@@ -32,7 +32,7 @@ struct mem_pool {
     size_t user_offset;
     int open;
     int resize;
-    struct offset_list lh;
+    struct offset_list lh; /*first, last*/
 };
 #define SIZEOF_mem_pool (sizeof(struct mem_pool))
 
@@ -45,7 +45,7 @@ int am_shm_lock(am_shm_t *am) {
     do {
         am->error = WaitForSingleObject(am->h[0], INFINITE);
     } while (am->error == WAIT_ABANDONED);
-    
+
 #else
     if (am->lock++) return AM_SUCCESS;
     sem_wait(am->sem);
@@ -320,7 +320,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         e->usize = 0;
         e->size = pool->size - SIZEOF_mem_pool;
         e->lh.next = e->lh.prev = 0;
-        am_offset_list_insert(pool, e, &pool->lh, struct mem_chunk);
+        am_offset_list_insert(pool, e, &(pool->lh), struct mem_chunk);
 
     } else {
         if (pool->user_offset > 0) {
@@ -458,7 +458,7 @@ void *am_shm_alloc(am_shm_t *am, size_t usize) {
             n->size = s;
             n->usize = 0;
             n->lh.prev = n->lh.next = 0;
-            am_offset_list_insert(pool, n, &pool->lh, struct mem_chunk);
+            am_offset_list_insert(pool, n, &(pool->lh), struct mem_chunk);
         } else if (cmin->size >= size) {
             /* use all of it */
             cmin->used = 1;
@@ -486,25 +486,8 @@ void *am_shm_alloc(am_shm_t *am, size_t usize) {
     return ret;
 }
 
-static int unlink_chunk(struct mem_pool *pool, struct mem_chunk *e) {
-    if (pool == NULL || e == NULL) return AM_EINVAL;
-    /* remove a node from a doubly linked list */
-    if (e->lh.prev == 0) {
-        pool->lh.prev = e->lh.next;
-    } else {
-        ((struct mem_chunk *) am_get_pointer(pool, e->lh.prev))->lh.next = e->lh.next;
-    }
-    if (e->lh.next == 0) {
-        pool->lh.next = e->lh.prev;
-    } else {
-        ((struct mem_chunk *) am_get_pointer(pool, e->lh.next))->lh.prev = e->lh.prev;
-    }
-    return AM_SUCCESS;
-}
-
 void am_shm_free(am_shm_t *am, void *ptr) {
-    size_t ns;
-    struct mem_chunk *e, *f;
+    struct mem_chunk *e, *p = NULL, *n = NULL;
     if (am != NULL && ptr != NULL) {
         struct mem_pool *pool = (struct mem_pool *) am->pool;
 
@@ -513,29 +496,24 @@ void am_shm_free(am_shm_t *am, void *ptr) {
         }
 
         e = (struct mem_chunk *) ((char *) ptr - SIZEOF_mem_chunk);
-        if (e->used == 0) return;
-
-        ns = e->size;
-
-        /* coalesce/combine adjacent chunks */
-        if (e->lh.next > 0) {
-            f = (struct mem_chunk *) am_get_pointer(pool, e->lh.next);
-            if (f->used == 0) {
-                ns += f->size;
-                unlink_chunk(pool, f);
-            }
+        if (e->used == 0) {
+            am_shm_unlock(am);
+            return;
         }
+
         if (e->lh.prev > 0) {
-            f = (struct mem_chunk *) am_get_pointer(pool, e->lh.prev);
-            if (f->used == 0) {
-                ns += f->size;
-                unlink_chunk(pool, f);
-            }
+            p = (struct mem_chunk *) am_get_pointer(pool, e->lh.prev);
+        }
+        if (e->lh.next > 0) {
+            n = (struct mem_chunk *) am_get_pointer(pool, e->lh.next);
         }
 
-        e->used = 0;
-        e->size = ns;
-        e->usize = 0;
+        if ((p == NULL && n != NULL && n->used > 0) ||
+                (p != NULL && n != NULL && p->used > 0 && n->used > 0)) {
+            /*no adjacent free chunks*/
+            e->used = 0;
+            e->usize = 0;
+        }
 
         am_shm_unlock(am);
     }

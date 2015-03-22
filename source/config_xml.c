@@ -88,9 +88,9 @@ static void end_element(void * userData, const char * name) {
 #define PARSE_NUMBER(x,prm,itm,val,vl) \
     do {\
         if (strcmp(x->current_name,prm) != 0) break;\
-        if (strncasecmp(val, "on", len) == 0 || strncasecmp(val, "true", len) == 0) {\
+        if (strncasecmp(val, "on", len) == 0 || strncasecmp(val, "true", len) == 0 || strncasecmp(val, "local", len) == 0) {\
             itm = 1;\
-        } else if (strncasecmp(val, "off", len) == 0 || strncasecmp(val, "false", len) == 0) {\
+        } else if (strncasecmp(val, "off", len) == 0 || strncasecmp(val, "false", len) == 0 || strncasecmp(val, "centralized", len) == 0) {\
             itm = 0;\
         } else {\
             char *t = malloc( vl + 1);\
@@ -102,7 +102,66 @@ static void end_element(void * userData, const char * name) {
         if (x->log_enable) \
         am_log_debug(x->conf->instance_id, "am_parse_config_xml() %s is set to '%d'",\
             prm, itm);\
-    } while (0);
+    } while (0)
+
+#define PARSE_DEBUG_LOG_LEVEL(x,prm,itm,val,vl) \
+    do {\
+        if (strcmp(x->current_name,prm) != 0) break;\
+        if (strncasecmp(val, "all", 3) == 0) {\
+            itm = AM_LOG_DEBUG;\
+        } else if (strncasecmp(val, "error", len) == 0) {\
+            itm = AM_LOG_ERROR;\
+        } else if (strncasecmp(val, "info", len) == 0) {\
+            itm = AM_LOG_INFO;\
+        } else if (strncasecmp(val, "message", len) == 0) {\
+            itm = AM_LOG_WARNING;\
+        } else if (strncasecmp(val, "warning", len) == 0) {\
+            itm = AM_LOG_WARNING;\
+        } else {\
+            itm = AM_LOG_NONE;\
+        }\
+        if (x->log_enable) \
+        am_log_debug(x->conf->instance_id, "am_parse_config_xml() %s is set to '%d'",\
+            prm, itm);\
+    } while (0)
+
+#define PARSE_ATTR_FETCH_MODE(x,prm,itm,val,vl) \
+    do {\
+        if (strcmp(x->current_name,prm) != 0) break;\
+        if (strncasecmp(val, "HTTP_HEADER", len) == 0) {\
+            itm = SET_ATTRS_AS_HEADER;\
+        } else if (strncasecmp(val, "HTTP_COOKIE", len) == 0) {\
+            itm = SET_ATTRS_AS_COOKIE;\
+        } else {\
+            itm = SET_ATTRS_NONE;\
+        }\
+        if (x->log_enable) \
+        am_log_debug(x->conf->instance_id, "am_parse_config_xml() %s is set to '%d'",\
+            prm, itm);\
+    } while (0)
+
+#define PARSE_AUDIT_LOG_LEVEL(x,prm,itm,val,vl) \
+    do {\
+        if (strcmp(x->current_name,prm) != 0) break;\
+        if (strncasecmp(val, "LOG_ALLOW", len) == 0) {\
+            itm |= AM_LOG_AUDIT_ALLOW;\
+        } else if (strncasecmp(val, "LOG_BOTH", len) == 0) {\
+            itm |= AM_LOG_AUDIT_ALLOW;\
+            itm |= AM_LOG_AUDIT_DENY;\
+        } else if (strncasecmp(val, "LOG_DENY", len) == 0) {\
+            itm |= AM_LOG_AUDIT_DENY;\
+        } else if (strncasecmp(val, "ALL", len) == 0) {\
+            itm |= AM_LOG_AUDIT;\
+            itm |= AM_LOG_AUDIT_REMOTE;\
+        } else if (strncasecmp(val, "LOCAL", len) == 0) {\
+            itm |= AM_LOG_AUDIT;\
+        } else if (strncasecmp(val, "REMOTE", len) == 0) {\
+            itm |= AM_LOG_AUDIT_REMOTE;\
+        }\
+        if (x->log_enable) \
+        am_log_debug(x->conf->instance_id, "am_parse_config_xml() %s is set to '%d'",\
+            prm, itm);\
+    } while (0)
 
 #define PARSE_STRING(x,prm,itm,val,vl) \
     do {\
@@ -118,7 +177,7 @@ static void end_element(void * userData, const char * name) {
             else \
             am_log_debug(x->conf->instance_id, "am_parse_config_xml() %s is set to '%s'",\
                 prm, itm); } \
-    } while (0);
+    } while (0)
 
 #define PARSE_STRING_LIST(x,prm,itmsz,itm,val,vl) \
     do {\
@@ -135,7 +194,7 @@ static void end_element(void * userData, const char * name) {
         if (x->log_enable) \
         am_log_debug(x->conf->instance_id, "am_parse_config_xml() %s is set to %d value(s)",\
             prm, itmsz);\
-    } while (0);
+    } while (0)
 
 #define PARSE_NUMBER_LIST(x,prm,itmsz,itm,val,vl) \
     do {\
@@ -152,7 +211,7 @@ static void end_element(void * userData, const char * name) {
         if (x->log_enable) \
         am_log_debug(x->conf->instance_id, "am_parse_config_xml() %s is set to %d value(s)",\
             prm, itmsz);\
-    } while (0);
+    } while (0)
 
 #define PARSE_STRING_MAP(x,prm,itmsz,itm,val,vl) \
     do {\
@@ -174,7 +233,7 @@ static void end_element(void * userData, const char * name) {
         if (x->log_enable) \
         am_log_debug(x->conf->instance_id, "am_parse_config_xml() %s is set to %d value(s)",\
             prm, itmsz);\
-    } while (0);
+    } while (0)
 
 static void character_data(void *userData, const char *val, int len) {
     am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
@@ -191,10 +250,10 @@ static void character_data(void *userData, const char *val, int len) {
     PARSE_STRING(ctx, AM_AGENTS_CONFIG_PASSWORD, ctx->conf->pass, val, len);
     PARSE_STRING(ctx, AM_AGENTS_CONFIG_KEY, ctx->conf->key, val, len);
     PARSE_STRING(ctx, AM_AGENTS_CONFIG_DEBUG_FILE, ctx->conf->debug_file, val, len);
-    PARSE_NUMBER(ctx, AM_AGENTS_CONFIG_DEBUG_LEVEL, ctx->conf->debug_level, val, len);
+    PARSE_DEBUG_LOG_LEVEL(ctx, AM_AGENTS_CONFIG_DEBUG_LEVEL, ctx->conf->debug_level, val, len);
     PARSE_NUMBER(ctx, AM_AGENTS_CONFIG_DEBUG_OPT, ctx->conf->debug, val, len);
     PARSE_STRING(ctx, AM_AGENTS_CONFIG_AUDIT_FILE, ctx->conf->audit_file, val, len);
-    PARSE_NUMBER(ctx, AM_AGENTS_CONFIG_AUDIT_LEVEL, ctx->conf->audit_level, val, len);
+    PARSE_AUDIT_LOG_LEVEL(ctx, AM_AGENTS_CONFIG_AUDIT_LEVEL, ctx->conf->audit_level, val, len);
     PARSE_NUMBER(ctx, AM_AGENTS_CONFIG_AUDIT_OPT, ctx->conf->audit, val, len);
 
     PARSE_STRING(ctx, AM_AGENTS_CONFIG_CERT_KEY_FILE, ctx->conf->cert_key_file, val, len);
@@ -233,11 +292,11 @@ static void character_data(void *userData, const char *val, int len) {
     PARSE_STRING(ctx, AM_AGENTS_CONFIG_UID_PARAM, ctx->conf->userid_param, val, len);
     PARSE_STRING(ctx, AM_AGENTS_CONFIG_UID_PARAM_TYPE, ctx->conf->userid_param_type, val, len);
 
-    PARSE_NUMBER(ctx, AM_AGENTS_CONFIG_ATTR_PROFILE_MODE, ctx->conf->profile_attr_fetch, val, len);
+    PARSE_ATTR_FETCH_MODE(ctx, AM_AGENTS_CONFIG_ATTR_PROFILE_MODE, ctx->conf->profile_attr_fetch, val, len);
     PARSE_STRING_MAP(ctx, AM_AGENTS_CONFIG_ATTR_PROFILE_MAP, ctx->conf->profile_attr_map_sz, ctx->conf->profile_attr_map, val, len);
-    PARSE_NUMBER(ctx, AM_AGENTS_CONFIG_ATTR_SESSION_MODE, ctx->conf->session_attr_fetch, val, len);
+    PARSE_ATTR_FETCH_MODE(ctx, AM_AGENTS_CONFIG_ATTR_SESSION_MODE, ctx->conf->session_attr_fetch, val, len);
     PARSE_STRING_MAP(ctx, AM_AGENTS_CONFIG_ATTR_SESSION_MAP, ctx->conf->session_attr_map_sz, ctx->conf->session_attr_map, val, len);
-    PARSE_NUMBER(ctx, AM_AGENTS_CONFIG_ATTR_RESPONSE_MODE, ctx->conf->response_attr_fetch, val, len);
+    PARSE_ATTR_FETCH_MODE(ctx, AM_AGENTS_CONFIG_ATTR_RESPONSE_MODE, ctx->conf->response_attr_fetch, val, len);
     PARSE_STRING_MAP(ctx, AM_AGENTS_CONFIG_ATTR_RESPONSE_MAP, ctx->conf->response_attr_map_sz, ctx->conf->response_attr_map, val, len);
 
     PARSE_NUMBER(ctx, AM_AGENTS_CONFIG_LB_ENABLE, ctx->conf->lb_enable, val, len);

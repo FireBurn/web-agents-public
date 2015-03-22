@@ -208,7 +208,6 @@ static void net_async_poll_timeout(union sigval si) {
 }
 
 static void net_async_poll(am_net_t *n) {
-    const char *thisfunc = "net_async_poll()";
     int ev = 0;
     char first_run = 1;
 #ifdef _WIN32
@@ -306,7 +305,7 @@ static void net_async_poll(am_net_t *n) {
                 if (n->on_close) n->on_close(n->data, 0);
                 break;
             } else {
-                size_t parsed = http_parser_execute(n->hp, n->hs, tmp, got);
+                http_parser_execute(n->hp, n->hs, tmp, got);
             }
         }
     }

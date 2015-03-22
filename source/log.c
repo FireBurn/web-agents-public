@@ -821,7 +821,7 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
         pthread_mutex_unlock(&log->lock);
 #endif
         if (exist == 2) {
-#define AM_LOG_HEADER "\r\n\r\n\t######################################################\r\n\t# %-51s#\r\n\t# Version: %-42s#\r\n\t# Revision: %-41s#\r\n\t# Build date: %s %-27s#\r\n\t######################################################\r\n"
+#define AM_LOG_HEADER "\r\n\r\n\t######################################################\r\n\t# %-51s#\r\n\t# Version: %-42s#\r\n\t# %-51s#\r\n\t# Build date: %s %-27s#\r\n\t######################################################\r\n"
 
             am_log_always(instance_id, AM_LOG_HEADER, DESCRIPTION, VERSION,
                     VERSION_VCS, __DATE__, __TIME__);

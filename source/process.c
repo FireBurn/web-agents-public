@@ -1236,7 +1236,7 @@ static void set_user_attributes(am_request_t *r) {
                     AM_COOKIE_SET_EXT(r, r->conf->cookie_name, r->token, NULL);
                 }
             }
-        } 
+        }
 
         /* if attributes mode is none, we're done */
         if (r->conf->profile_attr_fetch == SET_ATTRS_NONE &&
@@ -1492,8 +1492,10 @@ static am_return_t handle_exit(am_request_t *r) {
             /*set user attributes*/
             set_user_attributes(r);
 
-            am_log_audit(r->instance_id, AUDIT_ALLOW_USER_MESSAGE,
-                    LOGEMPTY(r->user), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
+            if ((r->conf->audit_level & AM_LOG_AUDIT_ALLOW) == AM_LOG_AUDIT_ALLOW) {
+                am_log_audit(r->instance_id, AUDIT_ALLOW_USER_MESSAGE,
+                        LOGEMPTY(r->user), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
+            }
 
             if (r->token_in_post == AM_TRUE && r->conf->cdsso_enable == AM_TRUE &&
                     r->is_dummypost_url == AM_FALSE && r->am_set_custom_response_f != NULL) {
@@ -1631,7 +1633,8 @@ static am_return_t handle_exit(am_request_t *r) {
         case AM_ACCESS_DENIED:
         case AM_INVALID_FQDN_ACCESS:
 
-            if (status == AM_ACCESS_DENIED) {
+            if (status == AM_ACCESS_DENIED &&
+                    (r->conf->audit_level & AM_LOG_AUDIT_DENY) == AM_LOG_AUDIT_DENY) {
                 am_log_audit(r->instance_id, AUDIT_DENY_USER_MESSAGE,
                         LOGEMPTY(r->user), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
             }

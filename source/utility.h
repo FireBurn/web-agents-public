@@ -225,7 +225,6 @@ int am_get_policy_cache_entry(am_request_t *r, const char *key);
 int am_add_policy_cache_entry(am_request_t *r, const char *key, int valid);
 
 int am_get_agent_config(unsigned long instance_id, const char *config_file, am_config_t **cnf);
-int am_config_update_xml(am_config_t *c, char all, char **xml, size_t *xml_sz);
 
 void remove_agent_instance_byname(const char *name);
 

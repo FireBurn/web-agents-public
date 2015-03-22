@@ -108,7 +108,9 @@ extern "C" {
         AM_LOG_DEBUG = 1 << 4,
         AM_LOG_REMOTE = 1 << 5,
         AM_LOG_AUDIT = 1 << 6,
-        AM_LOG_AUDIT_REMOTE = 1 << 7
+        AM_LOG_AUDIT_REMOTE = 1 << 7,
+        AM_LOG_AUDIT_ALLOW = 1 << 8,
+        AM_LOG_AUDIT_DENY = 1 << 9
     };
 
     struct url {
