@@ -163,22 +163,23 @@ int am_configuration_init() {
         return conf->error;
     }
 
-    am_shm_lock(conf);
     if (conf->init == 1) {
         /* allocate the table itself */
         struct am_instance *instance_data = (struct am_instance *) am_shm_alloc(conf, sizeof (struct am_instance));
         if (instance_data != NULL) {
+            am_shm_lock(conf);
             /* initialize head node */
             instance_data->list.next = instance_data->list.prev = 0;
             conf->user = instance_data;
             /*store instance_data offset (for other processes)*/
             am_shm_set_user_offset(conf, am_get_offset(conf->pool, instance_data));
+            am_shm_unlock(conf);
         } else {
             conf->user = NULL;
             status = AM_ENOMEM;
         }
     }
-    am_shm_unlock(conf);
+
     return status;
 }
 

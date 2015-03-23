@@ -918,33 +918,6 @@ void am_agent_instance_init_lock() {
 #endif 
 }
 
-int am_agent_instance_init_timedlock(int timeout_sec) {
-#if defined(_WIN32)
-    DWORD rv = WaitForSingleObject(ic_sem, timeout_sec * 1000);
-    return rv == WAIT_OBJECT_0 ? AM_SUCCESS :
-            rv == WAIT_TIMEOUT ? AM_ETIMEDOUT : AM_ERROR;
-#elif defined(__APPLE__)
-    int rv = 0;
-    struct timeval now = {0, 0};
-    mach_timespec_t ts = {0, 0};
-    gettimeofday(&now, NULL);
-    ts.tv_sec = now.tv_sec + timeout_sec;
-    ts.tv_nsec = now.tv_usec * 1000;
-    rv = semaphore_timedwait(ic_sem, ts);
-    return rv == KERN_SUCCESS ? AM_SUCCESS :
-            rv == KERN_OPERATION_TIMED_OUT ? AM_ETIMEDOUT : AM_ERROR;
-#else
-    int rv = 0;
-    struct timeval now = {0, 0};
-    struct timespec ts = {0, 0};
-    gettimeofday(&now, NULL);
-    ts.tv_sec = now.tv_sec + timeout_sec;
-    ts.tv_nsec = now.tv_usec * 1000;
-    rv = sem_timedwait(ic_sem, &ts);
-    return rv == 0 ? AM_SUCCESS : rv == -1 && errno == ETIMEDOUT ? AM_ETIMEDOUT : AM_ERROR;
-#endif 
-}
-
 void am_agent_instance_init_unlock() {
 #if defined(_WIN32)
     ReleaseSemaphore(ic_sem, 1, NULL);

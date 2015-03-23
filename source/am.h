@@ -38,7 +38,7 @@ extern "C" {
 #endif
 
 #ifndef AM_MAX_INSTANCES
-#define AM_MAX_INSTANCES 32 /*max number of agent configuration instances*/
+#define AM_MAX_INSTANCES            32 /*max number of agent configuration instances*/
 #endif
 
 #define EMPTY               "(empty)"

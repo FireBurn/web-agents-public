@@ -93,10 +93,10 @@ int am_cache_init() {
         return cache->error;
     }
 
-    am_shm_lock(cache);
     if (cache->init == AM_TRUE) {
         struct am_cache *cache_data = (struct am_cache *) am_shm_alloc(cache, sizeof (struct am_cache));
         if (cache_data != NULL) {
+            am_shm_lock(cache);
             cache_data->count = 0;
             /* initialize head nodes */
             for (i = 0; i < AM_SHARED_CACHE_SIZE; i++) {
@@ -105,13 +105,13 @@ int am_cache_init() {
             cache->user = cache_data;
             /*store table offset (for other processes)*/
             am_shm_set_user_offset(cache, am_get_offset(cache->pool, cache_data));
+            am_shm_unlock(cache);
         } else {
             cache->user = NULL;
             status = AM_ENOMEM;
         }
     }
 
-    am_shm_unlock(cache);
     return status;
 }
 

@@ -248,7 +248,7 @@ static am_return_t handle_notification(am_request_t *r) {
         int compare_status = r->conf->url_eval_case_ignore == AM_TRUE ?
                 strcasecmp(url, r->conf->notif_url) : strcmp(url, r->conf->notif_url);
         /*int compare_status = r->conf->url_eval_case_ignore == AM_TRUE ?
-                (stristr(url, r->conf->notif_url) != NULL ? 0 : 1) :
+                (stristr((char *) url, r->conf->notif_url) != NULL ? 0 : 1) :
                 (strstr(url, r->conf->notif_url) != NULL ? 0 : 1);*/
         if (compare_status == 0) {
             struct notification_worker_data *wd = malloc(sizeof (struct notification_worker_data));
@@ -1284,14 +1284,10 @@ static char *find_active_login_server(am_request_t *r, char add_goto_value) {
     int i, j, map_sz = 0;
     am_config_map_t *map = NULL;
     char local_alloc = AM_FALSE;
-
     char *cdsso_elements = NULL;
     char *login_url = NULL;
-
     const char *url = r->normalized_url;
-
     int valid_idx = get_valid_url_index(r->instance_id);
-    //TODO: cond_login_url ? match_conditional_url
 
     if (r->conf->cdsso_enable == AM_TRUE) {
         long msec = 0;
@@ -1337,8 +1333,55 @@ static char *find_active_login_server(am_request_t *r, char add_goto_value) {
         map = r->conf->login_url;
     }
 
+    if (r->conf->cond_login_url_sz > 0 && r->conf->cond_login_url != NULL) {
+        for (i = 0; i < r->conf->cond_login_url_sz; i++) {
+            am_config_map_t m = r->conf->cond_login_url[i];
+            char *cl = strdup(m.value);
+            if (cl != NULL) {
+                char compare_status, *sep = strchr(cl, '|');
+                if (sep != NULL && *(sep + 1) != '\0') {
+                    *sep = 0;
+                } else {
+                    free(cl);
+                    continue;
+                }
+                /*try to locate given pattern in a request url*/
+                compare_status = r->conf->url_eval_case_ignore == AM_TRUE ?
+                        (stristr((char *) url, cl) != NULL ? AM_TRUE : AM_FALSE) :
+                        (strstr(url, cl) != NULL ? AM_TRUE : AM_FALSE);
+
+                am_log_debug(r->instance_id, "%s conditional login pattern: %s, url: %s, match status: %s",
+                        thisfunc, cl, url, compare_status == AM_TRUE ? "match" : "no match");
+
+                if (compare_status == AM_TRUE) {
+                    /*found a match*/
+                    char *tk, *tmp = strdup(cl + strlen(cl) + 1), *o = tmp;
+                    if (tmp == NULL) break;
+                    /*set up url list*/
+                    map_sz = char_count(tmp, ',', NULL) + 1;
+                    map = (am_config_map_t *) malloc(map_sz * sizeof (am_config_map_t));
+                    if (map != NULL) {
+                        j = 0;
+                        while ((tk = am_strsep(&tmp, ",")) != NULL) {
+                            char *v = strdup(tk);
+                            trim(v, ' ');
+                            (&map[j])->name = v;
+                            (&map[j])->value = v;
+                            j++;
+                        }
+                        local_alloc = AM_TRUE;
+                    }
+                    free(o);
+                    free(cl);
+                    break;
+                }
+                free(cl);
+            }
+        }
+    }
+
     /*use url-validator confirmed (index) value*/
-    if (map_sz > 0) {
+    if (map_sz > 0 && map != NULL) {
         am_config_map_t m = (valid_idx >= map_sz) ? map[0] : map[valid_idx];
         if (add_goto_value == AM_TRUE) {
             char *goto_encoded = url_encode(r->overridden_url);
@@ -1363,11 +1406,6 @@ static char *find_active_login_server(am_request_t *r, char add_goto_value) {
             }
         }
         am_log_debug(r->instance_id, "%s selected login url: %s", thisfunc, LOGEMPTY(login_url));
-    }
-
-    for (i = 0; i < map_sz; i++) {
-        am_config_map_t m = map[i];
-        am_log_debug(r->instance_id, "%s [%s] [%s]", thisfunc, m.name, m.value);
     }
 
     if (local_alloc == AM_TRUE) {

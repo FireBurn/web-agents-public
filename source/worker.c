@@ -31,7 +31,6 @@ void notification_worker(
     struct am_namevalue *e, *t, *session_list = NULL;
     char *token = NULL, destroyed = 0;
     char *agentid = NULL;
-    char *resource = NULL;
 
     if (r == NULL || r->post_data == NULL || r->post_data_sz == 0) {
         if (r != NULL) {
@@ -46,9 +45,14 @@ void notification_worker(
     if (session_list != NULL) {
 
         am_list_for_each(session_list, e, t) {
+            /*SessionNotification*/
             if (strcmp(e->n, "sid") == 0) token = e->v;
             if (strcmp(e->n, "state") == 0 && strcmp(e->v, "destroyed") == 0) destroyed = 1;
             if (strcmp(e->n, "agentName") == 0) agentid = e->v;
+            /*PolicyChangeNotification - ResourceName*/
+            if (strcmp(e->n, "ResourceName") == 0) {
+                am_remove_cache_entry(r->instance_id, e->v);
+            }
         }
 
         if (ISVALID(token) && destroyed) {
@@ -60,8 +64,6 @@ void notification_worker(
                     thisfunc, agentid);
             remove_agent_instance_byname(agentid);
         }
-        
-        //TODO: PolicyChangeNotification - ResourceName remove
 
         delete_am_namevalue_list(&session_list);
     }

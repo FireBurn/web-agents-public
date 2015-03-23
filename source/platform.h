@@ -86,8 +86,6 @@ typedef SSIZE_T             ssize_t;
 #include <sys/socket.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
-#include <sys/ipc.h>
-#include <sys/sem.h>
 #include <ftw.h>
 #include <dirent.h>
 #ifdef __APPLE__

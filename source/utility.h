@@ -48,9 +48,8 @@ typedef struct {
     DWORD error;
 #else
     int fd;
-    sem_t *sem;
+    void *lock;
     int error;
-    int lock;
 #endif
     void *pool;
     void *user;
@@ -232,7 +231,6 @@ void am_agent_init_set_value(unsigned long instance_id, char lock, int val);
 int am_agent_init_get_value(unsigned long instance_id, char lock);
 int am_agent_instance_init_init();
 void am_agent_instance_init_lock();
-int am_agent_instance_init_timedlock(int timeout_sec);
 void am_agent_instance_init_unlock();
 void am_agent_instance_init_release(char unlink);
 

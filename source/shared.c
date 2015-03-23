@@ -47,8 +47,13 @@ int am_shm_lock(am_shm_t *am) {
     } while (am->error == WAIT_ABANDONED);
 
 #else
-    if (am->lock++) return AM_SUCCESS;
-    sem_wait(am->sem);
+    pthread_mutex_t *lock = (pthread_mutex_t *) am->lock;
+    am->error = pthread_mutex_lock(lock);
+#ifndef __APPLE__
+    if (am->error == EOWNERDEAD) {
+        am->error = pthread_mutex_consistent(lock);
+    }
+#endif
 #endif
     return rv;
 }
@@ -57,8 +62,8 @@ void am_shm_unlock(am_shm_t *am) {
 #ifdef _WIN32
     ReleaseMutex(am->h[0]);
 #else
-    if (--am->lock) return;
-    sem_post(am->sem);
+    pthread_mutex_t *lock = (pthread_mutex_t *) am->lock;
+    pthread_mutex_unlock(lock);
 #endif
 }
 
@@ -96,12 +101,9 @@ void am_shm_shutdown(am_shm_t *am) {
         if (am->fd != -1) {
             close(am->fd);
         }
-        if (am->sem != NULL) {
-            sem_close(am->sem);
-        }
         if (open == 0) {
             shm_unlink(am->name[1]);
-            sem_unlink(am->name[0]);
+            munmap(am->lock, sizeof (pthread_mutex_t));
         }
 #endif
         free(am);
@@ -232,10 +234,24 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
 
 #else
 
-    ret->sem = sem_open(ret->name[0], O_CREAT, 0666, 1);
-    if (ret->sem == SEM_FAILED) {
+    ret->lock = mmap(NULL, sizeof (pthread_mutex_t),
+            PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
+    if (ret->lock == MAP_FAILED) {
         ret->error = errno;
         return ret;
+    } else {
+        pthread_mutexattr_t attr;
+        pthread_mutex_t *lock = (pthread_mutex_t *) ret->lock;
+        pthread_mutexattr_init(&attr);
+        pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+#ifdef __APPLE__
+        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+#else
+        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE_NP);
+        pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST);
+#endif
+        pthread_mutex_init(lock, &attr);
+        pthread_mutexattr_destroy(&attr);
     }
 
     am_shm_lock(ret);
@@ -243,8 +259,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
     ret->fd = shm_open(ret->name[1], O_CREAT | O_EXCL | O_RDWR, 0666);
     error = errno;
     if (ret->fd == -1 && error != EEXIST) {
-        sem_close(ret->sem);
-        sem_unlink(ret->name[0]);
+        munmap(ret->lock, sizeof (pthread_mutex_t));
         ret->error = error;
         am_shm_unlock(ret);
         return ret;
@@ -253,8 +268,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         ret->fd = shm_open(ret->name[1], O_RDWR, 0666);
         error = errno;
         if (ret->fd == -1) {
-            sem_close(ret->sem);
-            sem_unlink(ret->name[0]);
+            munmap(ret->lock, sizeof (pthread_mutex_t));
             ret->error = error;
             am_shm_unlock(ret);
             return ret;
@@ -486,8 +500,24 @@ void *am_shm_alloc(am_shm_t *am, size_t usize) {
     return ret;
 }
 
+static void unlink_chunk(struct mem_pool *pool, struct mem_chunk *e) {
+    if (pool == NULL || e == NULL) return;
+    /* remove a node from a doubly linked list */
+    if (e->lh.prev == 0) {
+        pool->lh.prev = e->lh.next;
+    } else {
+        ((struct mem_chunk *) am_get_pointer(pool, e->lh.prev))->lh.next = e->lh.next;
+    }
+    if (e->lh.next == 0) {
+        pool->lh.next = e->lh.prev;
+    } else {
+        ((struct mem_chunk *) am_get_pointer(pool, e->lh.next))->lh.prev = e->lh.prev;
+    }
+}
+
 void am_shm_free(am_shm_t *am, void *ptr) {
-    struct mem_chunk *e, *p = NULL, *n = NULL;
+    size_t ns;
+    struct mem_chunk *e, *f;
     if (am != NULL && ptr != NULL) {
         struct mem_pool *pool = (struct mem_pool *) am->pool;
 
@@ -501,19 +531,27 @@ void am_shm_free(am_shm_t *am, void *ptr) {
             return;
         }
 
-        if (e->lh.prev > 0) {
-            p = (struct mem_chunk *) am_get_pointer(pool, e->lh.prev);
-        }
+        ns = e->size;
+
         if (e->lh.next > 0) {
-            n = (struct mem_chunk *) am_get_pointer(pool, e->lh.next);
+            f = (struct mem_chunk *) am_get_pointer(pool, e->lh.next);
+            if (f->used == 0) {
+                ns += f->size;
+                unlink_chunk(pool, f);
+            }
+        }
+        if (e->lh.prev > 0) {
+            f = (struct mem_chunk *) am_get_pointer(pool, e->lh.prev);
+            if (f->used == 0) {
+                ns += f->size;
+                unlink_chunk(pool, e);
+                e = f;
+            }
         }
 
-        if ((p == NULL && n != NULL && n->used > 0) ||
-                (p != NULL && n != NULL && p->used > 0 && n->used > 0)) {
-            /*no adjacent free chunks*/
-            e->used = 0;
-            e->usize = 0;
-        }
+        e->used = 0;
+        e->size = ns;
+        e->usize = 0;
 
         am_shm_unlock(am);
     }
