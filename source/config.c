@@ -1204,6 +1204,7 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
             char *agent_token = NULL;
             struct am_namevalue *agent_session = NULL;
             am_config_t *ac = NULL;
+            struct am_ssl_options info;
 
             am_shm_unlock(conf);
             am_agent_instance_init_lock();
@@ -1232,11 +1233,32 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
                 return AM_FILE_ERROR; /*fatal*/
             }
 
+            memset(&info, 0, sizeof (struct am_ssl_options));
+            if (ISVALID(ac->ciphers)) {
+                snprintf(info.name[0], sizeof (info.name[0]), "%s", ac->ciphers);
+            }
+            if (ISVALID(ac->cert_ca_file)) {
+                snprintf(info.name[1], sizeof (info.name[1]), "%s", ac->cert_ca_file);
+            }
+            if (ISVALID(ac->cert_file)) {
+                snprintf(info.name[2], sizeof (info.name[2]), "%s", ac->cert_file);
+            }
+            if (ISVALID(ac->cert_key_file)) {
+                snprintf(info.name[3], sizeof (info.name[3]), "%s", ac->cert_key_file);
+            }
+            if (ISVALID(ac->cert_key_pass)) {
+                snprintf(info.name[4], sizeof (info.name[4]), "%s", ac->cert_key_pass);
+            }
+            if (ISVALID(ac->tls_opts)) {
+                snprintf(info.name[5], sizeof (info.name[5]), "%s", ac->tls_opts);
+            }
+            info.verifypeer = ac->cert_trust == AM_TRUE ? AM_FALSE : AM_TRUE;
+
             memset(&r, 0, sizeof (am_request_t));
             r.conf = ac;
             r.instance_id = instance_id;
             login_status = am_agent_login(instance_id, get_valid_openam_url(&r), NOTNULL(ac->notif_url),
-                    ac->user, ac->pass, ac->key, ac->realm, ac->local,
+                    ac->user, ac->pass, ac->key, ac->realm, ac->local, &info,
                     &agent_token, &profile_xml, &profile_xml_sz, &agent_session, NULL);
             if (login_status == AM_SUCCESS && ISVALID(agent_token) && agent_session != NULL) {
 

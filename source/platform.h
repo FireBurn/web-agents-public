@@ -88,6 +88,7 @@ typedef SSIZE_T             ssize_t;
 #include <sys/sem.h>
 #include <ftw.h>
 #include <dirent.h>
+#include <dlfcn.h>
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #include <mach/clock.h>

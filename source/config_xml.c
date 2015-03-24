@@ -372,7 +372,7 @@ static void character_data(void *userData, const char *val, int len) {
 
     if (strcmp(ctx->current_name, "com.sun.identity.agents.config.freeformproperties") == 0) {
         /*handler for old freeformproperties*/
-        char *t, k[AM_URI_SIZE], *s;
+        char *t, k[AM_URI_SIZE];
         char *v = strndup(val, len);
         if (v != NULL) {
             /* make up parser's current_name to handle freeformproperties:

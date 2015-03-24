@@ -16,7 +16,7 @@
 
 #include "platform.h"
 #include "am.h"
-#include "thread.h"
+#include "net_client.h"
 
 #ifdef _WIN32
 
@@ -65,6 +65,7 @@ static void am_main_init_unlock() {
 int am_init() {
     int rv = AM_SUCCESS;
 #ifndef _WIN32
+    am_net_init();
     am_log_init(AM_SUCCESS);
     am_configuration_init();
     rv = am_cache_init();
@@ -78,12 +79,15 @@ int am_shutdown() {
     am_log_shutdown();
 #ifdef _WIN32
     am_main_destroy();
+#else
+    am_net_shutdown();
 #endif
     return 0;
 }
 
 int am_init_worker() {
 #ifdef _WIN32
+    am_net_init();
     am_main_create();
     am_main_init_timed_lock();
     am_log_init_worker(init.error);
@@ -109,5 +113,8 @@ int am_shutdown_worker() {
     am_main_init_unlock();
 #endif
     am_worker_pool_shutdown();
+#ifdef _WIN32
+    am_net_shutdown();
+#endif
     return 0;
 }

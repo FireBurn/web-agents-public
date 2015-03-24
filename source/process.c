@@ -682,10 +682,32 @@ static am_return_t validate_policy(am_request_t *r) {
     if ((status == AM_SUCCESS && cache_ts > 0) || status != AM_SUCCESS) {
         struct am_policy_result *policy_cache_new = NULL;
         struct am_namevalue *session_cache_new = NULL;
+        struct am_ssl_options info;
         unsigned int max_retry = 0;
         const char *service_url = get_valid_openam_url(r);
         unsigned int retry = 0, retry_wait = 2; //TODO: conf values
         max_retry = retry = 3;
+
+        memset(&info, 0, sizeof (struct am_ssl_options));
+        if (ISVALID(r->conf->ciphers)) {
+            snprintf(info.name[0], sizeof (info.name[0]), "%s", r->conf->ciphers);
+        }
+        if (ISVALID(r->conf->cert_ca_file)) {
+            snprintf(info.name[1], sizeof (info.name[1]), "%s", r->conf->cert_ca_file);
+        }
+        if (ISVALID(r->conf->cert_file)) {
+            snprintf(info.name[2], sizeof (info.name[2]), "%s", r->conf->cert_file);
+        }
+        if (ISVALID(r->conf->cert_key_file)) {
+            snprintf(info.name[3], sizeof (info.name[3]), "%s", r->conf->cert_key_file);
+        }
+        if (ISVALID(r->conf->cert_key_pass)) {
+            snprintf(info.name[4], sizeof (info.name[4]), "%s", r->conf->cert_key_pass);
+        }
+        if (ISVALID(r->conf->tls_opts)) {
+            snprintf(info.name[5], sizeof (info.name[5]), "%s", r->conf->tls_opts);
+        }
+        info.verifypeer = r->conf->cert_trust == AM_TRUE ? AM_FALSE : AM_TRUE;
 
         /* entry is found, but is not valid, or nothing is found,
          * do a policy+session call in either way
@@ -699,6 +721,7 @@ static am_return_t validate_policy(am_request_t *r) {
                     r->conf->token, r->token,
                     url,
                     r->conf->notif_url, am_scope_to_str(scope), r->client_ip, pattrs,
+                    &info,
                     &session_cache_new,
                     &policy_cache_new);
             if (status == AM_SUCCESS && session_cache_new != NULL && policy_cache_new != NULL) {
@@ -1470,6 +1493,26 @@ static am_return_t handle_exit(am_request_t *r) {
                         if (oam != NULL) {
                             wd->token = strdup(r->token);
                             wd->openam = strdup(oam);
+                            memset(&wd->info, 0, sizeof (struct am_ssl_options));
+                            if (ISVALID(r->conf->ciphers)) {
+                                snprintf(wd->info.name[0], sizeof (wd->info.name[0]), "%s", r->conf->ciphers);
+                            }
+                            if (ISVALID(r->conf->cert_ca_file)) {
+                                snprintf(wd->info.name[1], sizeof (wd->info.name[1]), "%s", r->conf->cert_ca_file);
+                            }
+                            if (ISVALID(r->conf->cert_file)) {
+                                snprintf(wd->info.name[2], sizeof (wd->info.name[2]), "%s", r->conf->cert_file);
+                            }
+                            if (ISVALID(r->conf->cert_key_file)) {
+                                snprintf(wd->info.name[3], sizeof (wd->info.name[3]), "%s", r->conf->cert_key_file);
+                            }
+                            if (ISVALID(r->conf->cert_key_pass)) {
+                                snprintf(wd->info.name[4], sizeof (wd->info.name[4]), "%s", r->conf->cert_key_pass);
+                            }
+                            if (ISVALID(r->conf->tls_opts)) {
+                                snprintf(wd->info.name[5], sizeof (wd->info.name[5]), "%s", r->conf->tls_opts);
+                            }
+                            wd->info.verifypeer = r->conf->cert_trust == AM_TRUE ? AM_FALSE : AM_TRUE;
 
                             if (am_worker_dispatch(session_logout_worker, wd) != 0) {
                                 r->status = AM_ERROR;

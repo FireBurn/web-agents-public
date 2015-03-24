@@ -187,6 +187,15 @@ extern "C" {
 
     } am_request_t;
 
+    struct am_ssl_options {
+        /* 0: cipher list, 1: CA certs file, 2: client cert file, 
+         * 3: client priv key file, 4: priv key password,
+         * 5: tls options
+         */
+        char name[6][AM_PATH_SIZE];
+        int verifypeer;
+    };
+
     void am_process_request(am_request_t *r);
 
     const char *am_method_num_to_str(char method);
@@ -247,6 +256,7 @@ extern "C" {
 
     int am_agent_login(unsigned long instance_id, const char *openam, const char *notifyurl,
             const char *user, const char *pass, const char *key, const char *realm, int is_local,
+            struct am_ssl_options *info,
             char **agent_token, char **pxml, size_t *pxsz, struct am_namevalue **session_list,
             void(*log)(const char *, ...));
     const char *get_valid_openam_url(am_request_t *r);
