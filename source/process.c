@@ -1807,7 +1807,7 @@ static am_return_t handle_exit(am_request_t *r) {
                         if (repost_uri != NULL) free(repost_uri);
                     }
 
-                } else if (status == AM__INVALID_FQDN_ACCESS) {
+                } else if (status == AM_INVALID_FQDN_ACCESS) {
                     /* if previous status was invalid fqdn access,
                      * redirect to the valid fqdn url
                      */
