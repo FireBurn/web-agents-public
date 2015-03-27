@@ -533,6 +533,7 @@ void am_shm_free(am_shm_t *am, void *ptr) {
 
         ns = e->size;
 
+        /* coalesce/combine adjacent chunks */
         if (e->lh.next > 0) {
             f = (struct mem_chunk *) am_get_pointer(pool, e->lh.next);
             if (f->used == 0) {
