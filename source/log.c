@@ -238,12 +238,15 @@ static void *am_log_worker(void *arg) {
                             int fdw = audit == 1 ? f->fd_audit : f->fd_debug;
                             char *fnm = audit == 1 ? f->name_audit : f->name_debug;
                             size_t max_size = audit == 1 ? f->max_size_audit : f->max_size_debug;
-#ifndef _WIN32
+#ifdef _WIN32
+                            int wrote;
+#else 
+                            ssize_t wrote;
                             ino_t fdi = audit == 1 ? f->node_audit : f->node_debug;
 #endif
-                            write(fdw, d, (unsigned int) (log->queue[log->out].size + log->queue[log->out].size_wrap));
+                            wrote = write(fdw, d, (unsigned int) (log->queue[log->out].size + log->queue[log->out].size_wrap));
 #ifdef _WIN32
-                            write(fdw, "\r\n", 2);
+                            wrote = write(fdw, "\r\n", 2);
                             _commit(fdw);
 
                             /*check file size; rotate if set so*/
@@ -278,7 +281,7 @@ static void *am_log_worker(void *arg) {
                                 }
                             }
 #else
-                            write(fdw, "\n", 1);
+                            wrote = write(fdw, "\n", 1);
                             fsync(fdw);
 
                             //TODO: optional rotate by date

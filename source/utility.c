@@ -780,7 +780,10 @@ am_status_t get_token_from_url(am_request_t *rq) {
     size_t cn_sz;
 
     if (tmp == NULL) return AM_ENOMEM;
-    if (!ISVALID(rq->conf->cookie_name)) return AM_EINVAL;
+    if (!ISVALID(rq->conf->cookie_name)) {
+        free(tmp);
+        return AM_EINVAL;
+    }
     cn_sz = strlen(rq->conf->cookie_name);
 
     while ((token = am_strsep(&tmp, "&")) != NULL) {
@@ -965,7 +968,7 @@ char file_exists(const char *fn) {
     return AM_FALSE;
 }
 
-#ifndef _AIX
+#if defined(_WIN32) || defined(__sun)
 
 size_t strnlen(const char *string, size_t maxlen) {
     const char *end = memchr(string, '\0', maxlen);
@@ -1171,9 +1174,10 @@ void uuid(char *buf, size_t buflen) {
         CryptReleaseContext(hcp, 0);
     }
 #else
+    size_t sz;
     FILE *fp = fopen("/dev/urandom", "r");
     if (fp != NULL) {
-        fread(uuid_data.__rnd, 1, sizeof (uuid_data), fp);
+        sz = fread(uuid_data.__rnd, 1, sizeof (uuid_data), fp);
         fclose(fp);
     }
 #endif
@@ -1801,7 +1805,7 @@ static int am_file_filter(const struct dirent *_a) {
 static int am_scandir(const char *dirname, struct dirent ***ret_namelist,
         int (*select)(const struct dirent *),
         int (*compar)(const struct dirent **, const struct dirent **)) {
-    int len, used, allocated;
+    int len, used, allocated, i;
     DIR *dir;
     struct dirent *ent, *ent2, *dirbuf;
     struct dirent **namelist = NULL;
@@ -1812,22 +1816,39 @@ static int am_scandir(const char *dirname, struct dirent ***ret_namelist,
     used = 0;
     allocated = 2;
     namelist = malloc(allocated * sizeof (struct dirent *));
-    if (namelist == NULL) return AM_ENOMEM;
+    if (namelist == NULL) {
+        closedir(dir);
+        return AM_ENOMEM;
+    }
     dirbuf = malloc(sizeof (struct dirent) + 255 + 1);
-    if (dirbuf == NULL) return AM_ENOMEM;
+    if (dirbuf == NULL) {
+        free(namelist);
+        closedir(dir);
+        return AM_ENOMEM;
+    }
     while (readdir_r(dir, dirbuf, &ent) == 0 && ent) {
         if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
             continue;
         if (select != NULL && !select(ent))
             continue;
         len = offsetof(struct dirent, d_name) + (int) strlen(ent->d_name) + 1;
-        if ((ent2 = malloc(len)) == NULL)
-            return -1;
+        if ((ent2 = malloc(len)) == NULL) {
+            for (i = 0; i < used; i++) {
+                am_free(namelist[i]);
+            }
+            AM_FREE(namelist, dirbuf);
+            closedir(dir);
+            return AM_ENOMEM;
+        }
         if (used >= allocated) {
             allocated *= 2;
             namelist_tmp = realloc(namelist, allocated * sizeof (struct dirent *));
             if (namelist_tmp == NULL) {
-                am_free(namelist);
+                for (i = 0; i < used; i++) {
+                    am_free(namelist[i]);
+                }
+                AM_FREE(namelist, dirbuf);
+                closedir(dir);
                 return AM_ENOMEM;
             } else {
                 namelist = namelist_tmp;
@@ -1937,7 +1958,7 @@ int string_replace(char **original, const char *pattern, const char *replace, si
 
         retlen = *sz;
         ret = newop;
-        /* go through each of thw patterns, make a space (by moving) 
+        /* go through each of the patterns, make a space (by moving) 
          * for a replacement string, copy replacement in, 
          * repeat until all patterns are found
          **/

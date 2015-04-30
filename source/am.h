@@ -37,12 +37,16 @@
 #define AM_PROTO_SIZE               6
 #endif
 
-#ifndef AM_SHARED_CACHE_KEY_SIZE
-#define AM_SHARED_CACHE_KEY_SIZE    128 /* TODO: ResourceResult name max size? */
+#ifndef AM_HASH_TABLE_KEY_SIZE
+#define AM_HASH_TABLE_KEY_SIZE      128 /* TODO: ResourceResult name max size? */
 #endif
 
-#ifndef AM_SHARED_CACHE_SIZE
-#define AM_SHARED_CACHE_SIZE        6151 /* must be a prime */
+#ifndef AM_HASH_TABLE_SIZE
+#define AM_HASH_TABLE_SIZE          6151 /* must be a prime */
+#endif
+
+#ifndef AM_SHARED_MAX_RESIZE
+#define AM_SHARED_MAX_RESIZE        2
 #endif
 
 #ifndef AM_LOG_QUEUE_DEPTH

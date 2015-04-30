@@ -73,8 +73,10 @@ enum {
 /* shared memory area handle */
 
 typedef struct {
+    size_t local_size;
+    size_t *global_size;
 #ifdef _WIN32
-    HANDLE h[3]; /* 0: mutex, 1: file, 2: file mapping */
+    HANDLE h[4]; /* 0: mutex, 1: file, 2: file mapping, 3: file mapping (for global_size) */
     DWORD error;
 #else
     int fd;
@@ -84,7 +86,7 @@ typedef struct {
     void *pool;
     void *user;
     char init;
-    char name[3][AM_PATH_SIZE];
+    char name[4][AM_PATH_SIZE];
 } am_shm_t;
 
 struct am_cookie {
@@ -169,6 +171,7 @@ void *am_shm_alloc(am_shm_t *am, size_t usize);
 void am_shm_free(am_shm_t *am, void *ptr);
 void *am_shm_realloc(am_shm_t *am, void *ptr, size_t size);
 void am_shm_set_user_offset(am_shm_t *r, size_t s);
+void am_shm_info(am_shm_t *);
 
 int am_create_agent_dir(const char *sep, const char *path, char **created_name, char **created_name_simple);
 
@@ -191,7 +194,7 @@ void am_secure_zero_memory(void *v, size_t sz);
 
 void read_directory(const char *path, struct am_namevalue **list);
 
-#ifndef _AIX
+#if defined(_WIN32) || defined(__sun)
 char *strndup(const char *s, size_t n);
 size_t strnlen(const char *string, size_t maxlen);
 #endif

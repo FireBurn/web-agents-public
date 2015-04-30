@@ -128,12 +128,17 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
                     "Content-Length: %d\r\n\r\n"
                     "%s", n.uv.path, n.uv.host, n.uv.port, post_data_sz, post_data);
             if (post != NULL) {
-                AM_LOG_DEBUG(instance_id, "%s sending %d bytes", thisfunc, post_sz);
-                if (log != NULL) {
-                    log("%s sending %d bytes", thisfunc, post_sz);
 #ifdef DEBUG
-                    log("%s\n%s", thisfunc, post);
+                AM_LOG_DEBUG(instance_id, "%s sending %d bytes:\n%s", thisfunc, post_sz, post);
+#else
+                AM_LOG_DEBUG(instance_id, "%s sending %d bytes", thisfunc, post_sz);
 #endif
+                if (log != NULL) {
+#ifdef DEBUG
+                    log("%s sending %d bytes:\n%s", thisfunc, post_sz, post);
+#else
+                    log("%s sending %d bytes", thisfunc, post_sz);
+#endif                
                 }
                 status = am_net_write(&n, post, post_sz);
                 free(post);

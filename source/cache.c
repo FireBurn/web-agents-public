@@ -59,7 +59,7 @@ struct am_cache_entry_data {
 };
 
 struct am_cache_entry {
-    char key[AM_SHARED_CACHE_KEY_SIZE];
+    char key[AM_HASH_TABLE_KEY_SIZE];
     time_t ts; /*create timestamp*/
     int valid; /*entry is valid, in sec*/
     unsigned long instance_id;
@@ -69,7 +69,7 @@ struct am_cache_entry {
 
 struct am_cache {
     size_t count;
-    struct offset_list table[AM_SHARED_CACHE_SIZE]; /* first,last */
+    struct offset_list table[AM_HASH_TABLE_SIZE]; /* first,last */
 };
 
 static am_shm_t *cache = NULL;
@@ -96,7 +96,7 @@ int am_cache_init() {
         am_shm_lock(cache);
         cache_data->count = 0;
         /* initialize head nodes */
-        for (i = 0; i < AM_SHARED_CACHE_SIZE; i++) {
+        for (i = 0; i < AM_HASH_TABLE_SIZE; i++) {
             cache_data->table[i].next = cache_data->table[i].prev = 0;
         }
         cache->user = cache_data;
@@ -144,7 +144,7 @@ static struct am_cache_entry *get_cache_entry(const char *key, int *index) {
 
     if (cache_data != NULL) {
         key_hash = hash((void *) key);
-        entry_index = index_for(AM_SHARED_CACHE_SIZE, key_hash);
+        entry_index = index_for(AM_HASH_TABLE_SIZE, key_hash);
         h = (struct am_cache_entry *) AM_GET_POINTER(cache->pool, cache_data->table[entry_index].prev);
 
         AM_OFFSET_LIST_FOR_EACH(cache->pool, h, e, t, struct am_cache_entry) {
@@ -286,7 +286,7 @@ int am_add_pdp_cache_entry(am_request_t *request, const char *key, const char *u
     if (!ISVALID(key) || !ISVALID(url) || !ISVALID(file) || !ISVALID(content_type)) {
         return AM_EINVAL;
     }
-    if (strlen(key) >= AM_SHARED_CACHE_KEY_SIZE) {
+    if (strlen(key) >= AM_HASH_TABLE_KEY_SIZE) {
         return AM_E2BIG;
     }
 
@@ -297,7 +297,7 @@ int am_add_pdp_cache_entry(am_request_t *request, const char *key, const char *u
     content_type_length = strlen(content_type);
 
     key_hash = hash((void *) key);
-    entry_index = index_for(AM_SHARED_CACHE_SIZE, key_hash);
+    entry_index = index_for(AM_HASH_TABLE_SIZE, key_hash);
 
     am_shm_lock(cache);
 
@@ -534,10 +534,10 @@ int am_add_session_policy_cache_entry(am_request_t *r, const char *key,
 
     if (cache_data == NULL) return AM_ENOMEM;
     if (!ISVALID(key) || (policy == NULL && session == NULL)) return AM_EINVAL;
-    if (strlen(key) >= AM_SHARED_CACHE_KEY_SIZE) return AM_E2BIG;
+    if (strlen(key) >= AM_HASH_TABLE_KEY_SIZE) return AM_E2BIG;
 
     key_hash = hash((void *) key);
-    entry_index = index_for(AM_SHARED_CACHE_SIZE, key_hash);
+    entry_index = index_for(AM_HASH_TABLE_SIZE, key_hash);
 
     am_shm_lock(cache);
 
@@ -813,10 +813,10 @@ int am_add_policy_cache_entry(am_request_t *r, const char *key, int valid) {
 
     if (cache_data == NULL) return AM_ENOMEM;
     if (!ISVALID(key)) return AM_EINVAL;
-    if (strlen(key) >= AM_SHARED_CACHE_KEY_SIZE) return AM_E2BIG;
+    if (strlen(key) >= AM_HASH_TABLE_KEY_SIZE) return AM_E2BIG;
 
     key_hash = hash((void *) key);
-    entry_index = index_for(AM_SHARED_CACHE_SIZE, key_hash);
+    entry_index = index_for(AM_HASH_TABLE_SIZE, key_hash);
 
     am_shm_lock(cache);
 

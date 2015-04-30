@@ -160,11 +160,10 @@ void *am_parse_session_xml(unsigned long instance_id, const char *xml, size_t xm
         XML_SetEntityDeclHandler(parser, entity_declaration);
         if (XML_Parse(parser, stream, (int) data_sz, XML_TRUE) == XML_STATUS_ERROR) {
             const char *message = XML_ErrorString(XML_GetErrorCode(parser));
-            int line = XML_GetCurrentLineNumber(parser);
-            int col = XML_GetCurrentColumnNumber(parser);
-            AM_LOG_ERROR(instance_id, "%s xml parser error (%d:%d) %s", thisfunc,
-                    line, col, message);
-
+            XML_Size line = XML_GetCurrentLineNumber(parser);
+            XML_Size col = XML_GetCurrentColumnNumber(parser);
+            AM_LOG_ERROR(instance_id, "%s xml parser error (%lu:%lu) %s", thisfunc,
+                    (unsigned long) line, (unsigned long) col, message);
             delete_am_namevalue_list(&xctx.list);
         } else {
             r = xctx.list;

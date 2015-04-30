@@ -30,7 +30,6 @@ struct mem_chunk {
 struct mem_pool {
     size_t size;
     size_t user_offset;
-    int count;
     int open;
     int resize;
     struct offset_list lh; /*first, last*/
@@ -41,11 +40,45 @@ struct mem_pool {
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
 
 int am_shm_lock(am_shm_t *am) {
+    struct mem_pool *pool;
     int rv = AM_SUCCESS;
+
+    /* once we enter the critical section, check if any other process hasn't 
+     * re-mapped our segment somewhere else (compare local_size to global_size which
+     * will differ after successful am_shm_resize)
+     */
+
 #ifdef _WIN32
     do {
         am->error = WaitForSingleObject(am->h[0], INFINITE);
     } while (am->error == WAIT_ABANDONED);
+
+    if (am->local_size != *(am->global_size)) {
+        if (UnmapViewOfFile(am->pool) == 0) {
+            am->error = GetLastError();
+            return AM_EFAULT;
+        }
+        if (CloseHandle(am->h[2]) == 0) {
+            am->error = GetLastError();
+            return AM_EFAULT;
+        }
+        am->h[2] = CreateFileMappingA(am->h[1], NULL, PAGE_READWRITE, 0, (DWORD) *(am->global_size), NULL);
+        am->error = GetLastError();
+        if (am->h[2] == NULL) {
+            return AM_EFAULT;
+        }
+        am->pool = (struct mem_pool *) MapViewOfFile(am->h[2], FILE_MAP_ALL_ACCESS, 0, 0, 0);
+        am->error = GetLastError();
+        if (am->pool == NULL || (am->error != 0 && am->error != ERROR_ALREADY_EXISTS)) {
+            return AM_EFAULT;
+        }
+
+        pool = (struct mem_pool *) am->pool;
+        am->local_size = *(am->global_size);
+        if (pool->user_offset > 0) {
+            am->user = AM_GET_POINTER(pool, pool->user_offset);
+        }
+    }
 
 #else
     pthread_mutex_t *lock = (pthread_mutex_t *) am->lock;
@@ -57,6 +90,24 @@ int am_shm_lock(am_shm_t *am) {
 #endif
     }
 #endif
+    if (am->local_size != *(am->global_size)) {
+        am->error = munmap(am->pool, am->local_size);
+        if (am->error == -1) {
+            am->error = errno;
+            rv = AM_EFAULT;
+        }
+        am->pool = mmap(NULL, *(am->global_size), PROT_READ | PROT_WRITE, MAP_SHARED, am->fd, 0);
+        if (am->pool == MAP_FAILED) {
+            am->error = errno;
+            rv = AM_EFAULT;
+        }
+
+        pool = (struct mem_pool *) am->pool;
+        am->local_size = *(am->global_size);
+        if (pool->user_offset > 0) {
+            am->user = AM_GET_POINTER(pool, pool->user_offset);
+        }
+    }
 #endif
     return rv;
 }
@@ -95,6 +146,13 @@ void am_shm_shutdown(am_shm_t *am) {
     if (am->h[1] != INVALID_HANDLE_VALUE) {
         CloseHandle(am->h[1]);
     }
+
+    if (am->global_size != NULL) {
+        UnmapViewOfFile(am->global_size);
+    }
+    if (am->h[3] != NULL) {
+        CloseHandle(am->h[3]);
+    }
     if (open == 0) {
         DeleteFile(am->name[2]);
     }
@@ -108,6 +166,7 @@ void am_shm_shutdown(am_shm_t *am) {
     if (open == 0) {
         shm_unlink(am->name[1]);
         munmap(am->lock, sizeof (pthread_mutex_t));
+        munmap(am->global_size, sizeof (size_t));
     }
 #endif
     free(am);
@@ -151,12 +210,13 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
                 AM_GLOBAL_PREFIX"%s_s", name); /*shared memory name*/
         snprintf(ret->name[2], sizeof (ret->name[2]),
                 "%s.."FILE_PATH_SEP"temp"FILE_PATH_SEP"%s_f", dll_path, name); /*shared memory file name*/
+        snprintf(ret->name[2], sizeof (ret->name[2]),
+                AM_GLOBAL_PREFIX"%s_sz", name); /*shared memory name for global_size*/
     } else {
         ret->error = AM_NOT_FOUND;
         return ret;
     }
 #else
-    ret->lock = 0;
     snprintf(ret->name[0], sizeof (ret->name[0]),
             "/%s_l", name); /*mutex/semaphore*/
     snprintf(ret->name[1], sizeof (ret->name[1]),
@@ -235,6 +295,27 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         return ret;
     }
 
+    ret->h[3] = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, (DWORD) sizeof (size_t), ret->name[3]);
+    if (ret->h[3] == NULL) {
+        ret->error = GetLastError();
+        CloseHandle(ret->h[0]);
+        CloseHandle(ret->h[1]);
+        CloseHandle(ret->h[2]);
+        am_shm_unlock(ret);
+        return ret;
+    }
+    ret->global_size = MapViewOfFile(ret->h[3], FILE_MAP_ALL_ACCESS, 0, 0, 0);
+    if (ret->global_size == NULL) {
+        ret->error = GetLastError();
+        CloseHandle(ret->h[0]);
+        CloseHandle(ret->h[1]);
+        CloseHandle(ret->h[2]);
+        CloseHandle(ret->h[3]);
+        am_shm_unlock(ret);
+        return ret;
+    }
+    *(ret->global_size) = ret->local_size = size;
+
 #else
 
     ret->lock = mmap(NULL, sizeof (pthread_mutex_t),
@@ -261,6 +342,15 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         pthread_mutex_init(lock, &attr);
         pthread_mutexattr_destroy(&attr);
     }
+
+    ret->global_size = mmap(NULL, sizeof (size_t),
+            PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
+    if (ret->global_size == MAP_FAILED) {
+        ret->error = errno;
+        return ret;
+    }
+
+    *(ret->global_size) = ret->local_size = size;
 
     am_shm_lock(ret);
 
@@ -330,20 +420,18 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
     pool = (struct mem_pool *) area;
     if (ret->init) {
         struct mem_chunk *e = (struct mem_chunk *) ((char *) pool + SIZEOF_mem_pool);
-        memset(pool, 0x00, size);
         pool->size = size;
         pool->user_offset = 0;
         pool->open = 1;
         pool->resize = 0;
-        pool->lh.next = pool->lh.prev = 0; /*nothing is allocated yet*/
 
         /* add all available (free) space as one chunk in a freelist */
         e->used = 0;
         e->usize = 0;
         e->size = pool->size - SIZEOF_mem_pool;
         e->lh.next = e->lh.prev = 0;
-        AM_OFFSET_LIST_INSERT(pool, e, &(pool->lh), struct mem_chunk);
-        pool->count = 1;
+        /* update head prev/next pointers */
+        pool->lh.next = pool->lh.prev = AM_GET_OFFSET(pool, e);
     } else {
         if (pool->user_offset > 0) {
             ret->user = AM_GET_POINTER(pool, pool->user_offset);
@@ -380,7 +468,7 @@ static int am_shm_extend(am_shm_t *am, size_t usize) {
     size_t size, osize;
     int rv = AM_SUCCESS;
 
-    if (usize == 0) {
+    if (usize == 0 || am == NULL || am->pool == NULL) {
         return AM_EINVAL;
     }
 
@@ -424,38 +512,52 @@ static int am_shm_extend(am_shm_t *am, size_t usize) {
 #endif
     {
         struct mem_pool *pool = (struct mem_pool *) am->pool;
-        /* add newly allocated space as one chunk in a freelist */
-        struct mem_chunk *e = (struct mem_chunk *) ((char *) pool + pool->size);
-        e->used = 0;
-        e->usize = 0;
-        e->size = size - pool->size - SIZEOF_mem_pool;
-        e->lh.next = e->lh.prev = 0;
-        AM_OFFSET_LIST_INSERT(pool, e, &pool->lh, struct mem_chunk);
+        struct mem_chunk *last = (struct mem_chunk *) AM_GET_POINTER(pool, pool->lh.next);
 
-        pool->size = size; /*new size*/
-        pool->count++;
+        if (last == NULL) {
+            am->error = AM_ENOMEM;
+            return AM_ERROR;
+        }
+
+        if (last->used == 0) {
+            /* the last chunk is not used - add all newly allocated space there */
+            last->size += size - pool->size;
+        } else {
+            /* the last chunk is used - add all newly allocated space right after the last chunk 
+             * adjusting both - next pointer of the last chunk and head node to point to it
+             */
+            struct mem_chunk *e = (struct mem_chunk *) ((char *) pool + pool->size);
+            e->used = 0;
+            e->usize = 0;
+            e->size = size - pool->size;
+            e->lh.prev = AM_GET_OFFSET(pool, last);
+            e->lh.next = 0;
+            pool->lh.next = last->lh.next = AM_GET_OFFSET(pool, e);
+        }
+
+        *(am->global_size) = am->local_size = pool->size = size; /*new size*/
         am->error = AM_SUCCESS;
     }
     return rv;
 }
 
 void *am_shm_alloc(am_shm_t *am, size_t usize) {
-    struct mem_pool *pool = (struct mem_pool *) am->pool;
+    struct mem_pool *pool;
     struct mem_chunk *e, *t, *n, *head, *cmin = NULL;
     void *ret = NULL;
-    size_t size, smin, s; //3841548739
-    int c;
+    size_t size, smin, s;
 
-    size = ALIGN(usize + SIZEOF_mem_chunk);
-    if (am_shm_lock(am) != AM_SUCCESS) {
+    if (usize == 0 || am == NULL ||
+            am->pool == NULL || am_shm_lock(am) != AM_SUCCESS) {
         return NULL;
     }
 
+    pool = (struct mem_pool *) am->pool;
+    size = ALIGN(usize + SIZEOF_mem_chunk);
     head = (struct mem_chunk *) AM_GET_POINTER(pool, pool->lh.prev);
 
     /* find the best-fitting chunk */
     smin = pool->size;
-    c = pool->count;
 
     AM_OFFSET_LIST_FOR_EACH(pool, head, e, t, struct mem_chunk) {
         if (e->used == 0) {
@@ -478,16 +580,25 @@ void *am_shm_alloc(am_shm_t *am, size_t usize) {
             cmin->usize = usize;
             cmin->used = 1;
             ret = (void *) ((char *) cmin + SIZEOF_mem_chunk);
+
             /* add remaining part as a free chunk */
             n = (struct mem_chunk *) ((char *) cmin + size);
             n->used = 0;
             n->size = s;
             n->usize = 0;
-            n->lh.prev = n->lh.next = 0;
-            AM_OFFSET_LIST_INSERT(pool, n, &pool->lh, struct mem_chunk);
-            pool->count++;
+            n->lh.prev = n->lh.next = cmin->lh.next;
+
+            /* adjust prev-next values for sibling chunks */
+            cmin->lh.next = AM_GET_OFFSET(pool, n);
+            n->lh.prev = AM_GET_OFFSET(pool, cmin);
+            if (n->lh.next == 0) {
+                /* in case we are splitting off the last or only chunk - adjust head-next value */
+                pool->lh.next = cmin->lh.next;
+            } else {
+                ((struct mem_chunk *) AM_GET_POINTER(pool, n->lh.next))->lh.prev = cmin->lh.next;
+            }
         } else if (cmin->size >= size) {
-            /* use all of it */
+            /* can't split anything out - use all of it */
             cmin->used = 1;
             cmin->usize = usize;
             ret = (void *) ((char *) cmin + SIZEOF_mem_chunk);
@@ -498,7 +609,7 @@ void *am_shm_alloc(am_shm_t *am, size_t usize) {
 #ifdef __APPLE__
         am->error = AM_EOPNOTSUPP;
 #else
-        if (pool->resize++ > 2) {
+        if (pool->resize++ > AM_SHARED_MAX_RESIZE) {
             am->error = AM_ENOMEM;
         } else {
             if (am_shm_extend(am, (pool->size + size) * 2) == AM_SUCCESS) {
@@ -513,37 +624,18 @@ void *am_shm_alloc(am_shm_t *am, size_t usize) {
     return ret;
 }
 
-static void unlink_chunk(struct mem_pool *pool, struct mem_chunk *e) {
-    if (pool == NULL || e == NULL) return;
-    /* remove a node from a doubly linked list */
-    if (e->lh.prev == 0) {
-        pool->lh.prev = e->lh.next;
-    } else {
-        ((struct mem_chunk *) AM_GET_POINTER(pool, e->lh.prev))->lh.next = e->lh.next;
-    }
-    if (e->lh.next == 0) {
-        pool->lh.next = e->lh.prev;
-    } else {
-        ((struct mem_chunk *) AM_GET_POINTER(pool, e->lh.next))->lh.prev = e->lh.prev;
-    }
-}
-
 void am_shm_free(am_shm_t *am, void *ptr) {
     size_t size;
     struct mem_pool *pool;
     struct mem_chunk *e, *f;
     unsigned int prev, next;
 
-    if (am == NULL || am->pool == NULL || ptr == NULL) {
+    if (am == NULL || am->pool == NULL ||
+            ptr == NULL || am_shm_lock(am) != AM_SUCCESS) {
         return;
     }
 
     pool = (struct mem_pool *) am->pool;
-
-    if (am_shm_lock(am) != AM_SUCCESS) {
-        return;
-    }
-
     e = (struct mem_chunk *) ((char *) ptr - SIZEOF_mem_chunk);
     if (e->used == 0) {
         am_shm_unlock(am);
@@ -554,26 +646,33 @@ void am_shm_free(am_shm_t *am, void *ptr) {
     next = e->lh.next;
     prev = e->lh.prev;
 
-#ifdef AM_SHM_GC_ENABLE
     /* coalesce/combine adjacent chunks */
     if (next > 0) {
         f = (struct mem_chunk *) AM_GET_POINTER(pool, next);
-        if (f->used == 0 && f->lh.next > 0) {
+        if (f->used == 0) {
             size += f->size;
-            unlink_chunk(pool, f);
-            pool->count--;
+            e->lh.next = f->lh.next;
+            if (f->lh.next == 0) {
+                pool->lh.next = AM_GET_OFFSET(pool, e);
+            } else {
+                ((struct mem_chunk *) AM_GET_POINTER(pool, f->lh.next))->lh.prev = AM_GET_OFFSET(pool, e);
+            }
         }
     }
     if (prev > 0) {
         f = (struct mem_chunk *) AM_GET_POINTER(pool, prev);
         if (f->used == 0) {
             size += f->size;
-            unlink_chunk(pool, e);
+            f->lh.next = e->lh.next;
+            if (e->lh.next == 0) {
+                pool->lh.next = AM_GET_OFFSET(pool, f);
+            }
             e = f;
-            pool->count--;
+            if (next > 0) {
+                ((struct mem_chunk *) AM_GET_POINTER(pool, next))->lh.prev = AM_GET_OFFSET(pool, e);
+            }
         }
     }
-#endif
 
     e->used = 0;
     e->size = size;
@@ -609,4 +708,27 @@ void *am_shm_realloc(am_shm_t *am, void *ptr, size_t usize) {
     memcpy(vp, ptr, e->usize);
     am_shm_free(am, ptr);
     return vp;
+}
+
+void am_shm_info(am_shm_t *am) {
+    int i = 0;
+    struct mem_pool *pool;
+    struct mem_chunk *e, *t, *head;
+
+    if (am == NULL || am->pool == NULL) return;
+    pool = (struct mem_pool *) am->pool;
+
+    fprintf(stdout, "\n");
+    fprintf(stdout, "AREA   (size: %ld bytes) ", pool->size);
+
+    head = (struct mem_chunk *) AM_GET_POINTER(pool, pool->lh.prev);
+    fprintf(stdout, "             HEAD   [P:%d][N:%d]\n", pool->lh.prev, pool->lh.next);
+
+    AM_OFFSET_LIST_FOR_EACH(pool, head, e, t, struct mem_chunk) {
+        fprintf(stdout, "CHUNK #%03d: %s  (size: %ld, user: %ld bytes) [P:%d][O:%d][N:%d]\n",
+                ++i, e->used ? "used" : "free",
+                e->size, e->usize, e->lh.prev,
+                AM_GET_OFFSET(pool, e), e->lh.next);
+    }
+    fprintf(stdout, "\n");
 }
