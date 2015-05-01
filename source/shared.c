@@ -556,7 +556,7 @@ void *am_shm_alloc(am_shm_t *am, size_t usize) {
     size = ALIGN(usize + SIZEOF_mem_chunk);
     head = (struct mem_chunk *) AM_GET_POINTER(pool, pool->lh.prev);
 
-    /* find the best-fitting chunk */
+    /* find the first-fitting chunk */
     smin = pool->size;
 
     AM_OFFSET_LIST_FOR_EACH(pool, head, e, t, struct mem_chunk) {
@@ -565,7 +565,9 @@ void *am_shm_alloc(am_shm_t *am, size_t usize) {
             if (s >= size && s < smin) {
                 cmin = e;
                 smin = s;
+#ifdef AM_SHARED_BEST_FIT
                 if (s == size)
+#endif
                     break;
             }
         }
@@ -628,7 +630,6 @@ void am_shm_free(am_shm_t *am, void *ptr) {
     size_t size;
     struct mem_pool *pool;
     struct mem_chunk *e, *f;
-    unsigned int prev, next;
 
     if (am == NULL || am->pool == NULL ||
             ptr == NULL || am_shm_lock(am) != AM_SUCCESS) {
@@ -643,12 +644,10 @@ void am_shm_free(am_shm_t *am, void *ptr) {
     }
 
     size = e->size;
-    next = e->lh.next;
-    prev = e->lh.prev;
 
     /* coalesce/combine adjacent chunks */
-    if (next > 0) {
-        f = (struct mem_chunk *) AM_GET_POINTER(pool, next);
+    if (e->lh.next > 0) {
+        f = (struct mem_chunk *) AM_GET_POINTER(pool, e->lh.next);
         if (f->used == 0) {
             size += f->size;
             e->lh.next = f->lh.next;
@@ -659,18 +658,17 @@ void am_shm_free(am_shm_t *am, void *ptr) {
             }
         }
     }
-    if (prev > 0) {
-        f = (struct mem_chunk *) AM_GET_POINTER(pool, prev);
+    if (e->lh.prev > 0) {
+        f = (struct mem_chunk *) AM_GET_POINTER(pool, e->lh.prev);
         if (f->used == 0) {
             size += f->size;
             f->lh.next = e->lh.next;
             if (e->lh.next == 0) {
                 pool->lh.next = AM_GET_OFFSET(pool, f);
+            } else {
+                ((struct mem_chunk *) AM_GET_POINTER(pool, e->lh.next))->lh.prev = e->lh.prev;
             }
             e = f;
-            if (next > 0) {
-                ((struct mem_chunk *) AM_GET_POINTER(pool, next))->lh.prev = AM_GET_OFFSET(pool, e);
-            }
         }
     }
 
