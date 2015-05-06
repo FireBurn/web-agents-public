@@ -2072,16 +2072,66 @@ void read_directory(const char *path, struct am_namevalue **list) {
 }
 
 int get_ttl_value(struct am_namevalue *session, const char *name, int def, int value_in_minutes) {
-    struct am_namevalue *e, *t;
+    struct am_namevalue *element, *tmp;
 
-    AM_LIST_FOR_EACH(session, e, t) {
-        if (strcmp(e->n, name) == 0) {
-            int rv = strtol(e->v, NULL, AM_BASE_TEN);
-            if (rv < 0 || errno == ERANGE) {
+    AM_LIST_FOR_EACH(session, element, tmp) {
+        if (strcmp(element->n, name) == 0) {
+            int result = (int) strtol(element->v, NULL, AM_BASE_TEN);
+            if (result < 0 || errno == ERANGE) {
                 break;
             }
-            return value_in_minutes ? rv * 60 : rv;
+            return value_in_minutes ? result * 60 : result;
         }
     }
     return def < 0 ? -(def) : def;
+}
+
+/**
+ * Memcpy twice into the target destination, adding null terminators.
+ *
+ * Into dest:
+ * write size1 bytes from source1, followed by a null terminator
+ * then  size2 bytes from source2, followed by a null terminator
+ *
+ * Note that dest MUST BE AT LEAST size1 + size2 + 2 bytes in size.  Return dest always.
+ */
+void* mem2cpy(void* dest, const void* source1, size_t size1, const void* source2, size_t size2) {
+    
+    char* d = dest;
+    
+    memcpy(d, source1, size1);
+    d[size1] = '\0';
+    
+    memcpy(d + size1 + 1, source2, size2);
+    d[size1 + size2 + 1] = '\0';
+    
+    return dest;
+}
+
+/**
+ * Memcpy three times into the target destination, adding null terminators.
+ *
+ * Into dest:
+ * Write size1 bytes from source1, followed by a null terminator
+ * then  size2 bytes from source2, followed by a null terminator
+ * then  size3 bytes from source3, followed by a null terminator
+ *
+ * Note that dest MUST BE AT LEAST size1 + size2 + size3 + 3 bytes in size.  Return dest always.
+ */
+void* mem3cpy(void* dest, const void* source1, size_t size1,
+                            const void* source2, size_t size2,
+                            const void* source3, size_t size3) {
+    
+    char* d = dest;
+    
+    memcpy(d, source1, size1);
+    d[size1] = '\0';
+    
+    memcpy(d + size1 + 1, source2, size2);
+    d[size1 + size2 + 1] = '\0';
+    
+    memcpy(d + size1 + size2 + 2, source3, size3);
+    d[size1 + size2 + size3 + 2] = '\0';
+    
+    return dest;
 }

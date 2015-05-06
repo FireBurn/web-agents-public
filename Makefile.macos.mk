@@ -16,7 +16,7 @@
 
 ifndef	MACOS_MK_INCLUDED
 MACOS_MK_INCLUDED := true
-	
+
 CC := clang
 SHARED := -dynamiclib
 
@@ -36,10 +36,14 @@ endif
 LDFLAGS += -Wl,-flat_namespace -Wl,-undefined,suppress -Wl,-rpath,'$$ORIGIN/../lib' -Wl,-rpath,'$$ORIGIN' \
 	     -lpthread -lc -ldl
 
+test_utility: $(OUT_OBJS) $(OBJDIR)$(PS)source$(PS)tests
+	@$(ECHO) "[*** Creating "$@" test of utility.c ***]"
+	${CC} source$(PS)unit_tests$(PS)$@.c $(OUT_OBJS) -o $(OBJDIR)$(PS)source$(PS)tests/$@
+
 libopenam: $(OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
 	${CC} $(SHARED) -Wl,-install_name,libopenam.dylib  $(LDFLAGS) $(OUT_OBJS) -o build/libopenam.dylib
-	
+
 apache: $(OUT_OBJS) $(APACHE_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
 	${CC} $(SHARED) -Wl,-install_name,mod_openam.so -Wl,-exported_symbols_list,source/apache/agent.exp \
@@ -50,7 +54,7 @@ iis:
 
 varnish: 
 	$(error Varnish target is not supported on this platform)
-	
+
 agentadmin: $(OUT_OBJS) $(ADMIN_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" binary ***]"
 	${CC} $(LDFLAGS) $(OUT_OBJS) $(ADMIN_OUT_OBJS) -o build/agentadmin

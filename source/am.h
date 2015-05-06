@@ -69,14 +69,17 @@
 #define LOGEMPTY(x)         (x==NULL ? EMPTY : x)
 #define NOTNULL(x)          (x==NULL ? "" : x)
 #define ISVALID(x)          (x!=NULL && x[0] != '\0')
+#define ISINVALID(x)        (x==NULL || *x == '\0')
 #define MIN(a,b)            (((a)<(b))?(a):(b))
 #define MAX(a,b)            (((a)>(b))?(a):(b))
 #define CMP(a, b)           ((a) < (b) ? -1 : (a) == (b) ? 0 : 1)
 
-enum {
+typedef enum {
     AM_FALSE = 0,
     AM_TRUE
-};
+} boolean;
+
+#define TO_BOOL(x) (((x)==0) ? AM_FALSE : AM_TRUE)
 
 enum {
     AM_REQUEST_UNKNOWN = 0,

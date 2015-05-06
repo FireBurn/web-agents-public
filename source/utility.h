@@ -105,7 +105,7 @@ struct am_action_decision {
     struct am_namevalue *advices;
     struct am_action_decision *next;
     char method;
-    char action;
+    char action; // TODO: should be boolean
 };
 
 struct am_policy_result {
@@ -234,8 +234,8 @@ void set_valid_url_index(unsigned long instance_id, int value);
 int get_ttl_value(struct am_namevalue *session, const char *name, int def, int value_in_minutes);
 
 int create_am_namevalue_node(const char *n, size_t ns, const char *v, size_t vs, struct am_namevalue **node);
-int create_am_policy_result_node(const char *va, size_t vs, struct am_policy_result **node);
-int create_am_action_decision_node(char a, char m, uint64_t ttl,
+int create_am_policy_result_node(const char *resource, size_t resource_size, struct am_policy_result **node);
+int create_am_action_decision_node(boolean a, char m, uint64_t ttl,
         struct am_action_decision **node);
 
 int am_agent_logout(unsigned long instance_id, const char *openam,
@@ -267,7 +267,7 @@ const char *am_scope_to_str(int scope);
 
 int remove_cookie(am_request_t *rq, const char *cookie_name, char **cookie_hdr);
 
-int am_get_policy_cache_entry(am_request_t *r, const char *key);
+int am_get_policy_cache_entry(am_request_t *request, const char *key);
 int am_add_policy_cache_entry(am_request_t *r, const char *key, int valid);
 
 int am_get_agent_config(unsigned long instance_id, const char *config_file, am_config_t **cnf);
@@ -287,14 +287,17 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
 
 int am_get_pdp_cache_entry(am_request_t *r, const char *key, char **data, size_t *data_sz, char **content_type);
 int am_add_pdp_cache_entry(am_request_t *r, const char *key, const char *url, const char *file, const char *content_type);
-int am_add_session_policy_cache_entry(am_request_t *r, const char *key,
+int am_add_session_policy_cache_entry(am_request_t *request, const char *key,
         struct am_policy_result *policy, struct am_namevalue *session);
-int am_get_session_policy_cache_entry(am_request_t *r, const char *key,
+int am_get_session_policy_cache_entry(am_request_t *request, const char *key,
         struct am_policy_result **policy, struct am_namevalue **session, time_t *ts);
 
 int am_get_cache_entry(unsigned long instance_id, int valid, const char *key);
 int am_add_cache_entry(unsigned long instance_id, const char *key);
 
 int am_remove_cache_entry(unsigned long instance_id, const char *key);
+
+void* mem2cpy(void* dest, const void* source1, size_t size1, const void* source2, size_t size2);
+void* mem3cpy(void* dest, const void* source1, size_t size1, const void* source2, size_t size2, const void* source3, size_t size3);
 
 #endif

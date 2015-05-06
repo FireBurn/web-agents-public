@@ -76,38 +76,47 @@ int create_am_namevalue_node(const char *n, size_t ns,
     return 0;
 }
 
-int create_am_action_decision_node(char a, char m, uint64_t ttl,
-        struct am_action_decision **node) {
-    struct am_action_decision *t = malloc(sizeof (struct am_action_decision));
-    if (t == NULL) return 1;
-    t->action = a;
-    t->method = m;
-    t->ttl = ttl;
-    t->advices = NULL;
-    t->next = NULL;
-    *node = t;
+/**
+ * Allocate storage for an am_action_decision from dynamic memory (malloc, as opposed to shared memory).
+ * The result is placed into *node (see last parameter), while the function's return value seems to be 1
+ * if things go wrong and 0 if we succeed - more of an exit status than a boolean value.
+ */
+int create_am_action_decision_node(boolean action, char method, uint64_t ttl, struct am_action_decision **node) {
+    
+    struct am_action_decision *action_decision = malloc(sizeof (struct am_action_decision));
+    
+    if (action_decision == NULL) {
+        return 1;
+    }
+    action_decision->action = action;
+    action_decision->method = method;
+    action_decision->ttl = ttl;
+    action_decision->advices = NULL;
+    action_decision->next = NULL;
+    *node = action_decision;
     return 0;
 }
 
-int create_am_policy_result_node(const char *va, size_t vs, struct am_policy_result **node) {
-    struct am_policy_result *v;
-    if (va == NULL || vs == 0) return 1;
-    v = malloc(sizeof (struct am_policy_result));
-    if (v == NULL) return 1;
-    v->resource = malloc(vs + 1);
-    if (v->resource == NULL) {
-        free(v);
+int create_am_policy_result_node(const char *resource, size_t resource_size, struct am_policy_result **node) {
+    
+    struct am_policy_result *policy_result;
+    
+    if (resource == NULL || resource_size == 0) {
         return 1;
     }
-    memcpy(v->resource, va, vs);
-    v->resource[vs] = 0;
-    v->index = 0;
-    v->scope = -1;
-    v->response_attributes = NULL;
-    v->response_decisions = NULL;
-    v->action_decisions = NULL;
-    v->next = NULL;
-    *node = v;
+    policy_result = calloc(1, sizeof (struct am_policy_result));
+    if (policy_result == NULL) {
+        return 1;
+    }
+    policy_result->resource = malloc(resource_size + 1);
+    if (policy_result->resource == NULL) {
+        free(policy_result);
+        return 1;
+    }
+    memcpy(policy_result->resource, resource, resource_size);
+    policy_result->resource[resource_size] = '\0';
+    policy_result->scope = -1;
+    *node = policy_result;
     return 0;
 }
 
