@@ -1184,52 +1184,52 @@ static void parse_cookie(const char *v, struct am_cookie *c) {
         delete_am_cookie_list(&ck); \
     } while(0)
 
-#define AM_COOKIE_SET(r,n,v) \
+#define AM_COOKIE_SET(request,name,value) \
     do { \
         char *cookie = NULL; \
-        char *cookie_value = r->conf->cookie_encode_chars ? url_encode(v) : (char *) v; \
+        char *cookie_value = request->conf->cookie_encode_chars ? url_encode(value) : (char *) value; \
         if (cookie_value != NULL) { \
             am_asprintf(&cookie, "%s%s=%s;Max-Age=%d;Path=/", \
-                strcmp(n, NOTNULL(r->conf->cookie_name)) == 0 ? \
-                    "" : NOTNULL(r->conf->cookie_prefix), n, \
-                    cookie_value, r->conf->cookie_maxage > 0 ? r->conf->cookie_maxage : 300); \
+                strcmp(name, NOTNULL(request->conf->cookie_name)) == 0 ? \
+                    "" : NOTNULL(request->conf->cookie_prefix), name, \
+                    cookie_value, request->conf->cookie_maxage > 0 ? request->conf->cookie_maxage : 300); \
             if (cookie != NULL) { \
-                if (r->conf->cookie_secure && cookie != NULL) { \
+                if (request->conf->cookie_secure && cookie != NULL) { \
                     am_asprintf(&cookie, "%s;Secure", cookie); \
                 } \
-                if (r->conf->cookie_http_only && cookie != NULL) { \
+                if (request->conf->cookie_http_only && cookie != NULL) { \
                     am_asprintf(&cookie, "%s;HttpOnly", cookie); \
                 } \
-                r->am_add_header_in_response_f(r, cookie, NULL); \
+                request->am_add_header_in_response_f(request, cookie, NULL); \
                 free(cookie); \
             } \
-            am_free(cookie_value); \
+            if (request->conf->cookie_encode_chars) am_free(cookie_value); \
         } \
     } while(0)
 
-#define AM_COOKIE_SET_EXT(r,n,v,d) \
+#define AM_COOKIE_SET_EXT(request,name,value,domain) \
     do { \
         char *cookie = NULL; \
-        char *cookie_value = r->conf->cookie_encode_chars ? url_encode(v) : (char *) v; \
+        char *cookie_value = request->conf->cookie_encode_chars ? url_encode(value) : (char *) value; \
         if (cookie_value != NULL) { \
             am_asprintf(&cookie, "%s%s=%s;Max-Age=%d;Path=/", \
-                strcmp(n, NOTNULL(r->conf->cookie_name)) == 0 ? \
-                    "" : NOTNULL(r->conf->cookie_prefix), n, \
-                    cookie_value, r->conf->cookie_maxage > 0 ? r->conf->cookie_maxage : 300); \
+                strcmp(name, NOTNULL(request->conf->cookie_name)) == 0 ? \
+                    "" : NOTNULL(request->conf->cookie_prefix), name, \
+                    cookie_value, request->conf->cookie_maxage > 0 ? request->conf->cookie_maxage : 300); \
             if (cookie != NULL) { \
-                if (d != NULL && cookie != NULL) { \
-                    am_asprintf(&cookie, "%s;Domain=%s", cookie, d); \
+                if (domain != NULL && cookie != NULL) { \
+                    am_asprintf(&cookie, "%s;Domain=%s", cookie, domain); \
                 } \
-                if (r->conf->cookie_secure && cookie != NULL) { \
+                if (request->conf->cookie_secure && cookie != NULL) { \
                     am_asprintf(&cookie, "%s;Secure", cookie); \
                 } \
-                if (r->conf->cookie_http_only && cookie != NULL) { \
+                if (request->conf->cookie_http_only && cookie != NULL) { \
                     am_asprintf(&cookie, "%s;HttpOnly", cookie); \
                 } \
-                r->am_add_header_in_response_f(r, cookie, NULL); \
+                request->am_add_header_in_response_f(request, cookie, NULL); \
                 free(cookie); \
             } \
-            am_free(cookie_value); \
+            if (request->conf->cookie_encode_chars) am_free(cookie_value); \
         } \
     } while(0)
 
