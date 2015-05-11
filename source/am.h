@@ -77,7 +77,7 @@
 typedef enum {
     AM_FALSE = 0,
     AM_TRUE
-} boolean;
+} am_bool_t;
 
 #define TO_BOOL(x) (((x)==0) ? AM_FALSE : AM_TRUE)
 

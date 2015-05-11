@@ -105,7 +105,7 @@ struct am_action_decision {
     struct am_namevalue *advices;
     struct am_action_decision *next;
     char method;
-    char action; // TODO: should be boolean
+    char action; // TODO: should be am_bool_t
 };
 
 struct am_policy_result {
@@ -235,7 +235,7 @@ int get_ttl_value(struct am_namevalue *session, const char *name, int def, int v
 
 int create_am_namevalue_node(const char *n, size_t ns, const char *v, size_t vs, struct am_namevalue **node);
 int create_am_policy_result_node(const char *resource, size_t resource_size, struct am_policy_result **node);
-int create_am_action_decision_node(boolean a, char m, uint64_t ttl,
+int create_am_action_decision_node(am_bool_t a, char m, uint64_t ttl,
         struct am_action_decision **node);
 
 int am_agent_logout(unsigned long instance_id, const char *openam,

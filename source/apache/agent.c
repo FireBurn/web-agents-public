@@ -489,14 +489,14 @@ static am_status_t get_request_body(am_request_t *rq) {
 /**
  * The incoming request_req is changed into an am_request_t on which ALL of our remaining processing is then done.
  */
-static int amagent_auth_handler(request_rec *request_rec) {
+static int amagent_auth_handler(request_rec *req) {
 
     static const char *thisfunc = "amagent_auth_handler():";
     int result;
     am_request_t am_request;
     am_config_t *boot = NULL;
 
-    amagent_config_t *config = ap_get_module_config(request_rec->server->module_config, &amagent_module);
+    amagent_config_t *config = ap_get_module_config(req->server->module_config, &amagent_module);
 
     if (config == NULL || !config->enabled) {
         /* amagent module is not enabled for this 
@@ -506,13 +506,13 @@ static int amagent_auth_handler(request_rec *request_rec) {
     }
 
     if (config->error != AM_SUCCESS) {
-        LOG_R(APLOG_ERR, request_rec, "%s is not configured to handle the request "
+        LOG_R(APLOG_ERR, req, "%s is not configured to handle the request "
                 "to %s (unable to load bootstrap configuration from %s, error: %s)",
-                DESCRIPTION, request_rec->uri, config->config, am_strerror(config->error));
+                DESCRIPTION, req->uri, config->config, am_strerror(config->error));
         return HTTP_FORBIDDEN;
     }
 
-    LOG_R(APLOG_DEBUG, request_rec, "amagent_auth_handler(): [%s] [%ld]", config->config, config->config_id);
+    LOG_R(APLOG_DEBUG, req, "amagent_auth_handler(): [%s] [%ld]", config->config, config->config_id);
 
     /* register and update instance logger configuration (for already registered
      * instances - update logging level only 
@@ -525,9 +525,9 @@ static int amagent_auth_handler(request_rec *request_rec) {
     /* fetch agent configuration instance (from cache if available) */
     result = am_get_agent_config(config->config_id, config->config, &boot);
     if (boot == NULL || result != AM_SUCCESS) {
-        LOG_R(APLOG_ERR, request_rec, "%s is not configured to handle the request "
+        LOG_R(APLOG_ERR, req, "%s is not configured to handle the request "
                 "to %s (unable to get agent configuration instance, configuration: %s, error: %s)",
-                DESCRIPTION, request_rec->uri, config->config, am_strerror(result));
+                DESCRIPTION, req->uri, config->config, am_strerror(result));
 
         AM_LOG_ERROR(config->config_id, "amagent_auth_handler(): failed to get agent configuration instance, error: %s",
                 am_strerror(result));
@@ -539,25 +539,25 @@ static int amagent_auth_handler(request_rec *request_rec) {
     am_request.conf = boot;
     am_request.status = AM_ERROR;
     am_request.instance_id = config->config_id;
-    am_request.ctx = request_rec;
-    am_request.method = get_method_num(request_rec, config->config_id);
-    am_request.content_type = apr_table_get(request_rec->headers_in, "Content-Type");
-    am_request.cookies = apr_table_get(request_rec->headers_in, "Cookie");
+    am_request.ctx = req;
+    am_request.method = get_method_num(req, config->config_id);
+    am_request.content_type = apr_table_get(req->headers_in, "Content-Type");
+    am_request.cookies = apr_table_get(req->headers_in, "Cookie");
 
     if (ISVALID(am_request.conf->client_ip_header)) {
-        am_request.client_ip = (char *) apr_table_get(request_rec->headers_in, am_request.conf->client_ip_header);
+        am_request.client_ip = (char *) apr_table_get(req->headers_in, am_request.conf->client_ip_header);
     }
 
     if (!ISVALID(am_request.client_ip)) {
 #ifdef APACHE24
-        am_request.client_ip = (char *) request_rec->connection->client_ip;
+        am_request.client_ip = (char *) req->connection->client_ip;
 #else
-        am_request.client_ip = (char *) request_rec->connection->remote_ip;
+        am_request.client_ip = (char *) req->connection->remote_ip;
 #endif
     }
 
     if (ISVALID(am_request.conf->client_hostname_header)) {
-        am_request.client_host = (char *) apr_table_get(request_rec->headers_in, am_request.conf->client_hostname_header);
+        am_request.client_host = (char *) apr_table_get(req->headers_in, am_request.conf->client_hostname_header);
     }
 
     am_request.am_get_request_url_f = get_request_url;
@@ -580,14 +580,14 @@ static int amagent_auth_handler(request_rec *request_rec) {
     am_config_free(&am_request.conf);
     am_request_free(&am_request);
 
-    LOG_R(APLOG_DEBUG, request_rec, "amagent_auth_handler(): return status: %d", result);
+    LOG_R(APLOG_DEBUG, req, "amagent_auth_handler(): return status: %d", result);
 
     return result;
 }
 
 
-static void amagent_auth_post_insert_filter(request_rec *request_rec) {
-    ap_add_input_filter(amagent_post_filter_name, NULL, request_rec, request_rec->connection);
+static void amagent_auth_post_insert_filter(request_rec *req) {
+    ap_add_input_filter(amagent_post_filter_name, NULL, req, req->connection);
 }
 
 

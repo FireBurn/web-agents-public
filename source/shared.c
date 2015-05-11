@@ -209,8 +209,8 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         snprintf(ret->name[1], sizeof (ret->name[1]),
                 AM_GLOBAL_PREFIX"%s_s", name); /*shared memory name*/
         snprintf(ret->name[2], sizeof (ret->name[2]),
-                "%s.."FILE_PATH_SEP"temp"FILE_PATH_SEP"%s_f", dll_path, name); /*shared memory file name*/
-        snprintf(ret->name[2], sizeof (ret->name[2]),
+                "%s.."FILE_PATH_SEP"log"FILE_PATH_SEP"%s_f", dll_path, name); /*shared memory file name*/
+        snprintf(ret->name[3], sizeof (ret->name[3]),
                 AM_GLOBAL_PREFIX"%s_sz", name); /*shared memory name for global_size*/
     } else {
         ret->error = AM_NOT_FOUND;

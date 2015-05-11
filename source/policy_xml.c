@@ -81,7 +81,7 @@ int create_am_namevalue_node(const char *n, size_t ns,
  * The result is placed into *node (see last parameter), while the function's return value seems to be 1
  * if things go wrong and 0 if we succeed - more of an exit status than a boolean value.
  */
-int create_am_action_decision_node(boolean action, char method, uint64_t ttl, struct am_action_decision **node) {
+int create_am_action_decision_node(am_bool_t action, char method, uint64_t ttl, struct am_action_decision **node) {
     
     struct am_action_decision *action_decision = malloc(sizeof (struct am_action_decision));
     

@@ -298,7 +298,7 @@ int am_get_pdp_cache_entry(am_request_t *request, const char *key, char **data, 
                     && element->size[FILENAME_LENGTH] > 0
                     && element->size[CONTENT_TYPE_LENGTH] > 0) {
             
-            unsigned long size = element->size[URL_LENGTH] + element->size[FILENAME_LENGTH] + 2;
+            size_t size = element->size[URL_LENGTH] + element->size[FILENAME_LENGTH] + 2;
             *data = malloc(size);
             if (*data != NULL) {
                 memcpy(*data, element->value, size);
@@ -552,7 +552,7 @@ int am_get_session_policy_cache_entry(am_request_t *request, const char *key,
                 }
             }
             if ((a->type & AM_CACHE_POLICY_ACTION) == AM_CACHE_POLICY_ACTION) {
-                boolean act;
+                am_bool_t act;
                 struct am_action_decision *el = NULL;
                 act = TO_BOOL(a->type & AM_CACHE_POLICY_ALLOW);
                 if (create_am_action_decision_node(act, a->method, a->ttl, &el) == 0) {
