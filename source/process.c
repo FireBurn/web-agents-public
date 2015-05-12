@@ -305,11 +305,11 @@ static am_return_t handle_notification(am_request_t *r) {
             AM_LOG_WARNING(r->instance_id, "%s failed to dispatch notification worker", thisfunc);
             return status;
         }
-        r->status = AM_NOTIFICATION_DONE;
         if (r->am_set_custom_response_f != NULL) {
             /* OpenAM needs 'OK' message in the body with a successful notification */
             r->am_set_custom_response_f(r, "OK", "text/html");
         }
+        r->status = AM_NOTIFICATION_DONE;
     }
     return status;
 }
@@ -939,12 +939,12 @@ static am_return_t validate_policy(am_request_t *r) {
                     /*in case its a fresh policy response, store it in a cache (resource name only)*/
                     am_add_policy_cache_entry(r, pattern, 300); /*5 minutes*/
                 } else {
-                    int rv = am_get_policy_cache_entry(r, pattern);
+                    int rv = am_get_policy_cache_entry(r, pattern, e->created);
                     AM_LOG_DEBUG(r->instance_id, "%s pattern: %s, cache status: %s", thisfunc,
                             pattern, am_strerror(rv));
                     if (rv != AM_SUCCESS) {
-                        /* policy cache entry might be removed by a notification,
-                         * redo validate_policy
+                        /* policy cache (resource) entry might be removed or updated by a notification
+                         * redo validate_policy in either case
                          */
                         r->response_attributes = NULL;
                         r->response_decisions = NULL;

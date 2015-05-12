@@ -109,6 +109,7 @@ struct am_action_decision {
 };
 
 struct am_policy_result {
+    time_t created;
     int index;
     int scope;
     char *resource;
@@ -267,7 +268,7 @@ const char *am_scope_to_str(int scope);
 
 int remove_cookie(am_request_t *rq, const char *cookie_name, char **cookie_hdr);
 
-int am_get_policy_cache_entry(am_request_t *request, const char *key);
+int am_get_policy_cache_entry(am_request_t *r, const char *key, time_t reference);
 int am_add_policy_cache_entry(am_request_t *r, const char *key, int valid);
 
 int am_get_agent_config(unsigned long instance_id, const char *config_file, am_config_t **cnf);

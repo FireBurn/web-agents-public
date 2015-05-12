@@ -471,6 +471,9 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_RETRY_MAX, CONF_NUMBER, NULL, &r->retry_max, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_RETRY_WAIT, CONF_NUMBER, NULL, &r->retry_wait, NULL);
 
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOTIF_ENABLE, CONF_NUMBER, NULL, &r->notif_enable, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOTIF_URL, CONF_STRING, NULL, &r->notif_url, NULL);
+
         if (r->local) { /*do read other options in case configuration is local*/
 
             /* other options */
@@ -479,9 +482,6 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_COOKIE_NAME, CONF_STRING, NULL, &r->cookie_name, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGIN_URL_MAP, CONF_STRING_MAP, &r->login_url_sz, &r->login_url, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_COOKIE_SECURE, CONF_NUMBER, NULL, &r->cookie_secure, NULL);
-
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOTIF_ENABLE, CONF_NUMBER, NULL, &r->notif_enable, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOTIF_URL, CONF_STRING, NULL, &r->notif_url, NULL);
 
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CMP_CASE_IGNORE, CONF_NUMBER, NULL, &r->url_eval_case_ignore, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_POLICY_CACHE_VALID, CONF_NUMBER, NULL, &r->policy_cache_valid, NULL);

@@ -76,11 +76,11 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
         void(*log)(const char *, ...)) {
     static const char *thisfunc = "am_agent_login():";
     char *post = NULL, *post_data = NULL;
-    am_net_t n;
-    size_t post_sz;
+    am_net_t conn;
+    size_t post_sz, post_data_sz;
     int status = AM_ERROR;
 
-    struct request_data ld;
+    struct request_data req_data;
 
     char *token_enc = NULL;
     char *realm_enc = url_encode(realm);
@@ -89,30 +89,30 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
     if (!ISVALID(realm_enc) || !ISVALID(user_enc) ||
             !ISVALID(pass) || !ISVALID(openam)) return AM_EINVAL;
 
-    memset(&ld, 0, sizeof (struct request_data));
+    memset(&req_data, 0, sizeof (struct request_data));
 
-    memset(&n, 0, sizeof (am_net_t));
-    n.log = log;
-    n.instance_id = instance_id;
-    n.timeout = AM_NET_CONNECT_TIMEOUT;
-    n.url = openam;
+    memset(&conn, 0, sizeof (am_net_t));
+    conn.log = log;
+    conn.instance_id = instance_id;
+    conn.timeout = AM_NET_CONNECT_TIMEOUT;
+    conn.url = openam;
     if (info != NULL) {
-        memcpy(&n.ssl.info, info, sizeof (struct am_ssl_options));
+        memcpy(&conn.ssl.info, info, sizeof (struct am_ssl_options));
     }
 
-    ld.rf = create_event();
-    if (ld.rf == NULL) return AM_ENOMEM;
+    req_data.rf = create_event();
+    if (req_data.rf == NULL) return AM_ENOMEM;
 
-    n.data = &ld;
-    n.on_connected = on_connected_cb;
-    n.on_close = on_close_cb;
-    n.on_data = on_agent_request_data_cb;
-    n.on_complete = on_complete_cb;
+    conn.data = &req_data;
+    conn.on_connected = on_connected_cb;
+    conn.on_close = on_close_cb;
+    conn.on_data = on_agent_request_data_cb;
+    conn.on_complete = on_complete_cb;
 
-    if (am_net_connect(&n) == 0) {
-        size_t post_data_sz;
+    if (am_net_connect(&conn) == 0) {
+
         char *pass_encoded = url_encode(pass);
-
+        /* authenticate with agent profile/password and module Application */
         post_data_sz = am_asprintf(&post_data,
                 "username=%s&password=%s&uri=realm%%3D%s%%26module%%3DApplication",
                 user_enc, NOTNULL(pass_encoded), realm_enc);
@@ -126,7 +126,7 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
                     "Connection: Keep-Alive\r\n"
                     "Content-Type: application/x-www-form-urlencoded\r\n"
                     "Content-Length: %d\r\n\r\n"
-                    "%s", n.uv.path, n.uv.host, n.uv.port, post_data_sz, post_data);
+                    "%s", conn.uv.path, conn.uv.host, conn.uv.port, post_data_sz, post_data);
             if (post != NULL) {
 #ifdef DEBUG
                 AM_LOG_DEBUG(instance_id, "%s sending %d bytes:\n%s", thisfunc, post_sz, post);
@@ -140,7 +140,7 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
                     log("%s sending %d bytes", thisfunc, post_sz);
 #endif                
                 }
-                status = am_net_write(&n, post, post_sz);
+                status = am_net_write(&conn, post, post_sz);
                 free(post);
                 post = NULL;
             }
@@ -149,30 +149,31 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
         }
 
         if (status == AM_SUCCESS)
-            wait_for_event(ld.rf, 0);
+            wait_for_event(req_data.rf, 0);
 
         AM_LOG_DEBUG(instance_id, "%s authenticate response status code: %d",
-                thisfunc, n.http_status);
+                thisfunc, conn.http_status);
         if (log != NULL) {
             log("%s authenticate response status code: %d\n%s", thisfunc,
-                    n.http_status, LOGEMPTY(ld.rd));
+                    conn.http_status, LOGEMPTY(req_data.rd));
         }
 
-        if (status == AM_SUCCESS && n.http_status == 200 && ISVALID(ld.rd)) {
+        if (status == AM_SUCCESS && conn.http_status == 200 && ISVALID(req_data.rd)) {
             char *identity_get = NULL;
-            char *sep = strchr(ld.rd, '=');
+            char *sep = strchr(req_data.rd, '=');
             status = AM_ERROR;
-            trim(ld.rd, '\n');
+            trim(req_data.rd, '\n');
             token_enc = sep != NULL && *(sep + 1) != '\0' ?
                     url_encode(sep + 1) : NULL;
             if (token_enc != NULL) {
 
                 if (agent_token != NULL) *agent_token = strdup(sep + 1);
 
-                free(ld.rd);
-                ld.rd = NULL;
+                free(req_data.rd);
+                req_data.rd = NULL;
 
                 if (!is_local) {
+                    /* get agent profile (xml) */
                     post_sz = am_asprintf(&identity_get, "GET %s/identity/xml/read?"
                             "name=%s&attributes_names=realm&attributes_values_realm=%s&attributes_names=objecttype"
                             "&attributes_values_objecttype=Agent&admin=%s HTTP/1.1\r\n"
@@ -180,15 +181,15 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
                             "User-Agent: "MODINFO"\r\n"
                             "Accept: text/xml\r\n"
                             "Connection: Keep-Alive\r\n\r\n",
-                            n.uv.path,
+                            conn.uv.path,
                             user_enc, realm_enc, token_enc,
-                            n.uv.host, n.uv.port);
+                            conn.uv.host, conn.uv.port);
                     if (identity_get != NULL) {
                         AM_LOG_DEBUG(instance_id, "%s sending request:\n%s", thisfunc, identity_get);
                         if (log != NULL) {
                             log("%s sending request:\n%s", thisfunc, identity_get);
                         }
-                        status = am_net_write(&n, identity_get, post_sz);
+                        status = am_net_write(&conn, identity_get, post_sz);
                         free(identity_get);
                     }
                 } else {
@@ -200,39 +201,39 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
         }
 
         if (status == AM_SUCCESS && !is_local) {
-            wait_for_event(ld.rf, 0);
+            wait_for_event(req_data.rf, 0);
         }
 
         if (!is_local) {
             AM_LOG_DEBUG(instance_id, "%s profile response status code: %d", thisfunc,
-                    n.http_status);
+                    conn.http_status);
             if (log != NULL) {
                 log("%s profile response status code: %d", thisfunc,
-                        n.http_status);
+                        conn.http_status);
             }
         }
 
-        if (status == AM_SUCCESS && n.http_status == 200 && agent_token != NULL) {
+        if (status == AM_SUCCESS && conn.http_status == 200 && agent_token != NULL) {
             char *token_in = NULL;
             char *session_post_data = NULL;
             size_t token_sz = am_asprintf(&token_in, "token:%s", NOTNULL(*agent_token));
             char *token_b64 = base64_encode(token_in, &token_sz);
 
-            if (pxml != NULL && !is_local && ISVALID(ld.rd)) {
+            if (pxml != NULL && !is_local && ISVALID(req_data.rd)) {
                 /*no interest in a remote profile in case of local-only configuration*/
-                *pxml = malloc(ld.sz + 1);
+                *pxml = malloc(req_data.sz + 1);
                 if (*pxml != NULL) {
-                    memcpy(*pxml, ld.rd, ld.sz);
-                    (*pxml)[ld.sz] = 0;
+                    memcpy(*pxml, req_data.rd, req_data.sz);
+                    (*pxml)[req_data.sz] = 0;
                 }
             }
-            if (pxsz != NULL && !is_local) *pxsz = ld.sz;
+            if (pxsz != NULL && !is_local) *pxsz = req_data.sz;
 
-            am_free(ld.rd);
-            ld.rd = NULL;
+            am_free(req_data.rd);
+            req_data.rd = NULL;
 
             status = AM_ERROR;
-
+            /* get agent session data and subscribe to the session notification */
             post_data_sz = am_asprintf(&session_post_data,
                     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
                     "<RequestSet vers=\"1.0\" svcid=\"Session\" reqid=\"0\">"
@@ -263,16 +264,16 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
                         "User-Agent: "MODINFO"\r\n"
                         "Accept: text/xml\r\n"
                         "Content-Language: UTF-8\r\n"
-                        "Connection: Close\r\n"
+                        "Connection: Keep-Alive\r\n"
                         "Content-Type: text/xml; charset=UTF-8\r\n"
                         "Content-Length: %d\r\n\r\n"
-                        "%s", n.uv.path, n.uv.host, n.uv.port, post_data_sz, session_post_data);
+                        "%s", conn.uv.path, conn.uv.host, conn.uv.port, post_data_sz, session_post_data);
                 if (session_post != NULL) {
                     AM_LOG_DEBUG(instance_id, "%s sending request:\n%s", thisfunc, session_post);
                     if (log != NULL) {
                         log("%s sending request:\n%s", thisfunc, session_post);
                     }
-                    status = am_net_write(&n, session_post, post_sz);
+                    status = am_net_write(&conn, session_post, post_sz);
                     free(session_post);
                     session_post = NULL;
                 }
@@ -285,33 +286,85 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
     }
 
     if (status == AM_SUCCESS) {
-        wait_for_event(ld.rf, 0);
+        wait_for_event(req_data.rf, 0);
+    }
+
+    AM_LOG_DEBUG(instance_id, "%s sessionservice status code: %d", thisfunc, conn.http_status);
+    if (log != NULL) {
+        log("%s sessionservice status code: %d", thisfunc, conn.http_status);
+    }
+
+    if (status == AM_SUCCESS && conn.http_status == 200 && ISVALID(req_data.rd)) {
+        AM_LOG_DEBUG(instance_id, "%s response:\n%s", thisfunc, req_data.rd);
+        if (log != NULL) {
+            log("%s response:\n%s", thisfunc, req_data.rd);
+        }
+        if (session_list != NULL) {
+            *session_list = am_parse_session_xml(instance_id, req_data.rd, req_data.sz);
+        }
+
+        am_free(req_data.rd);
+        req_data.rd = NULL;
+
+        /* subscribe to the policy change notifications */
+        post_data_sz = am_asprintf(&post_data,
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                "<RequestSet vers=\"1.0\" svcid=\"Policy\" reqid=\"1\">"
+                "<Request><![CDATA["
+                "<PolicyService version=\"1.0\">"
+                "<PolicyRequest requestId=\"1\" appSSOToken=\"%s\">"
+                "<RemovePolicyListener notificationURL=\"%s\" serviceName=\"iPlanetAMWebAgentService\"/>"
+                "</PolicyRequest>"
+                "</PolicyService>]]>"
+                "</Request>"
+                "<Request><![CDATA["
+                "<PolicyService version=\"1.0\">"
+                "<PolicyRequest requestId=\"2\" appSSOToken=\"%s\">"
+                "<AddPolicyListener notificationURL=\"%s\" serviceName=\"iPlanetAMWebAgentService\"/>"
+                "</PolicyRequest>"
+                "</PolicyService>]]>"
+                "</Request>"
+                "</RequestSet>",
+                *agent_token, notifyurl, *agent_token, notifyurl);
+
+        if (post_data != NULL) {
+            post_sz = am_asprintf(&post, "POST %s/policyservice HTTP/1.1\r\n"
+                    "Host: %s:%d\r\n"
+                    "User-Agent: "MODINFO"\r\n"
+                    "Accept: text/xml\r\n"
+                    "Content-Language: UTF-8\r\n"
+                    "Content-Type: text/xml; charset=UTF-8\r\n"
+                    "Content-Length: %d\r\n"
+                    "Connection: Close\r\n\r\n"
+                    "%s", conn.uv.path, conn.uv.host, conn.uv.port, post_data_sz, post_data);
+            if (post != NULL) {
+                AM_LOG_DEBUG(instance_id, "%s sending %d bytes:\n%s", thisfunc, post_sz, post);
+                status = am_net_write(&conn, post, post_sz);
+                free(post);
+                post = NULL;
+            }
+            free(post_data);
+            post_data = NULL;
+        }
+    }
+
+    if (status == AM_SUCCESS) {
+        wait_for_event(req_data.rf, 0);
+        if (conn.http_status == 200 && ISVALID(req_data.rd)) {
+            AM_LOG_DEBUG(instance_id, "%s response:\n%s", thisfunc, req_data.rd);
+        }
     } else {
         AM_LOG_DEBUG(instance_id, "%s disconnecting", thisfunc);
         if (log != NULL) {
             log("%s disconnecting", thisfunc);
         }
-        am_net_diconnect(&n);
+        am_net_diconnect(&conn);
     }
 
-    AM_LOG_DEBUG(instance_id, "%s sessionservice status code: %d", thisfunc, n.http_status);
-    if (log != NULL) {
-        log("%s sessionservice status code: %d", thisfunc, n.http_status);
-    }
+    am_net_close(&conn);
+    close_event(req_data.rf);
 
-    if (status == AM_SUCCESS && n.http_status == 200 && ISVALID(ld.rd)) {
-        AM_LOG_DEBUG(instance_id, "%s response:\n%s", thisfunc, ld.rd);
-        if (log != NULL) {
-            log("%s response:\n%s", thisfunc, ld.rd);
-        }
-        if (session_list != NULL)
-            *session_list = am_parse_session_xml(instance_id, ld.rd, ld.sz);
-    }
-
-    am_net_close(&n);
-    close_event(ld.rf);
-
-    AM_FREE(ld.rd, user_enc, realm_enc, token_enc);
+    AM_FREE(req_data.rd, user_enc, realm_enc, token_enc);
     return status;
 }
 
