@@ -437,7 +437,7 @@ static int send_policychange_request(am_net_t *conn, char **token, const char *n
     struct request_data *req_data;
 
     if (conn == NULL || conn->data == NULL || token == NULL ||
-            !ISVALID(*token) || !ISVALID(notifyurl)) return AM_EINVAL;
+            !ISVALID(*token)) return AM_EINVAL;
 
     req_data = (struct request_data *) conn->data;
 
@@ -459,7 +459,7 @@ static int send_policychange_request(am_net_t *conn, char **token, const char *n
             "</PolicyService>]]>"
             "</Request>"
             "</RequestSet>",
-            *token, notifyurl, *token, notifyurl);
+            *token, NOTNULL(notifyurl), *token, NOTNULL(notifyurl));
     if (post_data == NULL) return AM_ENOMEM;
 
     post_sz = am_asprintf(&post, "POST %s/policyservice HTTP/1.1\r\n"
