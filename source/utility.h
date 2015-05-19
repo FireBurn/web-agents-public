@@ -188,7 +188,6 @@ int gzip_deflate(const char *uncompressed, size_t *uncompressed_sz, char **compr
 int gzip_inflate(const char *compressed, size_t *compressed_sz, char **uncompressed);
 void trim(char *a, char w);
 
-int am_asprintf(char **buffer, const char *fmt, ...);
 int am_vasprintf(char **buffer, const char *fmt, va_list arg);
 
 void am_secure_zero_memory(void *v, size_t sz);

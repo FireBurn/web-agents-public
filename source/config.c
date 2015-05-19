@@ -125,7 +125,8 @@ enum {
     AM_CONF_HTTP_ONLY_COOKIE,
     AM_CONF_ATTR_SEP,
     AM_CONF_WIN_LOGON,
-    AM_CONF_WIN_PASS_HEADER
+    AM_CONF_WIN_PASS_HEADER,
+    AM_CONF_JSON_URL_MAP
 };
 
 struct am_instance {
@@ -674,6 +675,14 @@ static int am_create_instance_entry_data(am_shm_t *cf, struct offset_list *h, am
         if (c->password_header_enable > 0) {
             SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_WIN_PASS_HEADER, 0), c->password_header_enable);
         }
+        if (c->json_url_map_sz > 0 && c->json_url_map != NULL) {
+            for (i = 0; i < c->json_url_map_sz; i++) {
+                am_config_map_t *v = &c->json_url_map[i];
+                if (ISVALID(v->name) && ISVALID(v->value)) {
+                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_JSON_URL_MAP, c->json_url_map_sz), v->name, v->value);
+                }
+            }
+        }
     }
     return AM_SUCCESS;
 }
@@ -1110,6 +1119,17 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 break;
             case AM_CONF_WIN_PASS_HEADER:
                 r->password_header_enable = i->num_value;
+                break;
+            case AM_CONF_JSON_URL_MAP:
+                if (r->json_url_map_sz == 0) {
+                    r->json_url_map = malloc(sz * sizeof (am_config_map_t));
+                }
+                if (r->json_url_map != NULL && r->json_url_map_sz < sz) {
+                    am_config_map_t *m = &r->json_url_map[r->json_url_map_sz++];
+                    m->name = malloc(i->size[0] + i->size[1] + 2);
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                }
                 break;
         }
     }

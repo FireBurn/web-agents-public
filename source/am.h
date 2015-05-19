@@ -74,6 +74,44 @@
 #define MAX(a,b)            (((a)>(b))?(a):(b))
 #define CMP(a, b)           ((a) < (b) ? -1 : (a) == (b) ? 0 : 1)
 
+#define AM_JSON_TEMPLATE_LOCATION "{"\
+        "\"error\": {"\
+        " \"errors\": ["\
+        "  {"\
+        "   \"message\": \"%s\","\
+        "   \"location\": \"%s\""\
+        "  }"\
+        " ],"\
+        " \"code\": %d"\
+        " }"\
+        "}"
+
+#define AM_JSON_TEMPLATE_DATA "{"\
+        "\"error\": {"\
+        " \"errors\": ["\
+        "  {"\
+        "   \"message\": \"%s\","\
+        "   \"data\": \"%s\""\
+        "  }"\
+        " ],"\
+        " \"code\": %d"\
+        " }"\
+        "}"
+
+#define AM_JSON_TEMPLATE_LOCATION_DATA "{"\
+        "\"error\": {"\
+        " \"errors\": ["\
+        "  {"\
+        "   \"message\": \"%s\","\
+        "   \"location\": \"%s\","\
+        "   \"type\": \"%s\","\
+        "   \"data\": \"%s\""\
+        "  }"\
+        " ],"\
+        " \"code\": %d"\
+        " }"\
+        "}"
+
 typedef enum {
     AM_FALSE = 0,
     AM_TRUE
@@ -155,10 +193,11 @@ typedef struct am_request {
     am_status_t status;
     unsigned int retry;
 
-    char not_enforced;
-    char is_logout_url;
-    char token_in_post;
-    char is_dummypost_url;
+    am_bool_t not_enforced;
+    am_bool_t is_logout_url;
+    am_bool_t token_in_post;
+    am_bool_t is_dummypost_url;
+    am_bool_t is_json_url;
 
     const char *orig_url;
     struct url url; /* parsed/normalized request url (split in values)*/
@@ -255,5 +294,7 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
 char *base64_decode(const char *in, size_t *length);
 char *base64_encode(const void *in, size_t *length);
 void am_free(void *ptr);
+int am_asprintf(char **buffer, const char *fmt, ...);
+char *am_json_escape(const char *str, size_t *escaped_sz);
 
 #endif

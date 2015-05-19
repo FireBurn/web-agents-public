@@ -566,6 +566,8 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_IIS_LOGON_USER, CONF_NUMBER, NULL, &r->logon_user_enable, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_IIS_PASSWORD_HEADER, CONF_NUMBER, NULL, &r->password_header_enable, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_JS_REPOST, CONF_NUMBER, NULL, &r->pdp_js_repost, NULL);
+            
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_JSON_URL, CONF_STRING_MAP, &r->json_url_map_sz, &r->json_url_map, NULL);
         }
     }
 
@@ -629,6 +631,7 @@ void am_config_free(am_config_t **cp) {
         AM_CONF_MAP_FREE(c->logout_map_sz, c->logout_map);
         AM_CONF_MAP_FREE(c->openam_logout_map_sz, c->openam_logout_map);
         AM_CONF_MAP_FREE(c->cond_login_url_sz, c->cond_login_url);
+        AM_CONF_MAP_FREE(c->json_url_map_sz, c->json_url_map);
 
         free(c);
         c = NULL;

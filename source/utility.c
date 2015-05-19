@@ -2096,15 +2096,15 @@ int get_ttl_value(struct am_namevalue *session, const char *name, int def, int v
  * Note that dest MUST BE AT LEAST size1 + size2 + 2 bytes in size.  Return dest always.
  */
 void* mem2cpy(void* dest, const void* source1, size_t size1, const void* source2, size_t size2) {
-    
+
     char* d = dest;
-    
+
     memcpy(d, source1, size1);
     d[size1] = '\0';
-    
+
     memcpy(d + size1 + 1, source2, size2);
     d[size1 + size2 + 1] = '\0';
-    
+
     return dest;
 }
 
@@ -2119,19 +2119,99 @@ void* mem2cpy(void* dest, const void* source1, size_t size1, const void* source2
  * Note that dest MUST BE AT LEAST size1 + size2 + size3 + 3 bytes in size.  Return dest always.
  */
 void* mem3cpy(void* dest, const void* source1, size_t size1,
-                            const void* source2, size_t size2,
-                            const void* source3, size_t size3) {
-    
+        const void* source2, size_t size2,
+        const void* source3, size_t size3) {
+
     char* d = dest;
-    
+
     memcpy(d, source1, size1);
     d[size1] = '\0';
-    
+
     memcpy(d + size1 + 1, source2, size2);
     d[size1 + size2 + 1] = '\0';
-    
+
     memcpy(d + size1 + size2 + 2, source3, size3);
     d[size1 + size2 + size3 + 2] = '\0';
-    
+
     return dest;
+}
+
+char *am_json_escape(const char *str, size_t *escaped_sz) {
+    char *data = NULL;
+    const char *end;
+    size_t len = 0;
+    int err = 0;
+
+    if (str == NULL) return NULL;
+
+    err = concat(&data, &len, "\"", 1);
+    if (err) {
+        am_free(data);
+        return NULL;
+    }
+
+    end = str;
+    while (1) {
+        const char *text;
+        char seq[7];
+        int length;
+
+        while (*end && *end != '\\' && *end != '"' && *end != '/' &&
+                (unsigned char) *end > 0x1F) {
+            end++;
+        }
+        if (end != str) {
+            err = concat(&data, &len, str, end - str);
+            if (err) {
+                am_free(data);
+                return NULL;
+            }
+        }
+        if (!*end) break;
+
+        /* handle \, /, ", and control codes */
+        length = 2;
+        switch (*end) {
+            case '/': text = "\\/";
+                break;
+            case '\\': text = "\\\\";
+                break;
+            case '\"': text = "\\\"";
+                break;
+            case '\b': text = "\\b";
+                break;
+            case '\f': text = "\\f";
+                break;
+            case '\n': text = "\\n";
+                break;
+            case '\r': text = "\\r";
+                break;
+            case '\t': text = "\\t";
+                break;
+            default:
+            {
+                snprintf(seq, sizeof (seq), "\\u%04X", *end);
+                text = seq;
+                length = 6;
+                break;
+            }
+        }
+
+        err = concat(&data, &len, text, length);
+        if (err) {
+            am_free(data);
+            return NULL;
+        }
+        end++;
+        str = end;
+    }
+
+    err = concat(&data, &len, "\"", 1);
+    if (err) {
+        am_free(data);
+        return NULL;
+    }
+
+    if (escaped_sz) *escaped_sz = len;
+    return data;
 }

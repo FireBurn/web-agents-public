@@ -262,24 +262,54 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
         return AM_EINVAL;
     }
 
-    status = rq->status;
+    status = rq->is_json_url ? AM_JSON_RESPONSE : rq->status;
+
     switch (status) {
-        case AM_JSON_RESPONSE: {
-            //TODO:
+        case AM_JSON_RESPONSE:
+        {
+            r->status = (rq->status == AM_REDIRECT || rq->status == AM_SUCCESS ||
+                    rq->status == AM_DONE || rq->status == AM_INTERNAL_REDIRECT ||
+                    rq->status == AM_PDP_DONE) ? HTTP_OK : am_status_value(rq->status);
+            ap_set_content_type(r, "application/json");
+            switch (rq->status) {
+                case AM_PDP_DONE:
+                    ap_rprintf(r, AM_JSON_TEMPLATE_LOCATION_DATA,
+                            am_strerror(rq->status), rq->post_data_url, cont_type,
+                            NOTNULL(apr_table_get(r->notes, amagent_post_filter_name)),
+                            am_status_value(rq->status));
+                    break;
+                case AM_REDIRECT:
+                case AM_INTERNAL_REDIRECT:
+                    ap_rprintf(r, AM_JSON_TEMPLATE_LOCATION,
+                            am_strerror(rq->status), text, am_status_value(rq->status));
+                    break;
+                default:
+                {
+                    char *payload = am_json_escape(text, NULL);
+                    ap_rprintf(r, AM_JSON_TEMPLATE_DATA,
+                            am_strerror(rq->status), NOTNULL(payload), am_status_value(rq->status));
+                    am_free(payload);
+                    break;
+                }
+            }
+            ap_rflush(r);
             rq->status = AM_DONE;
             break;
         }
-        case AM_INTERNAL_REDIRECT: {
+        case AM_INTERNAL_REDIRECT:
+        {
             ap_internal_redirect(text, r);
             rq->status = AM_DONE;
             break;
         }
-        case AM_REDIRECT: {
+        case AM_REDIRECT:
+        {
             apr_table_add(r->headers_out, "Location", text);
             ap_custom_response(r, HTTP_MOVED_TEMPORARILY, text);
             break;
         }
-        case AM_PDP_DONE: {
+        case AM_PDP_DONE:
+        {
             request_rec *sr = ap_sub_req_method_uri(am_method_num_to_str(rq->method),
                     rq->post_data_url, r, NULL);
 
@@ -303,7 +333,8 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
             rq->status = AM_SUCCESS;
             break;
         }
-        default: {
+        default:
+        {
             size_t tl = strlen(text);
             if (ISVALID(cont_type)) {
                 ap_set_content_type(r, cont_type);
@@ -323,25 +354,23 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
     return AM_SUCCESS;
 }
 
-
 static char get_method_num(request_rec *r, unsigned long instance_id) {
-    
     static const char *thisfunc = "get_method_num():";
     char method_num = AM_REQUEST_UNKNOWN;
     const char *mthd = ap_method_name_of(r->pool, r->method_number);
-    
+
     AM_LOG_DEBUG(instance_id, "%s method %s (%s, %d)", thisfunc, LOGEMPTY(r->method),
             LOGEMPTY(mthd), r->method_number);
-    
+
     if (r->method_number == M_GET && r->header_only > 0) {
         method_num = AM_REQUEST_HEAD;
     } else {
         method_num = am_method_str_to_num(mthd);
     }
-    
+
     AM_LOG_DEBUG(instance_id, "%s number corresponds to %s method",
             thisfunc, am_method_num_to_str(method_num));
-    
+
     /* check if method number and method string correspond */
     if (method_num == AM_REQUEST_UNKNOWN) {
         /* if method string is not null, set the correct method number */
@@ -364,7 +393,6 @@ static char get_method_num(request_rec *r, unsigned long instance_id) {
     return method_num;
 }
 
-
 static am_status_t set_method(am_request_t *rq) {
     request_rec *r = (request_rec *) (rq != NULL ? rq->ctx : NULL);
     if (r == NULL) return AM_EINVAL;
@@ -372,7 +400,6 @@ static am_status_t set_method(am_request_t *rq) {
     r->method_number = ap_method_number_of(r->method);
     return AM_SUCCESS;
 }
-
 
 static am_status_t set_request_body(am_request_t *rq) {
     static const char *thisfunc = "set_request_body():";
@@ -405,9 +432,7 @@ static am_status_t set_request_body(am_request_t *rq) {
     return AM_SUCCESS;
 }
 
-
 static am_status_t get_request_body(am_request_t *rq) {
-
     static const char *thisfunc = "get_request_body():";
     request_rec *r;
     apr_bucket_brigade *bb;
@@ -485,12 +510,10 @@ static am_status_t get_request_body(am_request_t *rq) {
     return status;
 }
 
-
 /**
  * The incoming request_req is changed into an am_request_t on which ALL of our remaining processing is then done.
  */
 static int amagent_auth_handler(request_rec *req) {
-
     static const char *thisfunc = "amagent_auth_handler():";
     int result;
     am_request_t am_request;
@@ -574,26 +597,30 @@ static int amagent_auth_handler(request_rec *req) {
 
     result = am_status_value(am_request.status);
 
+    /* json handle for the rest of the unsuccessful exit statuses not processed by set_custom_response */
+    if (am_request.is_json_url && !(result == OK || result == DONE || result == DECLINED)) {
+        ap_set_content_type(req, "application/json");
+        ap_rprintf(req, AM_JSON_TEMPLATE_DATA,
+                am_strerror(am_request.status), "", am_status_value(am_request.status));
+        ap_rflush(req);
+        result = DONE;
+    }
+
     AM_LOG_DEBUG(config->config_id, "amagent_auth_handler(): exit status: %s (%d)",
             am_strerror(am_request.status), am_request.status);
 
     am_config_free(&am_request.conf);
     am_request_free(&am_request);
 
-    LOG_R(APLOG_DEBUG, req, "amagent_auth_handler(): return status: %d", result);
-
     return result;
 }
-
 
 static void amagent_auth_post_insert_filter(request_rec *req) {
     ap_add_input_filter(amagent_post_filter_name, NULL, req, req->connection);
 }
 
-
 static apr_status_t amagent_post_filter(ap_filter_t *f, apr_bucket_brigade *bucket_out,
         ap_input_mode_t emode, apr_read_type_e eblock, apr_off_t nbytes) {
-
     request_rec *r = f->r;
     conn_rec *c = r->connection;
     apr_bucket *bucket;
@@ -634,7 +661,6 @@ static apr_status_t amagent_post_filter(ap_filter_t *f, apr_bucket_brigade *buck
     ap_remove_input_filter(f);
     return ap_get_brigade(f->next, bucket_out, emode, eblock, nbytes);
 }
-
 
 static void amagent_register_hooks(apr_pool_t *p) {
 #if AP_SERVER_MAJORVERSION_NUMBER == 2 && AP_SERVER_MINORVERSION_NUMBER < 3

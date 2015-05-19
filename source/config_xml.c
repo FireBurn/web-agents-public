@@ -365,6 +365,8 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
     parse_config_value(ctx, AM_AGENTS_CONFIG_IIS_LOGON_USER, CONF_NUMBER, NULL, &ctx->conf->logon_user_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_IIS_PASSWORD_HEADER, CONF_NUMBER, NULL, &ctx->conf->password_header_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_PDP_JS_REPOST, CONF_NUMBER, NULL, &ctx->conf->pdp_js_repost, val, len);
+    
+    parse_config_value(ctx, AM_AGENTS_CONFIG_JSON_URL, CONF_STRING_MAP, &ctx->conf->json_url_map_sz, &ctx->conf->json_url_map, val, len);
 }
 
 static void character_data(void *userData, const char *val, int len) {

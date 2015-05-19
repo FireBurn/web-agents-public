@@ -98,6 +98,28 @@ static am_state_t lookup_transition(am_state_t c, am_return_t r) {
     return EXIT_STATE;
 }
 
+static am_bool_t is_json_request(am_request_t *request) {
+    int i, compare_status;
+    if (request->conf->json_url_map_sz <= 0) {
+        return AM_FALSE;
+    }
+    for (i = 0; i < request->conf->json_url_map_sz; i++) {
+        am_config_map_t *m = &request->conf->json_url_map[i];
+        if (!ISVALID(m->value)) continue;
+
+        compare_status = policy_compare_url(request, m->value, request->overridden_url);
+        if (compare_status == AM_EXACT_MATCH || compare_status == AM_EXACT_PATTERN_MATCH) {
+            return AM_TRUE;
+        }
+
+        /*compare_status = match(request->instance_id, request->overridden_url, m->value);
+        if (compare_status == AM_SUCCESS) {
+            return AM_TRUE;
+        }*/
+    }
+    return AM_FALSE;
+}
+
 static am_return_t setup_request_data(am_request_t *r) {
     static const char *thisfunc = "setup_request_data():";
     am_status_t status = AM_ERROR, status_token_query = AM_ERROR;
@@ -212,6 +234,11 @@ static am_return_t setup_request_data(am_request_t *r) {
         r->status = AM_ENOMEM;
         return fail;
     }
+
+    /* check if this request url (normalized) matches any of 
+     * org.forgerock.agents.config.json.url[] configuration parameter values
+     */
+    r->is_json_url = is_json_request(r);
 
     /* do an early check for a session token in query parameters,
      * remove if found (url evaluation later on 

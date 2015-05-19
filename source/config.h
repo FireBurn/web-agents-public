@@ -214,6 +214,9 @@ typedef struct {
 
     int logon_user_enable;
     int password_header_enable;
+    
+    int json_url_map_sz;
+    am_config_map_t *json_url_map;
 
 } am_config_t;
 
@@ -350,5 +353,7 @@ typedef struct {
 
 #define AM_AGENTS_CONFIG_PDP_JS_REPOST "org.forgerock.agents.pdp.javascript.repost"
 #define AM_AGENTS_CONFIG_EXT_NOT_ENFORCED_URL "org.forgerock.agents.config.notenforced.ipurl"
+
+#define AM_AGENTS_CONFIG_JSON_URL "org.forgerock.agents.config.json.url"
 
 #endif

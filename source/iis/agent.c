@@ -28,6 +28,13 @@ extern "C" {
 #define AM_MOD_SECTION                 L"system.webServer/OpenAmModule"
 #define AM_MOD_SECTION_ENABLED         L"enabled"
 #define AM_MOD_SECTION_CONFIGFILE      L"configFile"
+#define AM_HTTP_STATUS_200             200
+#define AM_HTTP_STATUS_302             302
+#define AM_HTTP_STATUS_400             400
+#define AM_HTTP_STATUS_403             403
+#define AM_HTTP_STATUS_404             404
+#define AM_HTTP_STATUS_500             500
+#define AM_HTTP_STATUS_501             501
 
 static IHttpServer *server = NULL;
 static void *modctx = NULL;
@@ -607,25 +614,25 @@ static REQUEST_NOTIFICATION_STATUS am_status_value(IHttpContext *ctx, am_status_
         case AM_NOT_HANDLING:
             return RQ_NOTIFICATION_CONTINUE;
         case AM_NOT_FOUND:
-            res->SetStatus(404, "Not Found");
+            res->SetStatus(AM_HTTP_STATUS_404, "Not Found");
             return RQ_NOTIFICATION_FINISH_REQUEST;
         case AM_REDIRECT:
-            res->SetStatus(302, "Found");
+            res->SetStatus(AM_HTTP_STATUS_302, "Found");
             return RQ_NOTIFICATION_FINISH_REQUEST;
         case AM_FORBIDDEN:
-            res->SetStatus(403, "Forbidden");
+            res->SetStatus(AM_HTTP_STATUS_403, "Forbidden");
             return RQ_NOTIFICATION_FINISH_REQUEST;
         case AM_BAD_REQUEST:
-            res->SetStatus(400, "Bad Request");
+            res->SetStatus(AM_HTTP_STATUS_400, "Bad Request");
             return RQ_NOTIFICATION_FINISH_REQUEST;
         case AM_ERROR:
-            res->SetStatus(500, "Internal Server Error");
+            res->SetStatus(AM_HTTP_STATUS_500, "Internal Server Error");
             return RQ_NOTIFICATION_FINISH_REQUEST;
         case AM_NOT_IMPLEMENTED:
-            res->SetStatus(501, "Not Implemented");
+            res->SetStatus(AM_HTTP_STATUS_501, "Not Implemented");
             return RQ_NOTIFICATION_FINISH_REQUEST;
         default:
-            res->SetStatus(500, "Internal Server Error");
+            res->SetStatus(AM_HTTP_STATUS_500, "Internal Server Error");
             return RQ_NOTIFICATION_FINISH_REQUEST;
     }
 }
@@ -763,6 +770,28 @@ static am_status_t des_decrypt(const char *encrypted, const char *keys, char **c
     return status;
 }
 
+static void send_custom_data(IHttpResponse *res, const char *payload, int payload_sz,
+        const char *cont_type) {
+    HTTP_DATA_CHUNK dc;
+    DWORD sent;
+    char payload_sz_text[64];
+    BOOL cmpl = FALSE;
+
+    if (res == NULL) return;
+    res->Clear();
+    res->SetStatus(AM_HTTP_STATUS_200, "OK", 0, S_OK);
+    res->SetHeader("Content-Type", cont_type,
+            (USHORT) strlen(cont_type), TRUE);
+    snprintf(payload_sz_text, sizeof (payload_sz_text), "%d", payload_sz);
+    res->SetHeader("Content-Length", payload_sz_text, (USHORT) strlen(payload_sz_text), TRUE);
+
+    dc.DataChunkType = HttpDataChunkFromMemory;
+    dc.FromMemory.pBuffer = (PVOID) NOTNULL(payload);
+    dc.FromMemory.BufferLength = (USHORT) payload_sz;
+    res->WriteEntityChunks(&dc, 1, FALSE, TRUE, &sent);
+    res->Flush(FALSE, FALSE, &sent, &cmpl);
+}
+
 class OpenAMHttpModule : public CHttpModule{
     public :
 
@@ -801,6 +830,7 @@ class OpenAMHttpModule : public CHttpModule{
         am_config_t *rq_conf = NULL;
         OpenAMStoredConfig *conf = NULL;
         char ip[INET6_ADDRSTRLEN];
+        USHORT status_code;
 
         /* agent module is not enabled for this 
          * server/site - we are not handling this request
@@ -824,7 +854,7 @@ class OpenAMHttpModule : public CHttpModule{
                     boot->audit_file, boot->audit_level);
         } else {
             WriteEventLog("%s GetConfig boot == NULL (%d)", thisfunc, site->GetSiteId());
-            res->SetStatus(500, "Internal Server Error");
+            res->SetStatus(AM_HTTP_STATUS_500, "Internal Server Error");
             return RQ_NOTIFICATION_FINISH_REQUEST;
         }
 
@@ -837,7 +867,7 @@ class OpenAMHttpModule : public CHttpModule{
             WriteEventLog("%s am_get_agent_config failed (%d)", thisfunc, site->GetSiteId());
             AM_LOG_ERROR(site->GetSiteId(), "%s failed to get agent configuration instance, error: %s",
                     thisfunc, am_strerror(rv));
-            res->SetStatus(403, "Forbidden");
+            res->SetStatus(AM_HTTP_STATUS_403, "Forbidden");
             return RQ_NOTIFICATION_FINISH_REQUEST;
         }
 
@@ -898,11 +928,25 @@ class OpenAMHttpModule : public CHttpModule{
 
         am_process_request(&d);
 
+        status = am_status_value(ctx, d.status);
+
+        res->GetStatus(&status_code, NULL, NULL, NULL, &hr, NULL, NULL, NULL);
+
+        /* json handle for the rest of the unsuccessful exit statuses not processed by set_custom_response */
+        if (d.is_json_url && status_code > AM_HTTP_STATUS_302) {
+            char *payload = NULL;
+            int payload_sz = am_asprintf(&payload, AM_JSON_TEMPLATE_DATA,
+                    am_strerror(d.status), "", status_code);
+            send_custom_data(res, payload, payload_sz, "application/json");
+            status = RQ_NOTIFICATION_FINISH_REQUEST;
+            am_free(payload);
+        }
+
+        AM_LOG_DEBUG(site->GetSiteId(), "%s exit status: %s (%d)", thisfunc, am_strerror(d.status), d.status);
+
         am_config_free(&d.conf);
         am_request_free(&d);
 
-        status = am_status_value(ctx, d.status);
-        AM_LOG_DEBUG(site->GetSiteId(), "%s exit status: %s (%d)", thisfunc, am_strerror(d.status), d.status);
         return status;
     }
 
@@ -919,7 +963,7 @@ class OpenAMHttpModule : public CHttpModule{
                 if (httpUser == NULL || !httpUser->GetStatus()) {
                     AM_LOG_ERROR(site->GetSiteId(), "OpenAMHttpModule(): failed (invalid Windows/AD user credentials). "
                             "Responding with HTTP403 error (%d)", httpUser->GetStatus());
-                    res->SetStatus(403, "Forbidden");
+                    res->SetStatus(AM_HTTP_STATUS_403, "Forbidden");
                     return RQ_NOTIFICATION_FINISH_REQUEST;
                 } else {
                     AM_LOG_DEBUG(site->GetSiteId(), "OpenAMHttpModule(): context user set to \"%s\"", userName);
@@ -1011,13 +1055,44 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
     if (r == NULL) {
         return AM_EINVAL;
     }
-    status = rq->status;
+
+    status = rq->is_json_url ? AM_JSON_RESPONSE : rq->status;
+
     switch (status) {
         case AM_JSON_RESPONSE:
         {
-
-        }
+            char *payload = NULL;
+            int payload_sz = 0;
+            switch (rq->status) {
+                case AM_PDP_DONE:
+                {
+                    size_t data_sz = rq->post_data_sz;
+                    char *temp = base64_encode(rq->post_data, &data_sz);
+                    payload_sz = am_asprintf(&payload, AM_JSON_TEMPLATE_LOCATION_DATA,
+                            am_strerror(rq->status), rq->post_data_url, cont_type,
+                            NOTNULL(temp), AM_HTTP_STATUS_200);
+                    am_free(temp);
+                    break;
+                }
+                case AM_REDIRECT:
+                case AM_INTERNAL_REDIRECT:
+                    payload_sz = am_asprintf(&payload, AM_JSON_TEMPLATE_LOCATION,
+                            am_strerror(rq->status), text, AM_HTTP_STATUS_302);
+                    break;
+                default:
+                {
+                    char *temp = am_json_escape(text, NULL);
+                    payload_sz = am_asprintf(&payload, AM_JSON_TEMPLATE_DATA,
+                            am_strerror(rq->status), NOTNULL(temp), AM_HTTP_STATUS_200);
+                    am_free(temp);
+                    break;
+                }
+            }
+            send_custom_data(r->GetResponse(), payload, payload_sz, "application/json");
+            rq->status = AM_DONE;
+            am_free(payload);
             break;
+        }
         case AM_INTERNAL_REDIRECT:
         case AM_REDIRECT:
         {
@@ -1029,14 +1104,14 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
                 break;
             }
             rq->status = AM_DONE;
-        }
             break;
+        }
         case AM_PDP_DONE:
         {
             r->GetResponse()->Redirect(rq->post_data_url, TRUE, FALSE);
             rq->status = AM_DONE;
-        }
             break;
+        }
         default:
         {
             HTTP_DATA_CHUNK dc;
@@ -1051,7 +1126,7 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
             }
             hr = r->GetResponse()->SetHeader("Content-Length", tls, (USHORT) strlen(tls), TRUE);
             if (rq->status == AM_SUCCESS || rq->status == AM_DONE) {
-                hr = r->GetResponse()->SetStatus(200, "OK", 0, S_OK);
+                hr = r->GetResponse()->SetStatus(AM_HTTP_STATUS_200, "OK", 0, S_OK);
             } else {
                 am_status_value(r, rq->status);
             }
@@ -1060,8 +1135,8 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
             dc.FromMemory.BufferLength = (USHORT) tl;
             hr = r->GetResponse()->WriteEntityChunks(&dc, 1, FALSE, TRUE, &sent);
             rq->status = AM_DONE;
-        }
             break;
+        }
     }
     AM_LOG_INFO(rq->instance_id, "set_custom_response(): status: %s (exit: %s)",
             am_strerror(status), am_strerror(rq->status));
