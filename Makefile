@@ -75,6 +75,7 @@ CFLAGS := $(COMPILEFLAG)I.$(PS)source $(COMPILEFLAG)I.$(PS)zlib $(COMPILEFLAG)I.
 OBJDIR := build
 
 APACHE_SOURCES := source/apache/agent.c
+APACHE22_SOURCES := source/apache/agent22.c
 IIS_SOURCES := source/iis/agent.c
 VARNISH_SOURCES := source/varnish/agent.c
 ADMIN_SOURCES := source/admin.c source/admin_iis.c
@@ -84,7 +85,9 @@ OUT_OBJS := $(addprefix $(OBJDIR)/,$(OBJECTS))
 ADMIN_OBJECTS := $(ADMIN_SOURCES:.c=.$(OBJ))
 ADMIN_OUT_OBJS := $(addprefix $(OBJDIR)/,$(ADMIN_OBJECTS))
 APACHE_OBJECTS := $(APACHE_SOURCES:.c=.$(OBJ))
+APACHE22_OBJECTS := $(APACHE22_SOURCES:.c=.$(OBJ))
 APACHE_OUT_OBJS := $(addprefix $(OBJDIR)/,$(APACHE_OBJECTS))
+APACHE22_OUT_OBJS := $(addprefix $(OBJDIR)/,$(APACHE22_OBJECTS))
 IIS_OBJECTS := $(IIS_SOURCES:.c=.$(OBJ))
 IIS_OUT_OBJS := $(addprefix $(OBJDIR)/,$(IIS_OBJECTS))
 VARNISH_OBJECTS := $(VARNISH_SOURCES:.c=.$(OBJ))
@@ -92,6 +95,7 @@ VARNISH_OUT_OBJS := $(addprefix $(OBJDIR)/,$(VARNISH_OBJECTS))
 	
 $(APACHE_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache24/include $(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache24/include -DAPACHE2 -DAPACHE24
 $(VARNISH_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/varnish/include
+$(APACHE22_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache22/include $(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache22/include -DAPACHE2
 	
 ifeq ($(OS_ARCH), Linux)
  include Makefile.linux.mk
@@ -138,7 +142,7 @@ clean:
 	-$(RMALL) source$(PS)version.h
 	
 apachezip: clean build version apache agentadmin
-	@$(ECHO) "[***** Building Apache agent archive *****]"
+	@$(ECHO) "[***** Building Apache 2.4 agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)apache24_agent
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)apache24_agent$(PS)bin
@@ -155,6 +159,30 @@ apachezip: clean build version apache agentadmin
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)apache24_agent$(PS)legal$(PS)
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Apache_v24_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
 
+apache22_pre:
+	-$(CP) source$(PS)apache$(PS)agent.c source$(PS)apache$(PS)agent22.c
+
+apache22_post:
+	-$(RMALL) source$(PS)apache$(PS)agent22.c
+	
+apache22zip: clean build version apache22 agentadmin
+	@$(ECHO) "[***** Building Apache 2.2 agent archive *****]"
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)apache22_agent
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)bin
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)lib
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)legal
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)instances
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)log
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)config
+	-$(CP) $(OBJDIR)$(PS)agentadmin* $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)bin$(PS)
+	-$(CP) $(OBJDIR)$(PS)mod_openam.so $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)lib$(PS)
+	-$(CP) $(OBJDIR)$(PS)mod_openam.dll $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)lib$(PS)
+	-$(CP) $(OBJDIR)$(PS)mod_openam.pdb $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)lib$(PS)
+	-$(CP) config$(PS)* $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)config$(PS)
+	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)legal$(PS)
+	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Apache_v22_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
+	
 iiszip: clean build version iis agentadmin
 	@$(ECHO) "[***** Building IIS agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
@@ -171,3 +199,20 @@ iiszip: clean build version iis agentadmin
 	-$(CP) config$(PS)* $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)config$(PS)
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)legal$(PS)
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a IIS_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
+
+varnishzip: clean build version varnish agentadmin
+	@$(ECHO) "[***** Building Varnish agent archive *****]"
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish_agent
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)bin
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)lib
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)legal
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)instances
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)log
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)config
+	-$(CP) $(OBJDIR)$(PS)agentadmin* $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)bin$(PS)
+	-$(CP) $(OBJDIR)$(PS)vmod_openam.so $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)lib$(PS)
+	-$(CP) config$(PS)* $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)config$(PS)
+	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)legal$(PS)
+	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Varnish_v4_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
+	

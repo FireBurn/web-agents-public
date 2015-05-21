@@ -52,6 +52,11 @@ apache: $(OUT_OBJS) $(APACHE_OUT_OBJS)
 	${CC} $(SHARED) -h mod_openam.so -Wl,-M,source/apache/agent.map $(LDFLAGS) $(OUT_OBJS) \
 	    $(APACHE_OUT_OBJS) -o build/mod_openam.so
 
+apache22: apache22_pre $(OUT_OBJS) $(APACHE22_OUT_OBJS) apache22_post
+	@$(ECHO) "[*** Creating "$@" shared library ***]"
+	${CC} $(SHARED) -h mod_openam.so -Wl,-M,source/apache/agent.map $(LDFLAGS) $(OUT_OBJS) \
+	    $(APACHE22_OUT_OBJS) -o build/mod_openam.so
+	
 iis: 
 	$(error IIS target is not supported on this platform)
 

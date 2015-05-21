@@ -49,6 +49,13 @@ apache: $(OUT_OBJS) $(APACHE_OUT_OBJS)
 	    extlib/Windows/apache24/lib/libapr-1.lib extlib/Windows/apache24/lib/libaprutil-1.lib \
 	    extlib/Windows/apache24/lib/libhttpd.lib
 
+apache22: apache22_pre $(OUT_OBJS) $(APACHE22_OUT_OBJS) apache22_post
+	@$(ECHO) "[*** Creating "$@" shared library ***]"
+	${LINK} $(SHARED) $(LDFLAGS) $(OUT_OBJS) $(APACHE22_OUT_OBJS) /OUT:build\mod_openam.dll /PDB:build\mod_openam.pdb \
+	    $(LIBS) \
+	    extlib/Windows/apache22/lib/libapr-1.lib extlib/Windows/apache22/lib/libaprutil-1.lib \
+	    extlib/Windows/apache22/lib/libhttpd.lib
+	
 iis: $(OUT_OBJS) $(IIS_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
 	${LINK} $(SHARED) $(LDFLAGS) $(OUT_OBJS) $(IIS_OUT_OBJS) /OUT:build\mod_iis_openam.dll /PDB:build\mod_iis_openam.pdb \

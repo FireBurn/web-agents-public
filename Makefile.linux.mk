@@ -47,11 +47,18 @@ apache: $(OUT_OBJS) $(APACHE_OUT_OBJS)
 	${CC} $(SHARED) -fPIC -Wl,-soname,mod_openam.so $(LDFLAGS) \
 	    $(OUT_OBJS) -Wl,--version-script=source/apache/agent.map $(APACHE_OUT_OBJS) -o build/mod_openam.so
 
+apache22: apache22_pre $(OUT_OBJS) $(APACHE22_OUT_OBJS) apache22_post
+	@$(ECHO) "[*** Creating "$@" shared library ***]"
+	${CC} $(SHARED) -fPIC -Wl,-soname,mod_openam.so $(LDFLAGS) \
+	    $(OUT_OBJS) -Wl,--version-script=source/apache/agent.map $(APACHE22_OUT_OBJS) -o build/mod_openam.so
+	
 iis: 
 	$(error IIS target is not supported on this platform)
 
-varnish: 
-	$(error Varnish target is not supported on this platform)
+varnish: $(OUT_OBJS) $(VARNISH_OUT_OBJS)
+	@$(ECHO) "[*** Creating "$@" shared library ***]"
+	${CC} $(SHARED) -fPIC -Wl,-soname,vmod_openam.so $(LDFLAGS) \
+	    $(OUT_OBJS) -Wl,--version-script=source/varnish/agent.map $(VARNISH_OUT_OBJS) -o build/vmod_openam.so
 	
 agentadmin: $(OUT_OBJS) $(ADMIN_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" binary ***]"

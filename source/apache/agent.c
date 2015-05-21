@@ -31,6 +31,7 @@
 #include <http_request.h>
 #include <http_log.h>
 #include <http_main.h>
+#include <http_config.h>
 #include <ap_mpm.h>
 #include <apr_strings.h>
 #include <apr_buckets.h>
@@ -41,7 +42,9 @@
 static const char amagent_post_filter_name[] = "AmModuleFilterIn";
 module AP_MODULE_DECLARE_DATA amagent_module;
 
+#ifdef APLOG_USE_MODULE
 APLOG_USE_MODULE(amagent);
+#endif
 
 /* APLOG_INFO APLOG_ERR APLOG_WARNING APLOG_DEBUG */
 #define LOG_R(l,r,...) \

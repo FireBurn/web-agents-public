@@ -24,10 +24,10 @@
 
 #ifdef _WIN32
 #define LIB_FILE_EXT "dll"
-#define APACHE_DEFAULT_CONF_FILE "c:\\Apache24\\conf\\httpd.conf"
+#define APACHE_DEFAULT_CONF_FILE "c:\\Apache\\conf\\httpd.conf"
 #else
 #define LIB_FILE_EXT "so"
-#define APACHE_DEFAULT_CONF_FILE "/opt/apache24/conf/httpd.conf"
+#define APACHE_DEFAULT_CONF_FILE "/opt/apache/conf/httpd.conf"
 #endif
 
 #ifdef AM_BINARY_LICENSE
