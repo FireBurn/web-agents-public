@@ -128,6 +128,8 @@ int am_cache_init() {
 
 int am_cache_shutdown() {
     am_shm_shutdown(cache);
+    cache = NULL;
+
     return AM_SUCCESS;
 }
 
@@ -464,6 +466,7 @@ int am_get_session_policy_cache_entry(am_request_t *request, const char *key,
     struct am_cache *cache_data;
     struct am_namevalue *sesion_attrs = NULL;
     struct am_policy_result *pol_attrs = NULL, *pol_curr = NULL;
+    struct am_action_decision *action_curr = NULL;
 
     if (cache == NULL || cache->user == NULL) {
         return AM_ENOMEM;
@@ -557,12 +560,13 @@ int am_get_session_policy_cache_entry(am_request_t *request, const char *key,
                 act = TO_BOOL(a->type & AM_CACHE_POLICY_ALLOW);
                 if (create_am_action_decision_node(act, a->method, a->ttl, &el) == 0) {
                     AM_LIST_INSERT(pol_curr->action_decisions, el);
+                    action_curr = el;
                 }
             }
             if ((a->type & AM_CACHE_POLICY_ADVICE) == AM_CACHE_POLICY_ADVICE && a->size[0] > 0 && a->size[1] > 0) {
                 struct am_namevalue *el = NULL;
                 if (create_am_namevalue_node(a->value, a->size[0], a->value + a->size[0] + 1, a->size[1], &el) == 0) {
-                    AM_LIST_INSERT(pol_curr->action_decisions->advices, el);
+                    AM_LIST_INSERT(action_curr->advices, el);
                 }
             }
         }

@@ -228,6 +228,10 @@ int am_worker_dispatch(void (*worker_f)(void *, void *), void *arg) {
 #endif
 }
 
+void am_worker_pool_startup() {
+    create_threadpool();
+}
+
 void am_worker_pool_shutdown() {
 #ifdef _WIN32
     CloseThreadpoolCleanupGroupMembers(worker_pool_cleanup, TRUE, NULL);

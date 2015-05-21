@@ -69,7 +69,7 @@ static pthread_mutex_t mutex;
 static pthread_t wthr;
 #endif
 static volatile int keep_going = 1;
-static naming_status_t *nlist = NULL;
+static naming_status_t *naming_status_lists = NULL;
 
 static void store_index_value(int ix, int *map, unsigned long instance_id) {
     int i = map[ix];
@@ -88,7 +88,7 @@ static void *url_watchdog(void *arg) {
         first_run = 0;
         /* fetch current index value */
         current_index = get_valid_url_index(v->instance_id);
-        if (current_index < 0 || current_index > nlist->size) {
+        if (current_index < 0 || current_index > naming_status_lists->size) {
             AM_LOG_WARNING(v->instance_id, "naming_validator(): invalid current index value, defaulting to %s", v->url_list[0]);
             store_index_value(0, v->default_set, v->instance_id);
             current_index = 0;
@@ -108,9 +108,9 @@ static void *url_watchdog(void *arg) {
 #else
         pthread_mutex_lock(&mutex);
 #endif
-        current_ok = nlist->list[current_index].ok;
-        current_fail = nlist->list[current_index].fail;
-        default_ok = nlist->list[0].ok;
+        current_ok = naming_status_lists->list[current_index].ok;
+        current_fail = naming_status_lists->list[current_index].fail;
+        default_ok = naming_status_lists->list[0].ok;
 #ifdef _WIN32
         LeaveCriticalSection(&mutex);
 #else
@@ -137,13 +137,13 @@ static void *url_watchdog(void *arg) {
 #else
         pthread_mutex_lock(&mutex);
 #endif
-        for (i = 0; i < nlist->size; i++) {
-            if (nlist->list[i].ok > 0) {
-                next_ok = nlist->list[i].ok;
+        for (i = 0; i < naming_status_lists->size; i++) {
+            if (naming_status_lists->list[i].ok > 0) {
+                next_ok = naming_status_lists->list[i].ok;
                 break;
             }
         }
-        default_ok = nlist->list[0].ok;
+        default_ok = naming_status_lists->list[0].ok;
 #ifdef _WIN32
         LeaveCriticalSection(&mutex);
 #else
@@ -177,17 +177,17 @@ static void *url_validator(void *arg) {
 #endif
     if (validate_status == AM_SUCCESS) {
         AM_LOG_DEBUG(v->instance_id, "url_validator(%d): %s validation succeeded", v->idx, v->url);
-        if ((nlist->list[v->idx].ok)++ > nlist->list[v->idx].ping_ok_count)
-            nlist->list[v->idx].ok = nlist->list[v->idx].ping_ok_count;
-        nlist->list[v->idx].fail = 0;
+        if ((naming_status_lists->list[v->idx].ok)++ > naming_status_lists->list[v->idx].ping_ok_count)
+            naming_status_lists->list[v->idx].ok = naming_status_lists->list[v->idx].ping_ok_count;
+        naming_status_lists->list[v->idx].fail = 0;
     } else {
         AM_LOG_WARNING(v->instance_id, "url_validator(%d): %s validation failed with %s, http status %d", v->idx,
                 v->url, am_strerror(validate_status), httpcode);
-        if ((nlist->list[v->idx].fail)++ > nlist->list[v->idx].ping_fail_count)
-            nlist->list[v->idx].fail = nlist->list[v->idx].ping_fail_count;
-        nlist->list[v->idx].ok = 0;
+        if ((naming_status_lists->list[v->idx].fail)++ > naming_status_lists->list[v->idx].ping_fail_count)
+            naming_status_lists->list[v->idx].fail = naming_status_lists->list[v->idx].ping_fail_count;
+        naming_status_lists->list[v->idx].ok = 0;
     }
-    nlist->list[v->idx].run = 0;
+    naming_status_lists->list[v->idx].run = 0;
 #ifdef _WIN32
     LeaveCriticalSection(&mutex);
 #else
@@ -230,7 +230,7 @@ static void callback(union sigval si) {
 #else
         pthread_mutex_lock(&mutex);
 #endif
-        j = nlist->list[i].run;
+        j = naming_status_lists->list[i].run;
 #ifdef _WIN32
         LeaveCriticalSection(&mutex);
 #else
@@ -256,7 +256,7 @@ static void callback(union sigval si) {
         pthread_create(&vthr, NULL, url_validator, arg);
         pthread_mutex_lock(&mutex);
 #endif
-        nlist->list[i].run = 1;
+        naming_status_lists->list[i].run = 1;
 #ifdef _WIN32
         LeaveCriticalSection(&mutex);
 #else
@@ -355,15 +355,15 @@ int naming_validator(void *arg) {
     naming_validator_t *v = (naming_validator_t *) arg;
     if (v->ping_interval == 0) return 0;
 
-    nlist = (naming_status_t *) malloc(sizeof (naming_status_t));
-    if (nlist == NULL) {
+    naming_status_lists = (naming_status_t *) malloc(sizeof (naming_status_t));
+    if (naming_status_lists == NULL) {
         AM_LOG_ERROR(v->instance_id, "naming_validator(): memory allocation error");
         return AM_ENOMEM;
     }
 
-    nlist->list = (naming_url_t *) calloc(v->url_size, sizeof (nlist->list[0]));
-    if (nlist->list == NULL) {
-        free(nlist);
+    naming_status_lists->list = (naming_url_t *) calloc(v->url_size, sizeof (naming_status_lists->list[0]));
+    if (naming_status_lists->list == NULL) {
+        free(naming_status_lists);
         AM_LOG_ERROR(v->instance_id, "naming_validator(): memory allocation error");
         return AM_ENOMEM;
     }
@@ -373,15 +373,15 @@ int naming_validator(void *arg) {
 #else
     pthread_mutex_init(&mutex, NULL);
 #endif
-    nlist->size = v->url_size;
+    naming_status_lists->size = v->url_size;
     for (i = 0; i < v->url_size; i++) {
-        nlist->list[i].instance_id = v->instance_id;
-        nlist->list[i].ok = 0;
-        nlist->list[i].fail = 0;
-        nlist->list[i].ping_ok_count = v->ping_ok_count;
-        nlist->list[i].ping_fail_count = v->ping_fail_count;
-        nlist->list[i].run = 0;
-        nlist->list[i].url = v->url_list[i];
+        naming_status_lists->list[i].instance_id = v->instance_id;
+        naming_status_lists->list[i].ok = 0;
+        naming_status_lists->list[i].fail = 0;
+        naming_status_lists->list[i].ping_ok_count = v->ping_ok_count;
+        naming_status_lists->list[i].ping_fail_count = v->ping_fail_count;
+        naming_status_lists->list[i].run = 0;
+        naming_status_lists->list[i].url = v->url_list[i];
     }
 #ifdef _WIN32
     tick_q = CreateTimerQueue();
@@ -429,7 +429,7 @@ int naming_validator(void *arg) {
     close(port);
 #endif
 #endif
-    free(nlist->list);
-    free(nlist);
+    free(naming_status_lists->list);
+    free(naming_status_lists);
     return AM_SUCCESS;
 }
