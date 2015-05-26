@@ -305,6 +305,10 @@ static void uri_normalize(struct url *url, char *path) {
     if (url != NULL) url->error = AM_SUCCESS;
 }
 
+static int query_attribute_compare(const void *a, const void *b) {
+    return strcasecmp(*(char**) a, *(char**) b);
+}
+
 int parse_url(const char *u, struct url *url) {
     int i = 0, port = 0;
     char last = 0;
@@ -312,12 +316,12 @@ int parse_url(const char *u, struct url *url) {
 
     if (url == NULL || u == NULL) {
         if (url != NULL) url->error = AM_EINVAL;
-        return 1;
+        return AM_ERROR;
     }
 
     if (strlen(u) > (AM_PROTO_SIZE + AM_HOST_SIZE + 6 + AM_URI_SIZE/*max size of all sscanf format limits*/)) {
         url->error = AM_E2BIG;
-        return 1;
+        return AM_ERROR;
     }
 
     url->error = url->ssl = url->port = 0;
@@ -338,7 +342,7 @@ int parse_url(const char *u, struct url *url) {
             break;
         } else {
             url->error = AM_EOF;
-            return 1;
+            return AM_ERROR;
         }
     }
     url->port = port < 0 ? -(port) : port;
@@ -362,18 +366,46 @@ int parse_url(const char *u, struct url *url) {
         url->path[0] = '/';
     }
 
-    /* split out a query string, if any (not modifying it later) */
+    /* split out a query string, if any and sort query parameters */
     p = strchr(url->path, '?');
     if (p != NULL) {
+        char *token, *temp, query[AM_URI_SIZE + 1], **list;
+        int sep_count, j;
         strncpy(url->query, p, sizeof (url->query) - 1);
         *p = 0;
+
+        strncpy(query, url->query + 1 /*skip '?'*/, sizeof (url->query) - 1);
+        sep_count = char_count(query, '&', NULL);
+        if (sep_count > 0) {
+            list = (char **) malloc((++sep_count) * sizeof (char *));
+            if (list == NULL) {
+                url->error = AM_ENOMEM;
+                return AM_ERROR;
             }
+            sep_count = 0;
+
+            for ((token = strtok_r(query, "&", &temp)); token; (token = strtok_r(NULL, "&", &temp))) {
+                list[sep_count++] = token;
+            }
+
+            qsort(list, sep_count, sizeof (*list), query_attribute_compare);
+
+            strncpy(url->query, "?", sizeof (url->query) - 1);
+            for (j = 0; j < sep_count; j++) {
+                if (j > 0) {
+                    strcat(url->query, "&");
+                }
+                strcat(url->query, list[j]);
+            }
+            free(list);
+        }
+    }
 
     /* decode path */
     d = url_decode(url->path);
     if (d == NULL) {
         url->error = AM_ENOMEM;
-        return 1;
+        return AM_ERROR;
     }
 
     p = d;
@@ -391,7 +423,7 @@ int parse_url(const char *u, struct url *url) {
     uri_normalize(url, uri);
 
     strncpy(url->path, uri, sizeof (url->path) - 1);
-    return 0;
+    return AM_SUCCESS;
 }
 
 char *url_encode(const char *str) {
