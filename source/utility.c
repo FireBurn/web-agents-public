@@ -367,7 +367,7 @@ int parse_url(const char *u, struct url *url) {
     if (p != NULL) {
         strncpy(url->query, p, sizeof (url->query) - 1);
         *p = 0;
-    }
+            }
 
     /* decode path */
     d = url_decode(url->path);
@@ -2011,9 +2011,29 @@ int copy_file(const char *from, const char *to) {
     }
 
     if (fstat(source, &st) == 0) {
-#ifdef __APPLE__
+#if defined(__APPLE__)
         if (fcopyfile(source, dest, NULL, COPYFILE_ALL) != -1) {
             rv = AM_SUCCESS;
+        }
+#elif defined(AIX)
+        struct sf_parms handle;
+        handle.header_data = NULL;
+        handle.header_length = 0;
+        handle.trailer_data = NULL;
+        handle.trailer_length = 0;
+        handle.file_descriptor = source;
+        handle.file_offset = 0;
+        handle.file_bytes = st.st_size;
+        rv = AM_SUCCESS;
+        while (handle.file_bytes + handle.header_length) {
+            ssize_t ret;
+            do {
+                ret = send_file(&dest, &handle, 0);
+            } while (ret == 1 || (ret == -1 && errno == EINTR));
+            if (ret == -1) {
+                rv = AM_FILE_ERROR;
+                break;
+            }
         }
 #else
         off_t offset = 0;

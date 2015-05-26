@@ -17,12 +17,12 @@
 ifndef	LINUX_MK_INCLUDED
 LINUX_MK_INCLUDED := true
 	
-CC := gcc
+CC := gcc44
 SHARED := -shared
 
 CFLAGS  += -fPIC -pthread -D_REENTRANT -DLINUX -D_GNU_SOURCE -D_FORTIFY_SOURCE=2 -fstack-protector \
-	    -Wno-unused-value -Wno-deprecated-declarations 
-
+	    -Wno-unused-value -Wno-deprecated-declarations
+	
 ifdef DEBUG
  CFLAGS += -g3 -fno-inline -O0 -DDEBUG -Wall
 else
@@ -57,8 +57,8 @@ iis:
 
 varnish: $(OUT_OBJS) $(VARNISH_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
-	${CC} $(SHARED) -fPIC -Wl,-soname,vmod_openam.so $(LDFLAGS) \
-	    $(OUT_OBJS) -Wl,--version-script=source/varnish/agent.map $(VARNISH_OUT_OBJS) -o build/vmod_openam.so
+	${CC} $(SHARED) -fPIC -Wl,-soname,libvmod_am.so $(LDFLAGS) \
+	    $(OUT_OBJS) -Wl,--version-script=source/varnish/agent.map $(VARNISH_OUT_OBJS) -o build/libvmod_am.so
 	
 agentadmin: $(OUT_OBJS) $(ADMIN_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" binary ***]"

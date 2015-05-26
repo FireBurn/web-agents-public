@@ -77,7 +77,7 @@ OBJDIR := build
 APACHE_SOURCES := source/apache/agent.c
 APACHE22_SOURCES := source/apache/agent22.c
 IIS_SOURCES := source/iis/agent.c
-VARNISH_SOURCES := source/varnish/agent.c
+VARNISH_SOURCES := source/varnish/agent.c source/varnish/vcc_if.c
 ADMIN_SOURCES := source/admin.c source/admin_iis.c
 SOURCES := $(filter-out $(ADMIN_SOURCES), $(wildcard source/*.c)) $(wildcard expat/*.c) $(wildcard pcre/*.c) $(wildcard zlib/*.c)
 OBJECTS := $(SOURCES:.c=.$(OBJ))
@@ -211,7 +211,7 @@ varnishzip: clean build version varnish agentadmin
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)log
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)config
 	-$(CP) $(OBJDIR)$(PS)agentadmin* $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)bin$(PS)
-	-$(CP) $(OBJDIR)$(PS)vmod_openam.so $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)lib$(PS)
+	-$(CP) $(OBJDIR)$(PS)libvmod_am.so $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)lib$(PS)
 	-$(CP) config$(PS)* $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)config$(PS)
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)legal$(PS)
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Varnish_v4_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents

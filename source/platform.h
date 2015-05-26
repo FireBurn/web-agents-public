@@ -104,7 +104,9 @@ typedef SSIZE_T             ssize_t;
 #include <copyfile.h>
 #include <sys/event.h>
 #else
+#ifndef AIX
 #include <sys/sendfile.h>
+#endif
 #endif
 #define sockpoll            poll
 #define SOCKLEN_T           socklen_t

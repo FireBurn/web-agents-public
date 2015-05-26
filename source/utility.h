@@ -151,7 +151,7 @@ void am_timer_report(unsigned long instance_id, am_timer_t *t, const char *op);
 
 const char *get_valid_openam_url(am_request_t *r);
 
-int ip_address_match(const char *ip, const char **list, unsigned int listsize, unsigned long instance_id);
+am_status_t ip_address_match(const char *ip, const char **list, unsigned int listsize, unsigned long instance_id);
 
 am_status_t get_token_from_url(am_request_t *rq);
 am_status_t get_cookie_value(am_request_t *rq, const char *separator, const char *cookie_name,

@@ -36,8 +36,8 @@ struct mem_pool {
 };
 #define SIZEOF_mem_pool (sizeof(struct mem_pool))
 
-#define ALIGNMENT 8
-#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
+#define AM_ALIGNMENT 8
+#define AM_ALIGN(size) (((size) + (AM_ALIGNMENT-1)) & ~(AM_ALIGNMENT-1))
 
 int am_shm_lock(am_shm_t *am) {
     struct mem_pool *pool;
@@ -83,11 +83,9 @@ int am_shm_lock(am_shm_t *am) {
 #else
     pthread_mutex_t *lock = (pthread_mutex_t *) am->lock;
     am->error = pthread_mutex_lock(lock);
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(AIX)
     if (am->error == EOWNERDEAD) {
-#if !defined(__SunOS_5_10)
-        am->error = pthread_mutex_consistent(lock);
-#endif
+        am->error = pthread_mutex_consistent_np(lock);
     }
 #endif
     if (am->local_size != *(am->global_size)) {
@@ -328,16 +326,19 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         pthread_mutex_t *lock = (pthread_mutex_t *) ret->lock;
         pthread_mutexattr_init(&attr);
         pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
-#if defined(__APPLE__)
         pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-#elif defined(__sun)
-        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-#if !defined(__SunOS_5_10)
-        pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST);
+#if defined(__sun)
+#if defined(__SunOS_5_10) 
+#if defined(_POSIX_THREAD_PRIO_INHERIT)
+        pthread_mutexattr_setprotocol(&attr, PTHREAD_PRIO_INHERIT);
+        pthread_mutexattr_setrobust_np(&attr, PTHREAD_MUTEX_ROBUST_NP);
 #endif
 #else
-        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE_NP);
         pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST);
+#endif
+#endif
+#if defined(LINUX)
+        pthread_mutexattr_setrobust_np(&attr, PTHREAD_MUTEX_ROBUST_NP);
 #endif
         pthread_mutex_init(lock, &attr);
         pthread_mutexattr_destroy(&attr);
@@ -553,7 +554,7 @@ void *am_shm_alloc(am_shm_t *am, size_t usize) {
     }
 
     pool = (struct mem_pool *) am->pool;
-    size = ALIGN(usize + SIZEOF_mem_chunk);
+    size = AM_ALIGN(usize + SIZEOF_mem_chunk);
     head = (struct mem_chunk *) AM_GET_POINTER(pool, pool->lh.prev);
 
     /* find the first-fitting chunk */
@@ -695,7 +696,7 @@ void *am_shm_realloc(am_shm_t *am, void *ptr, size_t usize) {
         e->usize = usize;
         return ptr;
     }
-    size = ALIGN(usize + SIZEOF_mem_chunk);
+    size = AM_ALIGN(usize + SIZEOF_mem_chunk);
     if (size <= e->size) {
         e->usize = usize;
         return ptr;
