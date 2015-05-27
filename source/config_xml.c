@@ -310,6 +310,8 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
     parse_config_value(ctx, AM_AGENTS_CONFIG_NOT_ENFORCED_ATTR, CONF_NUMBER, NULL, &ctx->conf->not_enforced_fetch_attr, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_NOT_ENFORCED_IP, CONF_STRING_MAP, &ctx->conf->not_enforced_ip_map_sz, &ctx->conf->not_enforced_ip_map, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_EXT_NOT_ENFORCED_URL, CONF_STRING_MAP, &ctx->conf->not_enforced_ext_map_sz, &ctx->conf->not_enforced_ext_map, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_NOT_ENFORCED_REGEX_ENABLE, CONF_NUMBER, NULL, &ctx->conf->not_enforced_regex_enable, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_EXT_NOT_ENFORCED_REGEX_ENABLE, CONF_NUMBER, NULL, &ctx->conf->not_enforced_ext_regex_enable, val, len);
 
     parse_config_value(ctx, AM_AGENTS_CONFIG_PDP_ENABLE, CONF_NUMBER, NULL, &ctx->conf->pdp_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_PDP_VALID, CONF_NUMBER, NULL, &ctx->conf->pdp_cache_valid, val, len);
@@ -327,6 +329,7 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
     parse_config_value(ctx, AM_AGENTS_CONFIG_APP_LOGOUT_URL, CONF_STRING_MAP, &ctx->conf->logout_map_sz, &ctx->conf->logout_map, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_LOGOUT_REDIRECT_URL, CONF_STRING, NULL, &ctx->conf->logout_redirect_url, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_LOGOUT_COOKIE_RESET, CONF_STRING_MAP, &ctx->conf->logout_cookie_reset_map_sz, &ctx->conf->logout_cookie_reset_map, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_LOGOUT_REGEX_ENABLE, CONF_NUMBER, NULL, &ctx->conf->logout_regex_enable, val, len);
 
     parse_config_value(ctx, AM_AGENTS_CONFIG_POLICY_SCOPE, CONF_NUMBER, NULL, &ctx->conf->policy_scope_subtree, val, len);
 
@@ -365,7 +368,7 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
     parse_config_value(ctx, AM_AGENTS_CONFIG_IIS_LOGON_USER, CONF_NUMBER, NULL, &ctx->conf->logon_user_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_IIS_PASSWORD_HEADER, CONF_NUMBER, NULL, &ctx->conf->password_header_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_PDP_JS_REPOST, CONF_NUMBER, NULL, &ctx->conf->pdp_js_repost, val, len);
-    
+
     parse_config_value(ctx, AM_AGENTS_CONFIG_JSON_URL, CONF_STRING_MAP, &ctx->conf->json_url_map_sz, &ctx->conf->json_url_map, val, len);
 }
 

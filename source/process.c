@@ -417,6 +417,15 @@ static am_return_t validate_fqdn_access(am_request_t *r) {
     return status;
 }
 
+static am_bool_t url_matches_pattern(am_request_t *r, const char *pattern,
+        const char *url, am_bool_t regex_enable) {
+    if (regex_enable) {
+        return match(r->instance_id, url, pattern) == AM_SUCCESS;
+    } else {
+        return policy_compare_url(r, pattern, url) != AM_NO_MATCH;
+    }
+}
+
 static am_return_t handle_not_enforced(am_request_t *r) {
     static const char *thisfunc = "handle_not_enforced():";
     int i;
@@ -492,44 +501,51 @@ static am_return_t handle_not_enforced(am_request_t *r) {
 
     AM_LOG_DEBUG(r->instance_id, "%s validating %s", thisfunc, url);
 
-    /* check the request url (normalized) is in not enforced url list (regular expressions only) */
+    /* check the request url (normalized) is in not enforced url list */
     if (r->conf->not_enforced_map_sz > 0) {
-        int invert = r->conf->not_enforced_invert;
-        for (i = 0; i < r->conf->not_enforced_ip_map_sz; i++) {
+        int compare_status = 0;
+        for (i = 0; i < r->conf->not_enforced_map_sz; i++) {
             am_config_map_t *m = &r->conf->not_enforced_map[i];
             if (ISVALID(m->value)) {
                 char *p = strstr(m->name, AM_COMMA_CHAR);
                 if (p == NULL) {
-                    if (match(r->instance_id, url, m->value) == invert) {
-                        r->not_enforced = AM_TRUE;
-                        if (!r->conf->not_enforced_fetch_attr) {
-                            r->status = AM_SUCCESS;
-                            return quit;
-                        }
-                        return ok;
-                    }
+                    /* regular [0]=not-enforced-url option */
+                    compare_status += url_matches_pattern(r, m->value, url, r->conf->not_enforced_regex_enable);
                 } else {
+                    /* method-extended [GET,0]=not-enforced-url option */
                     char *pv = strndup(m->name, p - m->name);
                     if (pv != NULL) {
                         char mtn = am_method_str_to_num(pv);
                         free(pv);
-                        if (r->method == mtn && match(r->instance_id, url, m->value) == invert) {
-                            r->not_enforced = AM_TRUE;
-                            if (!r->conf->not_enforced_fetch_attr) {
-                                r->status = AM_SUCCESS;
-                                return quit;
-                            }
-                            return ok;
-                        }
+                        if (r->method != mtn) continue;
+                        compare_status += url_matches_pattern(r, m->value, url, r->conf->not_enforced_regex_enable);
                     }
                 }
             }
         }
+
+        compare_status = compare_status > 0;
+
+        if (r->conf->not_enforced_invert) {
+            AM_LOG_DEBUG(r->instance_id, "%s not enforced list is inverted, "
+                    "only not enforced list of urls will be enforced", thisfunc);
+            compare_status = !compare_status;
+        }
+        if (compare_status) {
+            AM_LOG_DEBUG(r->instance_id, "%s %s is not enforced", thisfunc, url);
+            r->not_enforced = AM_TRUE;
+            if (!r->conf->not_enforced_fetch_attr) {
+                r->status = AM_SUCCESS;
+                return quit;
+            }
+            return ok;
+        }
+
     } else {
         AM_LOG_DEBUG(r->instance_id, "%s not enforced url validation feature is not enabled", thisfunc);
     }
 
-    /* check the request url (normalized) is in not enforced url list (extended version; regular expressions only) */
+    /* check the request url (normalized) is in not enforced url list (extended version) */
     if (r->conf->not_enforced_ext_map_sz > 0 && ISVALID(r->client_ip)) {
         for (i = 0; i < r->conf->not_enforced_ext_map_sz; i++) {
             char *p, *v, *t, *is, *us, found = AM_FALSE;
@@ -553,18 +569,10 @@ static am_return_t handle_not_enforced(am_request_t *r) {
             if (found) {
                 found = AM_FALSE;
                 for ((v = strtok_r(us, AM_SPACE_CHAR, &t)); v; (v = strtok_r(NULL, AM_SPACE_CHAR, &t))) {
-#ifdef AM_NEF_WILDCARD
-                    int compare_status = policy_compare_url(r, v, url);
-                    if (compare_status == AM_EXACT_MATCH || compare_status == AM_EXACT_PATTERN_MATCH) {
+                    if (url_matches_pattern(r, v, url, r->conf->not_enforced_ext_regex_enable)) {
                         found = AM_TRUE;
                         break;
                     }
-#else
-                    if (match(r->instance_id, url, v) == AM_SUCCESS) {
-                        found = AM_TRUE;
-                        break;
-                    }
-#endif
                 }
             }
             AM_FREE(is, us);
@@ -586,7 +594,7 @@ static am_return_t handle_not_enforced(am_request_t *r) {
     if (r->conf->logout_map_sz > 0) {
         for (i = 0; i < r->conf->logout_map_sz; i++) {//override ?
             am_config_map_t *m = &r->conf->logout_map[i];
-            if (match(r->instance_id, url, m->value) == AM_SUCCESS) {
+            if (url_matches_pattern(r, m->value, url, r->conf->logout_regex_enable)) {
                 r->is_logout_url = AM_TRUE;
                 r->not_enforced = AM_TRUE;
                 if (!r->conf->not_enforced_fetch_attr) {
@@ -2014,7 +2022,6 @@ static am_return_t handle_exit(am_request_t *r) {
         default:
             AM_LOG_ERROR(r->instance_id, "%s status: %s", thisfunc,
                     am_strerror(r->status));
-            r->status = AM_ERROR;
             break;
     }
 
@@ -2051,8 +2058,7 @@ void am_process_request(am_request_t *r) {
  * @param func_array_ptr address of pointer to be set
  * @param array_len_ptr the number of functions returned
  */
-extern void am_test_get_state_funcs(am_state_func_t const ** func_array_ptr, int * array_len_ptr)
-{
+extern void am_test_get_state_funcs(am_state_func_t const ** func_array_ptr, int * array_len_ptr) {
     * func_array_ptr = am_request_state;
     * array_len_ptr = (&am_request_state)[1] - am_request_state;
 }

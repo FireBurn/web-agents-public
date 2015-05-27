@@ -145,16 +145,18 @@ typedef struct {
     int not_enforced_invert;
     int not_enforced_fetch_attr;
     int not_enforced_map_sz;
-    /* key: [GET,]0  value: regular expression 
+    /* key: [GET,]0  value: wildcard or regular expression 
      * key format: [method,]index
      * where method name may be omitted ("all methods") */
     am_config_map_t *not_enforced_map;
+    int not_enforced_regex_enable;
     int not_enforced_ip_map_sz;
     /* key: [GET,]0  value: cidr notation */
     am_config_map_t *not_enforced_ip_map;
 
     int not_enforced_ext_map_sz;
     am_config_map_t *not_enforced_ext_map;
+    int not_enforced_ext_regex_enable;
 
     int pdp_enable;
     char *pdp_lb_cookie;
@@ -176,7 +178,8 @@ typedef struct {
     am_config_map_t *logout_cookie_reset_map;
     char *logout_redirect_url;
     int logout_map_sz;
-    am_config_map_t *logout_map; /*application logout url list (regular expressions only)*/
+    am_config_map_t *logout_map; /*application logout url list*/
+    int logout_regex_enable;
     int openam_logout_map_sz;
     am_config_map_t *openam_logout_map; /*OpenAM logout url list*/
 
@@ -214,7 +217,7 @@ typedef struct {
 
     int logon_user_enable;
     int password_header_enable;
-    
+
     int json_url_map_sz;
     am_config_map_t *json_url_map;
 
@@ -295,6 +298,7 @@ typedef struct {
 #define AM_AGENTS_CONFIG_NOT_ENFORCED_INVERT "com.sun.identity.agents.config.notenforced.url.invert"
 #define AM_AGENTS_CONFIG_NOT_ENFORCED_ATTR "com.sun.identity.agents.config.notenforced.url.attributes.enable"   
 #define AM_AGENTS_CONFIG_NOT_ENFORCED_IP "com.sun.identity.agents.config.notenforced.ip"
+#define AM_AGENTS_CONFIG_NOT_ENFORCED_REGEX_ENABLE "com.forgerock.agents.notenforced.url.regex.enable"
 
 #define AM_AGENTS_CONFIG_PDP_ENABLE "com.sun.identity.agents.config.postdata.preserve.enable"
 #define AM_AGENTS_CONFIG_PDP_VALID "com.sun.identity.agents.config.postcache.entry.lifetime"
@@ -312,13 +316,14 @@ typedef struct {
 #define AM_AGENTS_CONFIG_APP_LOGOUT_URL "com.sun.identity.agents.config.agent.logout.url"
 #define AM_AGENTS_CONFIG_LOGOUT_REDIRECT_URL "com.sun.identity.agents.config.logout.redirect.url"
 #define AM_AGENTS_CONFIG_LOGOUT_COOKIE_RESET "com.sun.identity.agents.config.logout.cookie.reset"
+#define AM_AGENTS_CONFIG_LOGOUT_REGEX_ENABLE "org.forgerock.agents.config.logout.regex.enable"
 
 #define AM_AGENTS_CONFIG_POLICY_SCOPE "com.sun.identity.agents.config.fetch.from.root.resource"
 
 #define AM_AGENTS_CONFIG_RESOLVE_CLIENT_HOST "com.sun.identity.agents.config.get.client.host.name"
 
 #define AM_AGENTS_CONFIG_POLICY_ENCODE_SPECIAL_CHAR "com.sun.identity.agents.config.encode.url.special.chars.enable"
-#define AM_AGENTS_CONFIG_COOKIE_ENCODE_SPECIAL_CHAR "com.sun.identity.agents.config.encode.cookie.special.chars.enable "
+#define AM_AGENTS_CONFIG_COOKIE_ENCODE_SPECIAL_CHAR "com.sun.identity.agents.config.encode.cookie.special.chars.enable"
 
 #define AM_AGENTS_CONFIG_OVERRIDE_PROTO "com.sun.identity.agents.config.override.protocol"
 #define AM_AGENTS_CONFIG_OVERRIDE_HOST "com.sun.identity.agents.config.override.host"
@@ -353,6 +358,7 @@ typedef struct {
 
 #define AM_AGENTS_CONFIG_PDP_JS_REPOST "org.forgerock.agents.pdp.javascript.repost"
 #define AM_AGENTS_CONFIG_EXT_NOT_ENFORCED_URL "org.forgerock.agents.config.notenforced.ipurl"
+#define AM_AGENTS_CONFIG_EXT_NOT_ENFORCED_REGEX_ENABLE "org.forgerock.agents.config.notenforced.ext.regex.enable"
 
 #define AM_AGENTS_CONFIG_JSON_URL "org.forgerock.agents.config.json.url"
 

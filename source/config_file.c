@@ -402,25 +402,25 @@ static void parse_config_value(unsigned long instance_id, const char *line, cons
 
 am_config_t *am_get_config_file(unsigned long instance_id, const char *filename) {
     static const char *thisfunc = "am_get_config_file():";
-    am_config_t *r = NULL;
+    am_config_t *conf = NULL;
     FILE *file = NULL;
     char *line = NULL;
     size_t len = 0;
     ssize_t read;
 
-    r = calloc(1, sizeof (am_config_t));
-    if (r == NULL) {
+    conf = calloc(1, sizeof (am_config_t));
+    if (conf == NULL) {
         AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
         return NULL;
     }
-    r->instance_id = instance_id;
+    conf->instance_id = instance_id;
 
     file = fopen(filename, "r");
     if (file == NULL) {
         AM_LOG_ERROR(instance_id,
                 "%s can't open file %s (error: %d)", thisfunc,
                 filename, errno);
-        free(r);
+        free(conf);
         return NULL;
     }
 
@@ -432,152 +432,155 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
 
         /* bootstrap options */
 
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOCAL, CONF_NUMBER, NULL, &r->local, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_POSTDATA_PRESERVE_DIR, CONF_STRING, NULL, &r->pdp_dir, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NAMING_URL, CONF_STRING_LIST, &r->naming_url_sz, &r->naming_url, AM_SPACE_CHAR);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_REALM, CONF_STRING, NULL, &r->realm, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_USER, CONF_STRING, NULL, &r->user, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PASSWORD, CONF_STRING, NULL, &r->pass, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_KEY, CONF_STRING, NULL, &r->key, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_DEBUG_OPT, CONF_NUMBER, NULL, &r->debug, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_DEBUG_FILE, CONF_STRING, NULL, &r->debug_file, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_DEBUG_LEVEL, CONF_DEBUG_LEVEL, NULL, &r->debug_level, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_FILE, CONF_STRING, NULL, &r->audit_file, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_LEVEL, CONF_AUDIT_LEVEL, NULL, &r->audit_level, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_OPT, CONF_NUMBER, NULL, &r->audit, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOCAL, CONF_NUMBER, NULL, &conf->local, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_POSTDATA_PRESERVE_DIR, CONF_STRING, NULL, &conf->pdp_dir, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NAMING_URL, CONF_STRING_LIST, &conf->naming_url_sz, &conf->naming_url, AM_SPACE_CHAR);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_REALM, CONF_STRING, NULL, &conf->realm, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_USER, CONF_STRING, NULL, &conf->user, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PASSWORD, CONF_STRING, NULL, &conf->pass, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_KEY, CONF_STRING, NULL, &conf->key, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_DEBUG_OPT, CONF_NUMBER, NULL, &conf->debug, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_DEBUG_FILE, CONF_STRING, NULL, &conf->debug_file, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_DEBUG_LEVEL, CONF_DEBUG_LEVEL, NULL, &conf->debug_level, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_FILE, CONF_STRING, NULL, &conf->audit_file, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_LEVEL, CONF_AUDIT_LEVEL, NULL, &conf->audit_level, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_OPT, CONF_NUMBER, NULL, &conf->audit, NULL);
 
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CERT_KEY_FILE, CONF_STRING, NULL, &r->cert_key_file, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CERT_KEY_PASSWORD, CONF_STRING, NULL, &r->cert_key_pass, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CERT_FILE, CONF_STRING, NULL, &r->cert_file, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CA_FILE, CONF_STRING, NULL, &r->cert_ca_file, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CIPHERS, CONF_STRING, NULL, &r->ciphers, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_TRUST_CERT, CONF_STRING, NULL, &r->cert_trust, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_TLS_OPT, CONF_STRING, NULL, &r->tls_opts, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CERT_KEY_FILE, CONF_STRING, NULL, &conf->cert_key_file, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CERT_KEY_PASSWORD, CONF_STRING, NULL, &conf->cert_key_pass, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CERT_FILE, CONF_STRING, NULL, &conf->cert_file, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CA_FILE, CONF_STRING, NULL, &conf->cert_ca_file, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CIPHERS, CONF_STRING, NULL, &conf->ciphers, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_TRUST_CERT, CONF_STRING, NULL, &conf->cert_trust, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_TLS_OPT, CONF_STRING, NULL, &conf->tls_opts, NULL);
 
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NET_TIMEOUT, CONF_NUMBER, NULL, &r->net_timeout, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NET_TIMEOUT, CONF_NUMBER, NULL, &conf->net_timeout, NULL);
 
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_URL_VALIDATE_LEVEL, CONF_NUMBER, NULL, &r->valid_level, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_URL_VALIDATE_PING_INTERVAL, CONF_NUMBER, NULL, &r->valid_ping, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_URL_VALIDATE_PING_MISS, CONF_NUMBER, NULL, &r->valid_ping_miss, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_URL_VALIDATE_PING_OK, CONF_NUMBER, NULL, &r->valid_ping_ok, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_URL_VALIDATE_DEFAULT_SET, CONF_NUMBER_LIST, &r->valid_default_url_sz, &r->valid_default_url, AM_SPACE_CHAR);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_URL_VALIDATE_LEVEL, CONF_NUMBER, NULL, &conf->valid_level, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_URL_VALIDATE_PING_INTERVAL, CONF_NUMBER, NULL, &conf->valid_ping, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_URL_VALIDATE_PING_MISS, CONF_NUMBER, NULL, &conf->valid_ping_miss, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_URL_VALIDATE_PING_OK, CONF_NUMBER, NULL, &conf->valid_ping_ok, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_URL_VALIDATE_DEFAULT_SET, CONF_NUMBER_LIST, &conf->valid_default_url_sz, &conf->valid_default_url, AM_SPACE_CHAR);
 
         /*
          * com.forgerock.agents.config.hostmap format:
          *  server1.domain.name|192.168.1.1,server2.domain.name|192.168.1.2
          */
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_HOST_MAP, CONF_STRING_LIST, &r->hostmap_sz, &r->hostmap, AM_COMMA_CHAR);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_HOST_MAP, CONF_STRING_LIST, &conf->hostmap_sz, &conf->hostmap, AM_COMMA_CHAR);
 
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_RETRY_MAX, CONF_NUMBER, NULL, &r->retry_max, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_RETRY_WAIT, CONF_NUMBER, NULL, &r->retry_wait, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_RETRY_MAX, CONF_NUMBER, NULL, &conf->retry_max, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_RETRY_WAIT, CONF_NUMBER, NULL, &conf->retry_wait, NULL);
 
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOTIF_ENABLE, CONF_NUMBER, NULL, &r->notif_enable, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOTIF_URL, CONF_STRING, NULL, &r->notif_url, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOTIF_ENABLE, CONF_NUMBER, NULL, &conf->notif_enable, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOTIF_URL, CONF_STRING, NULL, &conf->notif_url, NULL);
 
-        if (r->local) { /*do read other options in case configuration is local*/
+        if (conf->local) { /*do read other options in case configuration is local*/
 
             /* other options */
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AGENT_URI, CONF_STRING, NULL, &r->agenturi, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_COOKIE_NAME, CONF_STRING, NULL, &r->cookie_name, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGIN_URL_MAP, CONF_STRING_MAP, &r->login_url_sz, &r->login_url, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_COOKIE_SECURE, CONF_NUMBER, NULL, &r->cookie_secure, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AGENT_URI, CONF_STRING, NULL, &conf->agenturi, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_COOKIE_NAME, CONF_STRING, NULL, &conf->cookie_name, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGIN_URL_MAP, CONF_STRING_MAP, &conf->login_url_sz, &conf->login_url, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_COOKIE_SECURE, CONF_NUMBER, NULL, &conf->cookie_secure, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CMP_CASE_IGNORE, CONF_NUMBER, NULL, &r->url_eval_case_ignore, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_POLICY_CACHE_VALID, CONF_NUMBER, NULL, &r->policy_cache_valid, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_TOKEN_CACHE_VALID, CONF_NUMBER, NULL, &r->token_cache_valid, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_UID_PARAM, CONF_STRING, NULL, &r->userid_param, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_UID_PARAM_TYPE, CONF_STRING, NULL, &r->userid_param_type, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CMP_CASE_IGNORE, CONF_NUMBER, NULL, &conf->url_eval_case_ignore, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_POLICY_CACHE_VALID, CONF_NUMBER, NULL, &conf->policy_cache_valid, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_TOKEN_CACHE_VALID, CONF_NUMBER, NULL, &conf->token_cache_valid, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_UID_PARAM, CONF_STRING, NULL, &conf->userid_param, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_UID_PARAM_TYPE, CONF_STRING, NULL, &conf->userid_param_type, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_PROFILE_MODE, CONF_ATTR_MODE, NULL, &r->profile_attr_fetch, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_PROFILE_MAP, CONF_STRING_MAP, &r->profile_attr_map_sz, &r->profile_attr_map, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_SESSION_MODE, CONF_ATTR_MODE, NULL, &r->session_attr_fetch, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_SESSION_MAP, CONF_STRING_MAP, &r->session_attr_map_sz, &r->session_attr_map, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_RESPONSE_MODE, CONF_ATTR_MODE, NULL, &r->response_attr_fetch, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_RESPONSE_MAP, CONF_STRING_MAP, &r->response_attr_map_sz, &r->response_attr_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_PROFILE_MODE, CONF_ATTR_MODE, NULL, &conf->profile_attr_fetch, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_PROFILE_MAP, CONF_STRING_MAP, &conf->profile_attr_map_sz, &conf->profile_attr_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_SESSION_MODE, CONF_ATTR_MODE, NULL, &conf->session_attr_fetch, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_SESSION_MAP, CONF_STRING_MAP, &conf->session_attr_map_sz, &conf->session_attr_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_RESPONSE_MODE, CONF_ATTR_MODE, NULL, &conf->response_attr_fetch, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_RESPONSE_MAP, CONF_STRING_MAP, &conf->response_attr_map_sz, &conf->response_attr_map, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LB_ENABLE, CONF_NUMBER, NULL, &r->lb_enable, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_SSO_ONLY, CONF_NUMBER, NULL, &r->sso_only, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ACCESS_DENIED_URL, CONF_STRING, NULL, &r->access_denied_url, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_FQDN_CHECK_ENABLE, CONF_NUMBER, NULL, &r->fqdn_check_enable, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_FQDN_DEFAULT, CONF_STRING, NULL, &r->fqdn_default, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_FQDN_MAP, CONF_STRING_MAP, &r->fqdn_map_sz, &r->fqdn_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LB_ENABLE, CONF_NUMBER, NULL, &conf->lb_enable, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_SSO_ONLY, CONF_NUMBER, NULL, &conf->sso_only, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ACCESS_DENIED_URL, CONF_STRING, NULL, &conf->access_denied_url, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_FQDN_CHECK_ENABLE, CONF_NUMBER, NULL, &conf->fqdn_check_enable, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_FQDN_DEFAULT, CONF_STRING, NULL, &conf->fqdn_default, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_FQDN_MAP, CONF_STRING_MAP, &conf->fqdn_map_sz, &conf->fqdn_map, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_COOKIE_RESET_ENABLE, CONF_NUMBER, NULL, &r->cookie_reset_enable, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_COOKIE_RESET_MAP, CONF_STRING_MAP, &r->cookie_reset_map_sz, &r->cookie_reset_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_COOKIE_RESET_ENABLE, CONF_NUMBER, NULL, &conf->cookie_reset_enable, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_COOKIE_RESET_MAP, CONF_STRING_MAP, &conf->cookie_reset_map_sz, &conf->cookie_reset_map, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOT_ENFORCED_URL, CONF_STRING_MAP, &r->not_enforced_map_sz, &r->not_enforced_map, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOT_ENFORCED_INVERT, CONF_NUMBER, NULL, &r->not_enforced_invert, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOT_ENFORCED_ATTR, CONF_NUMBER, NULL, &r->not_enforced_fetch_attr, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOT_ENFORCED_IP, CONF_STRING_MAP, &r->not_enforced_ip_map_sz, &r->not_enforced_ip_map, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_EXT_NOT_ENFORCED_URL, CONF_STRING_MAP, &r->not_enforced_ext_map_sz, &r->not_enforced_ext_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOT_ENFORCED_URL, CONF_STRING_MAP, &conf->not_enforced_map_sz, &conf->not_enforced_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOT_ENFORCED_INVERT, CONF_NUMBER, NULL, &conf->not_enforced_invert, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOT_ENFORCED_ATTR, CONF_NUMBER, NULL, &conf->not_enforced_fetch_attr, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOT_ENFORCED_IP, CONF_STRING_MAP, &conf->not_enforced_ip_map_sz, &conf->not_enforced_ip_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_EXT_NOT_ENFORCED_URL, CONF_STRING_MAP, &conf->not_enforced_ext_map_sz, &conf->not_enforced_ext_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOT_ENFORCED_REGEX_ENABLE, CONF_NUMBER, NULL, &conf->not_enforced_regex_enable, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_EXT_NOT_ENFORCED_REGEX_ENABLE, CONF_NUMBER, NULL, &conf->not_enforced_ext_regex_enable, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_ENABLE, CONF_NUMBER, NULL, &r->pdp_enable, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_VALID, CONF_NUMBER, NULL, &r->pdp_cache_valid, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_COOKIE, CONF_STRING, NULL, &r->pdp_lb_cookie, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_ENABLE, CONF_NUMBER, NULL, &conf->pdp_enable, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_VALID, CONF_NUMBER, NULL, &conf->pdp_cache_valid, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_COOKIE, CONF_STRING, NULL, &conf->pdp_lb_cookie, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CLIENT_IP_VALIDATE, CONF_NUMBER, NULL, &r->client_ip_validate, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_COOKIE_PREFIX, CONF_STRING, NULL, &r->cookie_prefix, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_COOKIE_MAX_AGE, CONF_NUMBER, NULL, &r->cookie_maxage, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CLIENT_IP_VALIDATE, CONF_NUMBER, NULL, &conf->client_ip_validate, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_COOKIE_PREFIX, CONF_STRING, NULL, &conf->cookie_prefix, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_COOKIE_MAX_AGE, CONF_NUMBER, NULL, &conf->cookie_maxage, NULL);
 
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CDSSO_ENABLE, CONF_NUMBER, NULL, &r->cdsso_enable, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CDSSO_LOGIN, CONF_STRING_MAP, &r->cdsso_login_map_sz, &r->cdsso_login_map, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CDSSO_DOMAIN, CONF_STRING_MAP, &r->cdsso_cookie_domain_map_sz, &r->cdsso_cookie_domain_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CDSSO_ENABLE, CONF_NUMBER, NULL, &conf->cdsso_enable, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CDSSO_LOGIN, CONF_STRING_MAP, &conf->cdsso_login_map_sz, &conf->cdsso_login_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CDSSO_DOMAIN, CONF_STRING_MAP, &conf->cdsso_cookie_domain_map_sz, &conf->cdsso_cookie_domain_map, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGOUT_URL, CONF_STRING_MAP, &r->openam_logout_map_sz, &r->openam_logout_map, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_APP_LOGOUT_URL, CONF_STRING_MAP, &r->logout_map_sz, &r->logout_map, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGOUT_REDIRECT_URL, CONF_STRING, NULL, &r->logout_redirect_url, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGOUT_COOKIE_RESET, CONF_STRING_MAP, &r->logout_cookie_reset_map_sz, &r->logout_cookie_reset_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGOUT_URL, CONF_STRING_MAP, &conf->openam_logout_map_sz, &conf->openam_logout_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_APP_LOGOUT_URL, CONF_STRING_MAP, &conf->logout_map_sz, &conf->logout_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGOUT_REDIRECT_URL, CONF_STRING, NULL, &conf->logout_redirect_url, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGOUT_COOKIE_RESET, CONF_STRING_MAP, &conf->logout_cookie_reset_map_sz, &conf->logout_cookie_reset_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGOUT_REGEX_ENABLE, CONF_NUMBER, NULL, &conf->logout_regex_enable, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_POLICY_SCOPE, CONF_NUMBER, NULL, &r->policy_scope_subtree, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_POLICY_SCOPE, CONF_NUMBER, NULL, &conf->policy_scope_subtree, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_RESOLVE_CLIENT_HOST, CONF_NUMBER, NULL, &r->resolve_client_host, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_POLICY_ENCODE_SPECIAL_CHAR, CONF_NUMBER, NULL, &r->policy_eval_encode_chars, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_COOKIE_ENCODE_SPECIAL_CHAR, CONF_NUMBER, NULL, &r->cookie_encode_chars, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_RESOLVE_CLIENT_HOST, CONF_NUMBER, NULL, &conf->resolve_client_host, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_POLICY_ENCODE_SPECIAL_CHAR, CONF_NUMBER, NULL, &conf->policy_eval_encode_chars, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_COOKIE_ENCODE_SPECIAL_CHAR, CONF_NUMBER, NULL, &conf->cookie_encode_chars, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_OVERRIDE_PROTO, CONF_NUMBER, NULL, &r->override_protocol, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_OVERRIDE_HOST, CONF_NUMBER, NULL, &r->override_host, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_OVERRIDE_PORT, CONF_NUMBER, NULL, &r->override_port, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_OVERRIDE_NOTIFICATION_URL, CONF_NUMBER, NULL, &r->override_notif_url, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_OVERRIDE_PROTO, CONF_NUMBER, NULL, &conf->override_protocol, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_OVERRIDE_HOST, CONF_NUMBER, NULL, &conf->override_host, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_OVERRIDE_PORT, CONF_NUMBER, NULL, &conf->override_port, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_OVERRIDE_NOTIFICATION_URL, CONF_NUMBER, NULL, &conf->override_notif_url, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_VALID, CONF_NUMBER, NULL, &r->config_valid, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_VALID, CONF_NUMBER, NULL, &conf->config_valid, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PASSWORD_REPLAY_KEY, CONF_STRING, NULL, &r->password_replay_key, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PASSWORD_REPLAY_KEY, CONF_STRING, NULL, &conf->password_replay_key, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_POLICY_CLOCK_SKEW, CONF_NUMBER, NULL, &r->policy_clock_skew, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_POLICY_CLOCK_SKEW, CONF_NUMBER, NULL, &conf->policy_clock_skew, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_GOTO_PARAM_NAME, CONF_STRING, NULL, &r->url_redirect_param, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_GOTO_PARAM_NAME, CONF_STRING, NULL, &conf->url_redirect_param, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CACHE_CONTROL_ENABLE, CONF_NUMBER, NULL, &r->cache_control_enable, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CACHE_CONTROL_ENABLE, CONF_NUMBER, NULL, &conf->cache_control_enable, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_USE_REDIRECT_ADVICE, CONF_NUMBER, NULL, &r->use_redirect_for_advice, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_USE_REDIRECT_ADVICE, CONF_NUMBER, NULL, &conf->use_redirect_for_advice, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CLIENT_IP_HEADER, CONF_STRING, NULL, &r->client_ip_header, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CLIENT_HOSTNAME_HEADER, CONF_STRING, NULL, &r->client_hostname_header, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CLIENT_IP_HEADER, CONF_STRING, NULL, &conf->client_ip_header, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CLIENT_HOSTNAME_HEADER, CONF_STRING, NULL, &conf->client_hostname_header, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_INVALID_URL, CONF_STRING, NULL, &r->url_check_regex, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_INVALID_URL, CONF_STRING, NULL, &conf->url_check_regex, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CONDITIONAL_LOGIN_URL, CONF_STRING_MAP, &r->cond_login_url_sz, &r->cond_login_url, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CONDITIONAL_LOGIN_URL, CONF_STRING_MAP, &conf->cond_login_url_sz, &conf->cond_login_url, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_COOKIE_HTTP_ONLY, CONF_NUMBER, NULL, &r->cookie_http_only, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_MULTI_VALUE_SEPARATOR, CONF_STRING, NULL, &r->multi_attr_separator, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_COOKIE_HTTP_ONLY, CONF_NUMBER, NULL, &conf->cookie_http_only, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_MULTI_VALUE_SEPARATOR, CONF_STRING, NULL, &conf->multi_attr_separator, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_IIS_LOGON_USER, CONF_NUMBER, NULL, &r->logon_user_enable, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_IIS_PASSWORD_HEADER, CONF_NUMBER, NULL, &r->password_header_enable, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_JS_REPOST, CONF_NUMBER, NULL, &r->pdp_js_repost, NULL);
-            
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_JSON_URL, CONF_STRING_MAP, &r->json_url_map_sz, &r->json_url_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_IIS_LOGON_USER, CONF_NUMBER, NULL, &conf->logon_user_enable, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_IIS_PASSWORD_HEADER, CONF_NUMBER, NULL, &conf->password_header_enable, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_JS_REPOST, CONF_NUMBER, NULL, &conf->pdp_js_repost, NULL);
+
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_JSON_URL, CONF_STRING_MAP, &conf->json_url_map_sz, &conf->json_url_map, NULL);
         }
     }
 
-    r->ts = time(NULL);
+    conf->ts = time(NULL);
 
     fclose(file);
     am_free(line);
 
-    decrypt_agent_passwords(r);
-    return r;
+    decrypt_agent_passwords(conf);
+    return conf;
 }
 
 #define AM_CONF_FREE(sz,el) \

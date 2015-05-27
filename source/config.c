@@ -126,7 +126,10 @@ enum {
     AM_CONF_ATTR_SEP,
     AM_CONF_WIN_LOGON,
     AM_CONF_WIN_PASS_HEADER,
-    AM_CONF_JSON_URL_MAP
+    AM_CONF_JSON_URL_MAP,
+    AM_CONF_NEF_REGEX_ENABLE,
+    AM_CONF_NEF_EXT_REGEX_ENABLE,
+    AM_CONF_LOGOUT_REGEX_ENABLE
 };
 
 struct am_instance {
@@ -536,6 +539,15 @@ static int am_create_instance_entry_data(am_shm_t *cf, struct offset_list *h, am
                     SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_NEF_IP_MAP, c->not_enforced_ip_map_sz), v->name, v->value);
                 }
             }
+        }
+        if (c->not_enforced_regex_enable > 0) {
+            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_NEF_REGEX_ENABLE, 0), c->not_enforced_regex_enable);
+        }
+        if (c->not_enforced_ext_regex_enable > 0) {
+            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_NEF_EXT_REGEX_ENABLE, 0), c->not_enforced_ext_regex_enable);
+        }
+        if (c->logout_regex_enable > 0) {
+            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_LOGOUT_REGEX_ENABLE, 0), c->logout_regex_enable);
         }
         if (c->pdp_enable > 0) {
             SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_PDP, 0), c->pdp_enable);
@@ -963,6 +975,15 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                     memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
                     m->value = m->name + i->size[0] + 1;
                 }
+                break;
+            case AM_CONF_NEF_REGEX_ENABLE:
+                r->not_enforced_regex_enable = i->num_value;
+                break;
+            case AM_CONF_NEF_EXT_REGEX_ENABLE:
+                r->not_enforced_ext_regex_enable = i->num_value;
+                break;
+            case AM_CONF_LOGOUT_REGEX_ENABLE:
+                r->logout_regex_enable = i->num_value;
                 break;
             case AM_CONF_PDP:
                 r->pdp_enable = i->num_value;

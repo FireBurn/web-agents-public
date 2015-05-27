@@ -229,7 +229,9 @@ int am_worker_dispatch(void (*worker_f)(void *, void *), void *arg) {
 }
 
 void am_worker_pool_startup() {
+#ifndef _WIN32
     create_threadpool();
+#endif
 }
 
 void am_worker_pool_shutdown() {
