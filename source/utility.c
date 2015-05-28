@@ -91,6 +91,11 @@ const char *request_method_str[] = {
 #define HD3 URI_HTTP "://" URI_HOST ":" URI_PORT
 #define HD4 URI_HTTP "://" URI_HOST
 
+struct query_attribute {
+    char *key;
+    char *key_value;
+};
+
 enum {
     AM_TIMER_INACTIVE = 0,
     AM_TIMER_ACTIVE = 1 << 0,
@@ -306,7 +311,15 @@ static void uri_normalize(struct url *url, char *path) {
 }
 
 static int query_attribute_compare(const void *a, const void *b) {
-    return strcasecmp(*(char**) a, *(char**) b);
+    int status;
+    struct query_attribute *ia = (struct query_attribute *) a;
+    struct query_attribute *ib = (struct query_attribute *) b;
+    status = strcmp(ia->key, ib->key);
+    if (status == 0) {
+        /* variable names (keys) are the same, we need to further compare the values */
+        status = strcmp(ia->key_value, ib->key_value);
+    }
+    return status;
 }
 
 int parse_url(const char *u, struct url *url) {
@@ -369,33 +382,52 @@ int parse_url(const char *u, struct url *url) {
     /* split out a query string, if any and sort query parameters */
     p = strchr(url->path, '?');
     if (p != NULL) {
-        char *token, *temp, query[AM_URI_SIZE + 1], **list;
-        int sep_count, j;
+        char *token, *temp, query[AM_URI_SIZE + 1], *sep;
+        struct query_attribute *list;
+        int sep_count, sep_count_init, j;
         strncpy(url->query, p, sizeof (url->query) - 1);
         *p = 0;
 
         strncpy(query, url->query + 1 /*skip '?'*/, sizeof (url->query) - 1);
         sep_count = char_count(query, '&', NULL);
         if (sep_count > 0) {
-            list = (char **) malloc((++sep_count) * sizeof (char *));
+            list = (struct query_attribute *) calloc(++sep_count, sizeof (struct query_attribute));
             if (list == NULL) {
                 url->error = AM_ENOMEM;
                 return AM_ERROR;
             }
+            sep_count_init = sep_count;
             sep_count = 0;
 
             for ((token = strtok_r(query, "&", &temp)); token; (token = strtok_r(NULL, "&", &temp))) {
-                list[sep_count++] = token;
+                struct query_attribute *elm = &list[sep_count++];
+                elm->key_value = token;
+                elm->key = strdup(token);
+                if (elm->key == NULL) {
+                    for (j = 0; j < sep_count_init; j++) {
+                        struct query_attribute *elm = &list[j];
+                        am_free(elm->key);
+                    }
+                    free(list);
+                    url->error = AM_ENOMEM;
+                    return AM_ERROR;
+                }
+                sep = strchr(elm->key, '=');
+                if (sep != NULL) {
+                    *sep = '\0';
+                }
             }
 
-            qsort(list, sep_count, sizeof (*list), query_attribute_compare);
+            qsort(list, sep_count, sizeof (struct query_attribute), query_attribute_compare);
 
             strncpy(url->query, "?", sizeof (url->query) - 1);
             for (j = 0; j < sep_count; j++) {
+                struct query_attribute *elm = &list[j];
                 if (j > 0) {
                     strcat(url->query, "&");
                 }
-                strcat(url->query, list[j]);
+                strcat(url->query, elm->key_value);
+                free(elm->key);
             }
             free(list);
         }
