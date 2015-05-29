@@ -60,7 +60,8 @@ static char compare_pattern_resource(am_request_t *r, const char *ptn, const cha
     p_resource = rsc == NULL ? NULL : strdup(rsc);
     p_pattern = ptn == NULL ? NULL : strdup(ptn);
     if (p_resource == NULL || p_pattern == NULL) {
-        AM_FREE(p_resource,p_pattern);
+        AM_FREE(p_resource, p_pattern);
+        AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
         return AM_FALSE;
     }
     resource = p_resource;
@@ -282,12 +283,13 @@ char policy_compare_url(am_request_t *r, const char *pattern, const char *resour
 
     /*quick sanity check for field indicators*/
     if (pi[0] == 0 || pi[2] < 3 || pi[1] >= pi[2] ||
-            ri[0] == 0 || ri[2] < 3 || ri[1] >= pi[2]) return AM_NO_MATCH;
+            ri[0] == 0 || ri[2] < 3 || ri[1] >= ri[2]) return AM_NO_MATCH;
 
     a = strndup(pattern, pi[0]);
     b = strndup(resource, ri[0]);
     if (a == NULL || b == NULL) {
-        AM_FREE(a,b);
+        AM_FREE(a, b);
+        AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
         return AM_NO_MATCH;
     }
     /*compare protocol*/
@@ -300,7 +302,8 @@ char policy_compare_url(am_request_t *r, const char *pattern, const char *resour
         a = strndup(pattern + pi[0] + 3, pi[2] - pi[0] - 3);
         b = strndup(resource + ri[0] + 3, ri[2] - ri[0] - 3);
         if (a == NULL || b == NULL) {
-            AM_FREE(a,b);
+            AM_FREE(a, b);
+            AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
             return AM_NO_MATCH;
         }
         match = compare_pattern_resource(r, a, b);
@@ -312,7 +315,8 @@ char policy_compare_url(am_request_t *r, const char *pattern, const char *resour
         a = strndup(pattern + pi[0] + 3, pi[1] - pi[0] - 3);
         b = strndup(resource + ri[0] + 3, ri[1] - ri[0] - 3);
         if (a == NULL || b == NULL) {
-            AM_FREE(a,b);
+            AM_FREE(a, b);
+            AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
             return AM_NO_MATCH;
         }
         match = compare_pattern_resource(r, a, b);
@@ -323,7 +327,8 @@ char policy_compare_url(am_request_t *r, const char *pattern, const char *resour
         a = strndup(pattern + pi[1] + 1, pi[2] - pi[1] - 1);
         b = strndup(resource + ri[1] + 1, ri[2] - ri[1] - 1);
         if (a == NULL || b == NULL) {
-            AM_FREE(a,b);
+            AM_FREE(a, b);
+            AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
             return AM_NO_MATCH;
         }
         match = compare_pattern_resource(r, a, b);

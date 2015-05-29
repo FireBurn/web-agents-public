@@ -70,14 +70,13 @@ static struct transition state_transitions[] = {
     {handle_notification_c, ok, handle_exit_c},
     {handle_notification_c, fail, validate_fqdn_access_c},
 
-    {validate_fqdn_access_c, ok, handle_not_enforced_c},
+    {validate_fqdn_access_c, ok, validate_token_c},
     {validate_fqdn_access_c, fail, handle_exit_c},
 
     {handle_not_enforced_c, ok, validate_policy_c},
-    {handle_not_enforced_c, fail, validate_token_c},
     {handle_not_enforced_c, quit, handle_exit_c},
 
-    {validate_token_c, ok, validate_policy_c},
+    {validate_token_c, ok, handle_not_enforced_c},
     {validate_token_c, fail, handle_exit_c},
 
     {validate_policy_c, retry, validate_policy_c},
@@ -253,7 +252,7 @@ static am_return_t setup_request_data(am_request_t *r) {
     }
 
     AM_LOG_DEBUG(r->instance_id, "%s method: %s, original url: %s, normalized:\n"
-            "proto: %s\nhost: %s\nport: %d\nuri: %s\nquery: %s\ncomplete: %s\noverridden: %s", thisfunc,
+            "proto: %s\nhost: %s\nport: %d\npath: %s\nquery: %s\ncomplete: %s\noverridden: %s", thisfunc,
             am_method_num_to_str(r->method), r->orig_url,
             r->url.proto, r->url.host, r->url.port, r->url.path, r->url.query, r->normalized_url,
             r->overridden_url);
@@ -577,6 +576,7 @@ static am_return_t handle_not_enforced(am_request_t *r) {
             }
             AM_FREE(is, us);
             if (found) {
+                AM_LOG_DEBUG(r->instance_id, "%s %s is not enforced", thisfunc, url);
                 r->not_enforced = AM_TRUE;
                 if (!r->conf->not_enforced_fetch_attr) {
                     r->status = AM_SUCCESS;
@@ -589,14 +589,13 @@ static am_return_t handle_not_enforced(am_request_t *r) {
         AM_LOG_DEBUG(r->instance_id, "%s extended not enforced url validation feature is not enabled", thisfunc);
     }
 
-    /* check if the request url (normalized) is in an application logout url list
-     * (regular expressions only) */
+    /* check if the request url (normalized) is in an application logout url list */
     if (r->conf->logout_map_sz > 0) {
         for (i = 0; i < r->conf->logout_map_sz; i++) {//override ?
             am_config_map_t *m = &r->conf->logout_map[i];
             if (url_matches_pattern(r, m->value, url, r->conf->logout_regex_enable)) {
-                r->is_logout_url = AM_TRUE;
-                r->not_enforced = AM_TRUE;
+                AM_LOG_DEBUG(r->instance_id, "%s %s is an application logout url", thisfunc, url);
+                r->not_enforced = r->is_logout_url = AM_TRUE;
                 if (!r->conf->not_enforced_fetch_attr) {
                     r->status = AM_SUCCESS;
                     return quit;
@@ -609,7 +608,7 @@ static am_return_t handle_not_enforced(am_request_t *r) {
     }
 
     AM_LOG_DEBUG(r->instance_id, "%s %s is enforced", thisfunc, url);
-    return fail;
+    return ok;
 }
 
 static am_return_t validate_token(am_request_t *r) {
@@ -1001,6 +1000,19 @@ static am_return_t validate_policy(am_request_t *r) {
                 if (policy_status == AM_EXACT_MATCH || policy_status == AM_EXACT_PATTERN_MATCH) {
                     struct am_action_decision *ae, *at;
 
+                    if (r->not_enforced && r->conf->not_enforced_fetch_attr &&
+                            e->scope == AM_SCOPE_RESPONSE_ATTRIBUTE_ONLY) {
+                        /* allow, in case this is not-enforced url and attribute fetch is enabled 
+                         * (ignoring policy result) */
+                        AM_LOG_DEBUG(r->instance_id,
+                                "%s method: %s, decision: allow, not enforced url with attribute fetch enabled",
+                                thisfunc, am_method_num_to_str(r->method));
+                        r->response_attributes = e->response_attributes;
+                        r->response_decisions = e->response_decisions;
+                        r->status = AM_SUCCESS;
+                        return ok;
+                    }
+
                     if (e->action_decisions == NULL) {
                         AM_LOG_WARNING(r->instance_id,
                                 "%s decision: deny, reason: no action decisions found",
@@ -1280,9 +1292,9 @@ static void do_cookie_set_type(am_request_t *r, am_config_map_t *map, int sz,
             const char *val = get_attr_value(r, v->name, type);
             if (ISVALID(val)) {
                 AM_COOKIE_SET(r, v->value, val);
+                AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): setting %s: %s",
+                        v->value, val);
             }
-            AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): setting %s: %s",
-                    v->value, LOGEMPTY(val));
         }
     }
 }
@@ -1319,9 +1331,9 @@ static void do_header_set_type(am_request_t *r, am_config_map_t *map, int sz,
             const char *val = get_attr_value(r, v->name, type);
             if (ISVALID(val)) {
                 r->am_set_header_in_request_f(r, v->value, val);
+                AM_LOG_DEBUG(r->instance_id, "do_header_set(): setting %s: %s",
+                        v->value, val);
             }
-            AM_LOG_DEBUG(r->instance_id, "do_header_set(): setting %s: %s",
-                    v->value, LOGEMPTY(val));
         } else {
             r->am_set_header_in_request_f(r, v->value, NULL);
             AM_LOG_DEBUG(r->instance_id, "do_header_set(): clearing %s", v->value);
