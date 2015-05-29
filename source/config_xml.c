@@ -27,6 +27,9 @@
 typedef struct {
     char current_name[AM_URI_SIZE];
     char setting_value;
+    char *data;
+    int data_sz;
+    int status;
     am_config_t *conf;
     pcre *rgx;
     void *parser;
@@ -80,11 +83,6 @@ static void start_element(void *userData, const char *name, const char **atts) {
         return;
     }
     memset(&ctx->current_name[0], 0, sizeof (ctx->current_name));
-}
-
-static void end_element(void * userData, const char * name) {
-    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
-    ctx->setting_value = 0;
 }
 
 static void parse_config_value(am_xml_parser_ctx_t *x, const char *prm, int type,
@@ -372,11 +370,14 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
     parse_config_value(ctx, AM_AGENTS_CONFIG_JSON_URL, CONF_STRING_MAP, &ctx->conf->json_url_map_sz, &ctx->conf->json_url_map, val, len);
 }
 
-static void character_data(void *userData, const char *val, int len) {
+static void end_element(void * userData, const char * name) {
     char *v, *t, k[AM_URI_SIZE];
     am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
-    if (!ISVALID(ctx->current_name) || ctx->setting_value == 0 || len <= 0 ||
-            strncmp(val, "[]=", len) == 0 || strncmp(val, "[0]=", len) == 0) return;
+    char *val = ctx->data;
+    int len = ctx->data_sz;
+
+    ctx->setting_value = 0;
+    if (!ISVALID(ctx->data)) return;
 
     /* bootstrap options */
 
@@ -419,12 +420,21 @@ static void character_data(void *userData, const char *val, int len) {
 
     if (strcmp(ctx->current_name, "com.sun.identity.agents.config.freeformproperties") != 0) {
         parse_other_options(ctx, val, len);
+        am_free(ctx->data);
+        ctx->data = NULL;
+        ctx->data_sz = 0;
         return;
     }
 
     /*handler for old freeformproperties*/
     v = strndup(val, len);
-    if (v == NULL) return;
+    if (v == NULL) {
+        am_free(ctx->data);
+        ctx->data = NULL;
+        ctx->data_sz = 0;
+        ctx->status = AM_ENOMEM;
+        return;
+    }
     /* make up parser's current_name to handle freeformproperties:
      * instead of a property key being supplied as an <attribute name="...">,
      * it is sent as a part of <value> element, for example:
@@ -450,6 +460,29 @@ static void character_data(void *userData, const char *val, int len) {
         parse_other_options(&f, t, (int) l);
     }
     free(v);
+    am_free(ctx->data);
+    ctx->data = NULL;
+    ctx->data_sz = 0;
+}
+
+static void character_data(void *userData, const char *val, int len) {
+    char *tmp;
+    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
+    if (!ISVALID(ctx->current_name) || ctx->setting_value == 0 || len <= 0 ||
+            strncmp(val, "[]=", len) == 0 || strncmp(val, "[0]=", len) == 0) return;
+
+    tmp = realloc(ctx->data, ctx->data_sz + len + 1);
+    if (tmp == NULL) {
+        am_free(ctx->data);
+        ctx->data = NULL;
+        ctx->data_sz = 0;
+        ctx->status = AM_ENOMEM;
+        return;
+    }
+    ctx->data = tmp;
+    memcpy(ctx->data + ctx->data_sz, val, len);
+    ctx->data_sz += len;
+    ctx->data[ctx->data_sz] = 0;
 }
 
 static void entity_declaration(void *userData, const XML_Char *entityName,
@@ -469,7 +502,8 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
     int erroroffset;
 
     am_xml_parser_ctx_t xctx = {.setting_value = 0,
-        .conf = NULL, .rgx = NULL, .parser = NULL, .log_enable = log_enable};
+        .conf = NULL, .rgx = NULL, .parser = NULL, .log_enable = log_enable,
+        .data_sz = 0, .data = NULL, .status = AM_SUCCESS};
 
     if (xml == NULL || xml_sz == 0) {
         AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
@@ -524,6 +558,10 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
             r->ts = time(NULL);
         }
         XML_ParserFree(parser);
+    }
+
+    if (xctx.status != AM_SUCCESS) {
+        AM_LOG_ERROR(instance_id, "%s %s", thisfunc, am_strerror(xctx.status));
     }
 
     pcre_free(x);

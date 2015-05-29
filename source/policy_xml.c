@@ -39,6 +39,9 @@ typedef struct {
     int scope;
     int index;
     int ty;
+    char *data;
+    int data_sz;
+    int status;
     char *attribute_name;
     uint64_t ttl;
     unsigned long instance_id;
@@ -82,9 +85,7 @@ int create_am_namevalue_node(const char *n, size_t ns,
  * if things go wrong and 0 if we succeed - more of an exit status than a boolean value.
  */
 int create_am_action_decision_node(am_bool_t action, char method, uint64_t ttl, struct am_action_decision **node) {
-    
     struct am_action_decision *action_decision = malloc(sizeof (struct am_action_decision));
-    
     if (action_decision == NULL) {
         return 1;
     }
@@ -98,9 +99,7 @@ int create_am_action_decision_node(am_bool_t action, char method, uint64_t ttl, 
 }
 
 int create_am_policy_result_node(const char *resource, size_t resource_size, struct am_policy_result **node) {
-    
     struct am_policy_result *policy_result;
-    
     if (resource == NULL || resource_size == 0) {
         return 1;
     }
@@ -200,6 +199,48 @@ static void start_element(void *userData, const char *name, const char **atts) {
 
 static void end_element(void *userData, const char *name) {
     am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
+    struct am_namevalue *el = NULL;
+    char *val = ctx->data;
+    int len = ctx->data_sz;
+
+    if (ctx->attribute_name != NULL && val != NULL) {
+        switch (ctx->ty) {
+            case AMP_RESOURCE_RESULT + AMP_RESPONSE_ATTRIBUTE + AMP_ATTRIBUTE_VALUE_PAIR + AMP_ATTRIBUTE_VALUE:
+                if (ctx->curr_policy) {
+                    if (create_am_namevalue_node(ctx->attribute_name, strlen(ctx->attribute_name), val, len, &el) == 0) {
+                        AM_LIST_INSERT(ctx->curr_policy->response_attributes, el);
+                    }
+                }
+                break;
+
+            case AMP_RESOURCE_RESULT + AMP_RESPONSE_DECISION + AMP_ATTRIBUTE_VALUE_PAIR + AMP_ATTRIBUTE_VALUE:
+                if (ctx->curr_policy) {
+                    if (create_am_namevalue_node(ctx->attribute_name, strlen(ctx->attribute_name), val, len, &el) == 0) {
+                        AM_LIST_INSERT(ctx->curr_policy->response_decisions, el);
+                    }
+                }
+                break;
+
+            case AMP_RESOURCE_RESULT + AMP_ACTION_DECISION + AMP_ATTRIBUTE_VALUE_PAIR + AMP_ATTRIBUTE_VALUE:
+                if (ctx->curr_action_decision) {
+                    ctx->curr_action_decision->method = am_method_str_to_num(ctx->attribute_name);
+                    ctx->curr_action_decision->action = strncasecmp(val, "allow", len) == 0;
+                }
+                break;
+
+            case AMP_RESOURCE_RESULT + AMP_ACTION_DECISION + AMP_ACTION_DECISION_ADVICE + AMP_ATTRIBUTE_VALUE_PAIR + AMP_ATTRIBUTE_VALUE:
+                if (ctx->curr_action_decision) {
+                    if (create_am_namevalue_node(ctx->attribute_name, strlen(ctx->attribute_name), val, len, &el) == 0) {
+                        AM_LIST_INSERT(ctx->curr_action_decision->advices, el);
+                    }
+                }
+                break;
+        }
+    }
+
+    am_free(ctx->data);
+    ctx->data = NULL;
+    ctx->data_sz = 0;
 
     if (strcmp(name, "ResourceResult") == 0) {
         ctx->ty = 0;
@@ -231,46 +272,23 @@ static void end_element(void *userData, const char *name) {
 }
 
 static void character_data(void *userData, const char *val, int len) {
+    char *tmp;
     am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
-    if (len <= 0 || val[0] == '\r' || val[0] == '\n') return;
+    if (!ISVALID(ctx->attribute_name) || len <= 0
+            || val[0] == '\r' || val[0] == '\n') return;
 
-    if (ctx->attribute_name) {
-        switch (ctx->ty) {
-            case AMP_RESOURCE_RESULT + AMP_RESPONSE_ATTRIBUTE + AMP_ATTRIBUTE_VALUE_PAIR + AMP_ATTRIBUTE_VALUE:
-                if (ctx->curr_policy) {
-                    struct am_namevalue *el = NULL;
-                    if (create_am_namevalue_node(ctx->attribute_name, strlen(ctx->attribute_name), val, len, &el) == 0) {
-                        AM_LIST_INSERT(ctx->curr_policy->response_attributes, el);
-                    }
-                }
-                break;
-
-            case AMP_RESOURCE_RESULT + AMP_RESPONSE_DECISION + AMP_ATTRIBUTE_VALUE_PAIR + AMP_ATTRIBUTE_VALUE:
-                if (ctx->curr_policy) {
-                    struct am_namevalue *el = NULL;
-                    if (create_am_namevalue_node(ctx->attribute_name, strlen(ctx->attribute_name), val, len, &el) == 0) {
-                        AM_LIST_INSERT(ctx->curr_policy->response_decisions, el);
-                    }
-                }
-                break;
-
-            case AMP_RESOURCE_RESULT + AMP_ACTION_DECISION + AMP_ATTRIBUTE_VALUE_PAIR + AMP_ATTRIBUTE_VALUE:
-                if (ctx->curr_action_decision) {
-                    ctx->curr_action_decision->method = am_method_str_to_num(ctx->attribute_name);
-                    ctx->curr_action_decision->action = strncasecmp(val, "allow", len) == 0;
-                }
-                break;
-
-            case AMP_RESOURCE_RESULT + AMP_ACTION_DECISION + AMP_ACTION_DECISION_ADVICE + AMP_ATTRIBUTE_VALUE_PAIR + AMP_ATTRIBUTE_VALUE:
-                if (ctx->curr_action_decision) {
-                    struct am_namevalue *el = NULL;
-                    if (create_am_namevalue_node(ctx->attribute_name, strlen(ctx->attribute_name), val, len, &el) == 0) {
-                        AM_LIST_INSERT(ctx->curr_action_decision->advices, el);
-                    }
-                }
-                break;
-        }
+    tmp = realloc(ctx->data, ctx->data_sz + len + 1);
+    if (tmp == NULL) {
+        am_free(ctx->data);
+        ctx->data = NULL;
+        ctx->data_sz = 0;
+        ctx->status = AM_ENOMEM;
+        return;
     }
+    ctx->data = tmp;
+    memcpy(ctx->data + ctx->data_sz, val, len);
+    ctx->data_sz += len;
+    ctx->data[ctx->data_sz] = 0;
 }
 
 static void entity_declaration(void *userData, const XML_Char *entityName,
@@ -288,7 +306,7 @@ void *am_parse_policy_xml(unsigned long instance_id, const char *xml, size_t xml
 
     am_xml_parser_ctx_t xctx = {.instance_id = instance_id,
         .list = NULL, .parser = NULL, .ty = 0, .attribute_name = NULL, .index = 0,
-        .curr_policy = NULL, .scope = scope};
+        .curr_policy = NULL, .scope = scope, .data_sz = 0, .data = NULL, .status = AM_SUCCESS};
 
     if (xml == NULL || xml_sz == 0) {
         AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
@@ -326,6 +344,10 @@ void *am_parse_policy_xml(unsigned long instance_id, const char *xml, size_t xml
             r = xctx.list;
         }
         XML_ParserFree(parser);
+    }
+
+    if (xctx.status != AM_SUCCESS) {
+        AM_LOG_ERROR(instance_id, "%s %s", thisfunc, am_strerror(xctx.status));
     }
 
     return (void *) r;

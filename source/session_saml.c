@@ -27,6 +27,9 @@
 typedef struct {
     unsigned long instance_id;
     char setting_value;
+    char *data;
+    int data_sz;
+    int status;
     struct am_namevalue *list;
     void *parser;
 } am_xml_parser_ctx_t;
@@ -42,15 +45,14 @@ static void start_element(void *userData, const char *name, const char **atts) {
 
 static void end_element(void * userData, const char * name) {
     am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
-    ctx->setting_value = 0;
-}
-
-static void character_data(void *userData, const char *val, int len) {
     char alloc = 0, *clean = NULL;
     size_t sz = 0;
-    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
     struct am_namevalue *el = NULL;
-    if (ctx->setting_value == 0 || len <= 0) return;
+    char *val = ctx->data;
+    int len = ctx->data_sz;
+
+    ctx->setting_value = 0;
+    if (!ISVALID(ctx->data)) return;
 
     if (memchr(val, '%', len) != NULL) {
         char *t = strndup(val, len);
@@ -69,6 +71,28 @@ static void character_data(void *userData, const char *val, int len) {
     if (alloc && clean) {
         free(clean);
     }
+    am_free(ctx->data);
+    ctx->data = NULL;
+    ctx->data_sz = 0;
+}
+
+static void character_data(void *userData, const char *val, int len) {
+    char *tmp;
+    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
+    if (ctx->setting_value == 0 || len <= 0) return;
+
+    tmp = realloc(ctx->data, ctx->data_sz + len + 1);
+    if (tmp == NULL) {
+        am_free(ctx->data);
+        ctx->data = NULL;
+        ctx->data_sz = 0;
+        ctx->status = AM_ENOMEM;
+        return;
+    }
+    ctx->data = tmp;
+    memcpy(ctx->data + ctx->data_sz, val, len);
+    ctx->data_sz += len;
+    ctx->data[ctx->data_sz] = 0;
 }
 
 static void entity_declaration(void *userData, const XML_Char *entityName,
@@ -83,7 +107,7 @@ void *am_parse_session_saml(unsigned long instance_id, const char *xml, size_t x
     struct am_namevalue *e, *t, *r = NULL;
 
     am_xml_parser_ctx_t xctx = {.instance_id = instance_id,
-        .list = NULL, .parser = NULL};
+        .list = NULL, .parser = NULL, .data_sz = 0, .data = NULL, .status = AM_SUCCESS};
 
     if (xml == NULL || xml_sz == 0) {
         AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
@@ -114,6 +138,10 @@ void *am_parse_session_saml(unsigned long instance_id, const char *xml, size_t x
             AM_LOG_DEBUG(instance_id, "%s name: '%s' value: '%s'", thisfunc,
                     e->n, e->v != NULL ? e->v : "NULL");
         }
+    }
+
+    if (xctx.status != AM_SUCCESS) {
+        AM_LOG_ERROR(instance_id, "%s %s", thisfunc, am_strerror(xctx.status));
     }
 
     return (void *) r;
