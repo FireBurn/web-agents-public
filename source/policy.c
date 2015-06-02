@@ -60,8 +60,7 @@ static char compare_pattern_resource(am_request_t *r, const char *ptn, const cha
     p_resource = rsc == NULL ? NULL : strdup(rsc);
     p_pattern = ptn == NULL ? NULL : strdup(ptn);
     if (p_resource == NULL || p_pattern == NULL) {
-        AM_FREE(p_resource, p_pattern);
-        AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
+        AM_FREE(p_resource,p_pattern);
         return AM_FALSE;
     }
     resource = p_resource;
@@ -217,20 +216,73 @@ static char compare_pattern_resource(am_request_t *r, const char *ptn, const cha
     return status;
 }
 
-static void policy_get_proto_host_port(const char *string, int *c) {
-    int j;
-    for (j = 0; string[j]; j++) {
-        if (string[j] == ':') {
-            if (c[0] == 0) c[0] = j;
-            else c[1] = j;
-        } else if (string[j] == '/') {
-            c[2] += 1;
-        }
-        if (c[2] == 3) {
-            c[2] = j;
-            break;
+#define end_of_protocol(offsets) (offsets [0])
+#define start_of_host(offsets) (end_of_protocol(offsets) + 3)
+
+#define port_marker(offsets) (offsets [1])
+#define start_of_port(offsets) (port_marker(offsets) + 1)
+#define end_of_port(offsets) start_of_path(offsets)
+
+#define start_of_path(offsets) (offsets [2])
+
+/**
+ * Gets offsets of parts of a URL, setting them in the array (allocated by the caller).
+ * Returns AM_TRUE if the url passes the basic sanity tests of having '://' followed by a path section.
+ * Note: a pattern with wildcards does not have to pass this test, but the incoming URL must.
+ *
+ * The returned offsets are as follows:
+ * 0 <- offset of '://' end of scheme
+ * 1 <- the ':' before a port number if it exists
+ * 2 <- the '/' at the start of the path section
+ */
+static am_bool_t policy_get_url_offsets(const char *url, int *offsets) {
+    am_bool_t got_protocol = AM_FALSE;
+    
+    port_marker(offsets) = 0;
+    
+    for (int i = 0; url [i]; i++) {
+        switch (url [i]) {
+            case ':':
+                if (got_protocol) {
+                    port_marker(offsets) = i;
+                } else {
+                    end_of_protocol(offsets) = i;
+                    if (url [++i] == '/' && url [++i] == '/')
+                        got_protocol = AM_TRUE;
+                    else
+                        return AM_FALSE;
+                }
+                break;
+                
+            case '/':
+                if (got_protocol) {
+                    start_of_path(offsets) = i; // start of path
+                    return AM_TRUE;
+                }
+                break;
         }
     }
+    // should have finished with the start of path
+    return AM_FALSE;
+}
+
+/*
+ * Match sections within the pattern and resource.
+ */
+static char compare_pattern_sections(am_request_t *r,
+                                     const char *pattern_base, size_t pattern_lo, size_t pattern_hi,
+                                     const char *resource_base, size_t resource_lo, size_t resource_hi) {
+    char * pattern_section = strndup(pattern_base + pattern_lo, pattern_hi - pattern_lo);
+    char * resource_section = strndup(resource_base + resource_lo, resource_hi - resource_lo);
+    
+    char c;
+    if (pattern_section && resource_section)
+        c = compare_pattern_resource(r, pattern_section, resource_section);
+    else
+        c = AM_NO_MATCH;
+    
+    AM_FREE(pattern_section, resource_section);
+    return c;
 }
 
 char policy_compare_url(am_request_t *r, const char *pattern, const char *resource) {
@@ -238,7 +290,7 @@ char policy_compare_url(am_request_t *r, const char *pattern, const char *resour
     char has_wildcard = AM_FALSE;
     int pi[3] = {0, 0, 0};
     int ri[3] = {0, 0, 0};
-    char *a, *b, match;
+    char match;
     unsigned long instance_id = r != NULL ? r->instance_id : 0;
 
     if (pattern == NULL || resource == NULL)
@@ -277,68 +329,38 @@ char policy_compare_url(am_request_t *r, const char *pattern, const char *resour
         return match ? AM_EXACT_MATCH : AM_NO_MATCH;
     }
 
-    /*wildcard in a proto/host/port is not the same as in uri match*/
-    policy_get_proto_host_port(pattern, pi);
-    policy_get_proto_host_port(resource, ri);
-
-    /*quick sanity check for field indicators*/
-    if (pi[0] == 0 || pi[2] < 3 || pi[1] >= pi[2] ||
-            ri[0] == 0 || ri[2] < 3 || ri[1] >= ri[2]) return AM_NO_MATCH;
-
-    a = strndup(pattern, pi[0]);
-    b = strndup(resource, ri[0]);
-    if (a == NULL || b == NULL) {
-        AM_FREE(a, b);
-        AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
+    /* resource must have regular URL structure */
+    if (! policy_get_url_offsets(resource, ri))
         return AM_NO_MATCH;
+    
+    if (! policy_get_url_offsets(pattern, pi)) {
+        /* pattern has not got regular URL structure, so match the resource as a whole */
+        return compare_pattern_resource(r, pattern, resource) ? AM_EXACT_PATTERN_MATCH : AM_NO_MATCH;
     }
-    /*compare protocol*/
-    match = compare_pattern_resource(r, a, b);
-    free(a);
-    free(b);
-    if (!match) return AM_NO_MATCH;
-    if (pi[1] == 0 && ri[1] == 0) {
-        /*port is not set, compare host*/
-        a = strndup(pattern + pi[0] + 3, pi[2] - pi[0] - 3);
-        b = strndup(resource + ri[0] + 3, ri[2] - ri[0] - 3);
-        if (a == NULL || b == NULL) {
-            AM_FREE(a, b);
-            AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
+    
+    /* compare protocol */
+    if (! compare_pattern_sections(r, pattern, 0, end_of_protocol(pi), resource, 0, end_of_protocol(ri)))
+        return AM_NO_MATCH;
+    
+    if (port_marker(pi) && port_marker(ri)) {
+        /* compare hosts - up to ports */
+        if (! compare_pattern_sections(r, pattern, start_of_host(pi), port_marker(pi), resource, start_of_host(ri), port_marker(ri)))
             return AM_NO_MATCH;
-        }
-        match = compare_pattern_resource(r, a, b);
-        free(a);
-        free(b);
-        if (!match) return AM_NO_MATCH;
-    } else if (pi[1] > 0 && ri[1] > 0) {
-        /*port is set, compare host first*/
-        a = strndup(pattern + pi[0] + 3, pi[1] - pi[0] - 3);
-        b = strndup(resource + ri[0] + 3, ri[1] - ri[0] - 3);
-        if (a == NULL || b == NULL) {
-            AM_FREE(a, b);
-            AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
-            return AM_NO_MATCH;
-        }
-        match = compare_pattern_resource(r, a, b);
-        free(a);
-        free(b);
-        if (!match) return AM_NO_MATCH;
-        /*compare port*/
-        a = strndup(pattern + pi[1] + 1, pi[2] - pi[1] - 1);
-        b = strndup(resource + ri[1] + 1, ri[2] - ri[1] - 1);
-        if (a == NULL || b == NULL) {
-            AM_FREE(a, b);
-            AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
-            return AM_NO_MATCH;
-        }
-        match = compare_pattern_resource(r, a, b);
-        free(a);
-        free(b);
-        if (!match) return AM_NO_MATCH;
-    }
 
-    match = compare_pattern_resource(r, pattern + pi[2], resource + ri[2]);
-    return match ? AM_EXACT_PATTERN_MATCH : AM_NO_MATCH;
+        /* compare ports */
+        if (! compare_pattern_sections(r, pattern, start_of_port(pi), start_of_path(pi), resource, start_of_port(ri), start_of_path(ri)))
+            return AM_NO_MATCH;
+    } else {
+        /* compare hosts - up to paths */
+        if (! compare_pattern_sections(r, pattern, start_of_host(pi), start_of_path(pi), resource, start_of_host(ri), start_of_path(ri)))
+            return AM_NO_MATCH;
+    }
+    
+    /* compare paths and query */
+    if (! compare_pattern_sections(r, pattern, start_of_path(pi), strlen(pattern), resource, start_of_path(ri), strlen(resource)))
+        return AM_NO_MATCH;
+    
+    return AM_EXACT_PATTERN_MATCH;
 }
 
 int am_scope_to_num(const char *scope) {
