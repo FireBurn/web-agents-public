@@ -237,10 +237,10 @@ static char compare_pattern_resource(am_request_t *r, const char *ptn, const cha
  */
 static am_bool_t policy_get_url_offsets(const char *url, int *offsets) {
     am_bool_t got_protocol = AM_FALSE;
+    int i;
     
     port_marker(offsets) = 0;
     
-    int i;
     for (i = 0; url [i]; i++) {
         switch (url [i]) {
             case ':':
