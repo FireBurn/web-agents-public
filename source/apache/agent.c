@@ -313,16 +313,63 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
         }
         case AM_PDP_DONE:
         {
-            request_rec *sr = ap_sub_req_method_uri(am_method_num_to_str(rq->method),
+            request_rec *sr;
+
+            /* special handler for x-www-form-urlencoded POST data */
+            if (apr_strnatcasecmp(cont_type, "application/x-www-form-urlencoded") == 0) {
+                char *pair, *a, *eq, *inputs, *last = NULL;
+
+                inputs = apr_pstrcat(r->pool, "", NULL);
+
+                if (ISVALID(rq->post_data)) {
+                    /* recreate x-www-form-urlencoded HTML Form data */
+                    a = apr_pstrdup(r->pool, rq->post_data);
+                    for (pair = apr_strtok(a, "&", &last); pair;
+                            pair = apr_strtok(NULL, "&", &last)) {
+                        for (eq = pair; *eq; ++eq) {
+                            if (*eq == '+') *eq = ' ';
+                        }
+                        ap_unescape_url(pair);
+                        eq = strchr(pair, '=');
+                        if (eq) {
+                            *eq++ = 0;
+                            inputs = apr_pstrcat(r->pool, inputs,
+                                    "<input type=\"hidden\" name=\"", pair, "\" value=\"", eq, "\"/>", NULL);
+                        } else {
+                            inputs = apr_pstrcat(r->pool, inputs,
+                                    "<input type=\"hidden\" name=\"", pair, "\" value=\"\"/>", NULL);
+                        }
+                    }
+                }
+
+                r->clength = 0;
+                apr_table_unset(r->headers_in, "Content-Length");
+                apr_table_unset(r->notes, amagent_post_filter_name);
+                ap_set_content_type(r, "text/html");
+                ap_rprintf(r, "<html><head></head><body onload=\"document.postform.submit()\">"
+                        "<form name=\"postform\" method=\"POST\" action=\"%s\">"
+                        "%s"
+                        "</form></body></html>", rq->post_data_url, inputs);
+                ap_rflush(r);
+                rq->status = AM_DONE;
+                break;
+            }
+
+            /* all other content types are replied in amagent_post_filter (as sub-request) */
+            sr = ap_sub_req_method_uri(am_method_num_to_str(rq->method),
                     rq->post_data_url, r, NULL);
 
+            sr->protocol = r->protocol;
+            sr->proto_num = r->proto_num;
             sr->headers_in = r->headers_in;
             sr->notes = r->notes;
             sr->clength = rq->post_data_sz;
             sr->content_type = cont_type;
+            sr->path_info = r->path_info;
+            sr->args = r->args;
 
-            AM_LOG_DEBUG(rq->instance_id, "set_custom_response(): issuing sub-request %s to %s (%s)",
-                    sr->method, rq->post_data_url, LOGEMPTY(cont_type));
+            AM_LOG_DEBUG(rq->instance_id, "set_custom_response(): issuing %s sub-request to %s (%s), status %d",
+                    sr->method, rq->post_data_url, LOGEMPTY(cont_type), sr->status);
 
             ap_run_sub_req(sr);
 

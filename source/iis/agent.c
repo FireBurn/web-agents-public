@@ -932,7 +932,7 @@ class OpenAMHttpModule : public CHttpModule{
 
         res->GetStatus(&status_code, NULL, NULL, NULL, &hr, NULL, NULL, NULL);
 
-        /* json handle for the rest of the unsuccessful exit statuses not processed by set_custom_response */
+        /* json handler for the rest of the unsuccessful exit statuses not processed by set_custom_response */
         if (d.is_json_url && status_code > AM_HTTP_STATUS_302) {
             char *payload = NULL;
             int payload_sz = am_asprintf(&payload, AM_JSON_TEMPLATE_DATA,
@@ -1108,8 +1108,118 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
         }
         case AM_PDP_DONE:
         {
-            r->GetResponse()->Redirect(rq->post_data_url, TRUE, FALSE);
-            rq->status = AM_DONE;
+            IHttpContext *sr = NULL;
+            BOOL completion_expected;
+
+            /* special handler for x-www-form-urlencoded POST data */
+            if (_stricmp(cont_type, "application/x-www-form-urlencoded") == 0) {
+                char *pair, *a, *eq, *last = NULL;
+                char *form = NULL;
+                int form_sz;
+
+                form_sz = am_asprintf(&form, "<html><head></head><body onload=\"document.postform.submit()\">"
+                        "<form name=\"postform\" method=\"POST\" action=\"%s\">", rq->post_data_url);
+                if (form == NULL) {
+                    AM_LOG_ERROR(rq->instance_id, "set_custom_response(): memory allocation error");
+                    rq->status = AM_ERROR;
+                    break;
+                }
+
+                if (ISVALID(rq->post_data)) {
+                    a = (char *) alloc_request(r, rq->post_data_sz + 1);
+                    if (a == NULL) {
+                        AM_LOG_ERROR(rq->instance_id, "set_custom_response(): memory allocation error");
+                        rq->status = AM_ERROR;
+                        break;
+                    }
+                    memcpy(a, rq->post_data, rq->post_data_sz);
+                    for (pair = strtok_s(a, "&", &last); pair;
+                            pair = strtok_s(NULL, "&", &last)) {
+                        UrlUnescapeA(pair, NULL, NULL, URL_UNESCAPE_INPLACE);
+                        eq = strchr(pair, '=');
+                        if (eq) {
+                            *eq++ = 0;
+                            form_sz = am_asprintf(&form,
+                                    "%s<input type=\"hidden\" name=\"%s\" value=\"%s\"/>",
+                                    form, pair, eq);
+                        } else {
+                            form_sz = am_asprintf(&form,
+                                    "%s<input type=\"hidden\" name=\"%s\" value=\"\"/>",
+                                    form, pair);
+                        }
+                    }
+                }
+                form_sz = am_asprintf(&form, "%s</form></body></html>", form);
+                if (form == NULL) {
+                    AM_LOG_ERROR(rq->instance_id, "set_custom_response(): memory allocation error");
+                    rq->status = AM_ERROR;
+                    break;
+                }
+                send_custom_data(r->GetResponse(), form, form_sz, "text/html");
+                rq->status = AM_DONE;
+                am_free(form);
+                break;
+            }
+
+            /* all other content types are replied in a sub-request */
+            hr = r->GetRequest()->SetHeader("Content-Type", cont_type,
+                    (USHORT) strlen(cont_type), TRUE);
+            if (FAILED(hr)) {
+                AM_LOG_ERROR(rq->instance_id, "set_custom_response(): SetHeader failed for %s (%d)",
+                        LOGEMPTY(rq->post_data_url), hr_to_winerror(hr));
+                rq->status = AM_ERROR;
+                break;
+            }
+            hr = r->GetRequest()->SetHttpMethod("POST");
+            if (FAILED(hr)) {
+                AM_LOG_ERROR(rq->instance_id, "set_custom_response(): SetHttpMethod failed for %s (%d)",
+                        LOGEMPTY(rq->post_data_url), hr_to_winerror(hr));
+                rq->status = AM_ERROR;
+                break;
+            }
+            hr = r->GetRequest()->SetUrl(rq->post_data_url,
+                    (DWORD) strlen(rq->post_data_url), TRUE);
+            if (FAILED(hr)) {
+                AM_LOG_ERROR(rq->instance_id, "set_custom_response(): SetUrl failed for %s (%d)",
+                        LOGEMPTY(rq->post_data_url), hr_to_winerror(hr));
+                rq->status = AM_ERROR;
+                break;
+            }
+
+            hr = r->CloneContext(CLONE_FLAG_BASICS | CLONE_FLAG_HEADERS | CLONE_FLAG_ENTITY, &sr);
+            if (FAILED(hr)) {
+                AM_LOG_ERROR(rq->instance_id, "set_custom_response(): CloneContext failed for %s (%d)",
+                        LOGEMPTY(rq->post_data_url), hr_to_winerror(hr));
+                rq->status = AM_ERROR;
+                break;
+            }
+
+            hr = sr->GetRequest()->SetHttpMethod("POST");
+            if (FAILED(hr)) {
+                AM_LOG_ERROR(rq->instance_id, "set_custom_response(): SetHttpMethod failed for %s (%d)",
+                        LOGEMPTY(rq->post_data_url), hr_to_winerror(hr));
+                rq->status = AM_ERROR;
+                break;
+            }
+            hr = sr->GetRequest()->SetUrl(rq->post_data_url,
+                    (DWORD) strlen(rq->post_data_url), TRUE);
+            if (FAILED(hr)) {
+                AM_LOG_ERROR(rq->instance_id, "set_custom_response(): SetUrl failed for %s (%d)",
+                        LOGEMPTY(rq->post_data_url), hr_to_winerror(hr));
+                rq->status = AM_ERROR;
+                break;
+            }
+            hr = r->ExecuteRequest(FALSE, sr, EXECUTE_FLAG_BUFFER_RESPONSE,
+                    NULL, &completion_expected);
+            if (FAILED(hr)) {
+                AM_LOG_ERROR(rq->instance_id, "set_custom_response(): ExecuteRequest failed for %s (%d)",
+                        LOGEMPTY(rq->post_data_url), hr_to_winerror(hr));
+                rq->status = AM_ERROR;
+                break;
+            }
+
+            sr->ReleaseClonedContext();
+            rq->status = AM_SUCCESS;
             break;
         }
         default:

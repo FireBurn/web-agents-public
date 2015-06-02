@@ -435,9 +435,9 @@ static am_return_t handle_not_enforced(am_request_t *r) {
     /* post preservation url is not enforced */
     if (strcmp(r->url.path, POST_PRESERVE_URI) == 0 && ISVALID(r->url.query)) {
         AM_LOG_DEBUG(r->instance_id, "%s post preserve url is not enforced", thisfunc);
-        r->is_dummypost_url = AM_TRUE;
+        r->is_dummypost_url = r->not_enforced = AM_TRUE;
         r->status = AM_SUCCESS;
-        return quit;
+        return ok;
     }
 
     /* access denied url is not enforced */
@@ -786,7 +786,7 @@ static am_return_t validate_policy(am_request_t *r) {
 
     AM_LOG_DEBUG(r->instance_id, "%s (entry status: %s)", thisfunc, am_strerror(r->status));
 
-    if (r->not_enforced && r->conf->not_enforced_fetch_attr) {
+    if (r->not_enforced && (r->conf->not_enforced_fetch_attr || r->is_dummypost_url)) {
         if (!ISVALID(r->token)) {
             /* in case request url is not enforced and attribute fetch is enabled
              * but there is no session token - quit processing w/o policy evaluation.
@@ -1000,9 +1000,9 @@ static am_return_t validate_policy(am_request_t *r) {
                 if (policy_status == AM_EXACT_MATCH || policy_status == AM_EXACT_PATTERN_MATCH) {
                     struct am_action_decision *ae, *at;
 
-                    if (r->not_enforced && r->conf->not_enforced_fetch_attr &&
+                    if (r->not_enforced && (r->conf->not_enforced_fetch_attr || r->is_dummypost_url) &&
                             e->scope == AM_SCOPE_RESPONSE_ATTRIBUTE_ONLY) {
-                        /* allow, in case this is not-enforced url and attribute fetch is enabled 
+                        /* allow, in case this is not-enforced url and attribute fetch is enabled or this is a dummypost_url
                          * (ignoring policy result) */
                         AM_LOG_DEBUG(r->instance_id,
                                 "%s method: %s, decision: allow, not enforced url with attribute fetch enabled",
@@ -1308,6 +1308,7 @@ static void do_cookie_set(am_request_t *r, char cookie_reset_list_enable, char c
         for (i = 0; i < r->conf->cookie_reset_map_sz; i++) {
             am_config_map_t *v = &r->conf->cookie_reset_map[i];
             AM_COOKIE_RESET(r, v->value);
+            AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): clearing %s", v->value);
         }
     }
     if (r->conf->profile_attr_fetch == AM_SET_ATTRS_AS_COOKIE ||

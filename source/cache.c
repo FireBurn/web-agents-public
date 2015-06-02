@@ -242,21 +242,12 @@ int am_get_pdp_cache_entry(am_request_t *request, const char *key, char **data, 
         return AM_NOT_FOUND;
     }
 
-    AM_LOG_DEBUG(request->instance_id, "%s\n", thisfunc);
-    AM_LOG_DEBUG(request->instance_id, "request->conf->pdp_cache_valid=%d\n", request->conf->pdp_cache_valid);
-
     if (request->conf->pdp_cache_valid > 0) {
         time_t ts = cache_entry->ts;
         ts += request->conf->pdp_cache_valid;
-
-        AM_LOG_DEBUG(request->instance_id, "ts=%ld, time(NULL)=%ld\n", ts, time(NULL));
-
         if (difftime(time(NULL), ts) >= 0) {
             char tsc[32], tsu[32];
             struct tm created, until;
-
-            AM_LOG_DEBUG(request->instance_id, "difftime > 0\n", ts);
-
             localtime_r(&cache_entry->ts, &created);
             localtime_r(&ts, &until);
             strftime(tsc, sizeof (tsc), AM_CACHE_TIMEFORMAT, &created);
@@ -269,14 +260,11 @@ int am_get_pdp_cache_entry(am_request_t *request, const char *key, char **data, 
             AM_OFFSET_LIST_FOR_EACH(cache->pool, head, element, temp, struct am_cache_entry_data) {
                 if (element->type == AM_CACHE_PDP && element->size[FILENAME_LENGTH] != 0) {
                     char *file = element->value + element->size[URL_LENGTH] + 1;
-
-                    AM_LOG_DEBUG(request->instance_id, "file: \"%s\"\n", file);
-
                     if (ISVALID(file)) {
-
-                        AM_LOG_DEBUG(request->instance_id, "unlink(%s)\n", file);
-
-                        unlink(file);
+                        if (unlink(file) != 0) {
+                            AM_LOG_WARNING(request->instance_id, "%s error %d removing file %s",
+                                    thisfunc, errno, file);
+                        }
                         break;
                     }
                 }
