@@ -240,7 +240,8 @@ static am_bool_t policy_get_url_offsets(const char *url, int *offsets) {
     
     port_marker(offsets) = 0;
     
-    for (int i = 0; url [i]; i++) {
+    int i;
+    for (i = 0; url [i]; i++) {
         switch (url [i]) {
             case ':':
                 if (got_protocol) {
