@@ -1126,210 +1126,107 @@ static am_return_t validate_policy(am_request_t *r) {
     return ok;
 }
 
-static char *build_setcookie_header(am_request_t *r, struct am_cookie *c) {
-    char *cookie = NULL;
-    if (c == NULL || !ISVALID(c->name)) return NULL;
-    am_asprintf(&cookie, " %s=", c->name);
-    if (ISVALID(c->value))
-        am_asprintf(&cookie, "%s%s", cookie, c->value);
-    if (ISVALID(c->domain))
-        am_asprintf(&cookie, "%s;Domain=%s", cookie, c->domain);
-    if (ISVALID(c->max_age)) {
-        long sec = strtol(c->max_age, NULL, AM_BASE_TEN);
-        if (sec == 0) {
-            am_asprintf(&cookie, "%s;Max-Age=%s;Expires=Thu, 01-Jan-1970 00:00:01 GMT", cookie, c->max_age);
+/**
+ * Build and set "Set-Cookie" HTTP header value
+ * 
+ * @param req pointer to am_request_t
+ * @param prefix, cookie name prefix, can be NULL
+ * @param name, cookie name, must not be NULL or empty
+ * @param value, cookie value, can be NULL
+ * @param domain, cookie domain value, can be NULL
+ * @param path, cookie path value, can be NULL
+ * @param maxage, cookie max-age value in seconds, can be NULL
+ */
+
+static void do_cookie_set_generic(am_request_t *r, const char *prefix, const char *name,
+        const char *value, const char *domain, const char *path, const char *maxage) {
+    static const char *thisfunc = "do_cookie_set_generic():";
+    char time_string[32];
+    struct tm now;
+    time_t raw;
+    long sec;
+    char *cookie_value, *cookie = NULL;
+
+    if (r == NULL || r->conf == NULL || r->am_add_header_in_response_f == NULL || !ISVALID(name)) return;
+
+    /* set cookie prefix */
+    am_asprintf(&cookie, "%s", NOTNULL(prefix));
+
+    /* set cookie name */
+    if (cookie != NULL) {
+        am_asprintf(&cookie, "%s%s=", cookie, name);
+    }
+
+    /* set cookie value */
+    if (cookie != NULL) {
+        cookie_value = r->conf->cookie_encode_chars ? url_encode((char *) value) : (char *) value;
+        am_asprintf(&cookie, "%s%s", cookie, NOTNULL(cookie_value));
+        if (r->conf->cookie_encode_chars) {
+            am_free(cookie_value);
+        }
+    }
+
+    if (cookie != NULL) {
+        if (!ISVALID(value)) {
+            /* no value is provided - we are resetting a cookie */
+            am_asprintf(&cookie, "%s;Max-Age=0;Expires=Thu, 01-Jan-1970 00:00:01 GMT", cookie);
         } else {
-            char time_string[50];
-            struct tm now;
-            time_t raw;
-            time(&raw);
-            raw += sec;
-#ifdef _WIN32
-            gmtime_s(&now, &raw);
-#endif
-            strftime(time_string, sizeof (time_string),
-                    "%a, %d-%b-%Y %H:%M:%S GMT",
-#ifdef _WIN32
-                    &now
-#else
-                    gmtime_r(&raw, &now)
-#endif
-                    );
-            am_asprintf(&cookie, "%s;Max-Age=%s;Expires=%s", cookie, c->max_age, time_string);
-        }
-    } else if (!ISVALID(c->value)) {
-        am_asprintf(&cookie, "%s;Max-Age=0;Expires=Thu, 01-Jan-1970 00:00:01 GMT", cookie);
-    }
-    if (ISVALID(c->path))
-        am_asprintf(&cookie, "%s;Path=%s", cookie, c->path);
-    if (c->is_secure)
-        am_asprintf(&cookie, "%s;Secure", cookie);
-    if (c->is_http_only)
-        am_asprintf(&cookie, "%s;HttpOnly", cookie);
-    if (cookie == NULL) {
-        AM_LOG_ERROR(r->instance_id, "build_setcookie_header(): memory allocation failure");
-    }
-    return cookie;
-}
-
-static void parse_cookie(const char *v, struct am_cookie *c) {
-    char *tmp, *token, *o;
-
-    if (v == NULL) return;
-    tmp = strdup(v);
-    if (tmp == NULL) return;
-    o = tmp;
-
-    while ((token = am_strsep(&tmp, ";")) != NULL) {
-        char *vsep = strchr(token, '=');
-        if (strncasecmp(token, "Domain", 6) == 0) {
-            c->domain = vsep != NULL && *(vsep + 1) != '\n' ? strdup(vsep + 1) : NULL;
-            continue;
-        }
-        if (strncasecmp(token, "Max-Age", 7) == 0) {
-            c->max_age = vsep != NULL && *(vsep + 1) != '\n' ? strdup(vsep + 1) : NULL;
-            continue;
-        }
-        if (strncasecmp(token, "Path", 4) == 0) {
-            c->path = vsep != NULL && *(vsep + 1) != '\n' ? strdup(vsep + 1) : NULL;
-            continue;
-        }
-        if (strncasecmp(token, "Secure", 6) == 0) {
-            c->is_secure = AM_TRUE;
-            continue;
-        }
-        if (strncasecmp(token, "HttpOnly", 8) == 0) {
-            c->is_http_only = AM_TRUE;
-            continue;
-        }
-        if (strncasecmp(token, "Expires", 7) == 0) {
-            /*ignore*/
-            continue;
-        }
-        if (ISVALID(token)) {
-            if (vsep != NULL) {
-                c->name = strndup(token, vsep - token);
-                c->value = *(vsep + 1) != '\n' ? strdup(vsep + 1) : NULL;
+            /* check if maxage option is provided, if so - use it;
+             * if not - try cookie_maxage parameter;
+             * if none of the above is provided/valid use a default 300 sec value
+             */
+            sec = ISVALID(maxage) ? strtol(maxage, NULL, AM_BASE_TEN)
+                    : r->conf->cookie_maxage > 0 ? r->conf->cookie_maxage : 300;
+            if (sec <= 0 || errno == ERANGE) {
+                am_asprintf(&cookie, "%s;Max-Age=0;Expires=Thu, 01-Jan-1970 00:00:01 GMT", cookie);
             } else {
-                c->name = strdup(token);
+                time(&raw);
+                raw += sec;
+#ifdef _WIN32
+                gmtime_s(&now, &raw);
+#endif
+                strftime(time_string, sizeof (time_string),
+                        "%a, %d-%b-%Y %H:%M:%S GMT",
+#ifdef _WIN32
+                        &now
+#else
+                        gmtime_r(&raw, &now)
+#endif
+                        );
+                am_asprintf(&cookie, "%s;Max-Age=%d;Expires=%s", cookie, sec, time_string);
             }
         }
     }
-    free(o);
+
+    /* set cookie domain value */
+    if (cookie != NULL && ISVALID(domain)) {
+        am_asprintf(&cookie, "%s;Domain=%s", cookie, domain);
+    }
+
+    /* set cookie path value */
+    if (cookie != NULL) {
+        am_asprintf(&cookie, "%s;Path=/%s", cookie, NOTNULL(path));
+    }
+
+    /* set cookie Secure attribute */
+    if (cookie != NULL && r->conf->cookie_secure) {
+        am_asprintf(&cookie, "%s;Secure", cookie);
+    }
+
+    /* set cookie HttpOnly attribute */
+    if (cookie != NULL && r->conf->cookie_http_only) {
+        am_asprintf(&cookie, "%s;HttpOnly", cookie);
+    }
+
+    if (cookie == NULL) {
+        AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
+        return;
+    }
+
+    AM_LOG_DEBUG(r->instance_id, "%s %s", thisfunc, LOGEMPTY(cookie));
+    r->am_add_header_in_response_f(r, cookie, NULL);
+    am_free(cookie);
 }
-
-#define AM_COOKIE_RESET(r,v) \
-    do { \
-        struct am_cookie *ck = calloc(1, sizeof (struct am_cookie)); \
-        if (ck == NULL) break; \
-        parse_cookie(v, ck); \
-        if (ISVALID(r->conf->cookie_prefix)) { \
-            am_asprintf(&ck->name, "%s%s", strcmp(ck->name, NOTNULL(r->conf->cookie_name)) == 0 ? \
-                "" : r->conf->cookie_prefix, ck->name); \
-        } \
-        if (r->am_add_header_in_response_f != NULL) { \
-            char *c = build_setcookie_header(r, ck); \
-            if (c != NULL) { \
-                r->am_add_header_in_response_f(r, c, NULL); \
-                free(c); \
-            } \
-        } \
-        delete_am_cookie_list(&ck); \
-    } while(0)
-
-#define AM_COOKIE_SET_EMPTY(r,n) \
-    do { \
-        struct am_cookie *ck = calloc(1, sizeof (struct am_cookie)); \
-        if (ck == NULL) break; \
-        parse_cookie(n, ck); \
-        if (ISVALID(r->conf->cookie_prefix)) { \
-            am_asprintf(&ck->name, "%s%s", strcmp(ck->name, NOTNULL(r->conf->cookie_name)) == 0 ? \
-                "" : r->conf->cookie_prefix, ck->name); \
-        } \
-        ck->path = strdup("/"); \
-        ck->is_secure = r->conf->cookie_secure; \
-        ck->is_http_only = r->conf->cookie_http_only; /* TODO: cookie_domain_list ?*/ \
-        if (r->am_add_header_in_response_f != NULL) { \
-            char *c = build_setcookie_header(r, ck); \
-            if (c != NULL) { \
-                r->am_add_header_in_response_f(r, c, NULL); \
-                free(c); \
-            } \
-        } \
-        delete_am_cookie_list(&ck); \
-    } while(0)
-
-#define AM_COOKIE_SET(request,name,value) \
-    do { \
-        char *cookie = NULL; \
-        char *cookie_value = request->conf->cookie_encode_chars ? url_encode(value) : (char *) value; \
-        if (cookie_value != NULL) { \
-            am_asprintf(&cookie, "%s%s=%s;Max-Age=%d;Path=/", \
-                strcmp(name, NOTNULL(request->conf->cookie_name)) == 0 ? \
-                    "" : NOTNULL(request->conf->cookie_prefix), name, \
-                    cookie_value, request->conf->cookie_maxage > 0 ? request->conf->cookie_maxage : 300); \
-            if (cookie != NULL) { \
-                if (request->conf->cookie_secure && cookie != NULL) { \
-                    am_asprintf(&cookie, "%s;Secure", cookie); \
-                } \
-                if (request->conf->cookie_http_only && cookie != NULL) { \
-                    am_asprintf(&cookie, "%s;HttpOnly", cookie); \
-                } \
-                request->am_add_header_in_response_f(request, cookie, NULL); \
-                free(cookie); \
-            } \
-            if (request->conf->cookie_encode_chars) am_free(cookie_value); \
-        } \
-    } while(0)
-
-#define AM_COOKIE_SET_PATH(request,name,value,path) \
-    do { \
-        char *cookie = NULL; \
-        char *cookie_value = request->conf->cookie_encode_chars ? url_encode(value) : (char *) value; \
-        if (cookie_value != NULL) { \
-            am_asprintf(&cookie, "%s%s=%s;Max-Age=%d;Path=/%s", \
-                strcmp(name, NOTNULL(request->conf->cookie_name)) == 0 ? \
-                    "" : NOTNULL(request->conf->cookie_prefix), name, \
-                    cookie_value, request->conf->cookie_maxage > 0 ? request->conf->cookie_maxage : 300, NOTNULL(path)); \
-            if (cookie != NULL) { \
-                if (request->conf->cookie_secure && cookie != NULL) { \
-                    am_asprintf(&cookie, "%s;Secure", cookie); \
-                } \
-                if (request->conf->cookie_http_only && cookie != NULL) { \
-                    am_asprintf(&cookie, "%s;HttpOnly", cookie); \
-                } \
-                request->am_add_header_in_response_f(request, cookie, NULL); \
-                free(cookie); \
-            } \
-            if (request->conf->cookie_encode_chars) am_free(cookie_value); \
-        } \
-    } while(0)
-
-#define AM_COOKIE_SET_DOMAIN(request,name,value,domain) \
-    do { \
-        char *cookie = NULL; \
-        char *cookie_value = request->conf->cookie_encode_chars ? url_encode(value) : (char *) value; \
-        if (cookie_value != NULL) { \
-            am_asprintf(&cookie, "%s%s=%s;Max-Age=%d;Path=/", \
-                strcmp(name, NOTNULL(request->conf->cookie_name)) == 0 ? \
-                    "" : NOTNULL(request->conf->cookie_prefix), name, \
-                    cookie_value, request->conf->cookie_maxage > 0 ? request->conf->cookie_maxage : 300); \
-            if (cookie != NULL) { \
-                if (domain != NULL && cookie != NULL) { \
-                    am_asprintf(&cookie, "%s;Domain=%s", cookie, domain); \
-                } \
-                if (request->conf->cookie_secure && cookie != NULL) { \
-                    am_asprintf(&cookie, "%s;Secure", cookie); \
-                } \
-                if (request->conf->cookie_http_only && cookie != NULL) { \
-                    am_asprintf(&cookie, "%s;HttpOnly", cookie); \
-                } \
-                request->am_add_header_in_response_f(request, cookie, NULL); \
-                free(cookie); \
-            } \
-            if (request->conf->cookie_encode_chars) am_free(cookie_value); \
-        } \
-    } while(0)
 
 static void do_cookie_set_type(am_request_t *r, am_config_map_t *map, int sz,
         int type, char cookie_reset_enable) {
@@ -1337,14 +1234,14 @@ static void do_cookie_set_type(am_request_t *r, am_config_map_t *map, int sz,
     for (i = 0; i < sz; i++) {
         am_config_map_t *v = &map[i];
         if (cookie_reset_enable) {
-            AM_COOKIE_RESET(r, v->value);
             AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): clearing %s", v->value);
+            do_cookie_set_generic(r, r->conf->cookie_prefix, v->value, NULL, NULL, NULL, NULL);
         } else {
             const char *val = get_attr_value(r, v->name, type);
             if (ISVALID(val)) {
-                AM_COOKIE_SET(r, v->value, val);
                 AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): setting %s: %s",
                         v->value, val);
+                do_cookie_set_generic(r, r->conf->cookie_prefix, v->value, val, NULL, NULL, NULL);
             }
         }
     }
@@ -1358,8 +1255,8 @@ static void do_cookie_set(am_request_t *r, char cookie_reset_list_enable, char c
         /* process cookie reset list (agents.config.cookie.reset[0]) */
         for (i = 0; i < r->conf->cookie_reset_map_sz; i++) {
             am_config_map_t *v = &r->conf->cookie_reset_map[i];
-            AM_COOKIE_RESET(r, v->value);
             AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): clearing %s", v->value);
+            do_cookie_set_generic(r, NULL, v->value, NULL, NULL, NULL, NULL);
         }
     }
     if (r->conf->profile_attr_fetch == AM_SET_ATTRS_AS_COOKIE ||
@@ -1446,10 +1343,10 @@ static void set_user_attributes(am_request_t *r) {
                         am_config_map_t *m = &r->conf->cdsso_cookie_domain_map[i];
                         AM_LOG_DEBUG(r->instance_id, "%s setting session cookie in %s domain",
                                 thisfunc, LOGEMPTY(m->value));
-                        AM_COOKIE_SET_DOMAIN(r, r->conf->cookie_name, r->token, m->value);
+                        do_cookie_set_generic(r, NULL, r->conf->cookie_name, r->token, m->value, NULL, NULL);
                     }
                 } else {
-                    AM_COOKIE_SET_DOMAIN(r, r->conf->cookie_name, r->token, NULL);
+                    do_cookie_set_generic(r, NULL, r->conf->cookie_name, r->token, NULL, NULL, NULL);
                 }
             }
         }
@@ -1665,7 +1562,7 @@ static am_return_t handle_exit(am_request_t *r) {
                     /*process logout cookie reset list (logout.cookie.reset)*/
                     for (i = 0; i < r->conf->logout_cookie_reset_map_sz; i++) {
                         am_config_map_t *m = &r->conf->logout_cookie_reset_map[i];
-                        AM_COOKIE_RESET(r, m->value);
+                        do_cookie_set_generic(r, NULL, m->value, NULL, NULL, NULL, NULL);
                     }
                 }
 
@@ -1793,7 +1690,7 @@ static am_return_t handle_exit(am_request_t *r) {
                                 char *eq = strchr(sess_cookie, '=');
                                 if (eq != NULL) {
                                     *eq++ = 0;
-                                    AM_COOKIE_SET_EMPTY(r, sess_cookie);
+                                    do_cookie_set_generic(r, NULL, sess_cookie, NULL, NULL, NULL, NULL);
                                 }
                                 free(sess_cookie);
                             } else {
@@ -1912,14 +1809,14 @@ static am_return_t handle_exit(am_request_t *r) {
                     do_cookie_set(r, AM_TRUE, AM_TRUE);
                     if (r->conf->cdsso_enable) {
                         /* reset CDSSO cookie */
-                        AM_COOKIE_SET_EMPTY(r, r->conf->cookie_name);
+                        do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, NULL, NULL, NULL);
                     }
                 }
 
                 if (status == AM_ACCESS_DENIED && r->conf->cdsso_enable) {
                     /* reset CDSSO and LDAP cookies on access denied */
                     do_cookie_set(r, AM_TRUE, AM_TRUE);
-                    AM_COOKIE_SET_EMPTY(r, r->conf->cookie_name);
+                    do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, NULL, NULL, NULL);
                 }
 
                 if (r->method == AM_REQUEST_POST && r->conf->pdp_enable &&
@@ -2007,7 +1904,7 @@ static am_return_t handle_exit(am_request_t *r) {
                                 char *eq = strchr(sess_cookie, '=');
                                 if (eq != NULL) {
                                     *eq++ = 0;
-                                    AM_COOKIE_SET_PATH(r, sess_cookie, eq, r->conf->pdp_uri_prefix);
+                                    do_cookie_set_generic(r, NULL, sess_cookie, eq, NULL, r->conf->pdp_uri_prefix, NULL);
                                 }
                                 free(sess_cookie);
                             } else {
