@@ -314,6 +314,9 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
     parse_config_value(ctx, AM_AGENTS_CONFIG_PDP_ENABLE, CONF_NUMBER, NULL, &ctx->conf->pdp_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_PDP_VALID, CONF_NUMBER, NULL, &ctx->conf->pdp_cache_valid, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_PDP_COOKIE, CONF_STRING, NULL, &ctx->conf->pdp_lb_cookie, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_PDP_STICKYMODE, CONF_STRING, NULL, &ctx->conf->pdp_sess_mode, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_PDP_STICKYVALUE, CONF_STRING, NULL, &ctx->conf->pdp_sess_value, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_PDP_URI_PREFIX, CONF_STRING, NULL, &ctx->conf->pdp_uri_prefix, val, len);
 
     parse_config_value(ctx, AM_AGENTS_CONFIG_CLIENT_IP_VALIDATE, CONF_NUMBER, NULL, &ctx->conf->client_ip_validate, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_ATTR_COOKIE_PREFIX, CONF_STRING, NULL, &ctx->conf->cookie_prefix, val, len);

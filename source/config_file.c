@@ -517,6 +517,9 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_ENABLE, CONF_NUMBER, NULL, &conf->pdp_enable, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_VALID, CONF_NUMBER, NULL, &conf->pdp_cache_valid, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_COOKIE, CONF_STRING, NULL, &conf->pdp_lb_cookie, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_STICKYMODE, CONF_STRING, NULL, &conf->pdp_sess_mode, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_STICKYVALUE, CONF_STRING, NULL, &conf->pdp_sess_value, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_URI_PREFIX, CONF_STRING, NULL, &conf->pdp_uri_prefix, NULL);
 
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CLIENT_IP_VALIDATE, CONF_NUMBER, NULL, &conf->client_ip_validate, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_COOKIE_PREFIX, CONF_STRING, NULL, &conf->cookie_prefix, NULL);
@@ -615,7 +618,8 @@ void am_config_free(am_config_t **cp) {
                 c->notif_url, c->userid_param, c->userid_param_type, c->access_denied_url,
                 c->fqdn_default, c->pdp_lb_cookie, c->cookie_prefix, c->logout_redirect_url,
                 c->password_replay_key, c->url_redirect_param, c->client_ip_header,
-                c->client_hostname_header, c->url_check_regex, c->multi_attr_separator);
+                c->client_hostname_header, c->url_check_regex, c->multi_attr_separator,
+                c->pdp_sess_mode, c->pdp_sess_value, c->pdp_uri_prefix);
 
         AM_CONF_FREE(c->naming_url_sz, c->naming_url);
         AM_CONF_FREE(c->hostmap_sz, c->hostmap);

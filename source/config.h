@@ -162,6 +162,9 @@ typedef struct {
     char *pdp_lb_cookie;
     int pdp_cache_valid;
     int pdp_js_repost;
+    char *pdp_sess_mode;
+    char *pdp_sess_value;
+    char *pdp_uri_prefix;
 
     int client_ip_validate;
 
@@ -303,6 +306,9 @@ typedef struct {
 #define AM_AGENTS_CONFIG_PDP_ENABLE "com.sun.identity.agents.config.postdata.preserve.enable"
 #define AM_AGENTS_CONFIG_PDP_VALID "com.sun.identity.agents.config.postcache.entry.lifetime"
 #define AM_AGENTS_CONFIG_PDP_COOKIE "com.sun.identity.agents.config.postdata.preserve.lbcookie"
+#define AM_AGENTS_CONFIG_PDP_STICKYMODE "com.sun.identity.agents.config.postdata.preserve.stickysession.mode"
+#define AM_AGENTS_CONFIG_PDP_STICKYVALUE "com.sun.identity.agents.config.postdata.preserve.stickysession.value"
+#define AM_AGENTS_CONFIG_PDP_URI_PREFIX "com.forgerock.agents.config.pdpuri.prefix"
 
 #define AM_AGENTS_CONFIG_CLIENT_IP_VALIDATE "com.sun.identity.agents.config.client.ip.validation.enable"
 #define AM_AGENTS_CONFIG_ATTR_COOKIE_PREFIX "com.sun.identity.agents.config.profile.attribute.cookie.prefix"
