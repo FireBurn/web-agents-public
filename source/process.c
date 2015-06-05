@@ -1137,7 +1137,6 @@ static am_return_t validate_policy(am_request_t *r) {
  * @param path, cookie path value, can be NULL
  * @param maxage, cookie max-age value in seconds, can be NULL
  */
-
 static void do_cookie_set_generic(am_request_t *r, const char *prefix, const char *name,
         const char *value, const char *domain, const char *path, const char *maxage) {
     static const char *thisfunc = "do_cookie_set_generic():";
@@ -1146,15 +1145,31 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
     time_t raw;
     long sec;
     char *cookie_value, *cookie = NULL;
+    int sep_count = 0;
 
     if (r == NULL || r->conf == NULL || r->am_add_header_in_response_f == NULL || !ISVALID(name)) return;
+
+    /* cookie-reset list can contain the following values:
+     *  cookiename
+     *  cookiename[=value][;Domain=value]
+     * 
+     * sep_count with a value of:
+     *  0 ==> just a cookie name
+     *  1 ==> name and value
+     *  2 ==> name, value and domain
+     *  3 ==> name and domain
+     */
+    sep_count = ISVALID(value) ? 0 : char_count(name, '=', NULL);
+    if (sep_count == 1 && strstr(name, ";Domain=") != NULL) {
+        sep_count = 3;
+    }
 
     /* set cookie prefix */
     am_asprintf(&cookie, "%s", NOTNULL(prefix));
 
     /* set cookie name */
     if (cookie != NULL) {
-        am_asprintf(&cookie, "%s%s=", cookie, name);
+        am_asprintf(&cookie, "%s%s%s", cookie, name, sep_count == 0 ? "=" : "");
     }
 
     /* set cookie value */
@@ -1199,7 +1214,7 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
     }
 
     /* set cookie domain value */
-    if (cookie != NULL && ISVALID(domain)) {
+    if (cookie != NULL && ISVALID(domain) && sep_count < 2) {
         am_asprintf(&cookie, "%s;Domain=%s", cookie, domain);
     }
 
@@ -1253,10 +1268,11 @@ static void do_cookie_set(am_request_t *r, char cookie_reset_list_enable, char c
     if (cookie_reset_list_enable && r->conf->cookie_reset_enable
             && r->conf->cookie_reset_map_sz > 0) {
         /* process cookie reset list (agents.config.cookie.reset[0]) */
+        const char *default_domain = strchr(NOTNULL(r->conf->fqdn_default), '.');
         for (i = 0; i < r->conf->cookie_reset_map_sz; i++) {
             am_config_map_t *v = &r->conf->cookie_reset_map[i];
-            AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): clearing %s", v->value);
-            do_cookie_set_generic(r, NULL, v->value, NULL, NULL, NULL, NULL);
+            AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): login resetting %s", v->value);
+            do_cookie_set_generic(r, NULL, v->value, NULL, default_domain, NULL, NULL);
         }
     }
     if (r->conf->profile_attr_fetch == AM_SET_ATTRS_AS_COOKIE ||
@@ -1560,9 +1576,11 @@ static am_return_t handle_exit(am_request_t *r) {
                 if (r->am_add_header_in_response_f != NULL &&
                         r->conf->logout_cookie_reset_map_sz > 0) {
                     /*process logout cookie reset list (logout.cookie.reset)*/
+                    const char *default_domain = strchr(NOTNULL(r->conf->fqdn_default), '.');
                     for (i = 0; i < r->conf->logout_cookie_reset_map_sz; i++) {
                         am_config_map_t *m = &r->conf->logout_cookie_reset_map[i];
-                        do_cookie_set_generic(r, NULL, m->value, NULL, NULL, NULL, NULL);
+                        AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): logout resetting %s", m->value);
+                        do_cookie_set_generic(r, NULL, m->value, NULL, default_domain, NULL, NULL);
                     }
                 }
 
