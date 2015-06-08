@@ -11,13 +11,18 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2015 ForgeRock AS.
  */
 
 #include <stdio.h>
 #include <string.h>
-#include "../am.h"
-#include "../utility.h"
+#include <stdlib.h>
+
+#include "am.h"
+#include "utility.h"
+
+#include <setjmp.h>
+#include <cmocka.h>
 
 /**
  * This is the marker we spatter throughout our destination buffer for testing purposes.  It must not be null
@@ -81,46 +86,44 @@ int compare(const char* actual, const char* expected, size_t expected_len) {
         return 1;
     }
 
-    if (memcmp(actual, expected, expected_len) == 0) {
-        printf("SUCCESS\n");
-        return 0;
-    } else {
+    if (memcmp(actual, expected, expected_len) != 0) {
         printf("actual and expected strings are different (although the same length)\n");
         printf("expected: %s\nactual: %s\n", encode(expected, expected_len), encode(actual, actual_len));
         return 1;
     }
+    
+    return 0;
 }
 
 /************************************************************************************************************/
 
-
 /**
  * test mem2cpy, returning 1 if the test fails, 0 if it succeeds.
  */
-int test_mem2cpy() {
+void test_mem2cpy(void** state) {
 
-    int result;
+    (void)state;
+
     char a[] = "ABCDEF";
     char b[] = "GHI";
 
     char expected[] = "ABCDEF\0GHI"; // C gives us a free null after the "I"
 
     char dest[1000];
- 
+    
     memset(dest, MARKER, ARRAY_SIZE(dest));
     mem2cpy(dest, a, 6, b, 3);
 
-    printf("mem2cpy test ");
-    result = compare(dest, expected, ARRAY_SIZE(expected));
-    return result;
+    assert_int_equal(compare(dest, expected, ARRAY_SIZE(expected)), 0);
 }
 
 /**
  * test mem3cpy, returning 1 if the test fails, 0 if it succeeds.
  */
-int test_mem3cpy() {
+void test_mem3cpy(void** state) {
 
-    int result;
+    (void)state;
+
     char a[] = "ABCDEF";
     char b[] = "GHI";
     char c[] = "JKLMN";
@@ -132,22 +135,35 @@ int test_mem3cpy() {
     memset(dest, MARKER, ARRAY_SIZE(dest));
     mem3cpy(dest, a, 6, b, 3, c, 5);
 
-    printf("mem3cpy test ");
-    result = compare(dest, expected, ARRAY_SIZE(expected));
-    return result;
+    assert_int_equal(compare(dest, expected, ARRAY_SIZE(expected)), 0);
 }
 
-
-
-
-/************************************************************************************************************/
-
-
-int main(void) {
-    int exit_code = 0;
+/**
+ * Test the match function.
+ */
+void test_match(void** state) {
     
-    exit_code |= test_mem2cpy();
-    exit_code |= test_mem3cpy();
+    static const char* text = "Now is the winter of our discontent, "
+                                "Made glorious summer by this son of York";
     
-    return exit_code;
+    (void)state;
+    
+    // for some reason, passing in null results in an "ok" match
+    assert_int_equal(match(1, NULL, NULL), AM_OK);
+    assert_int_equal(match(1, NULL, text), AM_OK);
+    assert_int_equal(match(1, text, NULL), AM_OK);
+    
+    assert_int_equal(match(1, text, "content,"), AM_OK);
+    assert_int_equal(match(1, text, "ter.of..ur"), AM_OK);
+    assert_int_equal(match(1, text, "[Gg]lorio.s"), AM_OK);
+    
+    assert_int_equal(match(1, text, "Aardvark,"), AM_FAIL);
+    assert_int_equal(match(1, text, "[Gg]lourio.s"), AM_FAIL);
 }
+
+/**
+ * Note that the match_groups function isn't tested here because it is only invoked once in the entire codebase.
+ * Also I can't quite figure what the length parameters should be set to.
+ */
+
+

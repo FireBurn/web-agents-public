@@ -17,284 +17,299 @@
 #ifndef LOG_H
 #define LOG_H
 
-#include <stdint.h>
+#include "platform.h"
 
-typedef long am_usec_t;
+void am_strncat(char* dest, const char* source, size_t max);
+void am_log(unsigned long instance_id, int level, const char *format, ...);
+
+
 
 #ifdef _WIN32
-#define AM_LOG_ALWAYS(i,f,...) do { if (i > 0 && f != NULL) {\
-    char *mod_fmt, header[256];\
-    char time_string[25];\
-    char tze[6];\
-    int minutes;\
-    TIME_ZONE_INFORMATION tz;\
-    SYSTEMTIME st;\
-    size_t fmt_sz = strlen(f);\
-    GetLocalTime(&st);\
-    GetTimeZoneInformation(&tz);\
-    GetTimeFormatA(LOCALE_USER_DEFAULT, TIME_NOTIMEMARKER | TIME_FORCE24HOURFORMAT, &st,\
-        "HH':'mm':'ss", time_string, sizeof (time_string));\
-    minutes = -(tz.Bias);\
-    sprintf_s(tze, sizeof (tze), "%03d%02d", minutes / 60, abs(minutes % 60));\
-    if (*tze == '0') *tze = '+';\
-    sprintf_s(header, sizeof (header), "%04d-%02d-%02d %s.%03d %s   INFO [%d:%d]  ",\
-        st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
-        GetCurrentThreadId(), _getpid());\
-    mod_fmt = (char *) malloc(fmt_sz + 3);\
-    if (mod_fmt != NULL) {\
-    strcpy(mod_fmt,"%s");strcat(mod_fmt,f);\
-    am_log(i, (AM_LOG_LEVEL_INFO|AM_LOG_LEVEL_ALWAYS), mod_fmt, header, ##__VA_ARGS__);\
-    free(mod_fmt);}}}while (0)
+#define AM_LOG_ALWAYS(instance_id, format, ...)\
+    do {\
+        if (format != NULL) {\
+            char header[256];\
+            char time_string[25];\
+            char tze[6];\
+            int minutes;\
+            TIME_ZONE_INFORMATION tz;\
+            SYSTEMTIME st;\
+            GetLocalTime(&st);\
+            GetTimeZoneInformation(&tz);\
+            GetTimeFormatA(LOCALE_USER_DEFAULT, TIME_NOTIMEMARKER | TIME_FORCE24HOURFORMAT, &st,\
+                   "HH':'mm':'ss", time_string, sizeof(time_string));\
+            minutes = -(tz.Bias);\
+            sprintf_s(tze, sizeof(tze), "%03d%02d", minutes / 60, abs(minutes % 60));\
+            if (*tze == '0') {\
+                *tze = '+';\
+            }\
+            sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s INFO [%d:%d] ",\
+                      st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze,\
+                      GetCurrentThreadId(), _getpid());\
+            am_strncat(header, format, sizeof(header));\
+            am_log(instance, (AM_LOG_LEVEL_INFO|AM_LOG_LEVEL_ALWAYS), header, ##__VA_ARGS__);\
+        }\
+    } while (0)
 #else
-#define AM_LOG_ALWAYS(i,f,...) do { if (i > 0 && f != NULL) {\
-    char *mod_fmt, header[256];\
-    char time_string[25];\
-    char tz[8];\
-    struct tm now;\
-    struct timeval tv;\
-    size_t fmt_sz = strlen(f);\
-    gettimeofday(&tv, NULL);\
-    localtime_r(&tv.tv_sec, &now);\
-    strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
-    strftime(tz, sizeof (tz) - 1, "%z", &now);\
-    snprintf(header, sizeof(header), "%s.%03ld %s   INFO [%p:%d]  ", \
-        time_string, (am_usec_t)tv.tv_usec / 1000, tz, (void *)(uintptr_t)pthread_self(), \
-        getpid());\
-    mod_fmt = malloc(fmt_sz + 3);\
-    if (mod_fmt != NULL) {\
-        strcpy(mod_fmt,"%s");strcat(mod_fmt,f);\
-        am_log(i, (AM_LOG_LEVEL_INFO|AM_LOG_LEVEL_ALWAYS), mod_fmt, header, ##__VA_ARGS__);\
-    free(mod_fmt);}}}while (0)
+#define AM_LOG_ALWAYS(instance, format, ...)\
+    do {\
+        if (format != NULL) {\
+            char header[256];\
+            char time_string[25];\
+            char tz[8];\
+            struct tm now;\
+            struct timeval tv;\
+            gettimeofday(&tv, NULL);\
+            localtime_r(&tv.tv_sec, &now);\
+            strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
+            strftime(tz, sizeof (tz) - 1, "%z", &now);\
+            snprintf(header, sizeof(header), "%s.%03ld %s INFO [%p:%d] ", \
+                time_string, tv.tv_usec / 1000L, tz, (void *)(uintptr_t)pthread_self(), \
+                getpid());\
+            am_strncat(header, format, sizeof(header));\
+            am_log(instance, (AM_LOG_LEVEL_INFO|AM_LOG_LEVEL_ALWAYS), header, ##__VA_ARGS__);\
+        }\
+    } while (0)
 #endif
 
 #ifdef _WIN32
-#define AM_LOG_INFO(i,f,...) do { if (i > 0 && f != NULL) {\
-    char *mod_fmt, header[256];\
-    char time_string[25];\
-    char tze[6];\
-    int minutes;\
-    TIME_ZONE_INFORMATION tz;\
-    SYSTEMTIME st;\
-    size_t fmt_sz = strlen(f);\
-    GetLocalTime(&st);\
-    GetTimeZoneInformation(&tz);\
-    GetTimeFormatA(LOCALE_USER_DEFAULT, TIME_NOTIMEMARKER | TIME_FORCE24HOURFORMAT, &st,\
-        "HH':'mm':'ss", time_string, sizeof (time_string));\
-    minutes = -(tz.Bias);\
-    sprintf_s(tze, sizeof (tze), "%03d%02d", minutes / 60, abs(minutes % 60));\
-    if (*tze == '0') *tze = '+';\
-    sprintf_s(header, sizeof (header), "%04d-%02d-%02d %s.%03d %s   INFO [%d:%d]  ",\
-        st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
-        GetCurrentThreadId(), _getpid());\
-    mod_fmt = (char *) malloc(fmt_sz + 3);\
-    if (mod_fmt != NULL) {\
-    strcpy(mod_fmt,"%s");strcat(mod_fmt,f);\
-    am_log(i, AM_LOG_LEVEL_INFO, mod_fmt, header, ##__VA_ARGS__);\
-    free(mod_fmt);}}}while (0)
+#define AM_LOG_INFO(instance, format, ...) \
+    do {\
+        if (format != NULL) {\
+            char header[256];\
+            char time_string[25];\
+            char tze[6];\
+            int minutes;\
+            TIME_ZONE_INFORMATION tz;\
+            SYSTEMTIME st;\
+            GetLocalTime(&st);\
+            GetTimeZoneInformation(&tz);\
+            GetTimeFormatA(LOCALE_USER_DEFAULT, TIME_NOTIMEMARKER | TIME_FORCE24HOURFORMAT, &st,\
+                "HH':'mm':'ss", time_string, sizeof (time_string));\
+            minutes = -(tz.Bias);\
+            sprintf_s(tze, sizeof (tze), "%03d%02d", minutes / 60, abs(minutes % 60));\
+            if (*tze == '0') {\
+                *tze = '+';\
+            }\
+            sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s INFO [%d:%d] ",\
+                              st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
+                              GetCurrentThreadId(), _getpid());\
+            am_strncat(header, format, sizeof(header));\
+            am_log(instance, (AM_LOG_LEVEL_INFO|AM_LOG_LEVEL_ALWAYS), header, ##__VA_ARGS__);\
+        }\
+    } while (0)
 #else
-#define AM_LOG_INFO(i,f,...) do { if (i > 0 && f != NULL) {\
-    char *mod_fmt, header[256];\
-    char time_string[25];\
-    char tz[8];\
-    struct tm now;\
-    struct timeval tv;\
-    size_t fmt_sz = strlen(f);\
-    gettimeofday(&tv, NULL);\
-    localtime_r(&tv.tv_sec, &now);\
-    strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
-    strftime(tz, sizeof (tz) - 1, "%z", &now);\
-    snprintf(header, sizeof(header), "%s.%03ld %s   INFO [%p:%d]  ", \
-        time_string, (am_usec_t)tv.tv_usec / 1000, tz, (void *)(uintptr_t)pthread_self(), \
-        getpid());\
-    mod_fmt = malloc(fmt_sz + 3);\
-    if (mod_fmt != NULL) {\
-        strcpy(mod_fmt,"%s");strcat(mod_fmt,f);\
-        am_log(i, AM_LOG_LEVEL_INFO, mod_fmt, header, ##__VA_ARGS__);\
-    free(mod_fmt);}}}while (0)
+#define AM_LOG_INFO(instance, format, ...) \
+    do {\
+        if (format != NULL) {\
+            char header[256];\
+            char time_string[25];\
+            char tz[8];\
+            struct tm now;\
+            struct timeval tv;\
+            gettimeofday(&tv, NULL);\
+            localtime_r(&tv.tv_sec, &now);\
+            strftime(time_string, sizeof(time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
+            strftime(tz, sizeof(tz) - 1, "%z", &now);\
+            snprintf(header, sizeof(header), "%s.%03ld %s INFO [%p:%d] ", \
+                time_string, tv.tv_usec / 1000L, tz, (void *)(uintptr_t)pthread_self(), \
+                getpid());\
+            am_strncat(header, format, sizeof(header));\
+            am_log(instance, (AM_LOG_LEVEL_INFO|AM_LOG_LEVEL_ALWAYS), header, ##__VA_ARGS__);\
+        }\
+    } while (0)
 #endif
 
 #ifdef _WIN32
-#define AM_LOG_WARNING(i,f,...) do { if (i > 0 && f != NULL) {\
-    char *mod_fmt, header[256];\
-    char time_string[25];\
-    char tze[6];\
-    int minutes;\
-    TIME_ZONE_INFORMATION tz;\
-    SYSTEMTIME st;\
-    size_t fmt_sz = strlen(f);\
-    GetLocalTime(&st);\
-    GetTimeZoneInformation(&tz);\
-    GetTimeFormatA(LOCALE_USER_DEFAULT, TIME_NOTIMEMARKER | TIME_FORCE24HOURFORMAT, &st,\
-        "HH':'mm':'ss", time_string, sizeof (time_string));\
-    minutes = -(tz.Bias);\
-    sprintf_s(tze, sizeof (tze), "%03d%02d", minutes / 60, abs(minutes % 60));\
-    if (*tze == '0') *tze = '+';\
-    sprintf_s(header, sizeof (header), "%04d-%02d-%02d %s.%03d %s   WARNING [%d:%d]  ",\
-        st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
-        GetCurrentThreadId(), _getpid());\
-    mod_fmt = (char *) malloc(fmt_sz + 3);\
-    if (mod_fmt != NULL) {\
-    strcpy(mod_fmt,"%s");strcat(mod_fmt,f);\
-    am_log(i, AM_LOG_LEVEL_WARNING, mod_fmt, header, ##__VA_ARGS__);\
-    free(mod_fmt);}}}while (0)
+#define AM_LOG_WARNING(instance, format, ...) \
+    do {\
+        if (format != NULL) {\
+            char header[256];\
+            char time_string[25];\
+            char tze[6];\
+            int minutes;\
+            TIME_ZONE_INFORMATION tz;\
+            SYSTEMTIME st;\
+            GetLocalTime(&st);\
+            GetTimeZoneInformation(&tz);\
+            GetTimeFormatA(LOCALE_USER_DEFAULT, TIME_NOTIMEMARKER | TIME_FORCE24HOURFORMAT, &st,\
+                "HH':'mm':'ss", time_string, sizeof (time_string));\
+            minutes = -(tz.Bias);\
+            sprintf_s(tze, sizeof (tze), "%03d%02d", minutes / 60, abs(minutes % 60));\
+            if (*tze == '0') {\
+                *tze = '+';\
+            }\
+            sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s WARNING [%d:%d] ",\
+                st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
+                GetCurrentThreadId(), _getpid());\
+            am_strncat(header, format, sizeof(header));\
+            am_log(instance, (AM_LOG_LEVEL_INFO|AM_LOG_LEVEL_ALWAYS), header, ##__VA_ARGS__);\
+        }\
+    } while (0)
 #else
-#define AM_LOG_WARNING(i,f,...) do { if (i > 0 && f != NULL) {\
-    char *mod_fmt, header[256];\
-    char time_string[25];\
-    char tz[8];\
-    struct tm now;\
-    struct timeval tv;\
-    size_t fmt_sz = strlen(f);\
-    gettimeofday(&tv, NULL);\
-    localtime_r(&tv.tv_sec, &now);\
-    strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
-    strftime(tz, sizeof (tz) - 1, "%z", &now);\
-    snprintf(header, sizeof(header), "%s.%03ld %s   WARNING [%p:%d]  ", \
-        time_string, (am_usec_t)tv.tv_usec / 1000, tz, (void *)(uintptr_t)pthread_self(), \
-        getpid());\
-    mod_fmt = malloc(fmt_sz + 3);\
-    if (mod_fmt != NULL) {\
-        strcpy(mod_fmt,"%s");strcat(mod_fmt,f);\
-        am_log(i, AM_LOG_LEVEL_WARNING, mod_fmt, header, ##__VA_ARGS__);\
-    free(mod_fmt);}}}while (0)
+#define AM_LOG_WARNING(instance, format, ...) \
+    do {\
+        if (format != NULL) {\
+            char header[256];\
+            char time_string[25];\
+            char tz[8];\
+            struct tm now;\
+            struct timeval tv;\
+            gettimeofday(&tv, NULL);\
+            localtime_r(&tv.tv_sec, &now);\
+            strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
+            strftime(tz, sizeof (tz) - 1, "%z", &now);\
+            snprintf(header, sizeof(header), "%s.%03ld %s WARNING [%p:%d] ", \
+                time_string, tv.tv_usec / 1000L, tz, (void *)(uintptr_t)pthread_self(), \
+                getpid());\
+            am_strncat(header, format, sizeof(header));\
+            am_log(instance, (AM_LOG_LEVEL_INFO|AM_LOG_LEVEL_ALWAYS), header, ##__VA_ARGS__);\
+         }\
+     } while (0)
 #endif
 
 #ifdef _WIN32
-#define AM_LOG_ERROR(i,f,...) do { if (i > 0 && f != NULL) {\
-    char *mod_fmt, header[256];\
-    char time_string[25];\
-    char tze[6];\
-    int minutes;\
-    TIME_ZONE_INFORMATION tz;\
-    SYSTEMTIME st;\
-    size_t fmt_sz = strlen(f);\
-    GetLocalTime(&st);\
-    GetTimeZoneInformation(&tz);\
-    GetTimeFormatA(LOCALE_USER_DEFAULT, TIME_NOTIMEMARKER | TIME_FORCE24HOURFORMAT, &st,\
-        "HH':'mm':'ss", time_string, sizeof (time_string));\
-    minutes = -(tz.Bias);\
-    sprintf_s(tze, sizeof (tze), "%03d%02d", minutes / 60, abs(minutes % 60));\
-    if (*tze == '0') *tze = '+';\
-    sprintf_s(header, sizeof (header), "%04d-%02d-%02d %s.%03d %s   ERROR [%d:%d]  ",\
-        st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
-        GetCurrentThreadId(), _getpid());\
-    mod_fmt = (char *) malloc(fmt_sz + 3);\
-    if (mod_fmt != NULL) {\
-    strcpy(mod_fmt,"%s");strcat(mod_fmt,f);\
-    am_log(i, AM_LOG_LEVEL_ERROR, mod_fmt, header, ##__VA_ARGS__);\
-    free(mod_fmt);}}}while (0)
+#define AM_LOG_ERROR(instance, format, ...) \
+    do {\
+        if (format != NULL) {\
+            char header[256];\
+            char time_string[25];\
+            char tze[6];\
+            int minutes;\
+            TIME_ZONE_INFORMATION tz;\
+            SYSTEMTIME st;\
+            GetLocalTime(&st);\
+            GetTimeZoneInformation(&tz);\
+            GetTimeFormatA(LOCALE_USER_DEFAULT, TIME_NOTIMEMARKER | TIME_FORCE24HOURFORMAT, &st,\
+                "HH':'mm':'ss", time_string, sizeof (time_string));\
+            minutes = -(tz.Bias);\
+            sprintf_s(tze, sizeof (tze), "%03d%02d", minutes / 60, abs(minutes % 60));\
+            if (*tze == '0') {\
+                *tze = '+';\
+            }\
+            sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s ERROR [%d:%d] ",\
+                st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
+                GetCurrentThreadId(), _getpid());\
+            am_strncat(header, format, sizeof(header));\
+            am_log(instance, (AM_LOG_LEVEL_INFO|AM_LOG_LEVEL_ALWAYS), header, ##__VA_ARGS__);\
+        }\
+    } while (0)
 #else
-#define AM_LOG_ERROR(i,f,...) do { if (i > 0 && f != NULL) {\
-    char *mod_fmt, header[256];\
-    char time_string[25];\
-    char tz[8];\
-    struct tm now;\
-    struct timeval tv;\
-    size_t fmt_sz = strlen(f);\
-    gettimeofday(&tv, NULL);\
-    localtime_r(&tv.tv_sec, &now);\
-    strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
-    strftime(tz, sizeof (tz) - 1, "%z", &now);\
-    snprintf(header, sizeof(header), "%s.%03ld %s   ERROR [%p:%d]  ", \
-        time_string, (am_usec_t)tv.tv_usec / 1000, tz, (void *)(uintptr_t)pthread_self(), \
-        getpid());\
-    mod_fmt = malloc(fmt_sz + 3);\
-    if (mod_fmt != NULL) {\
-        strcpy(mod_fmt,"%s");strcat(mod_fmt,f);\
-        am_log(i, AM_LOG_LEVEL_ERROR, mod_fmt, header, ##__VA_ARGS__);\
-    free(mod_fmt);}}}while (0)
+#define AM_LOG_ERROR(instance, format, ...) \
+    do {\
+        if (format != NULL) {\
+            char header[256];\
+            char time_string[25];\
+            char tz[8];\
+            struct tm now;\
+            struct timeval tv;\
+            gettimeofday(&tv, NULL);\
+            localtime_r(&tv.tv_sec, &now);\
+            strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
+            strftime(tz, sizeof (tz) - 1, "%z", &now);\
+            snprintf(header, sizeof(header), "%s.%03ld %s ERROR [%p:%d] ", \
+                time_string, tv.tv_usec / 1000L, tz, (void *)(uintptr_t)pthread_self(), \
+                getpid());\
+            strcat(header, format);\
+            am_log(instance, (AM_LOG_LEVEL_INFO|AM_LOG_LEVEL_ALWAYS), header, ##__VA_ARGS__);\
+         }\
+    }while (0)
 #endif
 
 #ifdef _WIN32
-#define AM_LOG_DEBUG(i,f,...) do { if (i > 0 && f != NULL) {\
-    char *mod_fmt, header[256];\
-    char time_string[25];\
-    char tze[6];\
-    int minutes;\
-    TIME_ZONE_INFORMATION tz;\
-    SYSTEMTIME st;\
-    size_t fmt_sz = strlen(f);\
-    GetLocalTime(&st);\
-    GetTimeZoneInformation(&tz);\
-    GetTimeFormatA(LOCALE_USER_DEFAULT, TIME_NOTIMEMARKER | TIME_FORCE24HOURFORMAT, &st,\
-        "HH':'mm':'ss", time_string, sizeof (time_string));\
-    minutes = -(tz.Bias);\
-    sprintf_s(tze, sizeof (tze), "%03d%02d", minutes / 60, abs(minutes % 60));\
-    if (*tze == '0') *tze = '+';\
-    sprintf_s(header, sizeof (header), "%04d-%02d-%02d %s.%03d %s   DEBUG [%d:%d][%s:%d]  ",\
-        st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
-        GetCurrentThreadId(), _getpid(), __FILE__, __LINE__);\
-    mod_fmt = (char *) malloc(fmt_sz + 3);\
-    if (mod_fmt != NULL) {\
-    strcpy(mod_fmt,"%s");strcat(mod_fmt,f);\
-    am_log(i, AM_LOG_LEVEL_DEBUG, mod_fmt, header, ##__VA_ARGS__);\
-    free(mod_fmt);}}}while (0)
+#define AM_LOG_DEBUG(instance, format, ...) \
+    do {\
+        if (format != NULL) {\
+            char header[256];\
+            char time_string[25];\
+            char tze[6];\
+            int minutes;\
+            TIME_ZONE_INFORMATION tz;\
+            SYSTEMTIME st;\
+            GetLocalTime(&st);\
+            GetTimeZoneInformation(&tz);\
+            GetTimeFormatA(LOCALE_USER_DEFAULT, TIME_NOTIMEMARKER | TIME_FORCE24HOURFORMAT, &st,\
+                "HH':'mm':'ss", time_string, sizeof (time_string));\
+            minutes = -(tz.Bias);\
+            sprintf_s(tze, sizeof (tze), "%03d%02d", minutes / 60, abs(minutes % 60));\
+            if (*tze == '0') {\
+                *tze = '+';\
+            }\
+            sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s DEBUG [%d:%d][%s:%d] ",\
+                              st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
+                              GetCurrentThreadId(), _getpid(), __FILE__, __LINE__);\
+            am_strncat(header, format, sizeof(header));\
+            am_log(instance, (AM_LOG_LEVEL_INFO|AM_LOG_LEVEL_ALWAYS), header, ##__VA_ARGS__);\
+        }\
+    } while (0)
 #else
-#define AM_LOG_DEBUG(i,f,...) do { if (i > 0 && f != NULL) {\
-    char *mod_fmt, header[256];\
-    char time_string[25];\
-    char tz[8];\
-    struct tm now;\
-    struct timeval tv;\
-    size_t fmt_sz = strlen(f);\
-    gettimeofday(&tv, NULL);\
-    localtime_r(&tv.tv_sec, &now);\
-    strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
-    strftime(tz, sizeof (tz) - 1, "%z", &now);\
-    snprintf(header, sizeof(header), "%s.%03ld %s   DEBUG [%p:%d][%s:%d]  ", \
-        time_string, (am_usec_t)tv.tv_usec / 1000, tz, (void *)(uintptr_t)pthread_self(), \
-        getpid(), __FILE__, __LINE__);\
-    mod_fmt = malloc(fmt_sz + 3);\
-    if (mod_fmt != NULL) {\
-        strcpy(mod_fmt,"%s");strcat(mod_fmt,f);\
-        am_log(i, AM_LOG_LEVEL_DEBUG, mod_fmt, header, ##__VA_ARGS__);\
-    free(mod_fmt);}}}while (0)
+#define AM_LOG_DEBUG(instance, format, ...) \
+    do {\
+        if (format != NULL) {\
+            char header[256];\
+            char time_string[25];\
+            char tz[8];\
+            struct tm now;\
+            struct timeval tv;\
+            gettimeofday(&tv, NULL);\
+            localtime_r(&tv.tv_sec, &now);\
+            strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
+            strftime(tz, sizeof (tz) - 1, "%z", &now);\
+            snprintf(header, sizeof(header), "%s.%03ld %s DEBUG [%p:%d][%s:%d] ", \
+                time_string, tv.tv_usec / 1000L, tz, (void *)(uintptr_t)pthread_self(), \
+                getpid(), __FILE__, __LINE__);\
+            am_strncat(header, format, sizeof(header));\
+            am_log(instance, (AM_LOG_LEVEL_INFO|AM_LOG_LEVEL_ALWAYS), header, ##__VA_ARGS__);\
+        }\
+    } while (0)
 #endif
 
 #ifdef _WIN32
-#define AM_LOG_AUDIT(i,f,...) do { if (i > 0 && f != NULL) {\
-    char *mod_fmt, header[256];\
-    char time_string[25];\
-    char tze[6];\
-    int minutes;\
-    TIME_ZONE_INFORMATION tz;\
-    SYSTEMTIME st;\
-    size_t fmt_sz = strlen(f);\
-    GetLocalTime(&st);\
-    GetTimeZoneInformation(&tz);\
-    GetTimeFormatA(LOCALE_USER_DEFAULT, TIME_NOTIMEMARKER | TIME_FORCE24HOURFORMAT, &st,\
-        "HH':'mm':'ss", time_string, sizeof (time_string));\
-    minutes = -(tz.Bias);\
-    sprintf_s(tze, sizeof (tze), "%03d%02d", minutes / 60, abs(minutes % 60));\
-    if (*tze == '0') *tze = '+';\
-    sprintf_s(header, sizeof (header), "%04d-%02d-%02d %s.%03d %s   AUDIT [%d:%d]  ",\
-        st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
-        GetCurrentThreadId(), _getpid());\
-    mod_fmt = (char *) malloc(fmt_sz + 3);\
-    if (mod_fmt != NULL) {\
-    strcpy(mod_fmt,"%s");strcat(mod_fmt,f);\
-    am_log(i, AM_LOG_LEVEL_AUDIT, mod_fmt, header, ##__VA_ARGS__);\
-    free(mod_fmt);}}}while (0)
+#define AM_LOG_AUDIT(i, f, ...) \
+    do {\
+        if (format != NULL) {\
+            char header[256];\
+            char time_string[25];\
+            char tze[6];\
+            int minutes;\
+            TIME_ZONE_INFORMATION tz;\
+            SYSTEMTIME st;\
+            GetLocalTime(&st);\
+            GetTimeZoneInformation(&tz);\
+            GetTimeFormatA(LOCALE_USER_DEFAULT, TIME_NOTIMEMARKER | TIME_FORCE24HOURFORMAT, &st,\
+                "HH':'mm':'ss", time_string, sizeof (time_string));\
+            minutes = -(tz.Bias);\
+            sprintf_s(tze, sizeof (tze), "%03d%02d", minutes / 60, abs(minutes % 60));\
+            if (*tze == '0') {\
+                *tze = '+';\
+            }\
+            sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s AUDIT [%d:%d] ",\
+                st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
+                GetCurrentThreadId(), _getpid());\
+            am_strncat(header, format, sizeof(header));\
+            am_log(instance, (AM_LOG_LEVEL_INFO|AM_LOG_LEVEL_ALWAYS), header, ##__VA_ARGS__);\
+        }\
+    } while (0)
 #else
-#define AM_LOG_AUDIT(i,f,...) do { if (i > 0 && f != NULL) {\
-    char *mod_fmt, header[256];\
-    char time_string[25];\
-    char tz[8];\
-    struct tm now;\
-    struct timeval tv;\
-    size_t fmt_sz = strlen(f);\
-    gettimeofday(&tv, NULL);\
-    localtime_r(&tv.tv_sec, &now);\
-    strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
-    strftime(tz, sizeof (tz) - 1, "%z", &now);\
-    snprintf(header, sizeof(header), "%s.%03ld %s   AUDIT [%p:%d]  ", \
-        time_string, (am_usec_t)tv.tv_usec / 1000, tz, (void *)(uintptr_t)pthread_self(), \
-        getpid());\
-    mod_fmt = malloc(fmt_sz + 3);\
-    if (mod_fmt != NULL) {\
-        strcpy(mod_fmt,"%s");strcat(mod_fmt,f);\
-        am_log(i, AM_LOG_LEVEL_AUDIT, mod_fmt, header, ##__VA_ARGS__);\
-    free(mod_fmt);}}}while (0)
+#define AM_LOG_AUDIT(instance, format, ...) \
+    do {\
+        if (format != NULL) {\
+            char header[256];\
+            char time_string[25];\
+            char tz[8];\
+            struct tm now;\
+            struct timeval tv;\
+            gettimeofday(&tv, NULL);\
+            localtime_r(&tv.tv_sec, &now);\
+            strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
+            strftime(tz, sizeof (tz) - 1, "%z", &now);\
+            snprintf(header, sizeof(header), "%s.%03ld %s AUDIT [%p:%d] ", \
+                time_string, tv.tv_usec / 1000L, tz, (void *)(uintptr_t)pthread_self(), \
+                getpid());\
+            am_strncat(header, format, sizeof(header));\
+            am_log(instance, (AM_LOG_LEVEL_INFO|AM_LOG_LEVEL_ALWAYS), header, ##__VA_ARGS__);\
+        }\
+    } while (0)
 #endif
 
 #endif

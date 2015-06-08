@@ -182,8 +182,8 @@ void decrypt_agent_passwords(am_config_t *r);
 
 char is_big_endian();
 size_t page_size(size_t size);
-int match(unsigned long instance_id, const char *subject, const char *pattern);
-char *match_group(pcre *x, int cg, const char *subject, size_t *len);
+am_return_t match(unsigned long instance_id, const char *subject, const char *pattern);
+char *match_group(pcre *x, int capture_groups, const char *subject, size_t *len);
 int gzip_deflate(const char *uncompressed, size_t *uncompressed_sz, char **compressed);
 int gzip_inflate(const char *compressed, size_t *compressed_sz, char **uncompressed);
 void trim(char *a, char w);

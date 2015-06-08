@@ -537,24 +537,51 @@ void am_log_init_worker(int status) {
 #endif
 }
 
+/**
+ * This routine is primarily responsible for all logging within this application.
+ *   instance_id: the instance that has something to log
+ *   level: the level we want to log at, see constants AM_LOG_LEVEL_* in am.h
+ *   format: the printf style format string telling us about the variadic arguments
+ *   args: the variadic arguments themselves.
+ *
+ * Normally, this routine logs into a block of shared memory, which is subsequently written to a file.
+ * However if we're running a unit test, this block of memory won't have been set up, even though we
+ * would still like to log something somewhere.  If test cases ensure that instance_id is set to zero,
+ * then logging messages are written to the standard error.
+ *
+ */
 void am_log(unsigned long instance_id, int level, const char *format, ...) {
     size_t off, off_out;
     int sz, sr, i, log_lvl = AM_LOG_LEVEL_NONE, aud_lvl = AM_LOG_LEVEL_NONE;
     char *data, quit = AM_FALSE;
-    struct am_log_s *log = am_log_p != NULL ?
-            (struct am_log_s *) am_log_p->am_shared : NULL;
-    char *log_d = log != NULL ?
-            ((char *) am_log_p->am_shared) + sizeof (struct am_log_s) : NULL;
+    struct am_log_s *log = am_log_p != NULL ? (struct am_log_s *) am_log_p->am_shared : NULL;
+    char *log_d = log != NULL ? ((char *) am_log_p->am_shared) + sizeof (struct am_log_s) : NULL;
     va_list args;
 
-    if (log_d == NULL) return;
+    /**
+     * An instance id of zero indicates that we are running in unit test mode, shared memory is not
+     * initialised and so our only option, if we want to log, is to write to the standard error.
+     */
+    if (instance_id == 0) {
+        va_start(args, format);
+        vfprintf(stderr, format, args);
+        fputs("\n", stderr);
+        va_end(args);
+        return;
+    }
+
+    if (log_d == NULL) {
+        return;
+    }
 
     va_start(args, format);
     sz = vsnprintf(NULL, 0, format, args);
     va_end(args);
 
     data = (char *) calloc(1, sz + 1);
-    if (data == NULL) return;
+    if (data == NULL) {
+        return;
+    }
 
     va_start(args, format);
     sr = vsnprintf(data, sz + 1, format, args);
@@ -994,3 +1021,29 @@ int am_agent_init_get_value(unsigned long instance_id, char lock) {
     }
     return status;
 }
+
+
+/**
+ * Concatenate "source" onto the end of "dest" ensuring there are never more
+ * than "max" characters present in dest, allowing for the null terminator.
+ */
+void am_strncat(char* dest, const char* source, size_t max) {
+    size_t length = 0;
+
+    if (dest == NULL || source == NULL) {
+        return;  /** do no harm */
+    }
+    
+    /** move dest to the end, counting as we go */
+    while(*dest) {
+        length++;
+        dest++;
+    }
+    
+    while (length < max - 1 && *source != '\0') {
+        *dest++ = *source++;
+        length++;
+    }
+    *dest = '\0';
+}
+

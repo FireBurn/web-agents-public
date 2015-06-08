@@ -79,9 +79,14 @@ APACHE22_SOURCES := source/apache/agent22.c
 IIS_SOURCES := source/iis/agent.c
 VARNISH_SOURCES := source/varnish/agent.c source/varnish/vcc_if.c
 ADMIN_SOURCES := source/admin.c source/admin_iis.c
+TEST_EXE := test_MAIN
+TEST_EXE_SOURCE= $(TEST_EXE).c
+TEST_SOURCES := $(filter-out tests/$(TEST_EXE_SOURCE), $(wildcard tests/test_*.c))
 SOURCES := $(filter-out $(ADMIN_SOURCES), $(wildcard source/*.c)) $(wildcard expat/*.c) $(wildcard pcre/*.c) $(wildcard zlib/*.c)
 OBJECTS := $(SOURCES:.c=.$(OBJ))
+TEST_OBJECTS := $(TEST_SOURCES:.c=.$(OBJ))
 OUT_OBJS := $(addprefix $(OBJDIR)/,$(OBJECTS))
+TEST_OBJS := $(addprefix $(OBJDIR)/test,$(TEST_OBJECTS))
 ADMIN_OBJECTS := $(ADMIN_SOURCES:.c=.$(OBJ))
 ADMIN_OUT_OBJS := $(addprefix $(OBJDIR)/,$(ADMIN_OBJECTS))
 APACHE_OBJECTS := $(APACHE_SOURCES:.c=.$(OBJ))
@@ -92,11 +97,11 @@ IIS_OBJECTS := $(IIS_SOURCES:.c=.$(OBJ))
 IIS_OUT_OBJS := $(addprefix $(OBJDIR)/,$(IIS_OBJECTS))
 VARNISH_OBJECTS := $(VARNISH_SOURCES:.c=.$(OBJ))
 VARNISH_OUT_OBJS := $(addprefix $(OBJDIR)/,$(VARNISH_OBJECTS))
-	
+
 $(APACHE_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache24/include $(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache24/include -DAPACHE2 -DAPACHE24
 $(VARNISH_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/varnish/include
 $(APACHE22_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache22/include $(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache22/include -DAPACHE2
-	
+
 ifeq ($(OS_ARCH), Linux)
  include Makefile.linux.mk
 endif
@@ -120,11 +125,12 @@ $(OBJDIR)/%.$(OBJ): %.c
 .DEFAULT_GOAL := all
 
 all: apachezip
-	
+
 build:
 	$(MKDIR) $(OBJDIR)$(PS)expat
 	$(MKDIR) $(OBJDIR)$(PS)pcre
 	$(MKDIR) $(OBJDIR)$(PS)zlib
+	$(MKDIR) $(OBJDIR)$(PS)tests
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)apache
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)iis
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)varnish
@@ -136,11 +142,13 @@ version:
 	    -e "s$(SUB)_IDENT_DATE_$(SUB)$(IDENT_DATE)$(SUB)g" \
 	    -e "s$(SUB)_BUILD_MACHINE_$(SUB)$(BUILD_MACHINE)$(SUB)g" \
 	    -e "s$(SUB)_VERSION_$(SUB)$(VERSION)$(SUB)g" < source$(PS)version.template > source$(PS)version.h
+
 clean:
 	-$(RMDIR) $(OBJDIR)
 	-$(RMDIR) log
 	-$(RMALL) source$(PS)version.h
-	
+	-$(RMALL) $(TEST_OBJECTS)
+
 apachezip: clean build version apache agentadmin
 	@$(ECHO) "[***** Building Apache 2.4 agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
@@ -164,7 +172,7 @@ apache22_pre:
 
 apache22_post:
 	-$(RMALL) source$(PS)apache$(PS)agent22.c
-	
+
 apache22zip: clean build version apache22 agentadmin
 	@$(ECHO) "[***** Building Apache 2.2 agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
@@ -182,7 +190,7 @@ apache22zip: clean build version apache22 agentadmin
 	-$(CP) config$(PS)* $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)config$(PS)
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)legal$(PS)
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Apache_v22_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
-	
+
 iiszip: clean build version iis agentadmin
 	@$(ECHO) "[***** Building IIS agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
@@ -200,6 +208,13 @@ iiszip: clean build version iis agentadmin
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)legal$(PS)
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a IIS_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
 
+$(OBJDIR)$(PS)tests$(PS)$(TEST_EXE): $(OUT_OBJS) $(TEST_OBJECTS) tests$(PS)$(TEST_EXE).$(OBJ)
+	$(CC) -D_DEBUG $(COMPILEFLAG)I.$(PS)source $(COMPILEFLAG)I.$(PS)zlib $(COMPILEFLAG)I.$(PS)expat $(COMPILEFLAG)I.$(PS)pcre \
+	  $(COMPILEFLAG)DHAVE_EXPAT_CONFIG_H $(COMPILEFLAG)DHAVE_PCRE_CONFIG_H $(OUT_OBJS) $(TEST_OBJECTS) -o $(OBJDIR)$(PS)tests$(PS)$(TEST_EXE) tests$(PS)test_MAIN.c -lcmocka
+
+tests: clean version build $(OBJDIR)$(PS)tests$(PS)$(TEST_EXE)
+	$(ECHO) "[*** Building the test executable ***]"
+
 varnishzip: clean build version varnish agentadmin
 	@$(ECHO) "[***** Building Varnish agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
@@ -215,4 +230,3 @@ varnishzip: clean build version varnish agentadmin
 	-$(CP) config$(PS)* $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)config$(PS)
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)legal$(PS)
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Varnish_v4_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
-	

@@ -170,58 +170,90 @@ char is_big_endian() {
     return b.c[0] == 1;
 }
 
-int match(unsigned long instance_id, const char *subject, const char *pattern) {
-    pcre *x = NULL;
-    const char *error;
+/**
+ * match: match a subject against a pattern.
+ *  instance_id: the current instance id for debugging purposes
+ *  subject: the subject we're matching
+ *  pattern: the pattern we're using to match
+ * return:
+ *  AM_OK (0) if there is a match, or we pass in NULL for the subject and/or pattern
+ *  AM_FAIL (1) if there is no match, or the pattern doesn't compile
+ */
+am_return_t match(unsigned long instance_id, const char *subject, const char *pattern) {
+    pcre* x = NULL;
+    const char* error;
     int erroroffset, rc = -1;
     int offsets[3];
-    if (subject == NULL || pattern == NULL) return 0;
+    am_return_t result = AM_OK;
+    
+    if (subject == NULL || pattern == NULL) {
+        return result;
+    }
     x = pcre_compile(pattern, 0, &error, &erroroffset, NULL);
     if (x == NULL) {
-        if (error != NULL)
-            AM_LOG_DEBUG(instance_id, "match(): error: %s", error);
-        return 1;
+        AM_LOG_DEBUG(instance_id, "match: pcre_compile failed on \"%s\" with error %s", pattern, (error == NULL) ? "unknown" : error);
+        return AM_FAIL;
     }
+    
     rc = pcre_exec(x, NULL, subject, (int) strlen(subject), 0, 0, offsets, 3);
     if (rc < 0) {
-        AM_LOG_DEBUG(instance_id, "match(): '%s' does not match '%s'",
-                subject, pattern);
+        AM_LOG_DEBUG(instance_id, "match(): '%s' does not match '%s'", subject, pattern);
+        result = AM_FAIL;
+    } else {
+        AM_LOG_DEBUG(instance_id, "match(): '%s' matches '%s'", subject, pattern);
     }
     pcre_free(x);
-    return rc < 0 ? 1 : 0;
+    
+    return result;
 }
 
-char *match_group(pcre *x, int cg, const char *subject, size_t *len) {
-    int max_cg = (cg + 1)*3;
+/**
+ * match_group: match groups specified in the compiled regexp against the subject specified.
+ * The matching groups are returned in bulk in the return value as a number of null separated strings.
+ *
+ * params:
+ *   x: the compiled regular expression
+ *   capture_groups: the number of capture groups specified in the regular expression
+ *   subject: the string to be matched against the regular expression
+ *   len: initially set to the length of the subject, this is changed to be a count of the number
+ *        of strings stored in the return value, separated by null strings.
+ */
+char *match_group(pcre *x, int capture_groups, const char *subject, size_t *len) {
+
+    // pcre itself needs space in the
+    int max_capture_groups = (capture_groups + 1) * 3;
     size_t k = 0, slen = *len;
-    int i, l, rc, ret_len = 0;
+    int i, substring_len, rc, ret_len = 0;
     unsigned int offset = 0;
-    char *ret = NULL;
-    int *ovector = malloc(max_cg * sizeof (int)); /* (max_capturing_groups+1)*3 */
-    if (x == NULL || subject == NULL || ovector == NULL) {
-        am_free(ovector);
+    char* result = NULL;
+    int* ovector;
+
+    if (x == NULL || subject == NULL) {
         return NULL;
     }
-    while (offset < slen && (rc = pcre_exec(x, 0, subject, (int) slen, offset, 0, ovector, max_cg)) >= 0) {
-        for (i = 1/*skip the first pair: "identify the portion of the subject string matched by the entire pattern" */;
+    if ((ovector = calloc(max_capture_groups, sizeof(int))) == NULL) {
+        return NULL;
+    }
+    while (offset < slen && (rc = pcre_exec(x, 0, subject, (int)slen, offset, 0, ovector, max_capture_groups)) >= 0) {
+        for (i = 1 /* skip the first pair: "identify the portion of the subject string matched by the entire pattern" */;
                 i < rc; ++i) {
             char *rslt, *ret_tmp;
-            if ((l = pcre_get_substring(subject, ovector, rc, i, (const char **) &rslt)) > 0) {
-                ret_tmp = realloc(ret, ret_len + l + 1);
+            if ((substring_len = pcre_get_substring(subject, ovector, rc, i, (const char **) &rslt)) > 0) {
+                ret_tmp = realloc(result, ret_len + substring_len + 1);
                 if (ret_tmp == NULL) {
-                    am_free(ret);
+                    am_free(result);
                     pcre_free_substring(rslt);
                     free(ovector);
                     return NULL;
-                } else {
-                    ret = ret_tmp;
                 }
-                /*return value is stored as:
+                result = ret_tmp;
+                
+                /* return value is stored as:
                  * key\0value\0...
                  */
-                memcpy(ret + ret_len, rslt, l);
-                ret[ret_len + l] = 0;
-                ret_len += l + 1;
+                memcpy(result + ret_len, rslt, substring_len);
+                result[ret_len + substring_len] = '\0';
+                ret_len += substring_len + 1;
                 k++;
             }
             pcre_free_substring(rslt);
@@ -230,18 +262,22 @@ char *match_group(pcre *x, int cg, const char *subject, size_t *len) {
     }
     *len = k;
     free(ovector);
-    return ret;
+    return result;
 }
 
+
+
 static void uri_normalize(struct url *url, char *path) {
+    
     char *s, *o, *p = path != NULL ? strdup(path) : NULL;
     int i, m = 0, list_sz = 0;
     char **segment_list = NULL, **segment_list_norm = NULL, **tmp;
     char u[AM_URI_SIZE + 1];
 
     if (p == NULL) {
-        if (url != NULL)
+        if (url != NULL) {
             url->error = path != NULL ? AM_ENOMEM : AM_EINVAL;
+        }
         return;
     }
     o = p; /*preserve original pointer*/
@@ -304,10 +340,11 @@ static void uri_normalize(struct url *url, char *path) {
     }
     memcpy(path, u, sizeof (u));
 
-    free(segment_list_norm);
-    free(segment_list);
-    free(o);
-    if (url != NULL) url->error = AM_SUCCESS;
+    AM_FREE(segment_list_norm, segment_list, o);
+
+    if (url != NULL) {
+        url->error = AM_SUCCESS;
+    }
 }
 
 static int query_attribute_compare(const void *a, const void *b) {
@@ -525,6 +562,9 @@ char *url_decode(const char *str) {
     return dest;
 }
 
+/**
+ *
+ */
 int am_vasprintf(char **buffer, const char *fmt, va_list arg) {
     int size;
     va_list ap;
@@ -590,6 +630,10 @@ int gzip_inflate(const char *compressed, size_t *compressed_sz, char **uncompres
 
         if (strm.total_out >= uncompLength) {
             char *uncomp2 = (char *) calloc(sizeof (char), uncompLength + half_length);
+            if (uncomp2 == NULL) {
+                free(uncomp);
+                return 1;
+            }
             memcpy(uncomp2, uncomp, uncompLength);
             uncompLength += half_length;
             free(uncomp);

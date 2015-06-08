@@ -112,12 +112,23 @@
         " }"\
         "}"
 
+/**
+ * This is our representation of "boolean".  Try to avoid boolean itself as although supposed to be part of the language
+ * for some time now, it seems to be a grey area.
+ */
 typedef enum {
     AM_FALSE = 0,
     AM_TRUE
 } am_bool_t;
 
 #define TO_BOOL(x) (((x)==0) ? AM_FALSE : AM_TRUE)
+
+typedef enum {
+    AM_OK = 0, AM_FAIL, AM_RETRY, AM_QUIT
+} am_return_t;
+
+#define RETURN_TYPE_TO_BOOL(x)   (((x) == AM_OK) ? AM_TRUE : AM_FALSE)
+
 
 enum {
     AM_REQUEST_UNKNOWN = 0,
@@ -285,7 +296,6 @@ void am_log_init_worker(int s);
 void am_log_shutdown();
 void am_log_register_instance(unsigned long instance_id, const char *debug_log, int log_level,
         const char *audit_log, int audit_level);
-void am_log(unsigned long instance_id, int level, const char *format, ...);
 
 void am_config_free(am_config_t **c);
 am_config_t *am_get_config_file(unsigned long instance_id, const char *filename);
@@ -296,5 +306,6 @@ char *base64_encode(const void *in, size_t *length);
 void am_free(void *ptr);
 int am_asprintf(char **buffer, const char *fmt, ...);
 char *am_json_escape(const char *str, size_t *escaped_sz);
+
 
 #endif
