@@ -265,7 +265,7 @@ void am_log(unsigned long instance_id, int level, const char *format, ...);
 #endif
 
 #ifdef _WIN32
-#define AM_LOG_AUDIT(i, f, ...) \
+#define AM_LOG_AUDIT(instance, format, ...) \
     do {\
         if (format != NULL) {\
             char header[256];\
