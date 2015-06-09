@@ -132,7 +132,9 @@ enum {
     AM_CONF_JSON_URL_MAP,
     AM_CONF_NEF_REGEX_ENABLE,
     AM_CONF_NEF_EXT_REGEX_ENABLE,
-    AM_CONF_LOGOUT_REGEX_ENABLE
+    AM_CONF_LOGOUT_REGEX_ENABLE,
+    AM_CONF_LOGOUT_URL_REGEX,
+    AM_CONF_LOGOUT_REDIR_DISABLE
 };
 
 struct am_instance {
@@ -143,18 +145,18 @@ struct am_instance_entry {
     time_t ts;
     unsigned long instance_id;
     char token[AM_HASH_TABLE_KEY_SIZE];
-    char name[AM_HASH_TABLE_KEY_SIZE]; /*agent id*/
-    char config[AM_PATH_SIZE]; /*config file name*/
-    struct offset_list data; /*agent configuration data*/
+    char name[AM_HASH_TABLE_KEY_SIZE]; /* agent id */
+    char config[AM_PATH_SIZE]; /* config file name */
+    struct offset_list data; /* agent configuration data */
     struct offset_list lh;
 };
 
 struct am_instance_entry_data {
-    long type; /*low byte: type; high byte: optional map/list size*/
+    long type; /* low byte: type; high byte: optional map/list size */
     int num_value;
     size_t size[2];
     struct offset_list lh;
-    char value[1]; /*format: key\0value\0*/
+    char value[1]; /* format: key\0value\0 */
 };
 
 static am_shm_t *conf = NULL;
@@ -181,7 +183,7 @@ int am_configuration_init() {
         /* initialize head node */
         instance_data->list.next = instance_data->list.prev = 0;
         conf->user = instance_data;
-        /*store instance_data offset (for other processes)*/
+        /* store instance_data offset (for other processes) */
         am_shm_set_user_offset(conf, AM_GET_OFFSET(conf->pool, instance_data));
         am_shm_unlock(conf);
     }
@@ -250,9 +252,9 @@ void remove_agent_instance_byname(const char *name) {
 
     AM_OFFSET_LIST_FOR_EACH(conf->pool, h, e, t, struct am_instance_entry) {
         if (strcmp(e->name, name) == 0) {
-            am_remove_cache_entry(e->instance_id, e->token); /*delete cached agent session data*/
-            am_agent_init_set_value(e->instance_id, AM_TRUE, AM_FALSE); /*set this instance to 'unconfigured'*/
-            if (delete_instance_entry(e) == AM_SUCCESS) { /*remove cached configuration data*/
+            am_remove_cache_entry(e->instance_id, e->token); /* delete cached agent session data */
+            am_agent_init_set_value(e->instance_id, AM_TRUE, AM_FALSE); /* set this instance to 'unconfigured' */
+            if (delete_instance_entry(e) == AM_SUCCESS) { /* remove cached configuration data */
                 am_shm_free(conf, e);
             }
             break;
@@ -611,6 +613,12 @@ static int am_create_instance_entry_data(am_shm_t *cf, struct offset_list *h, am
         }
         if (ISVALID(c->logout_redirect_url)) {
             SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_LOGOUT_REDIRECT, 0), c->logout_redirect_url);
+        }
+        if (ISVALID(c->logout_url_regex)) {
+            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_LOGOUT_URL_REGEX, 0), c->logout_url_regex);
+        }
+        if (c->logout_redirect_disable > 0) {
+            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_LOGOUT_REDIR_DISABLE, 0), c->logout_redirect_disable);
         }
         if (c->logout_map_sz > 0 && c->logout_map != NULL) {
             for (i = 0; i < c->logout_map_sz; i++) {
@@ -1066,6 +1074,12 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
             case AM_CONF_LOGOUT_REDIRECT:
                 r->logout_redirect_url = strndup(i->value, i->size[0]);
                 break;
+            case AM_CONF_LOGOUT_URL_REGEX:
+                r->logout_url_regex = strndup(i->value, i->size[0]);
+                break;
+            case AM_CONF_LOGOUT_REDIR_DISABLE:
+                r->logout_redirect_disable = i->num_value;
+                break;
             case AM_CONF_LOGOUT_MAP:
                 if (r->logout_map_sz == 0) {
                     r->logout_map = malloc(sz * sizeof (am_config_map_t));
@@ -1244,7 +1258,7 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
                         thisfunc);
                 ret = AM_XML_ERROR;
             } else {
-                ret = am_create_instance_entry_data(conf, &(c->data), bc, AM_CONF_BOOT); /*store bootstrap properties*/
+                ret = am_create_instance_entry_data(conf, &(c->data), bc, AM_CONF_BOOT); /* store bootstrap properties */
                 ret = am_create_instance_entry_data(conf, &(c->data), cf, AM_CONF_REMOTE);
                 am_config_free(&cf);
             }
@@ -1300,7 +1314,7 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
                 continue;
             }
 
-            am_agent_init_set_value(instance_id, AM_FALSE, AM_TRUE); /*configuration fetch in progress*/
+            am_agent_init_set_value(instance_id, AM_FALSE, AM_TRUE); /* configuration fetch in progress */
 
             ac = am_get_config_file(instance_id, config_file);
             if (ac == NULL) {
@@ -1308,7 +1322,7 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
                 am_agent_instance_init_unlock();
                 AM_LOG_ERROR(instance_id, "%s failed to load instance bootstrap %ld data",
                         thisfunc, instance_id);
-                return AM_FILE_ERROR; /*fatal*/
+                return AM_FILE_ERROR; /* fatal */
             }
 
             am_net_set_ssl_options(ac, &info);
@@ -1385,7 +1399,7 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
         AM_LOG_ERROR(instance_id,
                 "%s failed to locate instance configuration %ld data (max %d retries exhausted)",
                 thisfunc, instance_id, retry);
-        return AM_RETRY_ERROR; /*fatal*/
+        return AM_RETRY_ERROR; /* fatal */
     }
 
     return rv;

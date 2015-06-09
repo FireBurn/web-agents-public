@@ -247,7 +247,7 @@ static void parse_config_value(am_xml_parser_ctx_t *x, const char *prm, int type
             v = strndup(val, len);
             if (v == NULL) break;
 
-            mv = match_group(x->rgx, 2 /*groups in [key]=value*/, v, &slen);
+            mv = match_group(x->rgx, 2 /* groups in [key]=value */, v, &slen);
             free(v);
             if (mv == NULL) break;
 
@@ -331,6 +331,8 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
     parse_config_value(ctx, AM_AGENTS_CONFIG_LOGOUT_REDIRECT_URL, CONF_STRING, NULL, &ctx->conf->logout_redirect_url, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_LOGOUT_COOKIE_RESET, CONF_STRING_MAP, &ctx->conf->logout_cookie_reset_map_sz, &ctx->conf->logout_cookie_reset_map, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_LOGOUT_REGEX_ENABLE, CONF_NUMBER, NULL, &ctx->conf->logout_regex_enable, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_LOGOUT_URL_REGEX, CONF_STRING, NULL, &ctx->conf->logout_url_regex, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_LOGOUT_REDIRECT_DISABLE, CONF_NUMBER, NULL, &ctx->conf->logout_redirect_disable, val, len);
 
     parse_config_value(ctx, AM_AGENTS_CONFIG_POLICY_SCOPE, CONF_NUMBER, NULL, &ctx->conf->policy_scope_subtree, val, len);
 
@@ -429,7 +431,7 @@ static void end_element(void * userData, const char * name) {
         return;
     }
 
-    /*handler for old freeformproperties*/
+    /* handler for old freeformproperties */
     v = strndup(val, len);
     if (v == NULL) {
         am_free(ctx->data);
@@ -449,7 +451,7 @@ static void end_element(void * userData, const char * name) {
     } else if ((t = strchr(v, '=')) != NULL) {
         memcpy(k, v, t - v);
         trim(k, ' ');
-        t++; /*move past the '='*/
+        t++; /* move past the '=' */
     }
     if (ISVALID(k) && t != NULL) {
         am_xml_parser_ctx_t f;
@@ -513,7 +515,7 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
         return NULL;
     }
 
-    /*match [key]=value returned within <value>[key]=value_of_a_key</value> element*/
+    /* match [key]=value returned within <value>[key]=value_of_a_key</value> element */
     x = pcre_compile("(?<=\\[)(.+?)(?=\\])\\]\\s*\\=\\s*(.+)", 0, &error, &erroroffset, NULL);
     if (x == NULL) {
         AM_LOG_ERROR(instance_id, "%s pcre error %s", thisfunc, error == NULL ? "" : error);
@@ -535,7 +537,7 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
             data_sz = end - (begin + 8);
         }
     } else {
-        /*no CDATA*/
+        /* no CDATA */
         stream = (char *) xml;
         data_sz = xml_sz;
     }

@@ -463,7 +463,17 @@ static am_return_t handle_not_enforced(am_request_t *r) {
     }
     am_free(pdp_path);
 
-    /* check if the request url (normalized) is in an application logout url list */
+    /* check if the request url (normalized) is an application logout url */
+    if (ISVALID(r->conf->logout_url_regex) && /* check legacy com.forgerock.agents.agent.logout.url.regex option first */
+            url_matches_pattern(r, r->conf->logout_url_regex, url, AM_TRUE)) {
+        AM_LOG_DEBUG(r->instance_id, "%s %s is an application logout url (not enforced)", thisfunc, url);
+        r->not_enforced = r->is_logout_url = AM_TRUE;
+        if (!r->conf->not_enforced_fetch_attr) {
+            r->status = AM_SUCCESS;
+            return AM_QUIT;
+        }
+        return AM_OK;
+    }
     if (r->conf->logout_map_sz > 0) {
         for (i = 0; i < r->conf->logout_map_sz; i++) {
             am_config_map_t *m = &r->conf->logout_map[i];
@@ -1592,13 +1602,13 @@ static am_return_t handle_exit(am_request_t *r) {
                 do_header_set(r, AM_FALSE);
                 do_cookie_set(r, AM_FALSE, AM_TRUE);
 
-                if (ISVALID(r->token) && !ISVALID(r->conf->logout_redirect_url)) {
-                    /* logout.redirect.url is not set - do background logout and cache cleanup */
+                if (ISVALID(r->token) && r->conf->logout_redirect_disable) {
+                    /* logout.redirect.disable is set - do a background logout and cache cleanup */
                     struct logout_worker_data *wd = malloc(sizeof (struct logout_worker_data));
                     if (wd != NULL) {
                         const char *oam = get_valid_openam_url(r);
                         wd->instance_id = r->instance_id;
-                        /* find active OpenAM service URL */
+                        /* find an active OpenAM service URL */
                         if (oam != NULL) {
                             wd->token = strdup(r->token);
                             wd->openam = strdup(oam);
@@ -1626,8 +1636,8 @@ static am_return_t handle_exit(am_request_t *r) {
                     break; /* early exit - we're done with this resource */
                 }
 
-                /* do OpenAM logout redirect with a goto value if logout_redirect_url is set. 
-                 * will land here if no session token is available and logout_redirect_url is not set too.
+                /* do OpenAM logout redirect with a goto value of logout_redirect_url; 
+                 * will land here if no session token is available too.
                  */
                 valid_idx = get_valid_url_index(r->instance_id);
                 if (r->conf->openam_logout_map_sz > 0) {

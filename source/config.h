@@ -63,10 +63,10 @@ typedef struct {
     char *key;
 
     /* debug and audit logging */
-    int debug; /*0 do not rotate, x rotate at x bytes, -1 rotate once a day*/
+    int debug; /* 0 do not rotate, x rotate at x bytes, -1 rotate once a day */
     int debug_level;
     char *debug_file;
-    int audit; /*0 do not rotate, x rotate at x bytes, -1 rotate once a day*/
+    int audit; /* 0 do not rotate, x rotate at x bytes, -1 rotate once a day */
     int audit_level;
     char *audit_file;
 
@@ -109,7 +109,7 @@ typedef struct {
     char *notif_url;
 
     int url_eval_case_ignore;
-    int policy_cache_valid; /*seconds*/
+    int policy_cache_valid; /* seconds */
     int token_cache_valid;
 
     char *userid_param;
@@ -181,12 +181,14 @@ typedef struct {
     am_config_map_t *logout_cookie_reset_map;
     char *logout_redirect_url;
     int logout_map_sz;
-    am_config_map_t *logout_map; /*application logout url list*/
+    am_config_map_t *logout_map; /* application logout url list */
     int logout_regex_enable;
     int openam_logout_map_sz;
-    am_config_map_t *openam_logout_map; /*OpenAM logout url list*/
+    am_config_map_t *openam_logout_map; /* OpenAM logout url list */
+    char *logout_url_regex;
+    int logout_redirect_disable;
 
-    int policy_scope_subtree; /*0 - self, 1 - subtree*/
+    int policy_scope_subtree; /* 0 - self, 1 - subtree */
     int resolve_client_host;
     int policy_eval_encode_chars;
     int cookie_encode_chars;
@@ -323,7 +325,9 @@ typedef struct {
 #define AM_AGENTS_CONFIG_LOGOUT_REDIRECT_URL "com.sun.identity.agents.config.logout.redirect.url"
 #define AM_AGENTS_CONFIG_LOGOUT_COOKIE_RESET "com.sun.identity.agents.config.logout.cookie.reset"
 #define AM_AGENTS_CONFIG_LOGOUT_REGEX_ENABLE "org.forgerock.agents.config.logout.regex.enable"
-
+#define AM_AGENTS_CONFIG_LOGOUT_URL_REGEX "com.forgerock.agents.agent.logout.url.regex"
+#define AM_AGENTS_CONFIG_LOGOUT_REDIRECT_DISABLE "com.forgerock.agents.config.logout.redirect.disable"
+        
 #define AM_AGENTS_CONFIG_POLICY_SCOPE "com.sun.identity.agents.config.fetch.from.root.resource"
 
 #define AM_AGENTS_CONFIG_RESOLVE_CLIENT_HOST "com.sun.identity.agents.config.get.client.host.name"

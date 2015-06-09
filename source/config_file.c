@@ -61,7 +61,7 @@ static void *parse_value(const char *line, const char *name,
         if (strncmp(tn, name, name_sz) == 0) {
             map = 0;
             if ((token_sz = strlen(tn)) != name_sz) {
-                /*get map value key*/
+                /* get map value key */
                 key = strstr(tn, "[");
                 if (key != NULL) {
                     key++; /* move past the '[' */
@@ -181,7 +181,7 @@ static void *parse_value(const char *line, const char *name,
                 if (map == 1) {
                     size_t val_sz = strlen(token);
                     size_t key_sz = strlen(key_val);
-                    /*value is stored as:
+                    /* value is stored as:
                      * key\0value\0
                      */
                     value = malloc(val_sz + key_sz + 2);
@@ -474,7 +474,7 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOTIF_ENABLE, CONF_NUMBER, NULL, &conf->notif_enable, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOTIF_URL, CONF_STRING, NULL, &conf->notif_url, NULL);
 
-        if (conf->local) { /*do read other options in case configuration is local*/
+        if (conf->local) { /* do read other options in case configuration is local */
 
             /* other options */
 
@@ -535,6 +535,8 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGOUT_REDIRECT_URL, CONF_STRING, NULL, &conf->logout_redirect_url, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGOUT_COOKIE_RESET, CONF_STRING_MAP, &conf->logout_cookie_reset_map_sz, &conf->logout_cookie_reset_map, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGOUT_REGEX_ENABLE, CONF_NUMBER, NULL, &conf->logout_regex_enable, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGOUT_URL_REGEX, CONF_STRING, NULL, &conf->logout_url_regex, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGOUT_REDIRECT_DISABLE, CONF_NUMBER, NULL, &conf->logout_redirect_disable, NULL);
 
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_POLICY_SCOPE, CONF_NUMBER, NULL, &conf->policy_scope_subtree, NULL);
 
@@ -619,7 +621,7 @@ void am_config_free(am_config_t **cp) {
                 c->fqdn_default, c->pdp_lb_cookie, c->cookie_prefix, c->logout_redirect_url,
                 c->password_replay_key, c->url_redirect_param, c->client_ip_header,
                 c->client_hostname_header, c->url_check_regex, c->multi_attr_separator,
-                c->pdp_sess_mode, c->pdp_sess_value, c->pdp_uri_prefix);
+                c->pdp_sess_mode, c->pdp_sess_value, c->pdp_uri_prefix, c->logout_url_regex);
 
         AM_CONF_FREE(c->naming_url_sz, c->naming_url);
         AM_CONF_FREE(c->hostmap_sz, c->hostmap);
