@@ -415,7 +415,7 @@ static am_return_t validate_fqdn_access(am_request_t *r) {
 static am_bool_t url_matches_pattern(am_request_t *r, const char *pattern,
         const char *url, am_bool_t regex_enable) {
     if (regex_enable) {
-        return match(r->instance_id, url, pattern) == AM_SUCCESS;
+        return match(r->instance_id, url, pattern) == AM_OK;
     } else {
         return policy_compare_url(r, pattern, url) != AM_NO_MATCH;
     }
@@ -833,6 +833,12 @@ static am_return_t validate_policy(am_request_t *r) {
         scope = AM_SCOPE_RESPONSE_ATTRIBUTE_ONLY;
     }
 
+    if (r->conf->sso_only) {
+        /* sso_only mode is interested only in user attributes (ignoring policy result) */
+        scope = AM_SCOPE_RESPONSE_ATTRIBUTE_ONLY;
+        AM_LOG_DEBUG(r->instance_id, "%s running in sso-only mode", thisfunc);
+    }
+
     if (r->status == AM_NOT_FOUND) {
         r->status = AM_INVALID_SESSION;
         return AM_OK;
@@ -1029,21 +1035,30 @@ static am_return_t validate_policy(am_request_t *r) {
                     }
                 }
 
-                //TODO: sso_only?
-
                 if (policy_status == AM_EXACT_MATCH || policy_status == AM_EXACT_PATTERN_MATCH) {
                     struct am_action_decision *ae, *at;
 
-                    if (r->not_enforced && (r->conf->not_enforced_fetch_attr || r->is_dummypost_url) &&
-                            e->scope == AM_SCOPE_RESPONSE_ATTRIBUTE_ONLY) {
-                        /* allow, in case this is not-enforced url and attribute fetch is enabled or this is a dummypost_url
-                         * (ignoring policy result) */
+                    if (((r->not_enforced && (r->conf->not_enforced_fetch_attr || r->is_dummypost_url))
+                            || r->conf->sso_only) && e->scope == AM_SCOPE_RESPONSE_ATTRIBUTE_ONLY) {
+                        /* allow, in case this is a) not-enforced url and attribute fetch is enabled or this is a dummypost_url
+                         * or b) agent is running in sso-only mode (ignoring policy result) */
                         AM_LOG_DEBUG(r->instance_id,
-                                "%s method: %s, decision: allow, not enforced url with attribute fetch enabled",
-                                thisfunc, am_method_num_to_str(r->method));
+                                "%s method: %s, decision: allow, %s",
+                                thisfunc, am_method_num_to_str(r->method),
+                                r->conf->sso_only ? "running sso-only mode" : "not enforced url with attribute fetch enabled");
                         r->response_attributes = e->response_attributes;
                         r->response_decisions = e->response_decisions;
                         r->status = AM_SUCCESS;
+
+                        /* fetch user parameter value */
+                        if (ISVALID(r->conf->userid_param) && ISVALID(r->conf->userid_param_type)) {
+                            if (strcasecmp(r->conf->userid_param_type, "SESSION") == 0) {
+                                r->user = get_attr_value(r, r->conf->userid_param, AM_SESSION_ATTRIBUTE);
+                            } else {
+                                r->user = get_attr_value(r, r->conf->userid_param, AM_POLICY_ATTRIBUTE);
+                            }
+                            r->user_password = get_attr_value(r, "sunIdentityUserPassword", AM_SESSION_ATTRIBUTE);
+                        }
                         return AM_OK;
                     }
 
@@ -1073,8 +1088,7 @@ static am_return_t validate_policy(am_request_t *r) {
                                 r->status = AM_SUCCESS;
 
                                 /* fetch user parameter value */
-                                if (ISVALID(r->conf->userid_param) &&
-                                        ISVALID(r->conf->userid_param_type)) {
+                                if (ISVALID(r->conf->userid_param) && ISVALID(r->conf->userid_param_type)) {
                                     if (strcasecmp(r->conf->userid_param_type, "SESSION") == 0) {
                                         r->user = get_attr_value(r, r->conf->userid_param, AM_SESSION_ATTRIBUTE);
                                     } else {
@@ -1091,8 +1105,7 @@ static am_return_t validate_policy(am_request_t *r) {
                             /* set the pointer to the policy advice(s) if any */
                             r->policy_advice = ae->advices;
                             r->status = AM_ACCESS_DENIED;
-                            AM_LOG_DEBUG(r->instance_id,
-                                    "%s method: %s, decision: deny, advice: %s",
+                            AM_LOG_DEBUG(r->instance_id, "%s method: %s, decision: deny, advice: %s",
                                     thisfunc, am_method_num_to_str(ae->method),
                                     ae->advices == NULL ? "n/a" : "available");
                             return AM_OK;
@@ -1716,7 +1729,7 @@ static am_return_t handle_exit(am_request_t *r) {
                         /* reset pdp sticky-session load-balancer cookie */
                         if (ISVALID(r->conf->pdp_sess_mode) && ISVALID(r->conf->pdp_sess_value)
                                 && strcmp(r->conf->pdp_sess_mode, "COOKIE") == 0
-                                && match(r->instance_id, r->conf->pdp_sess_value, "^(\\w+)=([^\\s]+)$") == AM_SUCCESS) {
+                                && match(r->instance_id, r->conf->pdp_sess_value, "^(\\w+)=([^\\s]+)$") == AM_OK) {
                             char *sess_cookie = strdup(r->conf->pdp_sess_value);
                             if (sess_cookie != NULL) {
                                 char *eq = strchr(sess_cookie, '=');
@@ -1905,7 +1918,7 @@ static am_return_t handle_exit(am_request_t *r) {
 
                         /* pdp sticky session value, if set, has to be in a correct format: param=value */
                         pdp_sess_mode = ISVALID(r->conf->pdp_sess_mode) && ISVALID(r->conf->pdp_sess_value)
-                                && match(r->instance_id, r->conf->pdp_sess_value, "^(\\w+)=([^\\s]+)$") == AM_SUCCESS;
+                                && match(r->instance_id, r->conf->pdp_sess_value, "^(\\w+)=([^\\s]+)$") == AM_OK;
 
                         pdp_sess_mode_url = pdp_sess_mode && strcmp(r->conf->pdp_sess_mode, "URL") == 0;
                         pdp_sess_mode_cookie = pdp_sess_mode && strcmp(r->conf->pdp_sess_mode, "COOKIE") == 0;
@@ -2051,9 +2064,8 @@ static am_return_t handle_exit(am_request_t *r) {
                 r->status = AM_REDIRECT;
                 r->am_set_custom_response_f(r, url, NULL);
                 free(url);
-                break;
             }
-
+            break;
         default:
             AM_LOG_ERROR(r->instance_id, "%s status: %s", thisfunc,
                     am_strerror(r->status));

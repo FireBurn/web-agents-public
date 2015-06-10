@@ -17,15 +17,11 @@
 #ifndef LOG_H
 #define LOG_H
 
-#include "platform.h"
-
 void am_strncat(char* dest, const char* source, size_t max);
 void am_log(unsigned long instance_id, int level, const char *format, ...);
 
-
-
 #ifdef _WIN32
-#define AM_LOG_ALWAYS(instance_id, format, ...)\
+#define AM_LOG_ALWAYS(instance, format, ...)\
     do {\
         if (format != NULL) {\
             char header[256];\

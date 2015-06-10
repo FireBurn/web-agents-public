@@ -18,6 +18,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "platform.h"
 #include "am.h"
 #include "log.h"
 

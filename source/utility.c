@@ -171,13 +171,14 @@ char is_big_endian() {
 }
 
 /**
- * match: match a subject against a pattern.
- *  instance_id: the current instance id for debugging purposes
- *  subject: the subject we're matching
- *  pattern: the pattern we're using to match
- * return:
- *  AM_OK (0) if there is a match, or we pass in NULL for the subject and/or pattern
- *  AM_FAIL (1) if there is no match, or the pattern doesn't compile
+ * Match a subject against a pattern.
+ * 
+ * @param instance_id: the current instance id for debugging purposes
+ * @param subject: the subject we're matching
+ * @param pattern: the pattern we're using to match
+ * 
+ * @return AM_OK (0) if there is a match, or we pass in NULL for the subject and/or pattern
+ *         AM_FAIL (1) if there is no match, or the pattern doesn't compile
  */
 am_return_t match(unsigned long instance_id, const char *subject, const char *pattern) {
     pcre* x = NULL;
@@ -185,7 +186,7 @@ am_return_t match(unsigned long instance_id, const char *subject, const char *pa
     int erroroffset, rc = -1;
     int offsets[3];
     am_return_t result = AM_OK;
-    
+
     if (subject == NULL || pattern == NULL) {
         return result;
     }
@@ -194,7 +195,7 @@ am_return_t match(unsigned long instance_id, const char *subject, const char *pa
         AM_LOG_DEBUG(instance_id, "match: pcre_compile failed on \"%s\" with error %s", pattern, (error == NULL) ? "unknown" : error);
         return AM_FAIL;
     }
-    
+
     rc = pcre_exec(x, NULL, subject, (int) strlen(subject), 0, 0, offsets, 3);
     if (rc < 0) {
         AM_LOG_DEBUG(instance_id, "match(): '%s' does not match '%s'", subject, pattern);
@@ -203,24 +204,25 @@ am_return_t match(unsigned long instance_id, const char *subject, const char *pa
         AM_LOG_DEBUG(instance_id, "match(): '%s' matches '%s'", subject, pattern);
     }
     pcre_free(x);
-    
+
     return result;
 }
 
 /**
- * match_group: match groups specified in the compiled regexp against the subject specified.
+ * Match groups specified in the compiled regular expression against the subject specified.
  * The matching groups are returned in bulk in the return value as a number of null separated strings.
  *
- * params:
- *   x: the compiled regular expression
- *   capture_groups: the number of capture groups specified in the regular expression
- *   subject: the string to be matched against the regular expression
- *   len: initially set to the length of the subject, this is changed to be a count of the number
+ * @param x: the compiled regular expression
+ * @param capture_groups: the number of capture groups specified in the regular expression
+ * @param subject: the string to be matched against the regular expression
+ * @param len: initially set to the length of the subject, this is changed to be a count of the number
  *        of strings stored in the return value, separated by null strings.
+ * 
+ * @return null separated matching strings
  */
 char *match_group(pcre *x, int capture_groups, const char *subject, size_t *len) {
 
-    // pcre itself needs space in the
+    /* pcre itself needs space in the max_capture_groups */
     int max_capture_groups = (capture_groups + 1) * 3;
     size_t k = 0, slen = *len;
     int i, substring_len, rc, ret_len = 0;
@@ -247,9 +249,9 @@ char *match_group(pcre *x, int capture_groups, const char *subject, size_t *len)
                     return NULL;
                 }
                 result = ret_tmp;
-                
+
                 /* return value is stored as:
-                 * key\0value\0...
+                 * value\0value\0...
                  */
                 memcpy(result + ret_len, rslt, substring_len);
                 result[ret_len + substring_len] = '\0';
@@ -265,10 +267,8 @@ char *match_group(pcre *x, int capture_groups, const char *subject, size_t *len)
     return result;
 }
 
-
-
 static void uri_normalize(struct url *url, char *path) {
-    
+
     char *s, *o, *p = path != NULL ? strdup(path) : NULL;
     int i, m = 0, list_sz = 0;
     char **segment_list = NULL, **segment_list_norm = NULL, **tmp;
@@ -280,7 +280,7 @@ static void uri_normalize(struct url *url, char *path) {
         }
         return;
     }
-    o = p; /*preserve original pointer*/
+    o = p; /* preserve original pointer */
 
     /* split path into segments */
     while ((s = am_strsep(&p, "/")) != NULL) {
@@ -369,7 +369,7 @@ int parse_url(const char *u, struct url *url) {
         return AM_ERROR;
     }
 
-    if (strlen(u) > (AM_PROTO_SIZE + AM_HOST_SIZE + 6 + AM_URI_SIZE/*max size of all sscanf format limits*/)) {
+    if (strlen(u) > (AM_PROTO_SIZE + AM_HOST_SIZE + 6 + AM_URI_SIZE/* max size of all sscanf format limits */)) {
         url->error = AM_E2BIG;
         return AM_ERROR;
     }
@@ -425,7 +425,7 @@ int parse_url(const char *u, struct url *url) {
         strncpy(url->query, p, sizeof (url->query) - 1);
         *p = 0;
 
-        strncpy(query, url->query + 1 /*skip '?'*/, sizeof (url->query) - 1);
+        strncpy(query, url->query + 1 /* skip '?' */, sizeof (url->query) - 1);
         sep_count = char_count(query, '&', NULL);
         if (sep_count > 0) {
             list = (struct query_attribute *) calloc(++sep_count, sizeof (struct query_attribute));
@@ -753,6 +753,7 @@ char *am_strsep(char **str, const char *delim) {
             }
         } while (sc != 0);
     }
+    return NULL;
 }
 
 int compare_property(const char *line, const char *property) {
@@ -934,7 +935,7 @@ am_status_t get_token_from_url(am_request_t *rq) {
         query[ql - 1] = 0;
         strncpy(rq->url.query, query, sizeof (rq->url.query) - 1);
     } else if (ql == 0 && ISVALID(rq->token)) {
-        /*token is the only query parameter - clear it*/
+        /* token is the only query parameter - clear it */
         memset(rq->url.query, 0, sizeof (rq->url.query));
         /* TODO: should a question mark be left there even when token is the only parameter? */
     }
@@ -1064,7 +1065,7 @@ char file_exists(const char *fn) {
         if (S_ISREG(sb.st_mode) || S_ISDIR(sb.st_mode) || S_ISLNK(sb.st_mode)) {
             if (S_ISDIR(sb.st_mode)) {
                 int mask = 0200 | 020;
-                /*we need owner/group write permission on a directory*/
+                /* we need owner/group write permission on a directory */
                 if (!(sb.st_mode & mask)) {
                     return AM_FALSE;
                 }
@@ -1351,7 +1352,7 @@ int am_session_decode(am_request_t *r) {
 
                 while (l > 0) {
                     uint16_t sz;
-                    uint8_t len[2]; /*network byte order*/
+                    uint8_t len[2]; /* network byte order */
 
                     memcpy(len, raw, sizeof (len));
                     if (is_big_endian()) {
@@ -1416,7 +1417,7 @@ int am_session_decode(am_request_t *r) {
 const char *get_valid_openam_url(am_request_t *r) {
     const char *val = NULL;
     int valid_idx = get_valid_url_index(r->instance_id);
-    /*find active OpenAM service URL*/
+    /* find active OpenAM service URL */
     if (r->conf->naming_url_sz > 0) {
         val = valid_idx >= r->conf->naming_url_sz ?
                 r->conf->naming_url[0] : r->conf->naming_url[valid_idx];
@@ -1706,7 +1707,7 @@ int am_bin_path(char *buffer, size_t len) {
 
 int am_delete_directory(const char *path) {
     SHFILEOPSTRUCT file_op;
-    int ret, len = (int) strlen(path) + 2; /*required by SHFileOperation*/
+    int ret, len = (int) strlen(path) + 2; /* required by SHFileOperation */
     char *tempdir = (char *) calloc(1, len);
     if (tempdir == NULL) return AM_ENOMEM;
     strcpy(tempdir, path);
@@ -1982,13 +1983,13 @@ int am_create_agent_dir(const char *sep, const char *path,
     char *p0 = NULL;
     if ((n = am_scandir(path, &instlist, am_file_filter, am_alphasort)) <= 0) {
 
-        /*report back an agent instance path and a configuration name*/
+        /* report back an agent instance path and a configuration name */
         if (created_name) am_asprintf(created_name, "%s%sagent_1", path, sep);
         if (created_name != NULL && *created_name == NULL) return AM_ENOMEM;
         if (created_name_simple) am_asprintf(created_name_simple, "agent_1");
         if (created_name_simple != NULL && *created_name_simple == NULL) return AM_ENOMEM;
 
-        /*create directory structure*/
+        /* create directory structure */
         if (created_name) r = am_make_path(*created_name);
         am_asprintf(&p0, "%s%sagent_1%sconfig", path, sep, sep);
         if (p0 == NULL) return AM_ENOMEM;
@@ -2008,7 +2009,7 @@ int am_create_agent_dir(const char *sep, const char *path,
         return r;
 
     } else {
-        /*the same as above, but there is an agent_x directory already*/
+        /* the same as above, but there is an agent_x directory already */
         for (i = 0; i < n; i++) {
             if (i == n - 1) {
                 char *id = strstr(instlist[i]->d_name, "_");
@@ -2052,12 +2053,12 @@ int string_replace(char **original, const char *pattern, const char *replace, si
         size_t plen = strlen(pattern);
         size_t retlen;
         char *newop, *ret, *op = *original;
-        /*count the number of patterns*/
+        /* count the number of patterns */
         for (optr = op; (ploc = strstr(optr, pattern)); optr = ploc + plen) pcnt++;
         if (pcnt == 0)
             return AM_NOT_FOUND;
 
-        retlen = (*sz) + pcnt * (rlen + plen); /*worst case*/
+        retlen = (*sz) + pcnt * (rlen + plen); /* worst case */
         newop = (char *) realloc(op, retlen + 1);
         if (newop == NULL) {
             am_free(op);
@@ -2090,7 +2091,7 @@ int copy_file(const char *from, const char *to) {
 
     if (!ISVALID(from)) return AM_EINVAL;
     if (!ISVALID(to)) {
-        /*'to' is not provided - do a copy of 'from' with a timestamped name*/
+        /* 'to' is not provided - do a copy of 'from' with a timestamped name */
         char tm[64];
         struct tm now;
         time_t tv = time(NULL);
@@ -2186,7 +2187,7 @@ void read_directory(const char *path, struct am_namevalue **list) {
         closedir(d);
     } else {
         if (errno == ENOTDIR) {
-            /*not a directory - add to the list as a file*/
+            /* not a directory - add to the list as a file */
             struct am_namevalue *el = calloc(1, sizeof (struct am_namevalue));
             if (el != NULL) {
                 el->ns = 0;
