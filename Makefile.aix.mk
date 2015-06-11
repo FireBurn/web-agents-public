@@ -20,7 +20,7 @@ AIX_MK_INCLUDED := true
 CC := xlc_r
 SHARED := -G -qmkshrobj
 
-CFLAGS += -qpic -D_REENTRANT -D_THREAD_SAFE -DAIX -qlanglvl=extc99:noucs -DPIC -D_LARGEFILE64_SOURCE
+CFLAGS += -qpic -g -D_REENTRANT -D_THREAD_SAFE -DAIX -qlanglvl=extc99:noucs -DPIC -D_LARGEFILE64_SOURCE
 
 ifdef DEBUG
  CFLAGS += -DDEBUG
@@ -33,6 +33,8 @@ ifdef 64
  CFLAGS += -q64
 endif
 
+$(TEST_OBJECTS): CFLAGS += -D_UINTPTR_T_DEFINED
+	
 LINKOPTS := -bnoentry -bquiet -brtl
 	
 LDFLAGS += -lpthread -ldl -lc -lm
@@ -59,4 +61,8 @@ agentadmin: $(OUT_OBJS) $(ADMIN_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" binary ***]"
 	${CC} $(LDFLAGS) $(OUT_OBJS) $(ADMIN_OUT_OBJS) -o build/agentadmin
 
+tests: clean build version test_includes $(OUT_OBJS) $(TEST_OBJECTS) 
+	@$(ECHO) "[***** Building "$@" binary *****]"
+	${CC} $(LDFLAGS) $(OUT_OBJS) $(TEST_OBJECTS) -o build$(PS)test
+	
 endif

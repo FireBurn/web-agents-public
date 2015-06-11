@@ -17,13 +17,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <setjmp.h>
 
 #include "platform.h"
 #include "am.h"
 #include "log.h"
-
-#include <setjmp.h>
-#include <cmocka.h>
+#include "cmocka.h"
 
 /**
  * This is the simplest of tests to check we can log things without crashing.
@@ -36,9 +35,7 @@ void test_logging(void** state) {
     
     static const char* text1 = "Now is the winter of our discontent,";
     static const char* text2 = "Made glorious summer by this son of York";
-    
-    (void)state;
-    
+        
     AM_LOG_INFO(0, "instance id is zero and no args");
     AM_LOG_INFO(0, "instance id is zero and incorrect args", text1);
     AM_LOG_INFO(0, "instance id is zero and more incorrect args", text1, text2);

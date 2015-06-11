@@ -218,7 +218,12 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
     snprintf(ret->name[0], sizeof (ret->name[0]),
             "/%s_l", name); /*mutex/semaphore*/
     snprintf(ret->name[1], sizeof (ret->name[1]),
-            "%s_s", name); /*shared memory name*/
+#ifdef __sun
+            "/%s_s"
+#else
+            "%s_s"
+#endif
+            , name); /*shared memory name*/
 #endif
 
     size = page_size(usize + SIZEOF_mem_pool); /*need at least the size of the mem_pool header*/

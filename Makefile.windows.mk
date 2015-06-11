@@ -23,7 +23,7 @@ RC = rc
 SHARED = /DLL
 
 CFLAGS  += /O2 /Oi /GL /Gy /D _CRT_SECURE_NO_WARNINGS /wd4996 /wd4101 /wd4244 /wd4995 /wd4275 \
-	/EHa /nologo /Zi /errorReport:none /MP /Gm- /W3 /c /TC /D WIN32 /D ZLIB_WINAPI /D PCRE_STATIC /MTd /D _DEBUG
+	/EHa /nologo /Zi /errorReport:none /MP /Gm- /W3 /c /TC /D WIN32 /D _WIN32 /D ZLIB_WINAPI /D PCRE_STATIC
 
 LDFLAGS += /SUBSYSTEM:CONSOLE /NOLOGO /INCREMENTAL:NO /errorReport:none /MANIFEST:NO \
 	/OPT:REF /OPT:ICF /LTCG /DYNAMICBASE /NXCOMPAT /DEBUG \
@@ -32,41 +32,76 @@ LDFLAGS += /SUBSYSTEM:CONSOLE /NOLOGO /INCREMENTAL:NO /errorReport:none /MANIFES
 LIBS = kernel32.lib user32.lib ws2_32.lib crypt32.lib advapi32.lib shlwapi.lib shell32.lib iphlpapi.lib
 
 $(IIS_OUT_OBJS): COMPILEOPTS += /TP
-
+$(TEST_OBJECTS): CFLAGS += /D HAVE_MSVC_THREAD_LOCAL_STORAGE /D HAVE__SNPRINTF_S /D HAVE__VSNPRINTF_S /D UNIT_TESTING_DEBUG=1
+	
 ifndef 64
 $(error Only 64bit targets are supported)
 endif
 
+ifdef DEBUG
+ CFLAGS += /MTd /D _DEBUG
+else
+ CFLAGS += /MT
+endif
+	
 libopenam: $(OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
-	${LINK} $(SHARED) $(LDFLAGS) $(OUT_OBJS) /OUT:build\$@.dll /PDB:build\$@.pdb \
+	-$(RMALL) $(OBJDIR)$(PS)version.*
+	$(SED) -e "s$(SUB)_FILE_NAME_$(SUB)libopenam.dll$(SUB)g" \
+	       -e "s$(SUB)_FILE_TYPE_$(SUB)VFT_DLL$(SUB)g" < source$(PS)version.rc.template > $(OBJDIR)$(PS)version.rc
+	$(RC)  /l 0x0409 /nologo /fo $(OBJDIR)$(PS)version.res $(OBJDIR)$(PS)version.rc
+	${LINK} $(SHARED) $(LDFLAGS) $(OUT_OBJS) $(OBJDIR)$(PS)version.res /OUT:build\$@.dll /PDB:build\$@.pdb \
 	    $(LIBS)
 	
 apache: $(OUT_OBJS) $(APACHE_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
-	${LINK} $(SHARED) $(LDFLAGS) $(OUT_OBJS) $(APACHE_OUT_OBJS) /OUT:build\mod_openam.dll /PDB:build\mod_openam.pdb \
-	    $(LIBS) \
+	-$(RMALL) $(OBJDIR)$(PS)version.*
+	$(SED) -e "s$(SUB)_FILE_NAME_$(SUB)mod_openam.dll$(SUB)g" \
+	       -e "s$(SUB)_FILE_TYPE_$(SUB)VFT_DLL$(SUB)g" < source$(PS)version.rc.template > $(OBJDIR)$(PS)version.rc
+	$(RC)  /l 0x0409 /nologo /fo $(OBJDIR)$(PS)version.res $(OBJDIR)$(PS)version.rc
+	${LINK} $(SHARED) $(LDFLAGS) $(OUT_OBJS) $(APACHE_OUT_OBJS) $(OBJDIR)$(PS)version.res /OUT:build\mod_openam.dll \
+	    /PDB:build\mod_openam.pdb $(LIBS) \
 	    extlib/Windows/apache24/lib/libapr-1.lib extlib/Windows/apache24/lib/libaprutil-1.lib \
 	    extlib/Windows/apache24/lib/libhttpd.lib
 
 apache22: apache22_pre $(OUT_OBJS) $(APACHE22_OUT_OBJS) apache22_post
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
-	${LINK} $(SHARED) $(LDFLAGS) $(OUT_OBJS) $(APACHE22_OUT_OBJS) /OUT:build\mod_openam.dll /PDB:build\mod_openam.pdb \
-	    $(LIBS) \
+	-$(RMALL) $(OBJDIR)$(PS)version.*
+	$(SED) -e "s$(SUB)_FILE_NAME_$(SUB)mod_openam.dll$(SUB)g" \
+	       -e "s$(SUB)_FILE_TYPE_$(SUB)VFT_DLL$(SUB)g" < source$(PS)version.rc.template > $(OBJDIR)$(PS)version.rc
+	$(RC)  /l 0x0409 /nologo /fo $(OBJDIR)$(PS)version.res $(OBJDIR)$(PS)version.rc
+	${LINK} $(SHARED) $(LDFLAGS) $(OUT_OBJS) $(APACHE22_OUT_OBJS) $(OBJDIR)$(PS)version.res /OUT:build\mod_openam.dll \
+	    /PDB:build\mod_openam.pdb $(LIBS) \
 	    extlib/Windows/apache22/lib/libapr-1.lib extlib/Windows/apache22/lib/libaprutil-1.lib \
 	    extlib/Windows/apache22/lib/libhttpd.lib
 	
 iis: $(OUT_OBJS) $(IIS_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
-	${LINK} $(SHARED) $(LDFLAGS) $(OUT_OBJS) $(IIS_OUT_OBJS) /OUT:build\mod_iis_openam.dll /PDB:build\mod_iis_openam.pdb \
-	    $(LIBS) /EXPORT:RegisterModule oleaut32.lib
+	-$(RMALL) $(OBJDIR)$(PS)version.*
+	$(SED) -e "s$(SUB)_FILE_NAME_$(SUB)mod_iis_openam.dll$(SUB)g" \
+	       -e "s$(SUB)_FILE_TYPE_$(SUB)VFT_DLL$(SUB)g" < source$(PS)version.rc.template > $(OBJDIR)$(PS)version.rc
+	$(RC)  /l 0x0409 /nologo /fo $(OBJDIR)$(PS)version.res $(OBJDIR)$(PS)version.rc
+	${LINK} $(SHARED) $(LDFLAGS) $(OUT_OBJS) $(IIS_OUT_OBJS) $(OBJDIR)$(PS)version.res /OUT:build\mod_iis_openam.dll \
+	    /PDB:build\mod_iis_openam.pdb $(LIBS) /EXPORT:RegisterModule oleaut32.lib
 
 varnish: 
 	$(error Varnish target is not supported on this platform)
 	
 agentadmin: $(OUT_OBJS) $(ADMIN_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" binary ***]"
-	${LINK} $(LDFLAGS) $(OUT_OBJS) $(ADMIN_OUT_OBJS) /OUT:build\$@.exe /PDB:build\$@.pdb $(LIBS) \
-	    ole32.lib oleaut32.lib ahadmin.lib
+	-$(RMALL) $(OBJDIR)$(PS)version.*
+	$(SED) -e "s$(SUB)_FILE_NAME_$(SUB)agentadmin.exe$(SUB)g" \
+	       -e "s$(SUB)_FILE_TYPE_$(SUB)VFT_APP$(SUB)g" < source$(PS)version.rc.template > $(OBJDIR)$(PS)version.rc
+	$(RC)  /l 0x0409 /nologo /fo $(OBJDIR)$(PS)version.res $(OBJDIR)$(PS)version.rc
+	${LINK} $(LDFLAGS) $(OUT_OBJS) $(ADMIN_OUT_OBJS) $(OBJDIR)$(PS)version.res /OUT:build\$@.exe /PDB:build\$@.pdb \
+	    $(LIBS) ole32.lib oleaut32.lib ahadmin.lib
 
+tests: clean build version test_includes $(OUT_OBJS) $(TEST_OBJECTS) 
+	@$(ECHO) "[***** Building "$@" binary *****]"
+	-$(RMALL) $(OBJDIR)$(PS)version.*
+	$(SED) -e "s$(SUB)_FILE_NAME_$(SUB)test.exe$(SUB)g" \
+	       -e "s$(SUB)_FILE_TYPE_$(SUB)VFT_APP$(SUB)g" < source$(PS)version.rc.template > $(OBJDIR)$(PS)version.rc
+	$(RC)  /l 0x0409 /nologo /fo $(OBJDIR)$(PS)version.res $(OBJDIR)$(PS)version.rc
+	${LINK} $(LDFLAGS) $(OUT_OBJS) $(TEST_OBJECTS) $(OBJDIR)$(PS)version.res /OUT:build$(PS)test.exe $(LIBS)
+	
 endif

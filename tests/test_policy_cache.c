@@ -16,21 +16,19 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdlib.h>
 #include <string.h>
+#include <setjmp.h>
 
-#include <pthread.h>
-
+#include "platform.h"
 #include "am.h"
-
 #include "utility.h"
 #include "list.h"
-
-#include <setjmp.h>
-#include <cmocka.h>
+#include "thread.h"
+#include "cmocka.h"
 
 void* am_parse_policy_xml(unsigned long instance_id, const char* xml, size_t xml_sz, int scope);
-
+void am_worker_pool_init_reset();
+void am_net_init_ssl_reset();
 
 char* policy_xml = "<PolicyService version='1.0' revisionNumber='60'>"
     "<PolicyResponse requestId='4' issueInstant='1424783306343' >"
@@ -118,11 +116,11 @@ static void test_namevalue_pair(const char* prefix, struct am_namevalue* nvp)
     int key_policy_seq, key_attr_seq;
     int value_policy_seq, value_attr_seq, value_value_seq;
     
-    char* key_format;
-    char* value_format;
+    char* key_format = NULL;
+    char* value_format = NULL;
 
-    asprintf(&key_format, "%s%s", prefix, ",key:%d,%d");
-    asprintf(&value_format, "%s%s", prefix, ",value:%d,%d,%d");
+    am_asprintf(&key_format, "%s%s", prefix, ",key:%d,%d");
+    am_asprintf(&value_format, "%s%s", prefix, ",value:%d,%d,%d");
     
     assert_int_equal(sscanf(nvp->n, key_format, &key_policy_seq, &key_attr_seq), 2);
     assert_int_equal(sscanf(nvp->v, value_format, &value_policy_seq, &value_attr_seq, &value_value_seq), 3);
@@ -147,15 +145,14 @@ static int test_attributes(const char * prefix, struct am_namevalue * head)
 static void test_policy_structure(struct am_policy_result * result)
 {
     struct am_policy_result* r = result;
-
+    struct am_action_decision* ad = r != NULL ? r->action_decisions : NULL;
+    
     assert_non_null(r);
 
     assert_string_equal(r->resource, "http://vb2.local.com:80/testwebsite");
     assert_int_equal(test_attributes("Attributes", r->response_attributes), 3);
     assert_int_equal(test_attributes("Decision", r->response_decisions), 3);
     
-    struct am_action_decision* ad = r->action_decisions;
-
     assert_non_null(ad);
     
     assert_string_equal(am_method_num_to_str(ad->method), "PUT");
@@ -189,13 +186,11 @@ static void test_policy_structure(struct am_policy_result * result)
 
 void test_policy_result_reader(void **state) {
 
-    (void)state;
-
     size_t size;
     char* buffer = NULL;
     struct am_policy_result* result;
 
-    asprintf(&buffer, pll, policy_xml);
+    am_asprintf(&buffer, pll, policy_xml);
     size = strlen(pll);
     result = am_parse_policy_xml(0l, buffer, size, 0);
 
@@ -206,37 +201,34 @@ void test_policy_result_reader(void **state) {
 
 
 void test_policy_cache_simple(void **state) {
-
-    (void)state;
-
-    struct {
-    } ctx;
     
-    am_config_t config = {
-        .instance_id = 101,
-        .token_cache_valid = 0,
-    };
-    
-    am_request_t request = {
-        .conf                   = &config,
-        .ctx                    = &ctx,
-    };
-    
+    am_config_t config;
+    am_request_t request;
     char* buffer = NULL;
-    int size = asprintf(&buffer, pll, policy_xml);
-    struct am_policy_result * result = am_parse_policy_xml(0l, buffer, size, 0);
+    struct am_policy_result * result;
     time_t ets;
     struct am_policy_result * r = NULL;
     struct am_namevalue * session = NULL;
     
+    memset(&config, 0, sizeof(am_config_t));
+    memset(&request, 0, sizeof(am_request_t));
+    request.conf = &config;
+    
+    am_asprintf(&buffer, pll, policy_xml);
+    result = am_parse_policy_xml(0l, buffer, strlen(buffer), 0);
+    
     free(buffer);
     
-    am_cache_init();
-    
-    am_add_session_policy_cache_entry(&request, "Policy-key", result, 0);
+    assert_int_equal(am_init(), AM_SUCCESS);
+    am_init_worker();
+        
+    am_add_session_policy_cache_entry(&request, "Policy-key", result, NULL);
     am_get_session_policy_cache_entry(&request, "Policy-key", &r, &session, &ets);
     
-    am_cache_shutdown();
+    am_shutdown_worker();
+    am_shutdown();
+    am_worker_pool_init_reset();
+    am_net_init_ssl_reset();
     
     test_policy_structure(r);
 }
@@ -252,7 +244,7 @@ void create_random_cache_key(char * buffer, size_t size)
     size_t len = sizeof(alphabet) - 1;
     
     for (i = 0; i < count; i++) {
-        buffer[i] = alphabet[random() % len];
+        buffer[i] = alphabet[rand() % len];
     }
     buffer[count] = 0;
 }
@@ -262,22 +254,22 @@ static void test_cache(int test_size, am_request_t * request, struct am_policy_r
     int i;
     char key[64];
     
-    // create initial entries
-    srandom(543542);
+    /* create initial entries */
+    srand(543542);
     for(i = 0; i < test_size; i++) {
         create_random_cache_key(key, sizeof(key));
-        assert_int_equal(am_add_session_policy_cache_entry(request, key, result, 0), AM_SUCCESS);
+        assert_int_equal(am_add_session_policy_cache_entry(request, key, result, NULL), AM_SUCCESS);
     }
     
-    // should refresh the whole lot
-    srandom(543542);
+    /* should refresh the whole lot */
+    srand(543542);
     for(i = 0; i < test_size; i++) {
         create_random_cache_key(key, sizeof(key));
-        assert_int_equal(am_add_session_policy_cache_entry(request, key, result, 0), AM_SUCCESS);
+        assert_int_equal(am_add_session_policy_cache_entry(request, key, result, NULL), AM_SUCCESS);
     }
     
-    // read them all back
-    srandom(543542);
+    /* read them all back */
+    srand(543542);
     for(i = 0; i < test_size; i++) {
         time_t ets;
         struct am_policy_result * r = NULL;
@@ -293,17 +285,17 @@ static void test_cache_keys(int test_size, char** keys, am_request_t* request, s
 {
     int i;
 
-    // create initial entries
+    /* create initial entries */
     for(i = 0; i < test_size; i++) {
-        assert_int_equal(am_add_session_policy_cache_entry(request, keys [i], result, 0), AM_SUCCESS);
+        assert_int_equal(am_add_session_policy_cache_entry(request, keys [i], result, NULL), AM_SUCCESS);
     }
     
-    // should refresh the whole lot
+    /* should refresh the whole lot */
     for(i = 0; i < test_size; i++) {
-        assert_int_equal(am_add_session_policy_cache_entry(request, keys [i], result, 0), AM_SUCCESS);
+        assert_int_equal(am_add_session_policy_cache_entry(request, keys [i], result, NULL), AM_SUCCESS);
     }
     
-    // read them all back
+    /* read them all back */
     for(i = 0; i < test_size; i++) {
         time_t ets;
         struct am_policy_result * r = NULL;
@@ -318,36 +310,33 @@ static void test_cache_keys(int test_size, char** keys, am_request_t* request, s
 
 void test_policy_cache_many_entries(void **state) {
 
-    (void)state;
-
     const int test_size = 198;
-    
-    struct {
-    } ctx;
-    
-    am_config_t config = {
-        .instance_id = 101,
-        .token_cache_valid = 0,
-    };
-    
-    am_request_t request = {
-        .conf                   = &config,
-        .ctx                    = &ctx,
-    };
-    
     char* buffer = NULL;
-    int size = asprintf(&buffer, pll, policy_xml);
-    struct am_policy_result * result = am_parse_policy_xml(0l, buffer, size, 0);
+    struct am_policy_result * result;
+    
+    am_config_t config;
+    am_request_t request;
+    
+    memset(&config, 0, sizeof(am_config_t));
+    memset(&request, 0, sizeof(am_request_t));
+    request.conf = &config;
+    
+    am_asprintf(&buffer, pll, policy_xml);
+    result = am_parse_policy_xml(0l, buffer, strlen(buffer), 0);
     
     free(buffer);
     
-    am_cache_init();
-    
+    assert_int_equal(am_init(), AM_SUCCESS);
+    am_init_worker();
+        
     test_cache(test_size, &request, result);
     
     delete_am_policy_result_list(&result);
     
-    assert_int_equal(am_cache_shutdown(), AM_SUCCESS);
+    am_shutdown_worker();
+    am_shutdown();
+    am_worker_pool_init_reset();
+    am_net_init_ssl_reset();
 }
 
 
@@ -371,81 +360,73 @@ static void* test_cache_procedure(void * params)
     return 0;
 }
 
-void test_policy_cache_multithread()
-{
-    struct {
-        
-    } ctx;
+void test_policy_cache_multithread() {
     
-    am_config_t config = {
-        .instance_id = 101,
-        .token_cache_valid = 0,
-    };
-    
-    am_request_t request = {
-        .conf                   = &config,
-        .ctx                    = &ctx,
-    };
-    
-    char* buffer = 0;
-    int size = asprintf(&buffer, pll, policy_xml);
-    struct am_policy_result* result = am_parse_policy_xml(0l, buffer, size, 0);
-    // this must be slightly less than the maximum because re-use of shm chunks might use more space
-    const int test_size = 195;
-    
-    char* keys [test_size];
+    am_config_t config;
+    am_request_t request;
+    char* buffer = NULL;
+    struct am_policy_result* result;
+    /* this must be slightly less than the maximum because re-use of shm chunks might use more space */
+#define TEST_SIZE  195
+    char* keys [TEST_SIZE];
     char key_buffer[64];
     int i;
-    
-    struct test_cache_params params = {
-        .test_size = test_size,
-        .keys = keys,
-        
-        .iterations = 32,
-        
-        .request = &request,
-        .result = result,
-    };
-    
-    long t0 = clock();
-    int nthreads = 2;
-    pthread_t threads [nthreads];
-    void* arg = NULL;
-    double dt;
+
+    memset(&config, 0, sizeof (am_config_t));
+    memset(&request, 0, sizeof (am_request_t));
+    request.conf = &config;
+
+    am_asprintf(&buffer, pll, policy_xml);
+    result = am_parse_policy_xml(0l, buffer, strlen(buffer), 0);
 
     free(buffer);
     
-    for (i = 0; i < test_size; i++) {
-        create_random_cache_key(key_buffer, sizeof(key_buffer));
-        keys[i] = strdup(key_buffer);
-    }
+    assert_non_null(result);
     
-    am_cache_init();
+    if (result != NULL) {
+        struct test_cache_params params = {
+            .test_size = TEST_SIZE,
+            .keys = keys,
 
-    fprintf(stdout, "info: started multithreaded cache tests.. ");
-    fflush(stdout);
+            .iterations = 32,
 
-    for (i = 0; i < nthreads; i++) {
-        if (pthread_create(threads + i, NULL, test_cache_procedure, &params)) {
-            perror("create thread\n");
+            .request = &request,
+            .result = result,
+        };
+
+        long t0 = clock();
+#define NTHREADS 2
+        am_thread_t threads [NTHREADS];
+        double dt;
+        
+        for (i = 0; i < TEST_SIZE; i++) {
+            create_random_cache_key(key_buffer, sizeof (key_buffer));
+            keys[i] = strdup(key_buffer);
         }
-    }
-    
-    for (i = 0; i < nthreads; i++) {
-        if (pthread_join(threads[i], &arg)) {
-            perror("create thread\n");
+
+        assert_int_equal(am_cache_init(), AM_SUCCESS);
+
+        fprintf(stdout, "info: started multithreaded cache tests.. ");
+        fflush(stdout);
+
+        for (i = 0; i < NTHREADS; i++) {
+            AM_THREAD_CREATE(threads[i], test_cache_procedure, &params);
         }
-    }
-  
-    dt = ((double) (clock() - t0)) / CLOCKS_PER_SEC;
-    fprintf(stdout, "finished after %lf secs\n", dt);
 
-    assert_int_equal(am_cache_shutdown(), AM_SUCCESS);
-    
-    delete_am_policy_result_list(&result);
+        for (i = 0; i < NTHREADS; i++) {
+            AM_THREAD_JOIN(threads[i]);
+        }
 
-    for(i = 0; i < test_size; i++) {
-        free(keys[i]);
+        dt = ((double) (clock() - t0)) / CLOCKS_PER_SEC;
+        fprintf(stdout, "finished after %lf secs\n", dt);
+
+        assert_int_equal(am_cache_shutdown(), AM_SUCCESS);
+
+        delete_am_policy_result_list(&result);
+
+        for (i = 0; i < TEST_SIZE; i++) {
+            free(keys[i]);
+        }
     }
 }
 
@@ -455,21 +436,19 @@ void test_policy_cache_multithread()
  */
 void test_key_creation(void **state) {
 
-    (void)state;
-
-    const int test_size = 10;
-    char* keys[test_size];
+#define TEST_SIZE_1 10
+    char* keys[TEST_SIZE_1];
     char key[64];
     int i;
     
-    srandom(543542);
-    for(i = 0; i < test_size; i++) {
+    srand(543542);
+    for(i = 0; i < TEST_SIZE_1; i++) {
         create_random_cache_key(key, sizeof(key));
         keys[i] = strdup(key);
     }
     
-    srandom(543542);
-    for(i = 0; i < test_size; i++) {
+    srand(543542);
+    for(i = 0; i < TEST_SIZE_1; i++) {
         create_random_cache_key(key, sizeof(key));
         assert_string_equal(key, keys[i]);
     }

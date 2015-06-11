@@ -17,16 +17,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
-#include <unistd.h>
+#include <setjmp.h>
 
+#include "platform.h"
 #include "am.h"
 #include "utility.h"
 #include "list.h"
-
-#include <setjmp.h>
-#include <cmocka.h>
-
-
+#include "cmocka.h"
 
 #define array_len(a) ( (&a) [1] - a )
 
@@ -124,6 +121,8 @@ static void cookie_table_unset(struct cookie_table * table, const char * key)
 
 void cookie_table_dump(char * title, struct cookie_table * table)
 {
+    int i;
+    int c = 0;
     printf("%s:\n", title);
     fflush(stdout);
     if (table == NULL) {
@@ -134,8 +133,6 @@ void cookie_table_dump(char * title, struct cookie_table * table)
     printf("table counter is %d\n", table->c);
     fflush(stdout);
 
-    int i;
-    int c = 0;
     for (i = 0; i < table->c; i++) {
         if (table->keys [i]) {
             printf("%d: %s -> %s\n", c++, table->keys [i], table->values [i]);
@@ -151,8 +148,8 @@ static am_status_t am_get_url_encoded_token_url(struct am_request * request)
     
     char * token = TOKEN_VALUE;
     
-    char * url = 0;
-    asprintf(&url, "http://a.b.c:80/%s?g=h&%s=%s&i=j", path, TOKEN_NAME, token);
+    char * url = NULL;
+    am_asprintf(&url, "http://a.b.c:80/%s?g=h&%s=%s&i=j", path, TOKEN_NAME, token);
     
     request->orig_url = url;
     
@@ -172,8 +169,8 @@ static am_status_t set_cookie(am_request_t *rq, const char *header) {
     }
     else
     {
-        char * cookie = 0;
-        asprintf(&cookie, "%s;%s", header, c);
+        char * cookie = NULL;
+        am_asprintf(&cookie, "%s;%s", header, c);
         cookie_table_set(&ctx->in, "Cookie", cookie);
         free(cookie);
     }
@@ -226,14 +223,12 @@ static am_status_t set_custom_response(am_request_t * rq, const char * text, con
     {
         case AM_JSON_RESPONSE:
         {
-            //TODO:
             rq->status = AM_DONE;
         }
         break;
         
         case AM_INTERNAL_REDIRECT:
         {
-            //ap_internal_redirect(text, r);
             rq->status = AM_DONE;
         }
         break;
@@ -241,7 +236,6 @@ static am_status_t set_custom_response(am_request_t * rq, const char * text, con
         case AM_REDIRECT:
         {
             cookie_table_add(&ctx->out, "Location", text);
-            //ap_custom_response(r, HTTP_MOVED_TEMPORARILY, text);
         }
         break;
             
@@ -267,22 +261,21 @@ static am_status_t set_custom_response(am_request_t * rq, const char * text, con
 
 static struct am_namevalue * new_namevalue(char * name, char * value)
 {
-    struct am_namevalue * el = 0;
+    struct am_namevalue * el = NULL;
     create_am_namevalue_node(name, strlen(name), value, strlen(value), &el);
-    
     return el;
 }
 
 
 void test_handle_exits_with_success(void **state) {
 
-    (void)state;
-
-    am_state_func_t const * func_array = 0;
+    am_state_func_t const * func_array = NULL;
     int array_len = 0;
-    
-    am_test_get_state_funcs(&func_array, &array_len);
-    am_state_func_t exit_f = func_array [7];
+    struct am_namevalue *el;
+    struct am_namevalue *sattr = NULL;
+    struct am_namevalue *response_decisions = NULL;
+    struct am_namevalue *response_attributes = NULL;
+    am_state_func_t exit_f;
     
     am_config_map_t session_attr_map [] =
     {
@@ -302,19 +295,6 @@ void test_handle_exits_with_success(void **state) {
         { "ldap-response-1", "Response-header-1" },
     };
     
-    struct am_namevalue * sattr = 0;
-    AM_LIST_INSERT(sattr, new_namevalue("ldap-session-0", "session-value-0"));
-    AM_LIST_INSERT(sattr, new_namevalue("ldap-session-1", "session-value-1"));
-    
-    struct am_namevalue * response_decisions = 0;
-    AM_LIST_INSERT(response_decisions, new_namevalue("ldap-profile-0", "profile-value-0"));
-    AM_LIST_INSERT(response_decisions, new_namevalue("ldap-profile-1", "profile-value-1"));
-    
-    struct am_namevalue * response_attributes = 0;
-    AM_LIST_INSERT(response_attributes, new_namevalue("ldap-response-0", "response-value-0"));
-    AM_LIST_INSERT(response_attributes, new_namevalue("ldap-response-1", "response-value-1"));
- 
-    
     struct cookie_ctx ctx =
     {
         .in = { .c = 0 }, .out = { .c = 0 }
@@ -322,6 +302,7 @@ void test_handle_exits_with_success(void **state) {
     
     am_config_t config =
     {
+        .instance_id                    = 0,
         .agenturi                       = "https://www.override.com:90/am",
         
         .override_protocol              = AM_TRUE,
@@ -349,6 +330,7 @@ void test_handle_exits_with_success(void **state) {
     
     am_request_t request =
     {
+        .instance_id                    = 0,
         .conf                           = &config,
         .ctx                            = &ctx,
         
@@ -371,7 +353,25 @@ void test_handle_exits_with_success(void **state) {
         .response_decisions             = response_decisions,
     };
     
-    // test the function
+    el = new_namevalue("ldap-session-0", "session-value-0");
+    AM_LIST_INSERT(sattr, el);
+    el = new_namevalue("ldap-session-1", "session-value-1");
+    AM_LIST_INSERT(sattr, el);
+    
+    el = new_namevalue("ldap-profile-0", "profile-value-0");
+    AM_LIST_INSERT(response_decisions, el);
+    el = new_namevalue("ldap-profile-1", "profile-value-1");
+    AM_LIST_INSERT(response_decisions, el);
+    
+    el = new_namevalue("ldap-response-0", "response-value-0");
+    AM_LIST_INSERT(response_attributes, el);
+    el = new_namevalue("ldap-response-1", "response-value-1");
+    AM_LIST_INSERT(response_attributes, el);
+    
+    am_test_get_state_funcs(&func_array, &array_len);
+    exit_f = func_array [7];
+    
+    /* test the function */
     
     assert_int_equal(exit_f(&request), AM_OK);
     
@@ -387,13 +387,13 @@ void test_handle_exits_with_success(void **state) {
 
 void test_handle_exits_with_access_denied(void **state) {
 
-    (void) state; /* unused */
-
-    am_state_func_t const * func_array = 0;
+    am_state_func_t const * func_array = NULL;
     int array_len = 0;
-    
-    am_test_get_state_funcs(&func_array, &array_len);
-    am_state_func_t exit_f = func_array [7];
+    struct am_namevalue *el;
+    struct am_namevalue *sattr = NULL;
+    struct am_namevalue *response_decisions = NULL;
+    struct am_namevalue *response_attributes = NULL;
+    am_state_func_t exit_f;
     
     am_config_map_t session_attr_map [] =
     {
@@ -413,19 +413,6 @@ void test_handle_exits_with_access_denied(void **state) {
         { "ldap-response-1", "Response-header-1" },
     };
     
-    struct am_namevalue * sattr = 0;
-    AM_LIST_INSERT(sattr, new_namevalue("ldap-session-0", "session-value-0"));
-    AM_LIST_INSERT(sattr, new_namevalue("ldap-session-1", "session-value-1"));
-    
-    struct am_namevalue * response_decisions = 0;
-    AM_LIST_INSERT(response_decisions, new_namevalue("ldap-profile-0", "profile-value-0"));
-    AM_LIST_INSERT(response_decisions, new_namevalue("ldap-profile-1", "profile-value-1"));
-    
-    struct am_namevalue * response_attributes = 0;
-    AM_LIST_INSERT(response_attributes, new_namevalue("ldap-response-0", "response-value-0"));
-    AM_LIST_INSERT(response_attributes, new_namevalue("ldap-response-1", "response-value-1"));
-    
-    
     struct cookie_ctx ctx =
     {
         .in = { .c = 0 }, .out = { .c = 0 }
@@ -433,6 +420,7 @@ void test_handle_exits_with_access_denied(void **state) {
     
     am_config_t config =
     {
+        .instance_id                    = 0,
         .agenturi                       = "https://www.override.com:90/am",
         
         .override_protocol              = AM_TRUE,
@@ -462,6 +450,7 @@ void test_handle_exits_with_access_denied(void **state) {
     
     am_request_t request =
     {
+        .instance_id                    = 0,
         .conf                           = &config,
         .ctx                            = &ctx,
         
@@ -484,6 +473,24 @@ void test_handle_exits_with_access_denied(void **state) {
         .sattr                          = sattr,
         .response_decisions             = response_decisions,
     };
+    
+    el = new_namevalue("ldap-session-0", "session-value-0");
+    AM_LIST_INSERT(sattr, el);
+    el = new_namevalue("ldap-session-1", "session-value-1");
+    AM_LIST_INSERT(sattr, el);
+    
+    el = new_namevalue("ldap-profile-0", "profile-value-0");
+    AM_LIST_INSERT(response_decisions, el);
+    el = new_namevalue("ldap-profile-1", "profile-value-1");
+    AM_LIST_INSERT(response_decisions, el);
+    
+    el = new_namevalue("ldap-response-0", "response-value-0");
+    AM_LIST_INSERT(response_attributes, el);
+    el = new_namevalue("ldap-response-1", "response-value-1");
+    AM_LIST_INSERT(response_attributes, el);
+    
+    am_test_get_state_funcs(&func_array, &array_len);
+    exit_f = func_array [7];
     
     assert_int_equal(exit_f(&request), AM_OK);
     

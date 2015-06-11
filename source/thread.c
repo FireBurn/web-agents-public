@@ -188,6 +188,18 @@ void am_worker_pool_init() {
 #endif
 }
 
+/**
+ * Reset worker pool initialize-once flag. Must not be used outside unit-test module.
+ */
+void am_worker_pool_init_reset() {
+#ifdef _WIN32
+    INIT_ONCE once = INIT_ONCE_STATIC_INIT;
+#else
+    pthread_once_t once = PTHREAD_ONCE_INIT;
+#endif
+    memcpy(&worker_pool_initialized, &once, sizeof (worker_pool_initialized));
+}
+
 int am_worker_dispatch(void (*worker_f)(void *, void *), void *arg) {
 #ifdef _WIN32
     BOOL status = TrySubmitThreadpoolCallback(worker_f, arg, &worker_env);
@@ -228,18 +240,13 @@ int am_worker_dispatch(void (*worker_f)(void *, void *), void *arg) {
 #endif
 }
 
-void am_worker_pool_startup() {
-#ifndef _WIN32
-    create_threadpool();
-#endif
-}
-
 void am_worker_pool_shutdown() {
 #ifdef _WIN32
     CloseThreadpoolCleanupGroupMembers(worker_pool_cleanup, TRUE, NULL);
     CloseThreadpoolCleanupGroup(worker_pool_cleanup);
     DestroyThreadpoolEnvironment(&worker_env);
     CloseThreadpool(worker_pool);
+    worker_pool_cleanup = NULL;
 #else
     int i;
 
@@ -265,6 +272,7 @@ void am_worker_pool_shutdown() {
     pthread_cond_destroy(&(worker_pool->not_empty));
     free(worker_pool);
 #endif
+    worker_pool = NULL;
 }
 
 am_event_t *create_event() {

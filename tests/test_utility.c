@@ -17,12 +17,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <setjmp.h>
 
+#include "platform.h"
 #include "am.h"
 #include "utility.h"
-
-#include <setjmp.h>
-#include <cmocka.h>
+#include "cmocka.h"
 
 /**
  * This is the marker we spatter throughout our destination buffer for testing purposes.  It must not be null
@@ -102,8 +102,6 @@ int compare(const char* actual, const char* expected, size_t expected_len) {
  */
 void test_mem2cpy(void** state) {
 
-    (void)state;
-
     char a[] = "ABCDEF";
     char b[] = "GHI";
 
@@ -121,8 +119,6 @@ void test_mem2cpy(void** state) {
  * test mem3cpy, returning 1 if the test fails, 0 if it succeeds.
  */
 void test_mem3cpy(void** state) {
-
-    (void)state;
 
     char a[] = "ABCDEF";
     char b[] = "GHI";
@@ -145,9 +141,7 @@ void test_match(void** state) {
     
     static const char* text = "Now is the winter of our discontent, "
                                 "Made glorious summer by this son of York";
-    
-    (void)state;
-    
+        
     // for some reason, passing in null results in an "ok" match
     assert_int_equal(match(1, NULL, NULL), AM_OK);
     assert_int_equal(match(1, NULL, text), AM_OK);

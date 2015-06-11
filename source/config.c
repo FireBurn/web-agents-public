@@ -193,6 +193,7 @@ int am_configuration_init() {
 
 int am_configuration_shutdown() {
     am_shm_shutdown(conf);
+    conf = NULL;
     return AM_SUCCESS;
 }
 

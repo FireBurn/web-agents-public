@@ -1,0 +1,44 @@
+/**
+ * The contents of this file are subject to the terms of the Common Development and
+ * Distribution License (the License). You may not use this file except in compliance with the
+ * License.
+ *
+ * You can obtain a copy of the License at legal/CDDLv1.0.txt. See the License for the
+ * specific language governing permission and limitations under the License.
+ *
+ * When distributing Covered Software, include this CDDL Header Notice in each file and include
+ * the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
+ * Header, with the fields enclosed by brackets [] replaced by your own identifying
+ * information: "Portions copyright [year] [name of copyright owner]".
+ *
+ * Copyright 2015 ForgeRock AS.
+ */
+
+#include <windows.h>
+#include "..\source\version.h"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION VERSION_NUM
+PRODUCTVERSION VERSION_NUM
+FILEOS VOS__WINDOWS32
+FILETYPE _FILE_TYPE_
+BEGIN     
+BLOCK "StringFileInfo"     
+BEGIN        
+BLOCK "00000000"         
+BEGIN             
+VALUE "CompanyName", "ForgeRock AS" "\000"             
+VALUE "FileDescription", DESCRIPTION "\000"             
+VALUE "FileVersion", VERSION "\000"             
+VALUE "LegalCopyright", "ForgeRock AS" "\000"             
+VALUE "OriginalFilename", "_FILE_NAME_" "\000"             
+VALUE "ProductName", DESCRIPTION "\000"             
+VALUE "ProductVersion", VERSION "\000"             
+VALUE "Comments", DESCRIPTION "\000"         
+END     
+END      
+BLOCK "VarFileInfo"     
+BEGIN         
+VALUE "Translation", 0x0000 0x0000     
+END 
+END

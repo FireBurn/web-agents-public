@@ -14,24 +14,22 @@
  * Copyright 2015 ForgeRock AS.
  */
 
-/** THIS FILE AUTOMATICALLY GENERATED FROM mm.sh.  DO NOT EDIT !! */
+/** 
+ * THIS FILE INCLUDES AUTOMATICALLY GENERATED CONTENT FROM "tests.h".  
+ * DO NOT EDIT "test_MAIN.c" AND "tests.h" FILES. 
+ */
 
 #include <stdio.h>
+#include <stdarg.h>
 #include <setjmp.h>
-#include <cmocka.h>
 
-#include "am.h"
-
-#include "test_log.h"
+#include "cmocka.h"
+#include "tests.h"
 
 /**
  * The main framework for calling the cmocka tests.  The exit status reflects the success or failure of
  * the tests.
  */
-int main(void) {
-    const struct CMUnitTest tests[] = {
-        cmocka_unit_test(test_logging),
-        cmocka_unit_test(test_am_strncat),
-    };
+int main(int argc, char **argv) {
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

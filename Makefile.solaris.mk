@@ -20,7 +20,7 @@ SOLARIS_MK_INCLUDED := true
 CC := suncc
 SHARED := -G
 
-CFLAGS  += -xc99=all -mt -D_REENTRANT -DSOLARIS -D_POSIX_PTHREAD_SEMANTICS 
+CFLAGS  += -xc99=all -g -mt -D_REENTRANT -DSOLARIS -D_POSIX_PTHREAD_SEMANTICS
 
 ifdef DEBUG
  CFLAGS += -xO0 -DDEBUG
@@ -41,7 +41,10 @@ else
  CFLAGS += -m32 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE
 endif
 
-LDFLAGS += -i -z ignore -z lazyload -z nodefs -z combreloc -z origin -R'$$ORIGIN/../lib' -R'$$ORIGIN' -lc -lsocket -lnsl -ldl -lrt
+$(TEST_OBJECTS): CFLAGS += -D_UINTPTR_T_DEFINED
+
+LDFLAGS += -i -z ignore -z lazyload -z nodefs -z combreloc -z origin -R'$$ORIGIN/../lib' -R'$$ORIGIN' \
+	-lc -lsocket -lnsl -ldl -lrt -lsendfile -lresolv
 
 libopenam: $(OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
@@ -67,4 +70,8 @@ agentadmin: $(OUT_OBJS) $(ADMIN_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" binary ***]"
 	${CC} $(LDFLAGS) $(OUT_OBJS) $(ADMIN_OUT_OBJS) -o build/agentadmin
 
+tests: clean build version test_includes $(OUT_OBJS) $(TEST_OBJECTS) 
+	@$(ECHO) "[***** Building "$@" binary *****]"
+	${CC} $(LDFLAGS) $(OUT_OBJS) $(TEST_OBJECTS) -o build$(PS)test
+	
 endif

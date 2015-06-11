@@ -62,6 +62,8 @@ else
  OBJ=o
 endif
 
+SED_ROPT := r
+	
 ifdef 64
  OS_BITS := _64bit
 else
@@ -79,14 +81,9 @@ APACHE22_SOURCES := source/apache/agent22.c
 IIS_SOURCES := source/iis/agent.c
 VARNISH_SOURCES := source/varnish/agent.c source/varnish/vcc_if.c
 ADMIN_SOURCES := source/admin.c source/admin_iis.c
-TEST_EXE := test_MAIN
-TEST_EXE_SOURCE= $(TEST_EXE).c
-TEST_SOURCES := $(filter-out tests/$(TEST_EXE_SOURCE), $(wildcard tests/test_*.c))
 SOURCES := $(filter-out $(ADMIN_SOURCES), $(wildcard source/*.c)) $(wildcard expat/*.c) $(wildcard pcre/*.c) $(wildcard zlib/*.c)
 OBJECTS := $(SOURCES:.c=.$(OBJ))
-TEST_OBJECTS := $(TEST_SOURCES:.c=.$(OBJ))
 OUT_OBJS := $(addprefix $(OBJDIR)/,$(OBJECTS))
-TEST_OBJS := $(addprefix $(OBJDIR)/test,$(TEST_OBJECTS))
 ADMIN_OBJECTS := $(ADMIN_SOURCES:.c=.$(OBJ))
 ADMIN_OUT_OBJS := $(addprefix $(OBJDIR)/,$(ADMIN_OBJECTS))
 APACHE_OBJECTS := $(APACHE_SOURCES:.c=.$(OBJ))
@@ -97,11 +94,20 @@ IIS_OBJECTS := $(IIS_SOURCES:.c=.$(OBJ))
 IIS_OUT_OBJS := $(addprefix $(OBJDIR)/,$(IIS_OBJECTS))
 VARNISH_OBJECTS := $(VARNISH_SOURCES:.c=.$(OBJ))
 VARNISH_OUT_OBJS := $(addprefix $(OBJDIR)/,$(VARNISH_OBJECTS))
+ifdef TESTS
+ TEST_FILES := $(addprefix tests/,$(addsuffix .c,$(TESTS)))
+else
+ TEST_FILES := $(filter-out test_MAIN.c, $(wildcard tests/*.c))
+endif
+TEST_SOURCES := $(wildcard cmocka/*.c) $(wildcard tests/*.c)
+TEST_OBJECTS := $(addprefix $(OBJDIR)/,$(TEST_SOURCES:.c=.$(OBJ)))
 
 $(APACHE_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache24/include $(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache24/include -DAPACHE2 -DAPACHE24
 $(VARNISH_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/varnish/include
 $(APACHE22_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache22/include $(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache22/include -DAPACHE2
-
+$(TEST_OBJECTS): CFLAGS += $(COMPILEFLAG)I.$(PS)cmocka $(COMPILEFLAG)I.$(PS)tests $(COMPILEFLAG)I.$(PS)$(OBJDIR)$(PS)tests \
+	$(COMPILEFLAG)DHAVE_SIGNAL_H
+	
 ifeq ($(OS_ARCH), Linux)
  include Makefile.linux.mk
 endif
@@ -113,10 +119,13 @@ ifeq ($(OS_ARCH), AIX)
 endif
 ifeq ($(OS_ARCH), Darwin)
  include Makefile.macos.mk
+ SED_ROPT := E
 endif
 ifeq ($(OS_ARCH), Windows)
  include Makefile.windows.mk
 endif
+
+VERSION_NUM := $(shell $(ECHO) $(VERSION) | $(SED) -$(SED_ROPT) "s/^([.0-9]*)-.*/\1/g" | $(SED) -$(SED_ROPT) "s/\./\,/g")
 
 $(OBJDIR)/%.$(OBJ): %.c
 	@$(ECHO) "[*** Compiling "$<" ***]"
@@ -130,7 +139,9 @@ build:
 	$(MKDIR) $(OBJDIR)$(PS)expat
 	$(MKDIR) $(OBJDIR)$(PS)pcre
 	$(MKDIR) $(OBJDIR)$(PS)zlib
+	$(MKDIR) $(OBJDIR)$(PS)cmocka
 	$(MKDIR) $(OBJDIR)$(PS)tests
+	$(MKDIR) log
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)apache
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)iis
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)varnish
@@ -141,14 +152,24 @@ version:
 	$(SED) -e "s$(SUB)_REVISION_$(SUB)$(REVISION)$(SUB)g" \
 	    -e "s$(SUB)_IDENT_DATE_$(SUB)$(IDENT_DATE)$(SUB)g" \
 	    -e "s$(SUB)_BUILD_MACHINE_$(SUB)$(BUILD_MACHINE)$(SUB)g" \
+	    -e "s$(SUB)_VERSION_NUM_$(SUB)$(VERSION_NUM)$(SUB)g" \
 	    -e "s$(SUB)_VERSION_$(SUB)$(VERSION)$(SUB)g" < source$(PS)version.template > source$(PS)version.h
 
 clean:
 	-$(RMDIR) $(OBJDIR)
 	-$(RMDIR) log
 	-$(RMALL) source$(PS)version.h
-	-$(RMALL) $(TEST_OBJECTS)
 
+test_includes:
+	@$(ECHO) "[***** Creating tests.h *****]"
+	-$(RMALL) $(OBJDIR)$(PS)tests$(PS)tests.h
+	$(SED) -$(SED_ROPT) "/.*static.+/d" $(TEST_FILES) | $(SED) -$(SED_ROPT)n "/.*\(void[ \t]*\*\*[ \t]*state\)/p" | sed -$(SED_ROPT) "s/\{/\;/g" > $(OBJDIR)$(PS)tests$(PS)tests.h.template
+	$(CP) $(OBJDIR)$(PS)tests$(PS)tests.h.template $(OBJDIR)$(PS)tests$(PS)tests.h
+	$(ECHO) "const struct CMUnitTest tests[] = {" >> $(OBJDIR)$(PS)tests$(PS)tests.h
+	$(SED) -$(SED_ROPT)n "s/void (test_.*[^\(])\(.*/cmocka_unit_test(\1),/p" $(OBJDIR)$(PS)tests$(PS)tests.h.template >> $(OBJDIR)$(PS)tests$(PS)tests.h
+	$(ECHO) "};" >> $(OBJDIR)$(PS)tests$(PS)tests.h
+	$(SED) -ie "s$(SUB)\"$(SUB) $(SUB)g" $(OBJDIR)$(PS)tests$(PS)tests.h
+	
 apachezip: clean build version apache agentadmin
 	@$(ECHO) "[***** Building Apache 2.4 agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
@@ -207,13 +228,6 @@ iiszip: clean build version iis agentadmin
 	-$(CP) config$(PS)* $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)config$(PS)
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)legal$(PS)
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a IIS_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
-
-$(OBJDIR)$(PS)tests$(PS)$(TEST_EXE): $(OUT_OBJS) $(TEST_OBJECTS) tests$(PS)$(TEST_EXE).$(OBJ)
-	$(CC) -D_DEBUG $(COMPILEFLAG)I.$(PS)source $(COMPILEFLAG)I.$(PS)zlib $(COMPILEFLAG)I.$(PS)expat $(COMPILEFLAG)I.$(PS)pcre \
-	  $(COMPILEFLAG)DHAVE_EXPAT_CONFIG_H $(COMPILEFLAG)DHAVE_PCRE_CONFIG_H $(OUT_OBJS) $(TEST_OBJECTS) -o $(OBJDIR)$(PS)tests$(PS)$(TEST_EXE) tests$(PS)test_MAIN.c -lcmocka
-
-tests: clean version build $(OBJDIR)$(PS)tests$(PS)$(TEST_EXE)
-	$(ECHO) "[*** Building the test executable ***]"
 
 varnishzip: clean build version varnish agentadmin
 	@$(ECHO) "[***** Building Varnish agent archive *****]"

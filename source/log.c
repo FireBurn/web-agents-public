@@ -389,8 +389,13 @@ void am_log_init(int status) {
     }
 
     am_log_p->am_shared_reader_pid = getpid();
-    snprintf(am_log_p->am_shared_fln,
-            sizeof (am_log_p->am_shared_fln), AM_GLOBAL_PREFIX"am_log_%d", 0);
+    snprintf(am_log_p->am_shared_fln, sizeof (am_log_p->am_shared_fln),
+#ifdef __sun
+            "/am_log_%d"
+#else
+            AM_GLOBAL_PREFIX"am_log_%d"
+#endif
+            , 0);
     am_log_p->am_shared_sz = page_size(log_data_sz + sizeof (struct am_log_s));
 
 #ifdef _WIN32
@@ -1022,7 +1027,6 @@ int am_agent_init_get_value(unsigned long instance_id, char lock) {
     return status;
 }
 
-
 /**
  * Concatenate "source" onto the end of "dest" ensuring there are never more
  * than "max" characters present in dest, allowing for the null terminator.
@@ -1031,15 +1035,15 @@ void am_strncat(char* dest, const char* source, size_t max) {
     size_t length = 0;
 
     if (dest == NULL || source == NULL) {
-        return;  /** do no harm */
+        return; /** do no harm */
     }
-    
+
     /** move dest to the end, counting as we go */
-    while(*dest) {
+    while (*dest) {
         length++;
         dest++;
     }
-    
+
     while (length < max - 1 && *source != '\0') {
         *dest++ = *source++;
         length++;

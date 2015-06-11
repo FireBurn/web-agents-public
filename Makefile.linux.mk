@@ -34,6 +34,7 @@ ifdef 64
  LDFLAGS += -m64
 else
  CFLAGS += -m32 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE
+ LDFLAGS += -m32
 endif
 
 LDFLAGS += -Wl,-rpath,'$$ORIGIN/../lib' -Wl,-rpath,'$$ORIGIN' -lpthread -lresolv -lrt -ldl
@@ -64,4 +65,8 @@ agentadmin: $(OUT_OBJS) $(ADMIN_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" binary ***]"
 	${CC} $(LDFLAGS) $(OUT_OBJS) $(ADMIN_OUT_OBJS) -o build/agentadmin
 
+tests: clean build version test_includes $(OUT_OBJS) $(TEST_OBJECTS) 
+	@$(ECHO) "[***** Building "$@" binary *****]"
+	${CC} $(LDFLAGS) $(OUT_OBJS) $(TEST_OBJECTS) -o build$(PS)test
+	
 endif

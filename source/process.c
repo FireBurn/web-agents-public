@@ -2100,12 +2100,12 @@ void am_process_request(am_request_t *r) {
 
 /**
  * Returns a pointer to the "process state" functions into the callers space and sets the number of pointers.
- * This is used to provide access to the porcess state functions for testing.
+ * This is used to provide access to the process state functions for testing.
  *
  * @param func_array_ptr address of pointer to be set
  * @param array_len_ptr the number of functions returned
  */
-extern void am_test_get_state_funcs(am_state_func_t const ** func_array_ptr, int * array_len_ptr) {
+void am_test_get_state_funcs(am_state_func_t const ** func_array_ptr, int * array_len_ptr) {
     * func_array_ptr = am_request_state;
     * array_len_ptr = (&am_request_state)[1] - am_request_state;
 }

@@ -123,6 +123,10 @@ static void start_element(void *userData, const char *name, const char **atts) {
     int i;
     am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
 
+    am_free(ctx->data);
+    ctx->data = NULL;
+    ctx->data_sz = 0;
+
     do {
         if (strcmp(name, "ResourceResult") == 0) {
             for (i = 0; atts[i]; i += 2) {

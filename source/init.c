@@ -39,6 +39,7 @@ static void am_main_create() {
 
 static void am_main_destroy() {
     CloseHandle(init.id);
+    init.id = NULL;
     init.error = AM_ERROR;
 }
 

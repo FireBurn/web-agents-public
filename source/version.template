@@ -20,6 +20,7 @@
 #define DESCRIPTION     "OpenAM Web Agent"
 #define BUILD_TS        __DATE__" "__TIME__
 #define VERSION         "_VERSION_"
+#define VERSION_NUM     _VERSION_NUM_,0
 #define VERSION_VCS     "_REVISION_"
 #define BUILD_MACHINE   "_BUILD_MACHINE_"
 #define MODINFO         DESCRIPTION"/"VERSION

@@ -391,9 +391,22 @@ void net_init_ssl() {
 #endif
 }
 
+/**
+ * Reset SSL initialize-once flag. Must not be used outside unit-test module.
+ */
+void am_net_init_ssl_reset() {
+#ifdef _WIN32
+    INIT_ONCE once = INIT_ONCE_STATIC_INIT;
+#else
+    pthread_once_t once = PTHREAD_ONCE_INIT;
+#endif
+    memcpy(&ssl_lib_initialized, &once, sizeof (ssl_lib_initialized));
+}
+
 void net_shutdown_ssl() {
     int i;
-    if (CRYPTO_set_locking_callback && CRYPTO_set_id_callback && CRYPTO_num_locks) {
+    if (SSL_library_init && CRYPTO_set_locking_callback
+            && CRYPTO_set_id_callback && CRYPTO_num_locks) {
         CRYPTO_set_locking_callback(NULL);
         CRYPTO_set_id_callback(NULL);
         if (ssl_mutexes != NULL) {

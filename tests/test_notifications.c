@@ -17,18 +17,19 @@
 #include <stdio.h>
 #include <string.h>
 #include <setjmp.h>
-#include <cmocka.h>
 
+#include "platform.h"
 #include "am.h"
 #include "utility.h"
-
-
+#include "thread.h"
+#include "cmocka.h"
 
 typedef am_return_t (* am_state_func_t)(am_request_t *);
 
 void am_test_get_state_funcs(am_state_func_t const ** func_array_p, int * func_array_len_p);
 
-void am_worker_pool_startup(void);
+void am_worker_pool_init_reset();
+void am_net_init_ssl_reset();
 
 static am_status_t get_post_data(struct am_request * request)
 {
@@ -43,13 +44,9 @@ static am_status_t set_custom_response(struct am_request * request, const char *
 
 void test_simple_fail(void **state) {
 
-    (void)state;
-
-    am_state_func_t const * func_array = 0;
+    am_state_func_t const * func_array = NULL;
     int array_len = 0;
-    
-    am_test_get_state_funcs(&func_array, &array_len);
-    am_state_func_t notification_handler = func_array[2];
+    am_state_func_t notification_handler;
     
     char * post_data =
         "<NotificationSet version='1.0'>"
@@ -70,10 +67,12 @@ void test_simple_fail(void **state) {
         " </Notification>"
         "</NotificationSet>";
     
-    struct {
+    struct ctx {
+        void *dummy;
     } ctx;
     
     am_config_t config = {
+        .instance_id                = 0,
         .notif_enable               = AM_TRUE,
         .notif_url                  = "https://www.notify.com:1234/am",
         .override_notif_url         = AM_TRUE,
@@ -82,11 +81,12 @@ void test_simple_fail(void **state) {
     };
     
     am_request_t request = {
+        .instance_id                = 0,
         .conf                       = &config,
         .ctx                        = &ctx,
         
         .method                     = AM_REQUEST_POST,
-        .token                      = 0,
+        .token                      = NULL,
         
         .overridden_url             = "https://www.override.com:90/am",
         .normalized_url             = "https://www.notify.com:90/am",
@@ -99,23 +99,19 @@ void test_simple_fail(void **state) {
         .am_set_custom_response_f   = set_custom_response,
     };
     
-    //am_init_worker();
-    am_worker_pool_startup();
-    
-    // this is not a notification
+    am_test_get_state_funcs(&func_array, &array_len);
+    notification_handler = func_array[2];
+        
+    /* this is not a notification */
     assert_int_equal(notification_handler(&request), AM_FAIL);
-    
-    am_shutdown_worker();
 }
 
 
 void test_simple_notification(void **state) {
 
-    am_state_func_t const * func_array = 0;
+    am_state_func_t const * func_array = NULL;
     int array_len = 0;
-    
-    am_test_get_state_funcs(&func_array, &array_len);
-    am_state_func_t notification_handler = func_array[2];
+    am_state_func_t notification_handler;
     
     char * post_data =
         "<NotificationSet version='1.0'>"
@@ -136,10 +132,12 @@ void test_simple_notification(void **state) {
         " </Notification>"
         "</NotificationSet>";
     
-    struct {
+    struct ctx {
+        void *dummy;
     } ctx;
     
     am_config_t config = {
+        .instance_id                = 0,
         .notif_enable               = AM_TRUE,
         .notif_url                  = "https://www.notify.com:1234/am",
         .override_notif_url         = AM_FALSE,
@@ -148,11 +146,12 @@ void test_simple_notification(void **state) {
     };
     
     am_request_t request = {
+        .instance_id                = 0,
         .conf                       = &config,
         .ctx                        = &ctx,
         
         .method                     = AM_REQUEST_POST,
-        .token                      = 0,
+        .token                      = NULL,
         
         .overridden_url             = "https://www.override.com:90/am",
         .normalized_url             = "https://www.notify.com:1234/am",
@@ -165,13 +164,23 @@ void test_simple_notification(void **state) {
         .am_set_custom_response_f   = set_custom_response,
     };
     
-    //am_init_worker();
-    am_worker_pool_startup();
+    am_test_get_state_funcs(&func_array, &array_len);
+    notification_handler = func_array[2];
     
-    // this is a notification
+    assert_int_equal(am_init(), AM_SUCCESS);
+    am_init_worker();
+    
+    sleep(2); /* must wait till worker pool is all set */
+    
+    /* this is a notification */
     assert_int_equal(notification_handler(&request), AM_OK);
     
+    sleep(2);
+    
     am_shutdown_worker();
+    am_shutdown();
+    am_worker_pool_init_reset();
+    am_net_init_ssl_reset();
 }
 
 
@@ -186,17 +195,16 @@ void test_session_notification_on_policy_cache(void **state) {
         " </Notification>"
         "</NotificationSet>";
 
-    am_state_func_t const * func_array = 0;
+    am_state_func_t const * func_array = NULL;
     int array_len = 0;
+    am_state_func_t notification_handler;
     
-    am_test_get_state_funcs(&func_array, &array_len);
-    am_state_func_t notification_handler = func_array [2];
-    
-    struct {
+    struct ctx {
+        void *dummy;
     } ctx;
     
     am_config_t config = {
-        .instance_id                = 101,
+        .instance_id                = 0,
         .token_cache_valid          = 0,
         
         .notif_enable               = AM_TRUE,
@@ -207,11 +215,12 @@ void test_session_notification_on_policy_cache(void **state) {
     };
     
     am_request_t request = {
+        .instance_id                = 0,
         .conf                       = &config,
         .ctx                        = &ctx,
         
         .method                     = AM_REQUEST_POST,
-        .token                      = 0,
+        .token                      = NULL,
         
         .overridden_url             = "https://www.override.com:90/am",
         .normalized_url             = "https://www.notify.com:1234/am",
@@ -279,48 +288,58 @@ void test_session_notification_on_policy_cache(void **state) {
         "</ResponseSet>";
 
     char * buffer = NULL;
-    int size = asprintf(&buffer, pll, xml);
-    
-    struct am_policy_result * result = am_parse_policy_xml(0l, buffer, size, 0);
+    struct am_policy_result * result;
     time_t ets;
     struct am_policy_result * r = NULL;
     struct am_namevalue * session = NULL;
     
+    am_asprintf(&buffer, pll, xml);
+    
+    result = am_parse_policy_xml(0l, buffer, strlen(buffer), 0);
+    
     free(buffer);
     
-    am_cache_init();
+    am_test_get_state_funcs(&func_array, &array_len);
+    notification_handler = func_array [2];
     
-    assert_int_equal(am_add_session_policy_cache_entry(&request, session_id, result, 0), AM_SUCCESS);
+    assert_int_equal(am_init(), AM_SUCCESS);
+    am_init_worker();
+    
+    sleep(2); /* must wait till worker pool is all set */
+    
+    assert_int_equal(am_add_session_policy_cache_entry(&request, session_id, result, NULL), AM_SUCCESS);
     
     delete_am_policy_result_list(&result);
 
-    // find the session
+    /* find the session */
     assert_int_equal(am_get_session_policy_cache_entry(&request, session_id, &r, &session, &ets), AM_SUCCESS);
     delete_am_policy_result_list(&r);
 
-    //am_init_worker();
-    am_worker_pool_startup();
-    
-    // this is a notification
+    /* this is a notification */
     assert_int_equal(notification_handler(&request), AM_OK);
 
-    am_shutdown_worker();
-
-    // wait for the worker to have finished
+    /* wait for the worker to have finished */
+    sleep(2);
+    
     assert_int_equal(am_get_session_policy_cache_entry(&request, session_id, &r, &session, &ets), AM_NOT_FOUND);
     
-    am_cache_shutdown();
+    am_shutdown_worker();
+    am_shutdown();
+    am_worker_pool_init_reset();
+    am_net_init_ssl_reset();
 }
 
 
 
 void test_resource_notification_on_policy_cache(void **state) {
 
-    am_state_func_t const * func_array = 0;
+    am_state_func_t const * func_array = NULL;
     int array_len = 0;
+    am_state_func_t notification_handler;
     
-    am_test_get_state_funcs(&func_array, &array_len);
-    am_state_func_t notification_handler = func_array [2];
+    struct ctx {
+        void *dummy;
+    } ctx;
     
     const char * session_id = "XXX";
     
@@ -333,12 +352,9 @@ void test_resource_notification_on_policy_cache(void **state) {
     "  </PolicyChangeNotification>"
     " </Notification>"
     "</NotificationSet>";
-    
-    struct {
-    } ctx;
-    
+   
     am_config_t config = {
-        .instance_id                = 101,
+        .instance_id                = 0,
         .token_cache_valid          = 0,
         
         .notif_enable               = AM_TRUE,
@@ -349,11 +365,12 @@ void test_resource_notification_on_policy_cache(void **state) {
     };
     
     am_request_t request = {
+        .instance_id                = 0,
         .conf                       = &config,
         .ctx                        = &ctx,
         
         .method                     = AM_REQUEST_POST,
-        .token                      = 0,
+        .token                      = NULL,
         
         .overridden_url             = "https://www.override.com:90/am",
         .normalized_url             = "https://www.notify.com:1234/am",
@@ -421,32 +438,38 @@ void test_resource_notification_on_policy_cache(void **state) {
         "</ResponseSet>";
     
     char * buffer = NULL;
-    int size = asprintf(&buffer, pll, xml);
-
-    // when the worker has finished, the session result list should be unchanged, but policy cache entry removed
+    /* when the worker has finished, the session result list should be unchanged, but policy cache entry removed */
     time_t ets;
     struct am_policy_result * r = NULL;
     struct am_namevalue * session = NULL;
     struct am_policy_result * p;
-    struct am_policy_result * result = am_parse_policy_xml(0l, buffer, size, 0);
+    struct am_policy_result * result;
+    
+    am_asprintf(&buffer, pll, xml);
+    result = am_parse_policy_xml(0l, buffer, strlen(buffer), 0);
 
     free(buffer);
     
-    am_cache_init();
+    am_test_get_state_funcs(&func_array, &array_len);
+    notification_handler = func_array [2];
+    
+    assert_int_equal(am_init(), AM_SUCCESS);
+    am_init_worker();
+    
+    sleep(2); /* must wait till worker pool is all set */
+    
     assert_int_equal(am_add_session_policy_cache_entry(&request, session_id, result, 0), AM_SUCCESS);
 
-    // add the resources to the policy cache
+    /* add the resources to the policy cache */
     for(p = result; p; p = p->next) {
         am_add_policy_cache_entry(&request, p->resource, 500);
     }
     delete_am_policy_result_list(&result);
     
-    //am_init_worker();
-    am_worker_pool_startup();
-    
-    // send a resource notification for the cached resource
+    /* send a resource notification for the cached resource */
     assert_int_equal(notification_handler(&request), AM_OK);
-    am_shutdown_worker();
+
+    sleep(2);
     
     assert_int_equal(am_get_session_policy_cache_entry(&request, session_id, &r, &session, &ets), AM_SUCCESS);
     
@@ -456,5 +479,8 @@ void test_resource_notification_on_policy_cache(void **state) {
     }
     delete_am_policy_result_list(&r);
 
-    am_cache_shutdown();
+    am_shutdown_worker();
+    am_shutdown();
+    am_worker_pool_init_reset();
+    am_net_init_ssl_reset();
 }

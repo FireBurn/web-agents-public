@@ -13,9 +13,10 @@
 # Copyright 2015 ForgeRock AS.
 
 
-This directory contains the unit tests for the C Web Agents version 4.
+This directory contains the unit tests for OpenAM Web Policy Agent.
 
-Tests are placed in C source files and will look something like the following.  Let us assume this is the file test_blah.c:
+Tests are placed in C source files and will look something like the following.  
+Let us assume this is the file test_blah.c:
 
 
 
@@ -41,22 +42,9 @@ void test_blah2(void** state) {
 }
 
 
+Make target "test_includes", which is a part of a global "tests" target, extracts
+all of the test method prototypes from each of the test files and creates "tests.h" 
+header file. The same target automatically creates "struct CMUnitTest tests[]" object 
+to be used inside test_MAIN cmocka_run_group_tests().
 
-
-Each test must be prototyped in a corresponding header file, in this case test_blah.h:
-
-
-
-void test_blah1(void** state);
-void test_blah2(void** state);
-
-
-
-then this header file must be included in test_MAIN.c so the tests can be invoked.  Fortunately, if you have access to either the
-Korn shell, or the Born Again shell, together with the sed utility, there are two scripts which can automate these two steps.
-
-The script mh.sh ("make header") will build one header file for each C source file (the default is to rebuild all header files).
-Once this is done, the script mm.sh ("make main") will build the main test harness test_MAIN.c which is compiled by the Makefile.
-
-Note that you will need to have the cmocka framework installed (i.e. available to the compiler with "-lcmocka") before the unit
-tests can be built.
+Resulting test executable "test" is available under "build" directory. 
