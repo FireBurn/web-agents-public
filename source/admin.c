@@ -777,7 +777,7 @@ static void install_interactive(int argc, char **argv) {
     am_net_init();
 
     rv = am_agent_login(0, openam_url, NULL,
-            agent_user, agent_password, agent_realm, AM_TRUE, NULL,
+            agent_user, agent_password, agent_realm, AM_TRUE, 0, NULL,
             &agent_token, NULL, NULL, NULL, install_log);
 
     if (rv != AM_SUCCESS) {
@@ -792,7 +792,7 @@ static void install_interactive(int argc, char **argv) {
 
     if (agent_token != NULL) {
         fprintf(stdout, "\nCleaning up validation data...\n");
-        am_agent_logout(0, openam_url, agent_token, NULL, install_log);
+        am_agent_logout(0, openam_url, agent_token, NULL, NULL, install_log);
     }
 
     if (validated) {
@@ -891,7 +891,7 @@ static void install_silent(int argc, char **argv) {
         fprintf(stdout, "\nValidating...\n");
 
         rv = am_agent_login(0, argv[3], NULL,
-                argv[6], agent_password, argv[5], AM_TRUE, NULL,
+                argv[6], agent_password, argv[5], AM_TRUE, 0, NULL,
                 &agent_token, NULL, NULL, NULL, install_log);
         if (rv != AM_SUCCESS) {
             fprintf(stdout, "\nError validating OpenAM - Agent configuration.\n"
@@ -905,7 +905,7 @@ static void install_silent(int argc, char **argv) {
 
         if (agent_token != NULL) {
             fprintf(stdout, "\nCleaning up validation data...\n");
-            am_agent_logout(0, argv[3], agent_token, NULL, install_log);
+            am_agent_logout(0, argv[3], agent_token, NULL, NULL, install_log);
         }
 
         if (validated) {

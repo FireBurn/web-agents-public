@@ -1332,7 +1332,7 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
             r.conf = ac;
             r.instance_id = instance_id;
             login_status = am_agent_login(instance_id, get_valid_openam_url(&r), NOTNULL(ac->notif_url),
-                    ac->user, ac->pass, ac->realm, ac->local, &info,
+                    ac->user, ac->pass, ac->realm, ac->local, ac->lb_enable, &info,
                     &agent_token, &profile_xml, &profile_xml_sz, &agent_session, NULL);
             if (login_status == AM_SUCCESS && ISVALID(agent_token) && agent_session != NULL) {
 

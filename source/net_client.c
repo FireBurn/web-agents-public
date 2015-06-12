@@ -609,8 +609,9 @@ int am_net_close(am_net_t *n) {
 #endif
     if (n->ra != NULL) freeaddrinfo(n->ra);
     n->ra = NULL;
-    AM_FREE(n->hs, n->hp);
+    AM_FREE(n->hs, n->hp, n->req_headers);
     n->hs = NULL;
     n->hp = NULL;
+    n->req_headers = NULL;
     return AM_SUCCESS;
 }

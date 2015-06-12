@@ -129,6 +129,7 @@ struct logout_worker_data {
     unsigned long instance_id;
     char *token;
     char *openam;
+    char *server_id;
     struct am_ssl_options info;
 };
 
@@ -239,14 +240,14 @@ int create_am_action_decision_node(am_bool_t a, char m, uint64_t ttl,
         struct am_action_decision **node);
 
 int am_agent_logout(unsigned long instance_id, const char *openam,
-        const char *token, struct am_ssl_options *info, void(*log)(const char *, ...));
+        const char *token, const char *server_id, struct am_ssl_options *info, void(*log)(const char *, ...));
 int am_agent_naming_request(unsigned long instance_id, const char *openam, const char *token);
 int am_agent_session_request(unsigned long instance_id, const char *openam,
         const char *token, const char *user_token, const char *notif_url);
 int am_agent_policy_request(unsigned long instance_id, const char *openam,
         const char *token, const char *user_token, const char *req_url,
         const char *notif_url, const char *scope, const char *cip, const char *pattr,
-        struct am_ssl_options *info,
+        const char *server_id, struct am_ssl_options *info,
         struct am_namevalue **session_list,
         struct am_policy_result **policy_list);
 
@@ -258,7 +259,7 @@ void *am_parse_policy_xml(unsigned long instance_id, const char *xml, size_t xml
 
 int am_agent_login(unsigned long instance_id, const char *openam, const char *notifyurl,
         const char *user, const char *pass, const char *realm, int is_local,
-        struct am_ssl_options *info,
+        int lb_enable, struct am_ssl_options *info,
         char **agent_token, char **pxml, size_t *pxsz, struct am_namevalue **session_list,
         void(*log)(const char *, ...));
 

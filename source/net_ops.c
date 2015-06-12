@@ -142,7 +142,32 @@ static int send_authcontext_request(am_net_t *conn, const char *realm, char **to
                 *token = strndup(begin + 25, end - begin - 25);
             }
         }
-        if (!ISVALID(*token)) status = AM_NOT_FOUND;
+        if (ISINVALID(*token)) {
+            status = AM_NOT_FOUND;
+        }
+
+        if (status == AM_SUCCESS && ISVALID(conn->req_headers)) {
+            am_request_t req_temp;
+            int decode_status;
+
+            memset(&req_temp, 0, sizeof (am_request_t));
+            req_temp.token = strdup(*token);
+
+            decode_status = am_session_decode(&req_temp);
+            if (decode_status == AM_SUCCESS && req_temp.si.error == AM_SUCCESS) {
+
+                if (ISVALID(req_temp.si.si)) {
+                    am_asprintf(&conn->req_headers, "%s%s\r\n", conn->req_headers, req_temp.si.si);
+                } else {
+                    am_free(conn->req_headers);
+                    conn->req_headers = NULL;
+                }
+
+                AM_LOG_DEBUG(conn->instance_id, "%s app token SI: %s, S1: %s", thisfunc,
+                        LOGEMPTY(req_temp.si.si), LOGEMPTY(req_temp.si.s1));
+            }
+            am_request_free(&req_temp);
+        }
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s status: %s", thisfunc, am_strerror(status));
@@ -194,8 +219,10 @@ static int send_login_request(am_net_t *conn, char **token, const char *user,
             "Content-Language: UTF-8\r\n"
             "Connection: Keep-Alive\r\n"
             "Content-Type: text/xml; charset=UTF-8\r\n"
+            "%s"
             "Content-Length: %d\r\n\r\n"
-            "%s", conn->uv.path, conn->uv.host, conn->uv.port, post_data_sz, post_data);
+            "%s", conn->uv.path, conn->uv.host, conn->uv.port,
+            NOTNULL(conn->req_headers), post_data_sz, post_data);
     if (post == NULL) {
         free(post_data);
         return AM_ENOMEM;
@@ -273,10 +300,11 @@ static int send_attribute_request(am_net_t *conn, char **token, char **pxml, siz
             "Host: %s:%d\r\n"
             "User-Agent: "MODINFO"\r\n"
             "Accept: text/xml\r\n"
+            "%s"
             "Connection: Keep-Alive\r\n\r\n",
             conn->uv.path,
             user_enc, realm_enc, token_enc,
-            conn->uv.host, conn->uv.port);
+            conn->uv.host, conn->uv.port, NOTNULL(conn->req_headers));
     if (post == NULL) {
         AM_FREE(realm_enc, user_enc, token_enc);
         return AM_ENOMEM;
@@ -380,8 +408,10 @@ static int send_session_request(am_net_t *conn, char **token, const char *notify
             "Content-Language: UTF-8\r\n"
             "Connection: Keep-Alive\r\n"
             "Content-Type: text/xml; charset=UTF-8\r\n"
+            "%s"
             "Content-Length: %d\r\n\r\n"
-            "%s", conn->uv.path, conn->uv.host, conn->uv.port, post_data_sz, post_data);
+            "%s", conn->uv.path, conn->uv.host, conn->uv.port,
+            NOTNULL(conn->req_headers), post_data_sz, post_data);
     if (post == NULL) {
         free(post_data);
         am_free(token_b64);
@@ -469,8 +499,10 @@ static int send_policychange_request(am_net_t *conn, char **token, const char *n
             "Content-Language: UTF-8\r\n"
             "Connection: Close\r\n"
             "Content-Type: text/xml; charset=UTF-8\r\n"
+            "%s"
             "Content-Length: %d\r\n\r\n"
-            "%s", conn->uv.path, conn->uv.host, conn->uv.port, post_data_sz, post_data);
+            "%s", conn->uv.path, conn->uv.host, conn->uv.port,
+            NOTNULL(conn->req_headers), post_data_sz, post_data);
     if (post == NULL) {
         free(post_data);
         return AM_ENOMEM;
@@ -512,7 +544,7 @@ static int send_policychange_request(am_net_t *conn, char **token, const char *n
 
 int am_agent_login(unsigned long instance_id, const char *openam, const char *notifyurl,
         const char *user, const char *pass, const char *realm, int is_local,
-        struct am_ssl_options *info,
+        int lb_enable, struct am_ssl_options *info,
         char **agent_token, char **pxml, size_t *pxsz, struct am_namevalue **session_list,
         void(*log)(const char *, ...)) {
     static const char *thisfunc = "am_agent_login():";
@@ -532,6 +564,10 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
     conn.url = openam;
     if (info != NULL) {
         memcpy(&conn.ssl.info, info, sizeof (struct am_ssl_options));
+    }
+
+    if (lb_enable) {
+        conn.req_headers = strdup("Cookie: amlbcookie=");
     }
 
     req_data.rf = create_event();
@@ -586,7 +622,8 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
 }
 
 int am_agent_logout(unsigned long instance_id, const char *openam,
-        const char *token, struct am_ssl_options *info, void(*log)(const char *, ...)) {
+        const char *token, const char *server_id,
+        struct am_ssl_options *info, void(*log)(const char *, ...)) {
     static const char *thisfunc = "am_agent_logout():";
     am_net_t conn;
     int status = AM_ERROR;
@@ -604,6 +641,10 @@ int am_agent_logout(unsigned long instance_id, const char *openam,
     conn.url = openam;
     if (info != NULL) {
         memcpy(&conn.ssl.info, info, sizeof (struct am_ssl_options));
+    }
+
+    if (ISVALID(server_id)) {
+        am_asprintf(&conn.req_headers, "Cookie: amlbcookie=%s\r\n", server_id);
     }
 
     req_data.rf = create_event();
@@ -633,8 +674,10 @@ int am_agent_logout(unsigned long instance_id, const char *openam,
                     "Content-Language: UTF-8\r\n"
                     "Connection: Close\r\n"
                     "Content-Type: text/xml; charset=UTF-8\r\n"
+                    "%s"
                     "Content-Length: %d\r\n\r\n"
-                    "%s", conn.uv.path, conn.uv.host, conn.uv.port, post_data_sz, post_data);
+                    "%s", conn.uv.path, conn.uv.host, conn.uv.port,
+                    NOTNULL(conn.req_headers), post_data_sz, post_data);
             if (post != NULL) {
                 AM_LOG_DEBUG(instance_id, "%s sending request:\n%s", thisfunc, post);
                 if (log != NULL) {
@@ -833,7 +876,7 @@ int am_agent_session_request(unsigned long instance_id, const char *openam,
 int am_agent_policy_request(unsigned long instance_id, const char *openam,
         const char *token, const char *user_token, const char *req_url,
         const char *notif_url, const char *scope, const char *cip, const char *pattr,
-        struct am_ssl_options *info,
+        const char *server_id, struct am_ssl_options *info,
         struct am_namevalue **session_list,
         struct am_policy_result **policy_list) {
     static const char *thisfunc = "am_agent_policy_request():";
@@ -856,6 +899,10 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
     n.url = openam;
     if (info != NULL) {
         memcpy(&n.ssl.info, info, sizeof (struct am_ssl_options));
+    }
+
+    if (ISVALID(server_id)) {
+        am_asprintf(&n.req_headers, "Cookie: amlbcookie=%s\r\n", server_id);
     }
 
     ld.rf = create_event();
@@ -903,8 +950,10 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
                     "Content-Language: UTF-8\r\n"
                     "Connection: Keep-Alive\r\n"
                     "Content-Type: text/xml; charset=UTF-8\r\n"
+                    "%s"
                     "Content-Length: %d\r\n\r\n"
-                    "%s", n.uv.path, n.uv.host, n.uv.port, post_data_sz, post_data);
+                    "%s", n.uv.path, n.uv.host, n.uv.port,
+                    NOTNULL(n.req_headers), post_data_sz, post_data);
             if (post != NULL) {
                 AM_LOG_DEBUG(instance_id, "%s sending request:\n%s", thisfunc, post);
                 status = am_net_write(&n, post, post_sz);
@@ -974,9 +1023,10 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
                     "Content-Language: UTF-8\r\n"
                     "Content-Type: text/xml; charset=UTF-8\r\n"
                     "Content-Length: %d\r\n"
+                    "%s"
                     "Connection: close\r\n\r\n"
                     "%s", n.uv.path, n.uv.host, n.uv.port,
-                    post_data_sz, post_data);
+                    post_data_sz, NOTNULL(n.req_headers), post_data);
 
             if (post != NULL) {
                 AM_LOG_DEBUG(instance_id, "%s sending request:\n%s", thisfunc, post);

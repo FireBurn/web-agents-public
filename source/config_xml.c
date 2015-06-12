@@ -297,7 +297,6 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
     parse_config_value(ctx, AM_AGENTS_CONFIG_ATTR_RESPONSE_MODE, CONF_ATTR_MODE, NULL, &ctx->conf->response_attr_fetch, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_ATTR_RESPONSE_MAP, CONF_STRING_MAP, &ctx->conf->response_attr_map_sz, &ctx->conf->response_attr_map, val, len);
 
-    parse_config_value(ctx, AM_AGENTS_CONFIG_LB_ENABLE, CONF_NUMBER, NULL, &ctx->conf->lb_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_SSO_ONLY, CONF_NUMBER, NULL, &ctx->conf->sso_only, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_ACCESS_DENIED_URL, CONF_STRING, NULL, &ctx->conf->access_denied_url, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_FQDN_CHECK_ENABLE, CONF_NUMBER, NULL, &ctx->conf->fqdn_check_enable, val, len);
@@ -424,6 +423,8 @@ static void end_element(void * userData, const char * name) {
 
     parse_config_value(ctx, AM_AGENTS_CONFIG_RETRY_MAX, CONF_NUMBER, NULL, &ctx->conf->retry_max, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_RETRY_WAIT, CONF_NUMBER, NULL, &ctx->conf->retry_wait, val, len);
+    
+    parse_config_value(ctx, AM_AGENTS_CONFIG_LB_ENABLE, CONF_NUMBER, NULL, &ctx->conf->lb_enable, val, len);
 
     /* other options */
 

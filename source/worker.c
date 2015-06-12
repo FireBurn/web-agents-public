@@ -77,11 +77,10 @@ void session_logout_worker(
 #endif
         inst, void *arg) {
     struct logout_worker_data *r = (struct logout_worker_data *) arg;
-    int status = am_agent_logout(r->instance_id, r->openam, r->token, &r->info, NULL);
+    int status = am_agent_logout(r->instance_id, r->openam, r->token,
+            r->server_id, &r->info, NULL);
     if (status == AM_SUCCESS) {
         am_remove_cache_entry(r->instance_id, r->token);
     }
-    free(r->openam);
-    free(r->token);
-    free(r);
+    AM_FREE(r->openam, r->token, r->server_id, r);
 }

@@ -233,10 +233,10 @@ char *match_group(pcre *x, int capture_groups, const char *subject, size_t *len)
     if (x == NULL || subject == NULL) {
         return NULL;
     }
-    if ((ovector = calloc(max_capture_groups, sizeof(int))) == NULL) {
+    if ((ovector = calloc(max_capture_groups, sizeof (int))) == NULL) {
         return NULL;
     }
-    while (offset < slen && (rc = pcre_exec(x, 0, subject, (int)slen, offset, 0, ovector, max_capture_groups)) >= 0) {
+    while (offset < slen && (rc = pcre_exec(x, 0, subject, (int) slen, offset, 0, ovector, max_capture_groups)) >= 0) {
         for (i = 1 /* skip the first pair: "identify the portion of the subject string matched by the entire pattern" */;
                 i < rc; ++i) {
             char *rslt, *ret_tmp;
@@ -1653,7 +1653,8 @@ void decrypt_agent_passwords(am_config_t *r) {
 void am_request_free(am_request_t *r) {
     if (r != NULL) {
         AM_FREE(r->normalized_url, r->overridden_url, r->token,
-                r->client_ip, r->client_host, r->post_data);
+                r->client_ip, r->client_host, r->post_data,
+                r->si.s1, r->si.si, r->si.sk);
         delete_am_policy_result_list(&r->pattr);
         delete_am_namevalue_list(&r->sattr);
     }

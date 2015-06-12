@@ -49,6 +49,7 @@ typedef struct {
 
     const char *url;
     struct url uv;
+    char *req_headers;
 
     struct ssl {
         char on;

@@ -884,7 +884,7 @@ static am_return_t validate_policy(am_request_t *r) {
                     r->conf->token, r->token,
                     url,
                     r->conf->notif_url, am_scope_to_str(scope), r->client_ip, pattrs,
-                    &info,
+                    r->conf->lb_enable && ISVALID(r->si.si) ? r->si.si : NULL, &info,
                     &session_cache_new,
                     &policy_cache_new);
             if (status == AM_SUCCESS && session_cache_new != NULL && policy_cache_new != NULL) {
@@ -1625,11 +1625,12 @@ static am_return_t handle_exit(am_request_t *r) {
                         if (oam != NULL) {
                             wd->token = strdup(r->token);
                             wd->openam = strdup(oam);
+                            wd->server_id = r->conf->lb_enable && ISVALID(r->si.si) ? strdup(r->si.si) : NULL;
 
                             am_net_set_ssl_options(r->conf, &wd->info);
 
                             if (am_worker_dispatch(session_logout_worker, wd) != 0) {
-                                AM_FREE(wd->token, wd->openam);
+                                AM_FREE(wd->token, wd->openam, wd->server_id);
                                 free(wd);
                                 r->status = AM_ERROR;
                                 AM_LOG_WARNING(r->instance_id, "%s failed to dispatch logout worker", thisfunc);

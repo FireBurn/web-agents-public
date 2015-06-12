@@ -27,7 +27,7 @@ com.forgerock.agents.ext.url.validation.default.url.set =
 com.forgerock.agents.config.hostmap =
 com.forgerock.agents.init.retry.max =
 com.forgerock.agents.init.retry.wait =
-
+com.sun.identity.agents.config.load.balancer.enable = false
 
 com.sun.identity.agents.config.agenturi.prefix = AM_AGENT_URL/amagent
 com.sun.identity.agents.config.cookie.name = iPlanetDirectoryPro
@@ -46,7 +46,6 @@ com.sun.identity.agents.config.session.attribute.fetch.mode = 0
 com.sun.identity.agents.config.session.attribute.mapping[]=
 com.sun.identity.agents.config.response.attribute.fetch.mode = 0
 com.sun.identity.agents.config.response.attribute.mapping[]=
-com.sun.identity.agents.config.load.balancer.enable = false
 com.sun.identity.agents.config.sso.only = false
 com.sun.identity.agents.config.access.denied.url =
 com.sun.identity.agents.config.fqdn.check.enable = true

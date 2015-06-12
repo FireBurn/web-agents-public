@@ -473,6 +473,8 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
 
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOTIF_ENABLE, CONF_NUMBER, NULL, &conf->notif_enable, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOTIF_URL, CONF_STRING, NULL, &conf->notif_url, NULL);
+        
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LB_ENABLE, CONF_NUMBER, NULL, &conf->lb_enable, NULL);
 
         if (conf->local) { /* do read other options in case configuration is local */
 
@@ -496,7 +498,6 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_RESPONSE_MODE, CONF_ATTR_MODE, NULL, &conf->response_attr_fetch, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ATTR_RESPONSE_MAP, CONF_STRING_MAP, &conf->response_attr_map_sz, &conf->response_attr_map, NULL);
 
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LB_ENABLE, CONF_NUMBER, NULL, &conf->lb_enable, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_SSO_ONLY, CONF_NUMBER, NULL, &conf->sso_only, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ACCESS_DENIED_URL, CONF_STRING, NULL, &conf->access_denied_url, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_FQDN_CHECK_ENABLE, CONF_NUMBER, NULL, &conf->fqdn_check_enable, NULL);
