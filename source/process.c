@@ -1009,31 +1009,45 @@ static am_return_t validate_policy(am_request_t *r) {
                 AM_LOG_DEBUG(r->instance_id, "%s pattern: %s, resource: %s, status: %s", thisfunc,
                         pattern, url, am_policy_strerror(policy_status));
 
-                if (remote) {
-                    /* in case its a fresh policy response, store it in a cache (resource name only) */
-                    am_add_policy_cache_entry(r, pattern, 300); /* 5 minutes */
-                } else {
-                    int rv = am_get_policy_cache_entry(r, pattern, e->created);
-                    AM_LOG_DEBUG(r->instance_id, "%s pattern: %s, cache status: %s", thisfunc,
-                            pattern, am_strerror(rv));
-                    if (rv != AM_SUCCESS) {
-                        /* policy cache (resource) entry might be removed or updated by a notification
-                         * redo validate_policy in either case
+                do {
+                    int rv;
+
+                    if (r->conf->policy_cache_valid <= 0) {
+                        /* do not add entries to a global policy-resource cache if policy_cache_valid is set to zero.
+                         * note: this disables policy notifications
                          */
-                        r->response_attributes = NULL;
-                        r->response_decisions = NULL;
-                        r->policy_advice = NULL;
-
-                        delete_am_policy_result_list(&policy_cache);
-                        r->pattr = NULL;
-                        delete_am_namevalue_list(&session_cache);
-                        r->sattr = NULL;
-
-                        r->status = entry_status;
-                        r->retry++;
-                        return AM_RETRY;
+                        break;
                     }
-                }
+
+                    if (remote) {
+                        /* in case its a fresh policy response, store it in a global policy cache (resource name only) */
+                        am_add_policy_cache_entry(r, pattern, 300); /* 5 minutes */
+                        break;
+                    }
+
+                    rv = am_get_policy_cache_entry(r, pattern, e->created);
+                    AM_LOG_DEBUG(r->instance_id, "%s pattern: %s, global policy cache status: %s", thisfunc,
+                            pattern, am_strerror(rv));
+                    if (rv == AM_SUCCESS) {
+                        break;
+                    }
+
+                    /* policy cache (resource) entry might be removed or updated by a notification
+                     * redo validate_policy in either case
+                     */
+                    r->response_attributes = NULL;
+                    r->response_decisions = NULL;
+                    r->policy_advice = NULL;
+
+                    delete_am_policy_result_list(&policy_cache);
+                    r->pattr = NULL;
+                    delete_am_namevalue_list(&session_cache);
+                    r->sattr = NULL;
+
+                    r->status = entry_status;
+                    r->retry++;
+                    return AM_RETRY;
+                } while (0);
 
                 if (policy_status == AM_EXACT_MATCH || policy_status == AM_EXACT_PATTERN_MATCH) {
                     struct am_action_decision *ae, *at;

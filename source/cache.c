@@ -820,7 +820,7 @@ int am_add_session_policy_cache_entry(am_request_t *request, const char *key,
 }
 
 /**
- * Fetch policy/resource cache entry (key: ResourceResult name).
+ * Fetch global policy-resource cache entry (key: ResourceResult name).
  * 
  * @return AM_SUCCESS if found, AM_NOT_FOUND if not found, AM_ETIMEDOUT if
  * not valid (either obsolete or newer than a reference time)
@@ -885,7 +885,7 @@ int am_get_policy_cache_entry(am_request_t *request, const char *key, time_t ref
 }
 
 /**
- * Add policy/resource cache entry (key: ResourceResult name).
+ * Add global policy-resource cache entry (key: ResourceResult name).
  * 
  * @return AM_SUCCESS if operation was successful
  */
@@ -902,7 +902,7 @@ int am_add_policy_cache_entry(am_request_t *r, const char *key, int valid) {
     if (ISINVALID(key)) {
         return AM_EINVAL;
     }
-    if (strlen(key) >= AM_HASH_TABLE_SIZE) {
+    if (strlen(key) >= AM_HASH_TABLE_KEY_SIZE) {
         return AM_E2BIG;
     }
 
@@ -915,16 +915,9 @@ int am_add_policy_cache_entry(am_request_t *r, const char *key, int valid) {
 
     cache_entry = get_cache_entry(key, NULL);
     if (cache_entry != NULL) {
-        if (!delete_cache_entry(entry_index, cache_entry)) {
-            am_shm_free(cache, cache_entry);
-            cache_data->count--;
-            cache_entry = NULL;
-        } else {
-            AM_LOG_ERROR(r->instance_id, "%s failed to remove cache entry (%s)",
-                    thisfunc, key);
-            am_shm_unlock(cache);
-            return 1;
-        }
+        /* entry with this key already exists - do nothing */
+        am_shm_unlock(cache);
+        return AM_SUCCESS;
     }
 
     cache_entry = am_shm_alloc(cache, sizeof (struct am_cache_entry));
