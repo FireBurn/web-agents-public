@@ -542,10 +542,84 @@ void am_log_init_worker(int status) {
 #endif
 }
 
+
+/**
+ * This function simply returns true or false depending on whether "level" specifies we
+ * need to log given the logger level settings for this instance.  Note that the function
+ * should return an am_bool_t, but because of a circular dependency between am.h (which
+ * defines that type) and log.h (which needs that type), I'm changing it to "int".
+ */
+int perform_logging(unsigned long instance_id, int level) {
+    
+    int                 i;
+    struct am_log_s*    log;
+    int                 log_level = AM_LOG_LEVEL_NONE;
+    int                 audit_level = AM_LOG_LEVEL_NONE;
+
+    /* We always want to log for a unit test, where the instance id is zero */
+    if (instance_id == 0) {
+        return AM_TRUE;
+    }
+    
+    /* We simply cannot log if the shared memory segment is not initialised */
+    if (am_log_p == NULL) {
+        return AM_FALSE;
+    }
+    log = (struct am_log_s*)am_log_p->am_shared;
+    
+#ifdef _WIN32
+    WaitForSingleObject(am_log_lck.lock, INFINITE);
+#else
+    pthread_mutex_lock(&log->lock);
+#endif
+
+    for (i = 0; i < AM_MAX_INSTANCES; i++) {
+        if (log->level[i].instance_id == instance_id) {
+            log_level = log->level[i].log;
+            audit_level = log->level[i].audit;
+            break;
+        }
+    }
+    
+#ifdef _WIN32
+    ReleaseMutex(am_log_lck.lock);
+#else
+    pthread_mutex_unlock(&log->lock);
+#endif
+    
+    /* Do not log in the following cases:
+     *
+     * requested log level is set to LEVEL_NONE
+     *  or
+     * selected (in a configuration) log level is LEVEL_NONE and requested log level is not LEVEL_AUDIT
+     *  or
+     * selected audit level is LEVE_NONE and requested log level is LEVEL_AUDIT
+     */
+    if (level == AM_LOG_LEVEL_NONE ||
+            (log_level == AM_LOG_LEVEL_NONE && (level & AM_LOG_LEVEL_AUDIT) != AM_LOG_LEVEL_AUDIT) ||
+            (audit_level == AM_LOG_LEVEL_NONE && (level & AM_LOG_LEVEL_AUDIT) == AM_LOG_LEVEL_AUDIT)) {
+        return AM_FALSE;
+    }
+    
+    /* In case requested log level is not LEVEL_AUDIT (as we must log audit message in case we
+     * got past the previous check) and its not LEVEL_ALWAYS (which must be logged too)
+     * and requested log level is "higher" than selected log level according to
+     * "DEBUG > INFO > WARNING > ERROR" schema - do not log.
+     */
+    if ((level & AM_LOG_LEVEL_AUDIT) != AM_LOG_LEVEL_AUDIT &&
+            (level & AM_LOG_LEVEL_ALWAYS) != AM_LOG_LEVEL_ALWAYS && level > log_level) {
+        return AM_FALSE;
+    }
+
+    return AM_TRUE;
+}
+
+
 /**
  * This routine is primarily responsible for all logging within this application.
  *   instance_id: the instance that has something to log
  *   level: the level we want to log at, see constants AM_LOG_LEVEL_* in am.h
+ *   header: a header consisting of various time information and the current logging level as a string
  *   format: the printf style format string telling us about the variadic arguments
  *   args: the variadic arguments themselves.
  *
@@ -554,21 +628,28 @@ void am_log_init_worker(int status) {
  * would still like to log something somewhere.  If test cases ensure that instance_id is set to zero,
  * then logging messages are written to the standard error.
  *
+ * Note that if you're calling this function from one of the macros in log.h, then the function
+ * perform_logging will already have been called.  If you're not, then consider calling that function
+ * first as it will save you a lot of work figuring out you didn't really want to log a message at
+ * your current logging level.
  */
-void am_log(unsigned long instance_id, int level, const char *format, ...) {
-    size_t off, off_out;
-    int sz, sr, i, log_lvl = AM_LOG_LEVEL_NONE, aud_lvl = AM_LOG_LEVEL_NONE;
-    char *data, quit = AM_FALSE;
-    struct am_log_s *log = am_log_p != NULL ? (struct am_log_s *) am_log_p->am_shared : NULL;
-    char *log_d = log != NULL ? ((char *) am_log_p->am_shared) + sizeof (struct am_log_s) : NULL;
-    va_list args;
+void am_log(unsigned long instance_id, int level, const char* header, const char *format, ...) {
+    size_t              off, off_out;
+    int                 sz, sr;
+    char *              data;
+    struct am_log_s *   log = am_log_p != NULL ? (struct am_log_s *) am_log_p->am_shared : NULL;
+    char *              log_d = log != NULL ? ((char *) am_log_p->am_shared) + sizeof (struct am_log_s) : NULL;
+    va_list             args;
+    char *              combined;
 
     /**
      * An instance id of zero indicates that we are running in unit test mode, shared memory is not
      * initialised and so our only option, if we want to log, is to write to the standard error.
+     * Note that we ALWAYS log, no matter what the level.
      */
     if (instance_id == 0) {
         va_start(args, format);
+        fprintf(stderr, "%s", header);
         vfprintf(stderr, format, args);
         fputs("\n", stderr);
         va_end(args);
@@ -579,8 +660,15 @@ void am_log(unsigned long instance_id, int level, const char *format, ...) {
         return;
     }
 
+    combined = malloc(strlen(header) + strlen(format) + 1);
+    if (combined == NULL) {
+        return;
+    }
+    strcpy(combined, header);
+    strcat(combined, format);
+    
     va_start(args, format);
-    sz = vsnprintf(NULL, 0, format, args);
+    sz = vsnprintf(NULL, 0, combined, args);
     va_end(args);
 
     data = (char *) calloc(1, sz + 1);
@@ -589,11 +677,11 @@ void am_log(unsigned long instance_id, int level, const char *format, ...) {
     }
 
     va_start(args, format);
-    sr = vsnprintf(data, sz + 1, format, args);
+    sr = vsnprintf(data, sz + 1, combined, args);
     va_end(args);
 
     if (sr <= 0) {
-        free(data);
+        am_free(data);
         return;
     }
 
@@ -610,42 +698,6 @@ void am_log(unsigned long instance_id, int level, const char *format, ...) {
         pthread_cond_wait(&log->queue_overflow, &log->lock);
     }
 #endif
-
-    for (i = 0; i < AM_MAX_INSTANCES; i++) {
-        if (log->level[i].instance_id == instance_id) {
-            log_lvl = log->level[i].log;
-            aud_lvl = log->level[i].audit;
-            break;
-        }
-    }
-
-    /*check if we have any logging configuration at all*/
-    if (level == AM_LOG_LEVEL_NONE ||
-            (log_lvl == AM_LOG_LEVEL_NONE && ((level & AM_LOG_LEVEL_AUDIT) != AM_LOG_LEVEL_AUDIT)) ||
-            (aud_lvl == AM_LOG_LEVEL_NONE && (level & AM_LOG_LEVEL_AUDIT) == AM_LOG_LEVEL_AUDIT)) {
-        quit = AM_TRUE;
-    }
-
-    /*check configured logging level (LOG_ALLWAYS*/
-    if ((level & AM_LOG_LEVEL_AUDIT) != AM_LOG_LEVEL_AUDIT && (level & AM_LOG_LEVEL_ALWAYS) != AM_LOG_LEVEL_ALWAYS) {
-        /* DEBUG > INFO > WARNING > ERROR */
-        if (level > log_lvl) {
-            quit = AM_TRUE;
-        }
-    }
-
-    /* either this particular instance has no logging configuration or requested log 
-     * level does not correspond to one set in instance configuration
-     */
-    if (quit) {
-        free(data);
-#ifdef _WIN32
-        ReleaseMutex(am_log_lck.lock);
-#else
-        pthread_mutex_unlock(&log->lock);
-#endif
-        return;
-    }
 
     off = log->queue[log->in].offset;
 
