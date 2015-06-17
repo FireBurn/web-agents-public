@@ -274,8 +274,8 @@ unsigned long am_instance_id(const char *);
 void am_process_request(am_request_t *r);
 void am_request_free(am_request_t *r);
 
-const char *am_method_num_to_str(char method);
-char am_method_str_to_num(const char *method_str);
+const char *am_method_num_to_str(int method);
+int am_method_str_to_num(const char *method_str);
 
 int am_init();
 int am_init_worker();

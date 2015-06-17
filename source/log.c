@@ -58,9 +58,9 @@ static struct am_shared_log_lock_s am_log_lck = {NULL, NULL, NULL, NULL};
 
 #endif
 
-/*log header*/
+/* log header */
 struct am_log_s {
-    size_t capacity; /*total number of bytes in a log data buffer*/
+    size_t capacity; /* total number of bytes in a log data buffer */
 
     struct log_queue {
         size_t size;
@@ -102,7 +102,7 @@ struct am_log_s {
     pthread_cond_t queue_overflow;
 #endif
 
-    int owner; /*current log reader process id*/
+    int owner; /* current log reader process id */
 
     struct log_level {
         unsigned long instance_id;
@@ -137,7 +137,7 @@ static int need_quit(pthread_mutex_t *mtx) {
 
 static char should_rotate_time(time_t ct) {
     time_t ts = ct;
-    ts += 86400; /*once in 24 hours*/
+    ts += 86400; /* once in 24 hours */
     if (difftime(time(NULL), ts) >= 0) {
         return AM_TRUE;
     }
@@ -249,7 +249,7 @@ static void *am_log_worker(void *arg) {
                             wrote = write(fdw, "\r\n", 2);
                             _commit(fdw);
 
-                            /*check file size; rotate if set so*/
+                            /* check file size; rotate if set so */
                             if (max_size > 0) {
                                 BY_HANDLE_FILE_INFORMATION info;
                                 uint64_t fsz = 0;
@@ -284,9 +284,9 @@ static void *am_log_worker(void *arg) {
                             wrote = write(fdw, "\n", 1);
                             fsync(fdw);
 
-                            //TODO: optional rotate by date
+                            // TODO: optional rotate by date
 
-                            /*check file size; rotate if set so*/
+                            /* check file size; rotate if set so */
                             if (max_size > 0 && stat(fnm, &st) == 0 && (st.st_size + 1024) > max_size) {
                                 unsigned int idx = 1;
                                 char tmp[4096];
@@ -376,14 +376,16 @@ void am_log_re_init(int status) {
 
 void am_log_init(int status) {
     int i;
-    const size_t log_data_sz = 1024 * 1024 * 10; /*size of a shared log buffer*/
+    const size_t log_data_sz = 1024 * 1024 * 10; /* size of a shared log buffer */
     char opened = 0;
 
     am_agent_instance_init_init();
 
     if (am_log_p == NULL) {
         am_log_p = (struct am_shared_log_s *) malloc(sizeof (struct am_shared_log_s));
-        if (am_log_p == NULL) return;
+        if (am_log_p == NULL) {
+            return;
+        }
     } else if (am_log_p->am_shared_reader_pid == getpid()) {
         return;
     }
@@ -453,14 +455,14 @@ void am_log_init(int status) {
     }
 
 #else
-    am_log_p->am_shared_id = shm_open(am_log_p->am_shared_fln,
-            O_CREAT | O_EXCL | O_RDWR, 0666);
-    if (am_log_p->am_shared_id == -1 && EEXIST != errno) return;
+    am_log_p->am_shared_id = shm_open(am_log_p->am_shared_fln, O_CREAT | O_EXCL | O_RDWR, 0666);
+    if (am_log_p->am_shared_id == -1 && EEXIST != errno) {
+        return;
+    }
     if (am_log_p->am_shared_id == -1) {
         /* already there, open without O_EXCL and go; if
          * something goes wrong, close and cleanup */
-        am_log_p->am_shared_id = shm_open(am_log_p->am_shared_fln,
-                O_RDWR, 0666);
+        am_log_p->am_shared_id = shm_open(am_log_p->am_shared_fln, O_RDWR, 0666);
         if (am_log_p->am_shared_id == -1) {
             fprintf(stderr, "am_log_init() shm_open failed (%d)\n", errno);
             free(am_log_p);
@@ -777,7 +779,7 @@ void am_log_shutdown() {
         CloseHandle(am_log_lck.queue_overflow);
 
         WaitForSingleObject(am_log_lck.lock, INFINITE);
-        /*close log file(s)*/
+        /* close log file(s) */
         for (i = 0; i < AM_MAX_INSTANCES; i++) {
             struct log_files *f = &log->files[i];
             if (f->owner == pid) {
@@ -805,7 +807,7 @@ void am_log_shutdown() {
         pthread_mutex_destroy(&log->lock);
         pthread_cond_destroy(&log->queue_overflow);
         pthread_cond_destroy(&log->queue_empty);
-        /*close log file(s)*/
+        /* close log file(s) */
         for (i = 0; i < AM_MAX_INSTANCES; i++) {
             struct log_files *f = &log->files[i];
             if (f->fd_debug != -1) {
@@ -880,7 +882,9 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
                     snprintf(f->name_debug, sizeof (f->name_debug), "%s", debug_log);
                     snprintf(f->name_audit, sizeof (f->name_audit), "%s", audit_log);
                     f->used = 1;
-#define MAX_LOG_SIZE (1024 * 1024 * 5) /*5MB*/
+/* 5MB */
+#define MAX_LOG_SIZE (1024 * 1024 * 5)
+
                     f->max_size_debug = f->max_size_audit = MAX_LOG_SIZE;
                     f->created_debug = f->created_audit = 0;
                     f->owner = 0;
@@ -888,7 +892,7 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
                     break;
                 }
             }
-            /*create instance logging level configuration*/
+            /* create instance logging level configuration */
             if (exist == 2)
                 for (i = 0; i < AM_MAX_INSTANCES; i++) {
                     if (log->level[i].instance_id == 0) {
@@ -899,7 +903,7 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
                     }
                 }
         } else {
-            /*update instance logging level configuration*/
+            /* update instance logging level configuration */
             for (i = 0; i < AM_MAX_INSTANCES; i++) {
                 if (log->level[i].instance_id == instance_id) {
                     log->level[i].log = log_level;
@@ -967,7 +971,7 @@ void set_valid_url_index(unsigned long instance_id, int value) {
         }
         if (!set) {
             for (i = 0; i < AM_MAX_INSTANCES; i++) {
-                /*find first empty slot*/
+                /* find first empty slot */
                 if (log->valid[i].instance_id == 0) {
                     log->valid[i].url_index = value;
                     log->valid[i].instance_id = instance_id;
@@ -987,16 +991,19 @@ int am_agent_instance_init_init() {
     int status = AM_ERROR;
 #if defined(_WIN32)
     ic_sem = CreateSemaphoreA(NULL, 1, 1, "Global\\"AM_CONFIG_INIT_NAME);
-    if (ic_sem != NULL)
+    if (ic_sem != NULL) {
         status = AM_SUCCESS;
+    }
 #elif defined(__APPLE__)
     kern_return_t rv = semaphore_create(mach_task_self(), &ic_sem, SYNC_POLICY_FIFO, 1);
-    if (rv == KERN_SUCCESS)
+    if (rv == KERN_SUCCESS) {
         status = AM_SUCCESS;
+    }
 #else
     ic_sem = sem_open(AM_CONFIG_INIT_NAME, O_CREAT, 0600, 1);
-    if (ic_sem != SEM_FAILED)
+    if (ic_sem != SEM_FAILED) {
         status = AM_SUCCESS;
+    }
 #endif
     return status;
 }
@@ -1028,35 +1035,38 @@ void am_agent_instance_init_release(char unlink) {
     semaphore_destroy(mach_task_self(), ic_sem);
 #else
     sem_close(ic_sem);
-    if (unlink)
+    if (unlink) {
         sem_unlink(AM_CONFIG_INIT_NAME);
-#endif 
+    }
+#endif
 }
 
 void am_agent_init_set_value(unsigned long instance_id, char lock, int val) {
     int i;
     if (am_log_p != NULL) {
         struct am_log_s *log = (struct am_log_s *) am_log_p->am_shared;
-        if (lock)
+        if (lock) {
             am_agent_instance_init_lock();
+        }
         for (i = 0; i < AM_MAX_INSTANCES; i++) {
             if (val == AM_UNKNOWN) {
-                /*find first empty slot*/
+                /* find first empty slot */
                 if (log->init[i].instance_id == 0) {
                     log->init[i].in_progress = 0;
                     log->init[i].instance_id = instance_id;
                     break;
                 }
             } else {
-                /*set/reset status value*/
+                /* set/reset status value */
                 if (log->init[i].instance_id == instance_id) {
                     log->init[i].in_progress = val;
                     break;
                 }
             }
         }
-        if (lock)
+        if (lock) {
             am_agent_instance_init_unlock();
+        }
     }
 }
 
@@ -1064,17 +1074,19 @@ int am_agent_init_get_value(unsigned long instance_id, char lock) {
     int i, status = AM_FALSE;
     if (am_log_p != NULL) {
         struct am_log_s *log = (struct am_log_s *) am_log_p->am_shared;
-        if (lock)
+        if (lock) {
             am_agent_instance_init_lock();
+        }
         for (i = 0; i < AM_MAX_INSTANCES; i++) {
-            /*get status value*/
+            /* get status value */
             if (log->init[i].instance_id == instance_id) {
                 status = log->init[i].in_progress;
                 break;
             }
         }
-        if (lock)
+        if (lock) {
             am_agent_instance_init_unlock();
+        }
     }
     return status;
 }
@@ -1087,10 +1099,10 @@ void am_strncat(char* dest, const char* source, size_t max) {
     size_t length = 0;
 
     if (dest == NULL || source == NULL) {
-        return; /** do no harm */
+        return; /* do no harm */
     }
 
-    /** move dest to the end, counting as we go */
+    /* move dest to the end, counting as we go */
     while (*dest) {
         length++;
         dest++;

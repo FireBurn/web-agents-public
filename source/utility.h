@@ -161,7 +161,7 @@ int parse_url(const char *u, struct url *url);
 char *url_encode(const char *str);
 char *url_decode(const char *str);
 
-int am_bin_path(char* buffer, size_t len);
+size_t am_bin_path(char* buffer, size_t len);
 
 int string_replace(char **original, const char *pattern, const char *replace, size_t *sz);
 
@@ -221,7 +221,8 @@ int am_session_decode(am_request_t *r);
 char policy_compare_url(am_request_t *r, const char *pattern, const char *resource);
 const char *am_policy_strerror(char status);
 
-char *am_strsep(char **sp, const char *sep);
+char* am_strsep(char** sp, const char* sep);
+char* am_strldup(const char* src);
 
 int compare_property(const char *line, const char *property);
 
