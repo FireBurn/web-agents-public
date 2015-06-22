@@ -302,4 +302,6 @@ int am_remove_cache_entry(unsigned long instance_id, const char *key);
 void* mem2cpy(void* dest, const void* source1, size_t size1, const void* source2, size_t size2);
 void* mem3cpy(void* dest, const void* source1, size_t size1, const void* source2, size_t size2, const void* source3, size_t size3);
 
+void update_agent_configuration_ttl(am_config_t *c);
+
 #endif

@@ -586,6 +586,7 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
     am_free(line);
 
     decrypt_agent_passwords(conf);
+    update_agent_configuration_ttl(conf);
     return conf;
 }
 

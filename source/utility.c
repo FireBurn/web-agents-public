@@ -186,7 +186,7 @@ am_return_t match(unsigned long instance_id, const char *subject, const char *pa
     int erroroffset, rc = -1;
     int offsets[3];
     am_return_t result = AM_OK;
-    
+
     if (subject == NULL || pattern == NULL) {
         return result;
     }
@@ -195,7 +195,7 @@ am_return_t match(unsigned long instance_id, const char *subject, const char *pa
         AM_LOG_DEBUG(instance_id, "match: pcre_compile failed on \"%s\" with error %s", pattern, (error == NULL) ? "unknown" : error);
         return AM_FAIL;
     }
-    
+
     rc = pcre_exec(x, NULL, subject, (int) strlen(subject), 0, 0, offsets, 3);
     if (rc < 0) {
         AM_LOG_DEBUG(instance_id, "match(): '%s' does not match '%s'", subject, pattern);
@@ -204,7 +204,7 @@ am_return_t match(unsigned long instance_id, const char *subject, const char *pa
         AM_LOG_DEBUG(instance_id, "match(): '%s' matches '%s'", subject, pattern);
     }
     pcre_free(x);
-    
+
     return result;
 }
 
@@ -233,7 +233,7 @@ char *match_group(pcre *x, int capture_groups, const char *subject, size_t *len)
     if (x == NULL || subject == NULL) {
         return NULL;
     }
-    if ((ovector = calloc(max_capture_groups, sizeof(int))) == NULL) {
+    if ((ovector = calloc(max_capture_groups, sizeof (int))) == NULL) {
         return NULL;
     }
     while (offset < slen && (rc = pcre_exec(x, 0, subject, (int) slen, offset, 0, ovector, max_capture_groups)) >= 0) {
@@ -249,7 +249,7 @@ char *match_group(pcre *x, int capture_groups, const char *subject, size_t *len)
                     return NULL;
                 }
                 result = ret_tmp;
-                
+
                 /* return value is stored as:
                  * key\0value\0...
                  */
@@ -267,10 +267,8 @@ char *match_group(pcre *x, int capture_groups, const char *subject, size_t *len)
     return result;
 }
 
-
-
 static void uri_normalize(struct url *url, char *path) {
-    
+
     char *s, *o, *p = path != NULL ? strdup(path) : NULL;
     int i, m = 0, list_sz = 0;
     char **segment_list = NULL, **segment_list_norm = NULL, **tmp;
@@ -289,7 +287,7 @@ static void uri_normalize(struct url *url, char *path) {
         if (strcmp(s, ".") == 0) {
             continue; /* remove (ignore) single dot segments */
         }
-        tmp = (char **) realloc(segment_list, sizeof(char *) * (++list_sz));
+        tmp = (char **) realloc(segment_list, sizeof (char *) * (++list_sz));
         if (tmp == NULL) {
             AM_FREE(o, segment_list);
             url->error = AM_ENOMEM;
@@ -308,7 +306,7 @@ static void uri_normalize(struct url *url, char *path) {
     }
 
     /* create a list for normalized segment storage */
-    segment_list_norm = (char **) calloc(list_sz, sizeof(char *));
+    segment_list_norm = (char **) calloc(list_sz, sizeof (char *));
     if (segment_list_norm == NULL) {
         AM_FREE(o, segment_list);
         if (url != NULL) {
@@ -330,25 +328,25 @@ static void uri_normalize(struct url *url, char *path) {
         }
     }
 
-    memset(&u[0], 0, sizeof(u));
+    memset(&u[0], 0, sizeof (u));
     /* join normalized segments */
     for (i = 0; i < list_sz; i++) {
         if (segment_list_norm[i] == NULL) {
             break;
         }
         if (i == 0) {
-            strncpy(u, segment_list_norm[i], sizeof(u) - 1);
+            strncpy(u, segment_list_norm[i], sizeof (u) - 1);
             if ((i + 1) < list_sz && segment_list_norm[i + 1] != NULL) {
-                strncat(u, "/", sizeof(u) - 1);
+                strncat(u, "/", sizeof (u) - 1);
             }
         } else {
-            strncat(u, segment_list_norm[i], sizeof(u) - 1);
+            strncat(u, segment_list_norm[i], sizeof (u) - 1);
             if ((i + 1) < list_sz && segment_list_norm[i + 1] != NULL) {
-                strncat(u, "/", sizeof(u) - 1);
+                strncat(u, "/", sizeof (u) - 1);
             }
         }
     }
-    memcpy(path, u, sizeof(u));
+    memcpy(path, u, sizeof (u));
 
     AM_FREE(segment_list_norm, segment_list, o);
 
@@ -395,11 +393,11 @@ int parse_url(const char *u, struct url *url) {
     }
 
     url->error = url->ssl = url->port = 0;
-    memset(&uri[0], 0, sizeof(uri));
-    memset(&url->proto[0], 0, sizeof(url->proto));
-    memset(&url->host[0], 0, sizeof(url->host));
-    memset(&url->path[0], 0, sizeof(url->path));
-    memset(&url->query[0], 0, sizeof(url->query));
+    memset(&uri[0], 0, sizeof (uri));
+    memset(&url->proto[0], 0, sizeof (url->proto));
+    memset(&url->host[0], 0, sizeof (url->host));
+    memset(&url->path[0], 0, sizeof (url->path));
+    memset(&url->query[0], 0, sizeof (url->query));
 
     if (sscanf(u, HD1, url->proto, url->host, &port, url->path) == 4) {
         ;
@@ -429,7 +427,7 @@ int parse_url(const char *u, struct url *url) {
         strcpy(url->path, "/");
     } else if (url->path[0] != '/') {
         size_t ul = strlen(url->path);
-        if (ul < sizeof(url->path)) {
+        if (ul < sizeof (url->path)) {
             memmove(url->path + 1, url->path, ul);
         }
         url->path[0] = '/';
@@ -441,13 +439,13 @@ int parse_url(const char *u, struct url *url) {
         char *token, *temp, query[AM_URI_SIZE + 1], *sep;
         struct query_attribute *list;
         int sep_count, sep_count_init, j;
-        strncpy(url->query, p, sizeof(url->query) - 1);
+        strncpy(url->query, p, sizeof (url->query) - 1);
         *p = 0;
 
-        strncpy(query, url->query + 1 /* skip '?' */, sizeof(url->query) - 1);
+        strncpy(query, url->query + 1 /* skip '?' */, sizeof (url->query) - 1);
         sep_count = char_count(query, '&', NULL);
         if (sep_count > 0) {
-            list = (struct query_attribute *) calloc(++sep_count, sizeof(struct query_attribute));
+            list = (struct query_attribute *) calloc(++sep_count, sizeof (struct query_attribute));
             if (list == NULL) {
                 url->error = AM_ENOMEM;
                 return AM_ERROR;
@@ -474,9 +472,9 @@ int parse_url(const char *u, struct url *url) {
                 }
             }
 
-            qsort(list, sep_count, sizeof(struct query_attribute), query_attribute_compare);
+            qsort(list, sep_count, sizeof (struct query_attribute), query_attribute_compare);
 
-            strncpy(url->query, "?", sizeof(url->query) - 1);
+            strncpy(url->query, "?", sizeof (url->query) - 1);
             for (j = 0; j < sep_count; j++) {
                 struct query_attribute *elm = &list[j];
                 if (j > 0) {
@@ -510,7 +508,7 @@ int parse_url(const char *u, struct url *url) {
     /* normalize path segments, RFC-2396, section-5.2 */
     uri_normalize(url, uri);
 
-    strncpy(url->path, uri, sizeof(url->path) - 1);
+    strncpy(url->path, uri, sizeof (url->path) - 1);
     return AM_SUCCESS;
 }
 
@@ -523,9 +521,9 @@ int parse_url(const char *u, struct url *url) {
  */
 char *url_encode(const char *str) {
     if (str != NULL) {
-        unsigned char* pstr = (unsigned char *) str;
-        char* buf = (char*)calloc(1, strlen(str) * 3 + 1);
-        char* pbuf = buf;
+        unsigned char *pstr = (unsigned char *) str;
+        char *buf = (char *) calloc(1, strlen(str) * 3 + 1);
+        char *pbuf = buf;
 
         if (buf == NULL) {
             return NULL;
@@ -678,7 +676,7 @@ int gzip_inflate(const char *compressed, size_t *compressed_sz, char **uncompres
     half_length = *compressed_sz / 2;
     uncompLength = full_length;
 
-    uncomp = (char *) calloc(sizeof(char), uncompLength);
+    uncomp = (char *) calloc(sizeof (char), uncompLength);
     if (uncomp == NULL) return 1;
 
     strm.next_in = (Bytef *) compressed;
@@ -696,7 +694,7 @@ int gzip_inflate(const char *compressed, size_t *compressed_sz, char **uncompres
         int err;
 
         if (strm.total_out >= uncompLength) {
-            char *uncomp2 = (char *) calloc(sizeof(char), uncompLength + half_length);
+            char *uncomp2 = (char *) calloc(sizeof (char), uncompLength + half_length);
             if (uncomp2 == NULL) {
                 free(uncomp);
                 return 1;
@@ -752,7 +750,7 @@ int gzip_deflate(const char *uncompressed, size_t *uncompressed_sz, char **compr
     }
 
     comp_length = deflateBound(&strm, ucomp_length);
-    comp = (char *) calloc(sizeof(char), comp_length);
+    comp = (char *) calloc(sizeof (char), comp_length);
     if (comp == NULL) {
         deflateEnd(&strm);
         return 1;
@@ -948,7 +946,6 @@ int am_method_str_to_num(const char *method_str) {
     return AM_REQUEST_UNKNOWN;
 }
 
-
 am_status_t get_cookie_value(am_request_t *rq, const char *separator, const char *cookie_name,
         const char *cookie_header_val, char **value) {
     size_t value_len = 0, ec = 0;
@@ -1057,10 +1054,10 @@ am_status_t get_token_from_url(am_request_t *rq) {
 
     if (ql > 0 && query[ql - 1] == '&') {
         query[ql - 1] = 0;
-        strncpy(rq->url.query, query, sizeof(rq->url.query) - 1);
+        strncpy(rq->url.query, query, sizeof (rq->url.query) - 1);
     } else if (ql == 0 && ISVALID(rq->token)) {
         /* token is the only query parameter - clear it */
-        memset(rq->url.query, 0, sizeof(rq->url.query));
+        memset(rq->url.query, 0, sizeof (rq->url.query));
         /* TODO: should a question mark be left there even when token is the only parameter? */
     }
     AM_FREE(query, o);
@@ -1202,6 +1199,7 @@ char file_exists(const char *fn) {
 }
 
 #if defined(_WIN32) || defined(__sun)
+
 /**
  * A windows implementation of a mac function.
  * The strnlen() function returns either the same result as strlen() or maxlen, whichever
@@ -1227,7 +1225,6 @@ char *strndup(const char *s, size_t n) {
 }
 #endif
 
-
 /**
  * Duplicate a string in dynamic memory, converting to lowercase.
  *
@@ -1245,7 +1242,7 @@ char* am_strldup(const char* src) {
         return NULL;
     }
     dest = result;
-    
+
     /* avoid tolower(*src++) because, I believe, tolower is a macro and may have side effects */
     while ((*dest = tolower(*src)) != '\0') {
         dest++;
@@ -1264,7 +1261,7 @@ char* stristr(char* str1, char* str2) {
     char* dup2;
     char* p;
     char* result = NULL;
-    
+
     if (str1 == NULL || str2 == NULL) {
         return NULL;
     }
@@ -1283,7 +1280,6 @@ char* stristr(char* str1, char* str2) {
     AM_FREE(dup1, dup2);
     return result;
 }
-
 
 /**
  * Decode the string specified by "src" from base 64 into "clear text".  The decoded value is stored on the
@@ -1322,14 +1318,14 @@ char* base64_decode(const char* src, size_t* sz) {
     }
 
     memset(table, 64, 256);
-    for (i = 0; i < sizeof(base64_table); i++) {
+    for (i = 0; i < sizeof (base64_table); i++) {
         table[base64_table[i]] = i;
     }
 
-    for(in = (unsigned char *)src; table[*in++] <= 63; /* void */)
+    for (in = (unsigned char *) src; table[*in++] <= 63; /* void */)
         ;
 
-    i = (in - (unsigned char *)src) - 1;
+    i = (in - (unsigned char *) src) - 1;
     count = (((i + 3) / 4) * 3) + 1;
 
     pos = out = malloc(count);
@@ -1337,33 +1333,32 @@ char* base64_decode(const char* src, size_t* sz) {
         return NULL;
     }
 
-    in = (unsigned char *)src;
+    in = (unsigned char *) src;
 
     while (i > 4) {
-        *pos++ = (unsigned char)(table[in[0]] << 2 | table[in[1]] >> 4);
-        *pos++ = (unsigned char)(table[in[1]] << 4 | table[in[2]] >> 2);
-        *pos++ = (unsigned char)(table[in[2]] << 6 | table[in[3]]);
+        *pos++ = (unsigned char) (table[in[0]] << 2 | table[in[1]] >> 4);
+        *pos++ = (unsigned char) (table[in[1]] << 4 | table[in[2]] >> 2);
+        *pos++ = (unsigned char) (table[in[2]] << 6 | table[in[3]]);
         in += 4;
         i -= 4;
     }
 
     if (i > 1) {
-        *pos++ = (unsigned char)(table[in[0]] << 2 | table[in[1]] >> 4);
+        *pos++ = (unsigned char) (table[in[0]] << 2 | table[in[1]] >> 4);
     }
     if (i > 2) {
-        *pos++ = (unsigned char)(table[in[1]] << 4 | table[in[2]] >> 2);
+        *pos++ = (unsigned char) (table[in[1]] << 4 | table[in[2]] >> 2);
     }
     if (i > 3) {
-        *pos++ = (unsigned char)(table[in[2]] << 6 | table[in[3]]);
+        *pos++ = (unsigned char) (table[in[2]] << 6 | table[in[3]]);
     }
 
     *pos = '\0';
     count -= (4 - i) & 3;
     *sz = count - 1;
 #endif
-    return (char *)out;
+    return (char *) out;
 }
-
 
 /**
  * Encode the "clear text" string specified by "in" into base 64.  The encoded value is stored on the
@@ -1377,12 +1372,12 @@ char* base64_decode(const char* src, size_t* sz) {
  * @return The encoded result, stored in dynamic memory and null terminated.
  */
 char *base64_encode(const void *in, size_t *sz) {
-    
+
     int i;
     char* p;
     char* out;
     const uint8_t *src = in;
-    
+
     if (src == NULL || sz == NULL) {
         return NULL;
     }
@@ -1421,11 +1416,11 @@ char *base64_encode(const void *in, size_t *sz) {
  */
 void delete_am_cookie_list(struct am_cookie** list) {
     struct am_cookie* t;
-    
+
     if (list == NULL || *list == NULL) {
         return;
     }
-    
+
     t = *list;
     if (t != NULL) {
         delete_am_cookie_list(&t->next);
@@ -1516,14 +1511,14 @@ void uuid(char *buf, size_t buflen) {
     HCRYPTPROV hcp;
     if (CryptAcquireContextA(&hcp, NULL, NULL, PROV_RSA_FULL,
             CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
-        CryptGenRandom(hcp, sizeof(uuid_data), uuid_data.__rnd);
+        CryptGenRandom(hcp, sizeof (uuid_data), uuid_data.__rnd);
         CryptReleaseContext(hcp, 0);
     }
 #else
     size_t sz;
     FILE *fp = fopen("/dev/urandom", "r");
     if (fp != NULL) {
-        sz = fread(uuid_data.__rnd, 1, sizeof(uuid_data), fp);
+        sz = fread(uuid_data.__rnd, 1, sizeof (uuid_data), fp);
         fclose(fp);
     }
 #endif
@@ -1552,7 +1547,7 @@ int am_session_decode(am_request_t *r) {
 
     if (token == NULL) return AM_EINVAL;
 
-    memset(&r->si, 0, sizeof(struct am_session_info));
+    memset(&r->si, 0, sizeof (struct am_session_info));
     tl = strlen(token);
 
     if (strchr(token, '*') != NULL) {
@@ -1591,15 +1586,15 @@ int am_session_decode(am_request_t *r) {
                     uint16_t sz;
                     uint8_t len[2]; /* network byte order */
 
-                    memcpy(len, raw, sizeof(len));
+                    memcpy(len, raw, sizeof (len));
                     if (is_big_endian()) {
                         sz = (*((uint16_t *) len));
                     } else {
                         sz = len[1] | len[0] << 8;
                     }
 
-                    l -= sizeof(len);
-                    raw += sizeof(len);
+                    l -= sizeof (len);
+                    raw += sizeof (len);
 
                     if (nv % 2 == 0) {
                         if (memcmp(raw, "SI", 2) == 0) {
@@ -1664,7 +1659,6 @@ const char *get_valid_openam_url(am_request_t *r) {
     }
     return val;
 }
-
 
 /**
  * Encode ampersand, single and double quotes, less than and greater than within
@@ -1891,7 +1885,6 @@ int encrypt_password(const char *key, char **password) {
     return (int) pass_sz;
 }
 
-
 void decrypt_agent_passwords(am_config_t *r) {
     char *pass;
     size_t pass_sz;
@@ -1946,13 +1939,13 @@ size_t am_bin_path(char *buffer, size_t len) {
 #else
     char *path_end;
 #ifdef __APPLE__
-    uint32_t size = (uint32_t)len;
+    uint32_t size = (uint32_t) len;
     if (_NSGetExecutablePath(buffer, &size) != 0) {
         return AM_ENOMEM;
     }
 #else
     char path[64];
-    snprintf(path, sizeof(path),
+    snprintf(path, sizeof (path),
 #if defined(__sun)
             "/proc/%d/path/a.out"
 #elif defined(LINUX)
@@ -2087,7 +2080,7 @@ static DIR *opendir(const char *dir) {
     }
     strcat(filespec, "/*");
 
-    dp = (DIR *) malloc(sizeof(DIR));
+    dp = (DIR *) malloc(sizeof (DIR));
     if (dp == NULL) {
         free(filespec);
         return NULL;
@@ -2170,7 +2163,7 @@ static int readdir_r(DIR *dp, struct dirent *entry, struct dirent **result) {
     dp->dent.d_ino = 1;
     dp->dent.d_reclen = (unsigned short) strlen(dp->dent.d_name);
     dp->dent.d_off = dp->offset;
-    memcpy(entry, &dp->dent, sizeof(*entry));
+    memcpy(entry, &dp->dent, sizeof (*entry));
     *result = &dp->dent;
     return 0;
 }
@@ -2200,12 +2193,12 @@ static int am_scandir(const char *dirname, struct dirent ***ret_namelist,
     }
     used = 0;
     allocated = 2;
-    namelist = malloc(allocated * sizeof(struct dirent *));
+    namelist = malloc(allocated * sizeof (struct dirent *));
     if (namelist == NULL) {
         closedir(dir);
         return AM_ENOMEM;
     }
-    dirbuf = malloc(sizeof(struct dirent) + 255 + 1);
+    dirbuf = malloc(sizeof (struct dirent) + 255 + 1);
     if (dirbuf == NULL) {
         free(namelist);
         closedir(dir);
@@ -2227,7 +2220,7 @@ static int am_scandir(const char *dirname, struct dirent ***ret_namelist,
         }
         if (used >= allocated) {
             allocated *= 2;
-            namelist_tmp = realloc(namelist, allocated * sizeof(struct dirent *));
+            namelist_tmp = realloc(namelist, allocated * sizeof (struct dirent *));
             if (namelist_tmp == NULL) {
                 for (i = 0; i < used; i++) {
                     am_free(namelist[i]);
@@ -2245,13 +2238,12 @@ static int am_scandir(const char *dirname, struct dirent ***ret_namelist,
     free(dirbuf);
     closedir(dir);
     if (compar) {
-        qsort(namelist, used, sizeof(struct dirent *),
+        qsort(namelist, used, sizeof (struct dirent *),
                 (int (*)(const void *, const void *)) compar);
     }
     *ret_namelist = namelist;
     return used;
 }
-
 
 int am_create_agent_dir(const char* sep, const char* path, char** created_name, char** created_name_simple) {
     struct dirent** instlist = NULL;
@@ -2299,10 +2291,10 @@ int am_create_agent_dir(const char* sep, const char* path, char** created_name, 
         r = am_make_path(p0);
         free(p0);
         am_free(instlist);
-        
+
         return r;
     }
-    
+
     /* the same as above, but there is an agent_x directory already */
     for (i = 0; i < n; i++) {
         if (i == n - 1) {
@@ -2352,18 +2344,17 @@ int am_create_agent_dir(const char* sep, const char* path, char** created_name, 
     return r;
 }
 
-
 int string_replace(char **original, const char *pattern, const char *replace, size_t *sz) {
 
     size_t pcnt = 0;
     const char *optr;
     const char *ploc;
-    
+
     if (original == NULL || *original == NULL || pattern == NULL
             || replace == NULL || sz == NULL) {
         return AM_EINVAL;
     }
-    
+
     size_t rlen = strlen(replace);
     size_t plen = strlen(pattern);
     size_t retlen;
@@ -2376,9 +2367,9 @@ int string_replace(char **original, const char *pattern, const char *replace, si
     if (pcnt == 0) {
         return AM_NOT_FOUND;
     }
-    
+
     retlen = (*sz) + pcnt * (rlen + plen); /* worst case */
-    newop = (char *)realloc(op, retlen + 1);
+    newop = (char *) realloc(op, retlen + 1);
     if (newop == NULL) {
         am_free(op);
         return AM_ENOMEM;
@@ -2403,7 +2394,6 @@ int string_replace(char **original, const char *pattern, const char *replace, si
     return AM_SUCCESS;
 }
 
-
 int copy_file(const char *from, const char *to) {
     int rv = AM_FILE_ERROR, source, dest;
     char *to_tmp = NULL;
@@ -2417,7 +2407,7 @@ int copy_file(const char *from, const char *to) {
         struct tm now;
         time_t tv = time(NULL);
         localtime_r(&tv, &now);
-        strftime(tm, sizeof(tm) - 1, "%Y%m%d%H%M%S", &now);
+        strftime(tm, sizeof (tm) - 1, "%Y%m%d%H%M%S", &now);
         am_asprintf(&to_tmp, "%s_amagent_%s", from, tm);
         if (to_tmp == NULL) {
             return AM_ENOMEM;
@@ -2462,7 +2452,7 @@ int copy_file(const char *from, const char *to) {
             do {
                 ret = send_file(&dest, &handle, 0);
             } while (ret == 1 || (ret == -1 && errno == EINTR));
-            
+
             if (ret == -1) {
                 rv = AM_FILE_ERROR;
                 break;
@@ -2481,25 +2471,24 @@ int copy_file(const char *from, const char *to) {
     return rv;
 }
 
-
 void read_directory(const char *path, struct am_namevalue **list) {
     DIR *d;
     char npath[AM_URI_SIZE];
     struct stat s;
-    
+
     if ((d = opendir(path)) != NULL) {
         while (1) {
             struct dirent *e = readdir(d);
             if (e == NULL) {
                 break;
             }
-            snprintf(npath, sizeof(npath), "%s/%s", path, e->d_name);
+            snprintf(npath, sizeof (npath), "%s/%s", path, e->d_name);
             if (stat(npath, &s) == -1) {
                 break;
             }
 
             if (strcmp(e->d_name, "..") != 0 && strcmp(e->d_name, ".") != 0) {
-                struct am_namevalue *el = calloc(1, sizeof(struct am_namevalue));
+                struct am_namevalue *el = calloc(1, sizeof (struct am_namevalue));
                 if (el == NULL) {
                     break;
                 }
@@ -2518,7 +2507,7 @@ void read_directory(const char *path, struct am_namevalue **list) {
     } else {
         if (errno == ENOTDIR) {
             /* not a directory - add to the list as a file */
-            struct am_namevalue *el = calloc(1, sizeof(struct am_namevalue));
+            struct am_namevalue *el = calloc(1, sizeof (struct am_namevalue));
             if (el != NULL) {
                 el->ns = 0;
                 el->n = strdup(path);
@@ -2600,7 +2589,6 @@ void* mem3cpy(void* dest, const void* source1, size_t size1,
     return dest;
 }
 
-
 char *am_json_escape(const char *str, size_t *escaped_sz) {
     char *data = NULL;
     const char *end;
@@ -2657,8 +2645,9 @@ char *am_json_escape(const char *str, size_t *escaped_sz) {
                 break;
             case '\t': text = "\\t";
                 break;
-            default: {
-                snprintf(seq, sizeof(seq), "\\u%04X", *end);
+            default:
+            {
+                snprintf(seq, sizeof (seq), "\\u%04X", *end);
                 text = seq;
                 length = 6;
                 break;
@@ -2684,4 +2673,30 @@ char *am_json_escape(const char *str, size_t *escaped_sz) {
         *escaped_sz = len;
     }
     return data;
+}
+
+/**
+ * Convert and update (to seconds) agent configuration parameter values 
+ * set in minutes (legacy).
+ *
+ * @param conf The pointer to am_config_t instance
+ */
+void update_agent_configuration_ttl(am_config_t *conf) {
+    if (conf == NULL) {
+        return;
+    }
+
+#define UPDATE_VALUE_TO_SEC(v) (v) = (v) > 0 ? (v) * 60 : v
+
+    /* com.sun.identity.agents.config.polling.interval */
+    UPDATE_VALUE_TO_SEC(conf->config_valid);
+    
+    /* com.sun.identity.agents.config.policy.cache.polling.interval */
+    UPDATE_VALUE_TO_SEC(conf->policy_cache_valid);
+    
+    /* com.sun.identity.agents.config.sso.cache.polling.interval */
+    UPDATE_VALUE_TO_SEC(conf->token_cache_valid);
+    
+    /* com.sun.identity.agents.config.postcache.entry.lifetime */
+    UPDATE_VALUE_TO_SEC(conf->pdp_cache_valid);
 }
