@@ -18,8 +18,7 @@
 #define LOG_H
 
 int perform_logging(unsigned long instance_id, int level);
-void am_strncat(char* dest, const char* source, size_t max);
-void am_log(unsigned long instance_id, int level, const char* header, const char *format, ...);
+void am_log_write(unsigned long instance_id, int level, const char* header, int header_sz, const char *format, ...);
 
 #ifdef _WIN32
 #define AM_LOG_ALWAYS(instance, format, ...)\
@@ -28,7 +27,7 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             char header[128];\
             char time_string[25];\
             char tze[6];\
-            int minutes;\
+            int header_sz, minutes;\
             TIME_ZONE_INFORMATION tz;\
             SYSTEMTIME st;\
             GetLocalTime(&st);\
@@ -40,10 +39,10 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             if (*tze == '0') {\
                 *tze = '+';\
             }\
-            sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s INFO [%d:%d] ",\
+            header_sz = sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s INFO [%d:%d] ",\
                       st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze,\
                       GetCurrentThreadId(), _getpid());\
-            am_log(instance, AM_LOG_LEVEL_ALWAYS, header, format, ##__VA_ARGS__);\
+            am_log_write(instance, AM_LOG_LEVEL_ALWAYS, header, header_sz, format, ##__VA_ARGS__);\
         }\
     } while (0)
 #else
@@ -53,16 +52,17 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             char header[128];\
             char time_string[25];\
             char tz[8];\
+            int header_sz;\
             struct tm now;\
             struct timeval tv;\
             gettimeofday(&tv, NULL);\
             localtime_r(&tv.tv_sec, &now);\
             strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
             strftime(tz, sizeof (tz) - 1, "%z", &now);\
-            snprintf(header, sizeof(header), "%s.%03ld %s INFO [%p:%d] ", \
+            header_sz = snprintf(header, sizeof(header), "%s.%03ld %s INFO [%p:%d] ", \
                 time_string, tv.tv_usec / 1000L, tz, (void *)(uintptr_t)pthread_self(), \
                 getpid());\
-            am_log(instance, AM_LOG_LEVEL_ALWAYS, header, format, ##__VA_ARGS__);\
+            am_log_write(instance, AM_LOG_LEVEL_ALWAYS, header, header_sz, format, ##__VA_ARGS__);\
         }\
     } while (0)
 #endif
@@ -74,7 +74,7 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             char header[128];\
             char time_string[25];\
             char tze[6];\
-            int minutes;\
+            int header_sz, minutes;\
             TIME_ZONE_INFORMATION tz;\
             SYSTEMTIME st;\
             GetLocalTime(&st);\
@@ -86,10 +86,10 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             if (*tze == '0') {\
                 *tze = '+';\
             }\
-            sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s INFO [%d:%d] ",\
+            header_sz = sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s INFO [%d:%d] ",\
                               st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
                               GetCurrentThreadId(), _getpid());\
-            am_log(instance, AM_LOG_LEVEL_INFO, header, format, ##__VA_ARGS__);\
+            am_log_write(instance, AM_LOG_LEVEL_INFO, header, header_sz, format, ##__VA_ARGS__);\
         }\
     } while (0)
 #else
@@ -99,16 +99,17 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             char header[128];\
             char time_string[25];\
             char tz[8];\
+            int header_sz;\
             struct tm now;\
             struct timeval tv;\
             gettimeofday(&tv, NULL);\
             localtime_r(&tv.tv_sec, &now);\
             strftime(time_string, sizeof(time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
             strftime(tz, sizeof(tz) - 1, "%z", &now);\
-            snprintf(header, sizeof(header), "%s.%03ld %s INFO [%p:%d] ", \
+            header_sz = snprintf(header, sizeof(header), "%s.%03ld %s INFO [%p:%d] ", \
                 time_string, tv.tv_usec / 1000L, tz, (void *)(uintptr_t)pthread_self(), \
                 getpid());\
-            am_log(instance, AM_LOG_LEVEL_INFO, header, format, ##__VA_ARGS__);\
+            am_log_write(instance, AM_LOG_LEVEL_INFO, header, header_sz, format, ##__VA_ARGS__);\
         }\
     } while (0)
 #endif
@@ -120,7 +121,7 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             char header[128];\
             char time_string[25];\
             char tze[6];\
-            int minutes;\
+            int header_sz, minutes;\
             TIME_ZONE_INFORMATION tz;\
             SYSTEMTIME st;\
             GetLocalTime(&st);\
@@ -132,10 +133,10 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             if (*tze == '0') {\
                 *tze = '+';\
             }\
-            sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s WARNING [%d:%d] ",\
+            header_sz = sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s WARNING [%d:%d] ",\
                 st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
                 GetCurrentThreadId(), _getpid());\
-            am_log(instance, AM_LOG_LEVEL_WARNING, header, format, ##__VA_ARGS__);\
+            am_log_write(instance, AM_LOG_LEVEL_WARNING, header, header_sz, format, ##__VA_ARGS__);\
         }\
     } while (0)
 #else
@@ -145,16 +146,17 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             char header[128];\
             char time_string[25];\
             char tz[8];\
+            int header_sz;\
             struct tm now;\
             struct timeval tv;\
             gettimeofday(&tv, NULL);\
             localtime_r(&tv.tv_sec, &now);\
             strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
             strftime(tz, sizeof (tz) - 1, "%z", &now);\
-            snprintf(header, sizeof(header), "%s.%03ld %s WARNING [%p:%d] ", \
+            header_sz = snprintf(header, sizeof(header), "%s.%03ld %s WARNING [%p:%d] ", \
                 time_string, tv.tv_usec / 1000L, tz, (void *)(uintptr_t)pthread_self(), \
                 getpid());\
-            am_log(instance, AM_LOG_LEVEL_WARNING, header, format, ##__VA_ARGS__);\
+            am_log_write(instance, AM_LOG_LEVEL_WARNING, header, header_sz, format, ##__VA_ARGS__);\
          }\
      } while (0)
 #endif
@@ -166,7 +168,7 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             char header[128];\
             char time_string[25];\
             char tze[6];\
-            int minutes;\
+            int header_sz, minutes;\
             TIME_ZONE_INFORMATION tz;\
             SYSTEMTIME st;\
             GetLocalTime(&st);\
@@ -178,10 +180,10 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             if (*tze == '0') {\
                 *tze = '+';\
             }\
-            sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s ERROR [%d:%d] ",\
+            header_sz = sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s ERROR [%d:%d] ",\
                 st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
                 GetCurrentThreadId(), _getpid());\
-            am_log(instance, AM_LOG_LEVEL_ERROR, header, format, ##__VA_ARGS__);\
+            am_log_write(instance, AM_LOG_LEVEL_ERROR, header, header_sz, format, ##__VA_ARGS__);\
         }\
     } while (0)
 #else
@@ -191,16 +193,17 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             char header[128];\
             char time_string[25];\
             char tz[8];\
+            int header_sz;\
             struct tm now;\
             struct timeval tv;\
             gettimeofday(&tv, NULL);\
             localtime_r(&tv.tv_sec, &now);\
             strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
             strftime(tz, sizeof (tz) - 1, "%z", &now);\
-            snprintf(header, sizeof(header), "%s.%03ld %s ERROR [%p:%d] ", \
+            header_sz = snprintf(header, sizeof(header), "%s.%03ld %s ERROR [%p:%d] ", \
                 time_string, tv.tv_usec / 1000L, tz, (void *)(uintptr_t)pthread_self(), \
                 getpid());\
-            am_log(instance, AM_LOG_LEVEL_ERROR, header, format, ##__VA_ARGS__);\
+            am_log_write(instance, AM_LOG_LEVEL_ERROR, header, header_sz, format, ##__VA_ARGS__);\
          }\
     }while (0)
 #endif
@@ -212,7 +215,7 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             char header[128];\
             char time_string[25];\
             char tze[6];\
-            int minutes;\
+            int header_sz, minutes;\
             TIME_ZONE_INFORMATION tz;\
             SYSTEMTIME st;\
             GetLocalTime(&st);\
@@ -224,10 +227,10 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             if (*tze == '0') {\
                 *tze = '+';\
             }\
-            sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s DEBUG [%d:%d][%s:%d] ",\
+            header_sz = sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s DEBUG [%d:%d][%s:%d] ",\
                               st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
                               GetCurrentThreadId(), _getpid(), __FILE__, __LINE__);\
-            am_log(instance, AM_LOG_LEVEL_DEBUG, header, format, ##__VA_ARGS__);\
+            am_log_write(instance, AM_LOG_LEVEL_DEBUG, header, header_sz, format, ##__VA_ARGS__);\
         }\
     } while (0)
 #else
@@ -238,15 +241,16 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             char time_string[25];\
             char tz[8];\
             struct tm now;\
+            int header_sz;\
             struct timeval tv;\
             gettimeofday(&tv, NULL);\
             localtime_r(&tv.tv_sec, &now);\
             strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
             strftime(tz, sizeof (tz) - 1, "%z", &now);\
-            snprintf(header, sizeof(header), "%s.%03ld %s DEBUG [%p:%d][%s:%d] ", \
+            header_sz = snprintf(header, sizeof(header), "%s.%03ld %s DEBUG [%p:%d][%s:%d] ", \
                 time_string, tv.tv_usec / 1000L, tz, (void *)(uintptr_t)pthread_self(), \
                 getpid(), __FILE__, __LINE__);\
-            am_log(instance, AM_LOG_LEVEL_DEBUG, header, format, ##__VA_ARGS__);\
+            am_log_write(instance, AM_LOG_LEVEL_DEBUG, header, header_sz, format, ##__VA_ARGS__);\
         }\
     } while (0)
 #endif
@@ -258,7 +262,7 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             char header[128];\
             char time_string[25];\
             char tze[6];\
-            int minutes;\
+            int header_sz, minutes;\
             TIME_ZONE_INFORMATION tz;\
             SYSTEMTIME st;\
             GetLocalTime(&st);\
@@ -270,10 +274,10 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             if (*tze == '0') {\
                 *tze = '+';\
             }\
-            sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s AUDIT [%d:%d] ",\
+            header_sz = sprintf_s(header, sizeof(header), "%04d-%02d-%02d %s.%03d %s AUDIT [%d:%d] ",\
                 st.wYear, st.wMonth, st.wDay, time_string, st.wMilliseconds, tze, \
                 GetCurrentThreadId(), _getpid());\
-            am_log(instance, AM_LOG_LEVEL_AUDIT, header, format, ##__VA_ARGS__);\
+            am_log_write(instance, AM_LOG_LEVEL_AUDIT, header, header_sz, format, ##__VA_ARGS__);\
         }\
     } while (0)
 #else
@@ -283,16 +287,17 @@ void am_log(unsigned long instance_id, int level, const char* header, const char
             char header[128];\
             char time_string[25];\
             char tz[8];\
+            int header_sz;\
             struct tm now;\
             struct timeval tv;\
             gettimeofday(&tv, NULL);\
             localtime_r(&tv.tv_sec, &now);\
             strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
             strftime(tz, sizeof (tz) - 1, "%z", &now);\
-            snprintf(header, sizeof(header), "%s.%03ld %s AUDIT [%p:%d] ", \
+            header_sz = snprintf(header, sizeof(header), "%s.%03ld %s AUDIT [%p:%d] ", \
                 time_string, tv.tv_usec / 1000L, tz, (void *)(uintptr_t)pthread_self(), \
                 getpid());\
-            am_log(instance, AM_LOG_LEVEL_AUDIT, header, format, ##__VA_ARGS__);\
+            am_log_write(instance, AM_LOG_LEVEL_AUDIT, header, header_sz, format, ##__VA_ARGS__);\
         }\
     } while (0)
 #endif

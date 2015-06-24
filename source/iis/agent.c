@@ -850,8 +850,8 @@ class OpenAMHttpModule : public CHttpModule{
             /* register and update instance logger configuration (for already registered
              * instances - update logging level only)
              */
-            am_log_register_instance(site->GetSiteId(), boot->debug_file, boot->debug_level,
-                    boot->audit_file, boot->audit_level);
+            am_log_register_instance(site->GetSiteId(), boot->debug_file, boot->debug_level, boot->debug,
+                    boot->audit_file, boot->audit_level, boot->audit);
         } else {
             WriteEventLog("%s GetConfig boot == NULL (%d)", thisfunc, site->GetSiteId());
             res->SetStatus(AM_HTTP_STATUS_500, "Internal Server Error");

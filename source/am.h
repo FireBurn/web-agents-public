@@ -65,6 +65,14 @@
 #define AM_MAX_THREADS_POOL         4
 #endif
 
+#ifndef AM_LOG_QUEUE_SIZE
+#define AM_LOG_QUEUE_SIZE           2048 /* must be a power of two */
+#endif
+
+#ifndef AM_LOG_MESSAGE_SIZE
+#define AM_LOG_MESSAGE_SIZE         16384
+#endif
+
 #define EMPTY               "(empty)"
 #define LOGEMPTY(x)         (x==NULL ? EMPTY : x)
 #define NOTNULL(x)          (x==NULL ? "" : x)
@@ -294,8 +302,8 @@ void am_log_re_init(int status);
 void am_log_init(int s);
 void am_log_init_worker(int s);
 void am_log_shutdown();
-void am_log_register_instance(unsigned long instance_id, const char *debug_log, int log_level,
-        const char *audit_log, int audit_level);
+void am_log_register_instance(unsigned long instance_id, const char *debug_log, int log_level, int log_size,
+        const char *audit_log, int audit_level, int audit_size);
 
 void am_config_free(am_config_t **c);
 am_config_t *am_get_config_file(unsigned long instance_id, const char *filename);
