@@ -36,6 +36,7 @@
 #include <time.h>
 #include <shlwapi.h>
 #include <shellapi.h>
+
 #if !defined(snprintf)
 #define snprintf            sprintf_s
 #endif
@@ -51,8 +52,11 @@
 #define SOCKLEN_T           int
 #define pid_t               int
 typedef SSIZE_T             ssize_t;
+typedef long                uid_t;
+typedef long                gid_t;
 #define INETPTON            InetPton
 #define INETNTOP            InetNtop
+
 #if (_MSC_VER < 1800)
 #define va_copy(dst, src)   ((void)((dst) = (src)))
 #endif
@@ -65,17 +69,19 @@ typedef SSIZE_T             ssize_t;
 #define FILE_PATH_SEP       "\\"
 #define AM_GLOBAL_PREFIX    "Global\\"
 
-#else
+#else /* _WIN32 */
 
 #include <pthread.h>
 #include <unistd.h>
+
 #if defined(__sun) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200112L 
 #include <sys/mman.h> 
 #undef _POSIX_C_SOURCE 
 #else
 #include <sys/mman.h> 
-#endif
+#endif /* __sun, etc. */
+
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -94,6 +100,9 @@ typedef SSIZE_T             ssize_t;
 #include <ftw.h>
 #include <dirent.h>
 #include <dlfcn.h>
+#include <pwd.h>
+#include <grp.h>
+
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #include <mach/clock.h>
@@ -107,7 +116,8 @@ typedef SSIZE_T             ssize_t;
 #ifndef AIX
 #include <sys/sendfile.h>
 #endif
-#endif
+#endif /* __APPLE */
+
 #define sockpoll            poll
 #define SOCKLEN_T           socklen_t
 #define INETPTON            inet_pton
@@ -115,7 +125,7 @@ typedef SSIZE_T             ssize_t;
 #define FILE_PATH_SEP       "/"
 #define AM_GLOBAL_PREFIX    ""
 
-#endif
+#endif /* _WIN32 */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -128,4 +138,4 @@ typedef SSIZE_T             ssize_t;
 #include <sys/types.h>
 #include <stddef.h>
 
-#endif
+#endif /* PLATFORM_H */

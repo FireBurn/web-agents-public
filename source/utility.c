@@ -1139,7 +1139,9 @@ char *load_file(const char *filepath, size_t *data_sz) {
             return NULL;
         }
         text[st.st_size] = '\0';
-        if (data_sz) *data_sz = st.st_size;
+        if (data_sz) {
+            *data_sz = st.st_size;
+        }
     }
     close(fd);
     return text;
@@ -2032,7 +2034,18 @@ int am_delete_file(const char *fn) {
     return -1;
 }
 
-int am_make_path(const char *path) {
+
+/**
+ * Make a directory, owned by the specifed uid (if not NULL) and group owned
+ * by the specified group id (if not NULL).  Note that if uid is not null, then
+ * gid is not expected to be null (i.e. its value will also be used).  Note that
+ * this is called from admin.c and therefore from the installer.
+ *
+ * @param path The directory path to create.
+ * @param uid Pointer to the user id, null if not available.
+ * @param gid Pointer to the group id, null if not available.
+ */
+int am_make_path(const char* path, uid_t* uid, gid_t* gid) {
 #ifdef _WIN32 
     int s = '\\';
     int nmode = _S_IREAD | _S_IWRITE;
@@ -2040,9 +2053,11 @@ int am_make_path(const char *path) {
     int s = '/';
     int nmode = 0770;
 #endif
-    char *p = NULL;
+    char* p = NULL;
     size_t len;
-    char *tmp = strdup(path);
+    char* tmp = strdup(path);
+    struct stat st;
+    
     if (tmp != NULL) {
         len = strlen(tmp);
         if (tmp[len - 1] == '/' || tmp[len - 1] == '\\') {
@@ -2051,11 +2066,35 @@ int am_make_path(const char *path) {
         for (p = tmp + 1; *p; p++) {
             if (*p == '/' || *p == '\\') {
                 *p = 0;
-                mkdir(tmp, nmode);
+                
+                /* only do this if the entry does not exist in the file system */
+                if (stat(tmp, &st) != 0) {
+                    mkdir(tmp, nmode);
+#ifndef _WIN32
+                    if (uid != NULL) {
+                        /* if we are installing and this (chmod) fails, we should log that
+                         * somewhere.  Unfortunately install_log is defined in admin.c and is
+                         * static.  Furthermore if you invoke it (by removing its static-ness)
+                         * then it gives an error when loading the module into httpd.
+                         */
+                        chown(tmp, *uid, *gid);
+                    }
+#endif
+                }
                 *p = s;
             }
         }
-        mkdir(tmp, nmode);
+        
+        /* again, only do this if the entry does not exist */
+        if (stat(tmp, &st) != 0) {
+            mkdir(tmp, nmode);
+#ifndef _WIN32
+            if (uid != NULL) {
+                /* again if this fails during installation, we should be logging somewhere */
+                chown(tmp, *uid, *gid);
+            }
+#endif
+        }
         free(tmp);
     }
     return 0;
@@ -2245,21 +2284,34 @@ static int am_scandir(const char *dirname, struct dirent ***ret_namelist,
     return used;
 }
 
-int am_create_agent_dir(const char* sep, const char* path, char** created_name, char** created_name_simple) {
+/**
+ * Create a bunch of agent directories, chown them and chgrp them if we're given that info.
+ *
+ * @param sep
+ * @param path
+ * @param created_name
+ * @param created_name_simple
+ * @param uid The user id who will own the directory, if not NULL
+ * @param gid The group id which will own the directory, if not NULL
+ */
+int am_create_agent_dir(const char* sep, const char* path,
+                        char** created_name, char** created_name_simple,
+                        uid_t* uid, gid_t* gid) {
+
     struct dirent** instlist = NULL;
-    int i, n, r = AM_ERROR, idx = 0;
-    char* p0 = NULL;
+    int i, n, result = AM_ERROR, idx = 0;
+    char* p = NULL;
 
     if ((n = am_scandir(path, &instlist, am_file_filter, am_alphasort)) <= 0) {
 
         /* report back an agent instance path and a configuration name */
-        if (created_name) {
+        if (created_name != NULL) {
             am_asprintf(created_name, "%s%sagent_1", path, sep);
         }
         if (created_name != NULL && *created_name == NULL) {
             return AM_ENOMEM;
         }
-        if (created_name_simple) {
+        if (created_name_simple != NULL) {
             am_asprintf(created_name_simple, "agent_1");
         }
         if (created_name_simple != NULL && *created_name_simple == NULL) {
@@ -2267,81 +2319,81 @@ int am_create_agent_dir(const char* sep, const char* path, char** created_name, 
         }
 
         /* create directory structure */
-        if (created_name) {
-            r = am_make_path(*created_name);
+        if (created_name != NULL) {
+            result = am_make_path(*created_name, uid, gid);
         }
-        am_asprintf(&p0, "%s%sagent_1%sconfig", path, sep, sep);
-        if (p0 == NULL) {
+        am_asprintf(&p, "%s%sagent_1%sconfig", path, sep, sep);
+        if (p == NULL) {
             return AM_ENOMEM;
         }
-        r = am_make_path(p0);
-        free(p0);
-        p0 = NULL;
-        am_asprintf(&p0, "%s%sagent_1%slogs%sdebug", path, sep, sep, sep);
-        if (p0 == NULL) {
+        result = am_make_path(p, uid, gid);
+        free(p);
+        p = NULL;
+        am_asprintf(&p, "%s%sagent_1%slogs%sdebug", path, sep, sep, sep);
+        if (p == NULL) {
             return AM_ENOMEM;
         }
-        r = am_make_path(p0);
-        free(p0);
-        p0 = NULL;
-        am_asprintf(&p0, "%s%sagent_1%slogs%saudit", path, sep, sep, sep);
-        if (p0 == NULL) {
+        result = am_make_path(p, uid, gid);
+        free(p);
+        p = NULL;
+        am_asprintf(&p, "%s%sagent_1%slogs%saudit", path, sep, sep, sep);
+        if (p == NULL) {
             return AM_ENOMEM;
         }
-        r = am_make_path(p0);
-        free(p0);
+        result = am_make_path(p, uid, gid);
+        free(p);
         am_free(instlist);
 
-        return r;
+        return result;
     }
 
     /* the same as above, but there is an agent_x directory already */
     for (i = 0; i < n; i++) {
         if (i == n - 1) {
-            char *id = strstr(instlist[i]->d_name, "_");
+            char* id = strstr(instlist[i]->d_name, "_");
             if (id != NULL && (idx = atoi(id + 1)) > 0) {
-                if (created_name) {
+                if (created_name != NULL) {
                     am_asprintf(created_name, "%s%sagent_%d", path, sep, idx + 1);
                 }
                 if (created_name != NULL && *created_name == NULL) {
                     return AM_ENOMEM;
                 }
-                if (created_name_simple) {
+                if (created_name_simple != NULL) {
                     am_asprintf(created_name_simple, "agent_%d", idx + 1);
                 }
                 if (created_name_simple != NULL && *created_name_simple == NULL) {
                     return AM_ENOMEM;
                 }
-                if (created_name) {
-                    r = am_make_path(*created_name);
+                if (created_name != NULL) {
+                    result = am_make_path(*created_name, uid, gid);
                 }
-                am_asprintf(&p0, "%s%sagent_%d%sconfig", path, sep, idx + 1, sep);
-                if (p0 == NULL) {
+                am_asprintf(&p, "%s%sagent_%d%sconfig", path, sep, idx + 1, sep);
+                if (p == NULL) {
                     return AM_ENOMEM;
                 }
-                r = am_make_path(p0);
-                free(p0);
-                p0 = NULL;
-                am_asprintf(&p0, "%s%sagent_%d%slogs%sdebug", path, sep, idx + 1, sep, sep);
-                if (p0 == NULL) {
+                result = am_make_path(p, uid, gid);
+                free(p);
+                p = NULL;
+                am_asprintf(&p, "%s%sagent_%d%slogs%sdebug", path, sep, idx + 1, sep, sep);
+                if (p == NULL) {
                     return AM_ENOMEM;
                 }
-                r = am_make_path(p0);
-                free(p0);
-                p0 = NULL;
-                am_asprintf(&p0, "%s%sagent_%d%slogs%saudit", path, sep, idx + 1, sep, sep);
-                if (p0 == NULL) {
+                result = am_make_path(p, uid, gid);
+                free(p);
+                p = NULL;
+                am_asprintf(&p, "%s%sagent_%d%slogs%saudit", path, sep, idx + 1, sep, sep);
+                if (p == NULL) {
                     return AM_ENOMEM;
                 }
-                r = am_make_path(p0);
-                free(p0);
+                result = am_make_path(p, uid, gid);
+                free(p);
             }
         }
         free(instlist[i]);
     }
     free(instlist);
 
-    return r;
+    return result;
 }
 
 int string_replace(char **original, const char *pattern, const char *replace, size_t *sz) {

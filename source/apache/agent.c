@@ -99,9 +99,8 @@ static const char *am_set_opt(cmd_parms *c, void *cfg, const char *arg) {
 /*Context: either top level or inside VirtualHost*/
 static const command_rec amagent_cmds[] = {
     AP_INIT_TAKE1("AmAgent", am_set_opt, NULL, RSRC_CONF, "Module enabled/disabled"),
-    AP_INIT_TAKE1("AmAgentConf", am_set_opt, NULL, RSRC_CONF, "Module configuration file"), {
-        NULL
-    }
+    AP_INIT_TAKE1("AmAgentConf", am_set_opt, NULL, RSRC_CONF, "Module configuration file"),
+    { NULL }
 };
 
 static apr_status_t amagent_cleanup(void *arg) {

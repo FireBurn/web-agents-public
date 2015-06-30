@@ -28,7 +28,14 @@ static HANDLE ic_sem = NULL;
 static semaphore_t ic_sem;
 #else
 static sem_t *ic_sem = NULL;
-#endif   
+#endif
+
+
+/**
+ * This flag says we want debugging messages when the instance id is zero
+ */
+static am_bool_t zero_instance_logging_is_wanted = AM_FALSE;
+
 
 struct am_shared_log {
     void *area;
@@ -589,9 +596,9 @@ int perform_logging(unsigned long instance_id, int level) {
     int log_level = AM_LOG_LEVEL_NONE;
     int audit_level = AM_LOG_LEVEL_NONE;
 
-    /* We always want to log for a unit test, where the instance id is zero */
+    /* If the instance id is zero, we are either running a test case, or installing something */
     if (instance_id == 0) {
-        return AM_TRUE;
+        return zero_instance_logging_is_wanted;
     }
 
     /* We simply cannot log if the shared memory segment is not initialised */
@@ -1091,3 +1098,18 @@ int am_agent_init_get_value(unsigned long instance_id, char lock) {
     }
     return status;
 }
+
+/**
+ * This function gives controlled access to the flag which says whether to log or not when
+ * there is no instance id.  This happens when we are running test cases and/or when we are
+ * running the installation code.
+ *
+ * @param wanted true to enable zero instance id logging, false to disable
+ * @return the previous value of the flag.
+ */
+am_bool_t zero_instance_logging_wanted(am_bool_t wanted) {
+    am_bool_t result = zero_instance_logging_is_wanted;
+    zero_instance_logging_is_wanted = wanted;
+    return result;
+}
+

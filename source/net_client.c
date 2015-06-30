@@ -15,7 +15,7 @@
  */
 
 #ifdef _GNU_SOURCE
-#undef _GNU_SOURCE /*prefer strerror_r*/
+#undef _GNU_SOURCE /* prefer strerror_r */
 #endif
 #include "platform.h"
 #include "am.h"
@@ -40,23 +40,38 @@ static short read_avail_ev = POLLIN | POLLHUP;
 
 #ifdef _WIN32
 #define net_log_error(i,e) \
-do {LPSTR es = NULL; \
-if (FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, 0, e, 0, (LPSTR) & es, 0, 0) == 0) { \
-        AM_LOG_ERROR(i, "net_error(%s:%d) unknown error code (%X)", __FILE__, __LINE__, e); } else { \
-        char *p = strchr(es, '\r'); \
-        if (p != NULL) *p = '\0'; \
-        AM_LOG_ERROR(i, "net_error(%s:%d): %s (%X)", __FILE__, __LINE__, es, e); \
-        LocalFree(es);}} while(0)
+    do {\
+        LPSTR es = NULL; \
+        if (FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, 0, e, 0, (LPSTR) & es, 0, 0) == 0) { \
+            AM_LOG_ERROR(i, "net_error(%s:%d) unknown error code (%X)", __FILE__, __LINE__, e);\
+        } else { \
+            char *p = strchr(es, '\r'); \
+            if (p != NULL) {\
+                *p = '\0';\
+            }\
+            AM_LOG_ERROR(i, "net_error(%s:%d): %s (%X)", __FILE__, __LINE__, es, e); \
+            LocalFree(es);\
+        }\
+    } while(0)
 #else
-#define net_log_error(i,e) \
-   do {size_t size = 1024; char *tmp, *es = malloc(size + 1); \
-   if (es != NULL) { \
-        while (strerror_r(e, es, size) == -1 && errno == ERANGE) {\
-        size *= 2; tmp = realloc(es, size + 1); if (tmp == NULL) {am_free(es); break;} }\
-        es = tmp;\
+#define net_log_error(i, e) \
+    do {\
+        size_t size = 1024;\
+        char *tmp, *es = malloc(size + 1);\
         if (es != NULL) {\
-        AM_LOG_ERROR(i, "net_error(%s:%d): %s (%d)", __FILE__, __LINE__, es, e);\
-        free(es);}}} while(0)
+            while (strerror_r(e, es, size) == -1 && errno == ERANGE) {\
+                size *= 2;\
+                tmp = realloc(es, size + 1);\
+                if (tmp == NULL) {\
+                    am_free(es);\
+                    break;\
+                }\
+                es = tmp;\
+            }\
+            AM_LOG_ERROR(i, "net_error(%s:%d): %s (%d)", __FILE__, __LINE__, es, e);\
+            free(es);\
+        }\
+    } while(0)
 #endif
 
 void net_init_ssl();

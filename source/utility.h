@@ -175,7 +175,7 @@ void *am_shm_realloc(am_shm_t *am, void *ptr, size_t size);
 void am_shm_set_user_offset(am_shm_t *r, size_t s);
 void am_shm_info(am_shm_t *);
 
-int am_create_agent_dir(const char *sep, const char *path, char **created_name, char **created_name_simple);
+int am_create_agent_dir(const char *sep, const char *path, char **created_name, char **created_name_simple, uid_t* uid, gid_t* gid);
 
 int decrypt_password(const char *key, char **password);
 int encrypt_password(const char *key, char **password);
@@ -226,7 +226,7 @@ char* am_strldup(const char* src);
 
 int compare_property(const char *line, const char *property);
 
-int am_make_path(const char *path);
+int am_make_path(const char *path, uid_t* uid, gid_t* gid);
 int am_delete_file(const char *fn);
 int am_delete_directory(const char *path);
 

@@ -21,38 +21,38 @@
 #include "net_client.h"
 #include "list.h"
 
-#define AM_NET_CONNECT_TIMEOUT 8 /*in sec*/
+#define AM_NET_CONNECT_TIMEOUT 8 /* in sec */
 
 struct request_data {
-    char *rd;
-    size_t sz;
-    int error;
-    am_event_t *rf;
+    char*       data;
+    size_t      data_size;
+    int         error;
+    am_event_t* event;
 };
 
 static void on_agent_request_data_cb(void *udata, const char *data, size_t data_sz, int status) {
     struct request_data *ld = (struct request_data *) udata;
-    if (ld->rd == NULL) {
-        ld->rd = malloc(data_sz + 1);
-        if (ld->rd == NULL) {
+    if (ld->data == NULL) {
+        ld->data = malloc(data_sz + 1);
+        if (ld->data == NULL) {
             ld->error = AM_ENOMEM;
             return;
         }
-        memcpy(ld->rd, data, data_sz);
-        ld->rd[data_sz] = 0;
-        ld->sz = data_sz;
+        memcpy(ld->data, data, data_sz);
+        ld->data[data_sz] = 0;
+        ld->data_size = data_sz;
     } else {
-        char *rd_tmp = realloc(ld->rd, ld->sz + data_sz + 1);
+        char *rd_tmp = realloc(ld->data, ld->data_size + data_sz + 1);
         if (rd_tmp == NULL) {
-            am_free(ld->rd);
+            am_free(ld->data);
             ld->error = AM_ENOMEM;
             return;
         } else {
-            ld->rd = rd_tmp;
+            ld->data = rd_tmp;
         }
-        memcpy(ld->rd + ld->sz, data, data_sz);
-        ld->sz += data_sz;
-        ld->rd[ld->sz] = 0;
+        memcpy(ld->data + ld->data_size, data, data_sz);
+        ld->data_size += data_sz;
+        ld->data[ld->data_size] = 0;
     }
 }
 
@@ -61,12 +61,12 @@ static void on_connected_cb(void *udata, int status) {
 
 static void on_close_cb(void *udata, int status) {
     struct request_data *ld = (struct request_data *) udata;
-    set_event(ld->rf);
+    set_event(ld->event);
 }
 
 static void on_complete_cb(void *udata, int status) {
     struct request_data *ld = (struct request_data *) udata;
-    set_event(ld->rf);
+    set_event(ld->event);
 }
 
 static int send_authcontext_request(am_net_t *conn, const char *realm, char **token) {
@@ -124,18 +124,18 @@ static int send_authcontext_request(am_net_t *conn, const char *realm, char **to
     free(post);
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data->rf, 0);
+        wait_for_event(req_data->event, 0);
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s response status code: %d\n%s",
-            thisfunc, conn->http_status, LOGEMPTY(req_data->rd));
+            thisfunc, conn->http_status, LOGEMPTY(req_data->data));
     if (conn->log != NULL) {
         conn->log("%s response status code: %d\n%s", thisfunc,
-                conn->http_status, LOGEMPTY(req_data->rd));
+                conn->http_status, LOGEMPTY(req_data->data));
     }
 
-    if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->rd)) {
-        char *begin = strstr(req_data->rd, "Response authIdentifier=\"");
+    if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->data)) {
+        char *begin = strstr(req_data->data, "Response authIdentifier=\"");
         if (begin != NULL) {
             char *end = strstr(begin + 25, "\"");
             if (end != NULL) {
@@ -150,7 +150,7 @@ static int send_authcontext_request(am_net_t *conn, const char *realm, char **to
             am_request_t req_temp;
             int decode_status;
 
-            memset(&req_temp, 0, sizeof (am_request_t));
+            memset(&req_temp, 0, sizeof(am_request_t));
             req_temp.token = strdup(*token);
 
             decode_status = am_session_decode(&req_temp);
@@ -171,8 +171,8 @@ static int send_authcontext_request(am_net_t *conn, const char *realm, char **to
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s status: %s", thisfunc, am_strerror(status));
-    am_free(req_data->rd);
-    req_data->rd = NULL;
+    am_free(req_data->data);
+    req_data->data = NULL;
     return status;
 }
 
@@ -248,20 +248,20 @@ static int send_login_request(am_net_t *conn, char **token, const char *user,
     *token = NULL;
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data->rf, 0);
+        wait_for_event(req_data->event, 0);
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s authenticate response status code: %d\n%s",
-            thisfunc, conn->http_status, LOGEMPTY(req_data->rd));
+            thisfunc, conn->http_status, LOGEMPTY(req_data->data));
     if (conn->log != NULL) {
         conn->log("%s authenticate response status code: %d\n%s", thisfunc,
-                conn->http_status, LOGEMPTY(req_data->rd));
+                conn->http_status, LOGEMPTY(req_data->data));
     }
 
     status = AM_ERROR;
 
-    if (ISVALID(req_data->rd)) {
-        char *begin = strstr(req_data->rd, "LoginStatus status=\"success\" ssoToken=\"");
+    if (ISVALID(req_data->data)) {
+        char *begin = strstr(req_data->data, "LoginStatus status=\"success\" ssoToken=\"");
         if (begin != NULL) {
             char *end = strstr(begin + 39, "\"");
             if (end != NULL) {
@@ -272,8 +272,8 @@ static int send_login_request(am_net_t *conn, char **token, const char *user,
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s status: %s", thisfunc, am_strerror(status));
-    am_free(req_data->rd);
-    req_data->rd = NULL;
+    am_free(req_data->data);
+    req_data->data = NULL;
     return status;
 }
 
@@ -327,36 +327,36 @@ static int send_attribute_request(am_net_t *conn, char **token, char **pxml, siz
     free(post);
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data->rf, 0);
+        wait_for_event(req_data->event, 0);
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s response status code: %d\n%s",
-            thisfunc, conn->http_status, LOGEMPTY(req_data->rd));
+            thisfunc, conn->http_status, LOGEMPTY(req_data->data));
     if (conn->log != NULL) {
         conn->log("%s response status code: %d\n%s", thisfunc,
-                conn->http_status, LOGEMPTY(req_data->rd));
+                conn->http_status, LOGEMPTY(req_data->data));
     }
 
-    if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->rd)) {
-        if (stristr(req_data->rd, "exception") != NULL) {
+    if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->data)) {
+        if (stristr(req_data->data, "exception") != NULL) {
             status = AM_ERROR;
         } else {
             if (pxml != NULL) {
-                *pxml = malloc(req_data->sz + 1);
+                *pxml = malloc(req_data->data_size + 1);
                 if (*pxml != NULL) {
-                    memcpy(*pxml, req_data->rd, req_data->sz);
-                    (*pxml)[req_data->sz] = 0;
+                    memcpy(*pxml, req_data->data, req_data->data_size);
+                    (*pxml)[req_data->data_size] = 0;
                 } else {
                     status = AM_ENOMEM;
                 }
             }
-            if (pxsz != NULL) *pxsz = req_data->sz;
+            if (pxsz != NULL) *pxsz = req_data->data_size;
         }
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s status: %s", thisfunc, am_strerror(status));
-    AM_FREE(req_data->rd, realm_enc, user_enc, token_enc);
-    req_data->rd = NULL;
+    AM_FREE(req_data->data, realm_enc, user_enc, token_enc);
+    req_data->data = NULL;
     return status;
 }
 
@@ -437,25 +437,25 @@ static int send_session_request(am_net_t *conn, char **token, const char *notify
     am_free(token_b64);
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data->rf, 0);
+        wait_for_event(req_data->event, 0);
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s response status code: %d\n%s",
-            thisfunc, conn->http_status, LOGEMPTY(req_data->rd));
+            thisfunc, conn->http_status, LOGEMPTY(req_data->data));
     if (conn->log != NULL) {
         conn->log("%s response status code: %d\n%s", thisfunc,
-                conn->http_status, LOGEMPTY(req_data->rd));
+                conn->http_status, LOGEMPTY(req_data->data));
     }
 
-    if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->rd)) {
+    if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->data)) {
         if (session_list != NULL) {
-            *session_list = am_parse_session_xml(conn->instance_id, req_data->rd, req_data->sz);
+            *session_list = am_parse_session_xml(conn->instance_id, req_data->data, req_data->data_size);
         }
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s status: %s", thisfunc, am_strerror(status));
-    am_free(req_data->rd);
-    req_data->rd = NULL;
+    am_free(req_data->data);
+    req_data->data = NULL;
     return status;
 }
 
@@ -526,19 +526,19 @@ static int send_policychange_request(am_net_t *conn, char **token, const char *n
     free(post);
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data->rf, 0);
+        wait_for_event(req_data->event, 0);
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s authenticate response status code: %d\n%s",
-            thisfunc, conn->http_status, LOGEMPTY(req_data->rd));
+            thisfunc, conn->http_status, LOGEMPTY(req_data->data));
     if (conn->log != NULL) {
         conn->log("%s authenticate response status code: %d\n%s", thisfunc,
-                conn->http_status, LOGEMPTY(req_data->rd));
+                conn->http_status, LOGEMPTY(req_data->data));
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s status: %s", thisfunc, am_strerror(status));
-    am_free(req_data->rd);
-    req_data->rd = NULL;
+    am_free(req_data->data);
+    req_data->data = NULL;
     return status;
 }
 
@@ -553,25 +553,27 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
     struct request_data req_data;
 
     if (!ISVALID(realm) || !ISVALID(user) ||
-            !ISVALID(pass) || !ISVALID(openam)) return AM_EINVAL;
+        !ISVALID(pass) || !ISVALID(openam)) {
+        return AM_EINVAL;
+    }
 
-    memset(&req_data, 0, sizeof (struct request_data));
+    memset(&req_data, 0, sizeof(struct request_data));
 
-    memset(&conn, 0, sizeof (am_net_t));
+    memset(&conn, 0, sizeof(am_net_t));
     conn.log = log;
     conn.instance_id = instance_id;
     conn.timeout = AM_NET_CONNECT_TIMEOUT;
     conn.url = openam;
     if (info != NULL) {
-        memcpy(&conn.ssl.info, info, sizeof (struct am_ssl_options));
+        memcpy(&conn.ssl.info, info, sizeof(struct am_ssl_options));
     }
 
     if (lb_enable) {
         conn.req_headers = strdup("Cookie: amlbcookie=");
     }
 
-    req_data.rf = create_event();
-    if (req_data.rf == NULL) return AM_ENOMEM;
+    req_data.event = create_event();
+    if (req_data.event == NULL) return AM_ENOMEM;
 
     conn.data = &req_data;
     conn.on_connected = on_connected_cb;
@@ -615,9 +617,9 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
     }
 
     am_net_close(&conn);
-    close_event(req_data.rf);
+    close_event(req_data.event);
 
-    am_free(req_data.rd);
+    am_free(req_data.data);
     return status;
 }
 
@@ -633,22 +635,22 @@ int am_agent_logout(unsigned long instance_id, const char *openam,
 
     if (!ISVALID(token) || !ISVALID(openam)) return AM_EINVAL;
 
-    memset(&req_data, 0, sizeof (struct request_data));
-    memset(&conn, 0, sizeof (am_net_t));
+    memset(&req_data, 0, sizeof(struct request_data));
+    memset(&conn, 0, sizeof(am_net_t));
     conn.log = log;
     conn.instance_id = instance_id;
     conn.timeout = AM_NET_CONNECT_TIMEOUT;
     conn.url = openam;
     if (info != NULL) {
-        memcpy(&conn.ssl.info, info, sizeof (struct am_ssl_options));
+        memcpy(&conn.ssl.info, info, sizeof(struct am_ssl_options));
     }
 
     if (ISVALID(server_id)) {
         am_asprintf(&conn.req_headers, "Cookie: amlbcookie=%s\r\n", server_id);
     }
 
-    req_data.rf = create_event();
-    if (req_data.rf == NULL) return AM_ENOMEM;
+    req_data.event = create_event();
+    if (req_data.event == NULL) return AM_ENOMEM;
 
     conn.data = &req_data;
     conn.on_connected = on_connected_cb;
@@ -691,7 +693,7 @@ int am_agent_logout(unsigned long instance_id, const char *openam,
     }
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data.rf, 0);
+        wait_for_event(req_data.event, 0);
     } else {
         AM_LOG_DEBUG(instance_id, "%s disconnecting", thisfunc);
         if (log != NULL) {
@@ -706,9 +708,9 @@ int am_agent_logout(unsigned long instance_id, const char *openam,
     }
 
     am_net_close(&conn);
-    close_event(req_data.rf);
+    close_event(req_data.event);
 
-    am_free(req_data.rd);
+    am_free(req_data.data);
     return status;
 }
 
@@ -722,15 +724,15 @@ int am_agent_naming_request(unsigned long instance_id, const char *openam, const
 
     if (!ISVALID(token) || !ISVALID(openam)) return AM_EINVAL;
 
-    memset(&ld, 0, sizeof (struct request_data));
+    memset(&ld, 0, sizeof(struct request_data));
 
-    memset(&n, 0, sizeof (am_net_t));
+    memset(&n, 0, sizeof(am_net_t));
     n.instance_id = instance_id;
     n.timeout = AM_NET_CONNECT_TIMEOUT;
     n.url = openam;
 
-    ld.rf = create_event();
-    if (ld.rf == NULL) return AM_ENOMEM;
+    ld.event = create_event();
+    if (ld.event == NULL) return AM_ENOMEM;
 
     n.data = &ld;
     n.on_connected = on_connected_cb;
@@ -771,15 +773,15 @@ int am_agent_naming_request(unsigned long instance_id, const char *openam, const
     }
 
     if (status == AM_SUCCESS) {
-        wait_for_event(ld.rf, 0);
+        wait_for_event(ld.event, 0);
     } else {
         am_net_diconnect(&n);
     }
 
     am_net_close(&n);
-    close_event(ld.rf);
+    close_event(ld.event);
 
-    am_free(ld.rd);
+    am_free(ld.data);
     return status;
 }
 
@@ -795,15 +797,15 @@ int am_agent_session_request(unsigned long instance_id, const char *openam,
     if (!ISVALID(token) || !ISVALID(user_token) ||
             !ISVALID(openam) || !ISVALID(notif_url)) return AM_EINVAL;
 
-    memset(&ld, 0, sizeof (struct request_data));
+    memset(&ld, 0, sizeof(struct request_data));
 
-    memset(&n, 0, sizeof (am_net_t));
+    memset(&n, 0, sizeof(am_net_t));
     n.instance_id = instance_id;
     n.timeout = AM_NET_CONNECT_TIMEOUT;
     n.url = openam;
 
-    ld.rf = create_event();
-    if (ld.rf == NULL) return AM_ENOMEM;
+    ld.event = create_event();
+    if (ld.event == NULL) return AM_ENOMEM;
 
     n.data = &ld;
     n.on_connected = on_connected_cb;
@@ -861,15 +863,15 @@ int am_agent_session_request(unsigned long instance_id, const char *openam,
     }
 
     if (status == AM_SUCCESS) {
-        wait_for_event(ld.rf, 0);
+        wait_for_event(ld.event, 0);
     } else {
         am_net_diconnect(&n);
     }
 
     am_net_close(&n);
-    close_event(ld.rf);
+    close_event(ld.event);
 
-    am_free(ld.rd);
+    am_free(ld.data);
     return status;
 }
 
@@ -879,36 +881,39 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
         const char *server_id, struct am_ssl_options *info,
         struct am_namevalue **session_list,
         struct am_policy_result **policy_list) {
+    
     static const char *thisfunc = "am_agent_policy_request():";
     char *post = NULL, *post_data = NULL;
     am_net_t n;
     size_t post_sz;
     int status = AM_ERROR;
     int session_status = AM_SUCCESS;
-
-    struct request_data ld;
+    struct request_data req_data;
 
     if (!ISVALID(token) || !ISVALID(user_token) || !ISVALID(notif_url) || !ISVALID(scope) ||
-            !ISVALID(req_url) || !ISVALID(openam) || !ISVALID(cip)) return AM_EINVAL;
+        !ISVALID(req_url) || !ISVALID(openam) || !ISVALID(cip)) {
+        return AM_EINVAL;
+    }
 
-    memset(&ld, 0, sizeof (struct request_data));
-
-    memset(&n, 0, sizeof (am_net_t));
+    memset(&req_data, 0, sizeof(struct request_data));
+    memset(&n, 0, sizeof(am_net_t));
     n.instance_id = instance_id;
     n.timeout = AM_NET_CONNECT_TIMEOUT;
     n.url = openam;
     if (info != NULL) {
-        memcpy(&n.ssl.info, info, sizeof (struct am_ssl_options));
+        memcpy(&n.ssl.info, info, sizeof(struct am_ssl_options));
     }
 
     if (ISVALID(server_id)) {
         am_asprintf(&n.req_headers, "Cookie: amlbcookie=%s\r\n", server_id);
     }
 
-    ld.rf = create_event();
-    if (ld.rf == NULL) return AM_ENOMEM;
+    req_data.event = create_event();
+    if (req_data.event == NULL) {
+        return AM_ENOMEM;
+    }
 
-    n.data = &ld;
+    n.data = &req_data;
     n.on_connected = on_connected_cb;
     n.on_close = on_close_cb;
     n.on_data = on_agent_request_data_cb;
@@ -924,7 +929,7 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
                 "<RequestSet vers=\"1.0\" svcid=\"Session\" reqid=\"0\">"
                 "<Request><![CDATA["
                 "<SessionRequest vers=\"1.0\" reqid=\"1\" requester=\"%s\">"
-                "<GetSession reset=\"true\">" /*reset the idle timeout*/
+                "<GetSession reset=\"true\">" /* reset the idle timeout */
                 "<SessionID>%s</SessionID>"
                 "</GetSession>"
                 "</SessionRequest>]]>"
@@ -964,34 +969,35 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
             post_data = NULL;
         }
 
-        if (status == AM_SUCCESS)
-            wait_for_event(ld.rf, 0);
+        if (status == AM_SUCCESS) {
+            wait_for_event(req_data.event, 0);
+        }
 
         AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, n.http_status);
 
-        if (status == AM_SUCCESS && n.http_status == 200 && ISVALID(ld.rd)) {
+        if (status == AM_SUCCESS && n.http_status == 200 && ISVALID(req_data.data)) {
             size_t req_url_sz = strlen(req_url);
-            char *req_url_escaped = malloc(req_url_sz * 6 + 1); /*worst case*/
+            char *req_url_escaped = malloc(req_url_sz * 6 + 1); /* worst case */
             if (req_url_escaped != NULL) {
                 memcpy(req_url_escaped, req_url, req_url_sz);
                 xml_entity_escape(req_url_escaped, req_url_sz);
             }
 
-            AM_LOG_DEBUG(instance_id, "%s response:\n%s", thisfunc, ld.rd);
+            AM_LOG_DEBUG(instance_id, "%s response:\n%s", thisfunc, req_data.data);
 
-            if (strstr(ld.rd, "<Exception>") != NULL && strstr(ld.rd, "Invalid session ID") != NULL) {
+            if (strstr(req_data.data, "<Exception>") != NULL && strstr(req_data.data, "Invalid session ID") != NULL) {
                 session_status = AM_INVALID_SESSION;
             }
-            if (strstr(ld.rd, "<Exception>") != NULL && strstr(ld.rd, "Application token passed in") != NULL) {
+            if (strstr(req_data.data, "<Exception>") != NULL && strstr(req_data.data, "Application token passed in") != NULL) {
                 session_status = AM_INVALID_AGENT_SESSION;
             }
+            if (session_status == AM_SUCCESS && session_list != NULL) {
+                *session_list = am_parse_session_xml(instance_id, req_data.data, req_data.data_size);
+            }
 
-            if (session_status == AM_SUCCESS && session_list != NULL)
-                *session_list = am_parse_session_xml(instance_id, ld.rd, ld.sz);
-
-            ld.sz = 0;
-            free(ld.rd);
-            ld.rd = NULL;
+            req_data.data_size = 0;
+            free(req_data.data);
+            req_data.data = NULL;
 
             /* TODO:
              * <AttributeValuePair><Attribute name=\"requestDnsName\"/><Value>%s</Value></AttributeValuePair>
@@ -1039,7 +1045,7 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
     }
 
     if (status == AM_SUCCESS) {
-        wait_for_event(ld.rf, 0);
+        wait_for_event(req_data.event, 0);
     } else {
         AM_LOG_DEBUG(instance_id, "%s disconnecting", thisfunc);
         am_net_diconnect(&n);
@@ -1047,58 +1053,70 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
 
     AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, n.http_status);
 
-    if (status == AM_SUCCESS && n.http_status == 200 && ISVALID(ld.rd)) {
-        AM_LOG_DEBUG(instance_id, "%s response:\n%s", thisfunc, ld.rd);
+    if (status == AM_SUCCESS && n.http_status == 200 && ISVALID(req_data.data)) {
+        AM_LOG_DEBUG(instance_id, "%s response:\n%s", thisfunc, req_data.data);
 
-        if (strstr(ld.rd, "<Exception>") != NULL && strstr(ld.rd, "SSO token is invalid") != NULL) {
-            session_status = AM_INVALID_SESSION;
-        }
-        if (strstr(ld.rd, "<Exception>") != NULL && strstr(ld.rd, "Application sso token is invalid") != NULL) {
-            session_status = AM_INVALID_AGENT_SESSION;
+        if (strstr(req_data.data, "<Exception>") != NULL) {
+            if (strstr(req_data.data, "SSO token is invalid") != NULL) {
+                session_status = AM_INVALID_SESSION;
+            } else if (strstr(req_data.data, "Application sso token is invalid") != NULL) {
+                session_status = AM_INVALID_AGENT_SESSION;
+            }
         }
 
-        if (session_status == AM_SUCCESS && policy_list != NULL)
-            *policy_list = am_parse_policy_xml(instance_id, ld.rd, ld.sz,
+        if (session_status == AM_SUCCESS && policy_list != NULL) {
+            *policy_list = am_parse_policy_xml(instance_id, req_data.data, req_data.data_size,
                 am_scope_to_num(scope));
+        }
     }
 
     am_net_close(&n);
-    close_event(ld.rf);
+    close_event(req_data.event);
 
-    am_free(ld.rd);
+    am_free(req_data.data);
     return session_status != AM_SUCCESS ? session_status : status;
 }
 
-int am_url_validate(unsigned long instance_id, const char *url, struct am_ssl_options *info, int *httpcode) {
-    static const char *thisfunc = "am_url_validate():";
-    char *get = NULL;
+/**
+ * Validate the specified URL by using http HEAD.
+ */
+int am_url_validate(unsigned long instance_id, const char* url, struct am_ssl_options* info, int* httpcode) {
+    static const char* thisfunc = "am_url_validate():";
+    char* get = NULL;
     am_net_t n;
     size_t get_sz;
     int status = AM_ERROR;
-    struct request_data ld;
+    struct request_data request_data;
+    
+    AM_LOG_DEBUG(instance_id, "%s%s", thisfunc, LOGEMPTY(url));
 
-    if (!ISVALID(url)) return AM_EINVAL;
+    if (!ISVALID(url)) {
+        return AM_EINVAL;
+    }
 
-    memset(&ld, 0, sizeof (struct request_data));
-    memset(&n, 0, sizeof (am_net_t));
+    memset(&request_data, 0, sizeof(struct request_data));
+    memset(&n, 0, sizeof(am_net_t));
     n.log = NULL;
     n.instance_id = instance_id;
     n.timeout = AM_NET_CONNECT_TIMEOUT;
     n.url = url;
     if (info != NULL) {
-        memcpy(&n.ssl.info, info, sizeof (struct am_ssl_options));
+        memcpy(&n.ssl.info, info, sizeof(struct am_ssl_options));
     }
 
-    ld.rf = create_event();
-    if (ld.rf == NULL) return AM_ENOMEM;
+    request_data.event = create_event();
+    if (request_data.event == NULL) {
+        return AM_ENOMEM;
+    }
 
-    n.data = &ld;
+    n.data = &request_data;
     n.on_connected = on_connected_cb;
     n.on_close = on_close_cb;
     n.on_data = on_agent_request_data_cb;
     n.on_complete = on_complete_cb;
 
     if (am_net_connect(&n) == 0) {
+        AM_LOG_DEBUG(instance_id, "am_net_connect(%s) returns zero", url);
         get_sz = am_asprintf(&get, "HEAD %s HTTP/1.1\r\n"
                 "Host: %s:%d\r\n"
                 "User-Agent: "MODINFO"\r\n"
@@ -1110,21 +1128,27 @@ int am_url_validate(unsigned long instance_id, const char *url, struct am_ssl_op
             status = am_net_write(&n, get, get_sz);
             free(get);
         }
+    } else {
+        AM_LOG_DEBUG(instance_id, "am_net_connect(%s) returns NON zero", url);
     }
 
+    AM_LOG_DEBUG(instance_id, "status is set to %d", status);
+    
     if (status == AM_SUCCESS) {
-        wait_for_event(ld.rf, 0);
+        wait_for_event(request_data.event, 0);
     } else {
         AM_LOG_DEBUG(instance_id, "%s disconnecting", thisfunc);
         am_net_diconnect(&n);
     }
 
     AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, n.http_status);
-    if (httpcode) *httpcode = n.http_status;
+    if (httpcode) {
+        *httpcode = n.http_status;
+    }
 
     am_net_close(&n);
-    close_event(ld.rf);
+    close_event(request_data.event);
 
-    am_free(ld.rd);
+    am_free(request_data.data);
     return status;
 }

@@ -65,6 +65,10 @@
 #define AM_MAX_THREADS_POOL         4
 #endif
 
+#ifndef AM_USER_GROUP_NAME_LIMIT
+#define AM_USER_GROUP_NAME_LIMIT    20
+#endif
+
 #ifndef AM_LOG_QUEUE_SIZE
 #define AM_LOG_QUEUE_SIZE           2048 /* must be a power of two */
 #endif
@@ -74,13 +78,17 @@
 #endif
 
 #define EMPTY               "(empty)"
-#define LOGEMPTY(x)         (x==NULL ? EMPTY : x)
-#define NOTNULL(x)          (x==NULL ? "" : x)
-#define ISVALID(x)          (x!=NULL && x[0] != '\0')
-#define ISINVALID(x)        (x==NULL || *x == '\0')
-#define MIN(a,b)            (((a)<(b))?(a):(b))
-#define MAX(a,b)            (((a)>(b))?(a):(b))
-#define CMP(a, b)           ((a) < (b) ? -1 : (a) == (b) ? 0 : 1)
+#define LOGEMPTY(x)         (x == NULL ? EMPTY : x)
+#define NOTNULL(x)          (x == NULL ? "" : x)
+#define ISVALID(x)          (x != NULL && *x != '\0')
+#define ISINVALID(x)        (x == NULL || *x == '\0')
+#ifndef MIN
+#define MIN(a, b)           (((a) < (b)) ? (a) : (b))
+#endif
+#ifndef MAX
+#define MAX(a, b)           (((a) > (b)) ? (a) : (b))
+#endif
+#define CMP(a, b)           (((a) < (b)) ? -1 : (a) == (b) ? 0 : 1)
 
 #define AM_JSON_TEMPLATE_LOCATION "{"\
         "\"error\": {"\
