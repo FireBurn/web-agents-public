@@ -17,6 +17,17 @@
 #ifndef AM_H
 #define AM_H
 
+/**
+ * This is our representation of "boolean".  Try to avoid boolean itself as although supposed to be part of the language
+ * for some time now, it seems to be a grey area.  This is needed by log.h.
+ */
+typedef enum {
+    AM_FALSE = 0,
+    AM_TRUE
+} am_bool_t;
+
+#define TO_BOOL(x) (((x)==0) ? AM_FALSE : AM_TRUE)
+
 #include "error.h"
 #include "log.h"
 #include "config.h"
@@ -127,17 +138,6 @@
         " \"code\": %d"\
         " }"\
         "}"
-
-/**
- * This is our representation of "boolean".  Try to avoid boolean itself as although supposed to be part of the language
- * for some time now, it seems to be a grey area.
- */
-typedef enum {
-    AM_FALSE = 0,
-    AM_TRUE
-} am_bool_t;
-
-#define TO_BOOL(x) (((x)==0) ? AM_FALSE : AM_TRUE)
 
 typedef enum {
     AM_OK = 0, AM_FAIL, AM_RETRY, AM_QUIT

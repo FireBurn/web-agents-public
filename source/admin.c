@@ -1495,7 +1495,7 @@ static void archive_files(int argc, char **argv) {
             }
             if (dir[0] == '\\' && dir[1] == '\\') {
                 off = 2;
-            }'
+            }
             off += strlen(drive);
         }
 #endif
