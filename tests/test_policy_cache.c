@@ -105,11 +105,99 @@ char* policy_xml = "<PolicyService version='1.0' revisionNumber='60'>"
     "</PolicyService>";
 
 
+char* policy_for_url =
+    "<PolicyService version=\"1.0\" revisionNumber=\"60\">"
+    "    <PolicyResponse requestId=\"4\" issueInstant=\"9999999999999\" >"
+    "        <ResourceResult name=\"%s\">"
+    "            <PolicyDecision>"
+    "                <ResponseAttributes>"
+    "                </ResponseAttributes>"
+    "                <ActionDecision timeToLive=\"9999999999999999999\">"
+    "                    <AttributeValuePair>"
+    "                        <Attribute name=\"POST\"/>"
+    "                        <Value>allow</Value>"
+    "                    </AttributeValuePair>"
+    "                    <Advices>"
+    "                    </Advices>"
+    "                </ActionDecision>"
+    "                <ActionDecision timeToLive=\"9999999999999999999\">"
+    "                    <AttributeValuePair>"
+    "                        <Attribute name=\"PATCH\"/>"
+    "                        <Value>allow</Value>"
+    "                    </AttributeValuePair>"
+    "                    <Advices>"
+    "                    </Advices>"
+    "                </ActionDecision>"
+    "                <ActionDecision timeToLive=\"9999999999999999999\">"
+    "                    <AttributeValuePair>"
+    "                        <Attribute name=\"GET\"/>"
+    "                        <Value>allow</Value>"
+    "                    </AttributeValuePair>"
+    "                    <Advices>"
+    "                    </Advices>"
+    "                </ActionDecision>"
+    "                <ActionDecision timeToLive=\"9999999999999999999\">"
+    "                    <AttributeValuePair>"
+    "                        <Attribute name=\"DELETE\"/>"
+    "                        <Value>allow</Value>"
+    "                    </AttributeValuePair>"
+    "                    <Advices>"
+    "                    </Advices>"
+    "                </ActionDecision>"
+    "                <ActionDecision timeToLive=\"9999999999999999999\">"
+    "                    <AttributeValuePair>"
+    "                        <Attribute name=\"OPTIONS\"/>"
+    "                        <Value>allow</Value>"
+    "                    </AttributeValuePair>"
+    "                    <Advices>"
+    "                    </Advices>"
+    "                </ActionDecision>"
+    "                <ActionDecision timeToLive=\"9999999999999999999\">"
+    "                    <AttributeValuePair>"
+    "                        <Attribute name=\"HEAD\"/>"
+    "                        <Value>allow</Value>"
+    "                    </AttributeValuePair>"
+    "                    <Advices>"
+    "                    </Advices>"
+    "                </ActionDecision>"
+    "                <ActionDecision timeToLive=\"9999999999999999999\">"
+    "                    <AttributeValuePair>"
+    "                        <Attribute name=\"PUT\"/>"
+    "                        <Value>allow</Value>"
+    "                    </AttributeValuePair>"
+    "                    <Advices>"
+    "                    </Advices>"
+    "                </ActionDecision>"
+    "            </PolicyDecision>"
+    "        </ResourceResult>"
+    "   </PolicyResponse>"
+    "</PolicyService>";
+
+
 char* pll = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>"
     "<ResponseSet vers='1.0' svcid='poicy' reqid='48'>"
     "  <Response><![CDATA[%s]]></Response>"
     "</ResponseSet>";
 
+
+/**
+ * Substitute our chosen URL into the "policy for url" string above.  That way we can pretend
+ * we're getting different responses for different URLs. All the values are "allow" anyway.
+ */
+static char* get_policy_for_url(const char* url) {
+    char* buff1 = NULL;
+    char* result = NULL;
+    
+    am_asprintf(&buff1, policy_for_url, url);
+    if (buff1 == NULL) {
+        return NULL;
+    }
+    
+    am_asprintf(&result, pll, buff1);
+    am_free(buff1);
+    
+    return result;
+}
 
 static void test_namevalue_pair(const char* prefix, struct am_namevalue* nvp)
 {
@@ -219,6 +307,8 @@ void test_policy_cache_simple(void **state) {
     
     free(buffer);
     
+    // destroy the cache, if it exists
+    am_cache_destroy();
     assert_int_equal(am_init(), AM_SUCCESS);
     am_init_worker();
         
@@ -226,7 +316,7 @@ void test_policy_cache_simple(void **state) {
     am_get_session_policy_cache_entry(&request, "Policy-key", &r, &session, &ets);
     
     am_shutdown_worker();
-    am_shutdown();
+    am_cache_destroy();
     am_worker_pool_init_reset();
     am_net_init_ssl_reset();
     
@@ -326,6 +416,8 @@ void test_policy_cache_many_entries(void **state) {
     
     free(buffer);
     
+    // destroy the cache, if it exists
+    am_cache_destroy();
     assert_int_equal(am_init(), AM_SUCCESS);
     am_init_worker();
         
@@ -334,10 +426,93 @@ void test_policy_cache_many_entries(void **state) {
     delete_am_policy_result_list(&result);
     
     am_shutdown_worker();
-    am_shutdown();
+    am_cache_destroy();
     am_worker_pool_init_reset();
     am_net_init_ssl_reset();
 }
+
+
+/**
+ * Now vary the incoming URL a bit and check we can get the same values out.
+ */
+void test_policy_cache_with_many_different_entries_single_session(void **state) {
+    
+    int                         i;
+    char*                       buffer = NULL;
+    struct am_policy_result *   policy_result;
+    char                        fake_session[64];
+    char*                       urls[] = {
+        "http://agent.a-example.com:8080/allowed.html",
+        "http://agent.b-example.com:8080/allowed.html?attr1=value1",
+        "http://agent.c-example.com:8080/also-allowed.html",
+        "http://agent.d-example.com:8080/allow.php",
+        "http://agent.e-example.com:8080/allowed/index.html",
+    };
+    am_config_t                 config;
+    am_request_t                request;
+    
+    // destroy the cache, if it exists
+    am_cache_destroy();
+    
+    assert_int_equal(am_init(), AM_SUCCESS);
+    am_init_worker();
+    
+    create_random_cache_key(fake_session, sizeof(fake_session));
+    
+    /**
+     * Add the URLS above into the cache via the same session id
+     */
+    for (i = 0; i < sizeof(urls)/sizeof(urls[0]); i++) {
+        memset(&config, 0, sizeof(am_config_t));
+        memset(&request, 0, sizeof(am_request_t));
+        request.conf = &config;
+        
+        buffer = get_policy_for_url(urls[i]);
+        policy_result = am_parse_policy_xml(0l, buffer, strlen(buffer), 0);
+        free(buffer);
+        
+        assert_int_equal(am_add_session_policy_cache_entry(&request, fake_session, policy_result, NULL), AM_SUCCESS);
+    }
+    
+    /**
+     * Check we can retrieve the URLs above from the cache via the same session id
+     */
+    for (i = 0; i < sizeof(urls)/sizeof(urls[0]); i++) {
+        time_t ets;
+        struct am_policy_result * r = NULL;
+        struct am_policy_result * result = NULL;
+        struct am_namevalue * session = NULL;
+
+        memset(&config, 0, sizeof(am_config_t));
+        memset(&request, 0, sizeof(am_request_t));
+        request.conf = &config;
+        request.orig_url = urls[i];
+        
+        if (am_get_session_policy_cache_entry(&request, fake_session, &r, &session, &ets) == AM_SUCCESS) {
+            
+            am_bool_t found = AM_FALSE;
+            for (result = r; result != NULL; result = result->next) {
+                if (strcmp(result->resource, urls[i]) == 0) {
+                    found = AM_TRUE;
+                }
+            }
+            
+            if (found == AM_FALSE) {
+                AM_LOG_ERROR(0, "Failed to match policy for URL %s, although results retrieved", urls[i]);
+            }
+            
+            assert_int_equal(found, AM_TRUE);
+        } else {
+            AM_LOG_ERROR(0, "Failed to retrieve policy for URL %s", urls[i]);
+        }
+    }
+    
+    am_shutdown_worker();
+    am_cache_destroy();
+    am_worker_pool_init_reset();
+    am_net_init_ssl_reset();
+}
+
 
 
 struct test_cache_params {
@@ -372,6 +547,8 @@ void test_policy_cache_multithread() {
     char key_buffer[64];
     int i;
 
+    am_cache_destroy();
+    
     memset(&config, 0, sizeof (am_config_t));
     memset(&request, 0, sizeof (am_request_t));
     request.conf = &config;
@@ -428,6 +605,8 @@ void test_policy_cache_multithread() {
             free(keys[i]);
         }
     }
+    
+    am_cache_destroy();
 }
 
 

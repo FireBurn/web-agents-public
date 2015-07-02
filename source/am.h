@@ -302,6 +302,7 @@ int am_configuration_init();
 int am_configuration_shutdown();
 int am_cache_init();
 int am_cache_shutdown();
+void am_cache_destroy();
 
 int am_log_get_current_owner();
 int am_re_init_worker();

@@ -19,6 +19,7 @@
 #include "utility.h"
 #include "list.h"
 
+
 struct mem_chunk {
     size_t size;
     size_t usize;
@@ -32,7 +33,7 @@ struct mem_pool {
     size_t user_offset;
     int open;
     int resize;
-    struct offset_list lh; /*first, last*/
+    struct offset_list lh; /* first, last */
 };
 #define SIZEOF_mem_pool (sizeof(struct mem_pool))
 
@@ -119,6 +120,30 @@ void am_shm_unlock(am_shm_t *am) {
 #endif
 }
 
+/**
+ * Utterly destroy the shared memory area handle pointed to by "am", i.e. delete/unlink
+ * the shared memory block, destroy the locks, shared memory files and process-wide
+ * mutexes.
+ *
+ * CALL THIS FUNCTION WITH EXTREME CARE.  It is intended for test cases ONLY, so each
+ * test case can start with a clean slate.
+ *
+ * @param am The shared memory area handle to destroy.
+ */
+void am_shm_destroy(am_shm_t* am) {
+    if (am != NULL) {
+        ((struct mem_pool *) am->pool)->open = 1;
+        am_shm_shutdown(am);
+    }
+}
+
+/**
+ * Shutdown the shared memory area handle pointed to by "am", i.e. destroy the locks,
+ * shared memory files and process-wide mutexes IF the open count is 1, delete/unlink
+ * the shared memory block.
+ *
+ * @param am The shared memory area handle to destroy.
+ */
 void am_shm_shutdown(am_shm_t *am) {
     int open = -1;
     size_t size = 0;
@@ -163,12 +188,11 @@ void am_shm_shutdown(am_shm_t *am) {
     }
     if (open == 0) {
         shm_unlink(am->name[1]);
-        munmap(am->lock, sizeof (pthread_mutex_t));
-        munmap(am->global_size, sizeof (size_t));
+        munmap(am->lock, sizeof(pthread_mutex_t));
+        munmap(am->global_size, sizeof(size_t));
     }
 #endif
     free(am);
-    am = NULL;
 }
 
 void am_shm_set_user_offset(am_shm_t *am, size_t off) {
@@ -193,40 +217,40 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
     int error = 0;
 #endif
 
-    ret = calloc(1, sizeof (am_shm_t));
+    ret = calloc(1, sizeof(am_shm_t));
     if (ret == NULL) return NULL;
 
 #ifdef _WIN32
     if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR) caller, &hm) &&
-            GetModuleFileNameA(hm, dll_path, sizeof (dll_path) - 1) > 0) {
+            GetModuleFileNameA(hm, dll_path, sizeof(dll_path) - 1) > 0) {
         PathRemoveFileSpecA(dll_path);
         strcat(dll_path, FILE_PATH_SEP);
-        snprintf(ret->name[0], sizeof (ret->name[0]),
-                AM_GLOBAL_PREFIX"%s_l", name); /*mutex/semaphore*/
-        snprintf(ret->name[1], sizeof (ret->name[1]),
-                AM_GLOBAL_PREFIX"%s_s", name); /*shared memory name*/
-        snprintf(ret->name[2], sizeof (ret->name[2]),
-                "%s.."FILE_PATH_SEP"log"FILE_PATH_SEP"%s_f", dll_path, name); /*shared memory file name*/
-        snprintf(ret->name[3], sizeof (ret->name[3]),
-                AM_GLOBAL_PREFIX"%s_sz", name); /*shared memory name for global_size*/
+        snprintf(ret->name[0], sizeof(ret->name[0]),
+                AM_GLOBAL_PREFIX"%s_l", name); /* mutex/semaphore */
+        snprintf(ret->name[1], sizeof(ret->name[1]),
+                AM_GLOBAL_PREFIX"%s_s", name); /* shared memory name */
+        snprintf(ret->name[2], sizeof(ret->name[2]),
+                "%s.."FILE_PATH_SEP"log"FILE_PATH_SEP"%s_f", dll_path, name); /* shared memory file name */
+        snprintf(ret->name[3], sizeof(ret->name[3]),
+                AM_GLOBAL_PREFIX"%s_sz", name); /* shared memory name for global_size */
     } else {
         ret->error = AM_NOT_FOUND;
         return ret;
     }
 #else
-    snprintf(ret->name[0], sizeof (ret->name[0]),
-            "/%s_l", name); /*mutex/semaphore*/
-    snprintf(ret->name[1], sizeof (ret->name[1]),
+    snprintf(ret->name[0], sizeof(ret->name[0]),
+            "/%s_l", name); /* mutex/semaphore */
+    snprintf(ret->name[1], sizeof(ret->name[1]),
 #ifdef __sun
             "/%s_s"
 #else
             "%s_s"
 #endif
-            , name); /*shared memory name*/
+            , name); /* shared memory name */
 #endif
 
-    size = page_size(usize + SIZEOF_mem_pool); /*need at least the size of the mem_pool header*/
+    size = page_size(usize + SIZEOF_mem_pool); /* need at least the size of the mem_pool header */
 
 #ifdef _WIN32
     ret->h[0] = CreateMutexA(NULL, TRUE, ret->name[0]);
@@ -298,7 +322,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         return ret;
     }
 
-    ret->h[3] = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, (DWORD) sizeof (size_t), ret->name[3]);
+    ret->h[3] = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, (DWORD) sizeof(size_t), ret->name[3]);
     if (ret->h[3] == NULL) {
         ret->error = GetLastError();
         CloseHandle(ret->h[0]);
@@ -321,7 +345,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
 
 #else
 
-    ret->lock = mmap(NULL, sizeof (pthread_mutex_t),
+    ret->lock = mmap(NULL, sizeof(pthread_mutex_t),
             PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
     if (ret->lock == MAP_FAILED) {
         ret->error = errno;
@@ -349,7 +373,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         pthread_mutexattr_destroy(&attr);
     }
 
-    ret->global_size = mmap(NULL, sizeof (size_t),
+    ret->global_size = mmap(NULL, sizeof(size_t),
             PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
     if (ret->global_size == MAP_FAILED) {
         ret->error = errno;
@@ -363,7 +387,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
     ret->fd = shm_open(ret->name[1], O_CREAT | O_EXCL | O_RDWR, 0666);
     error = errno;
     if (ret->fd == -1 && error != EEXIST) {
-        munmap(ret->lock, sizeof (pthread_mutex_t));
+        munmap(ret->lock, sizeof(pthread_mutex_t));
         ret->error = error;
         am_shm_unlock(ret);
         return ret;
@@ -372,7 +396,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         ret->fd = shm_open(ret->name[1], O_RDWR, 0666);
         error = errno;
         if (ret->fd == -1) {
-            munmap(ret->lock, sizeof (pthread_mutex_t));
+            munmap(ret->lock, sizeof(pthread_mutex_t));
             ret->error = error;
             am_shm_unlock(ret);
             return ret;
@@ -541,7 +565,7 @@ static int am_shm_extend(am_shm_t *am, size_t usize) {
             pool->lh.next = last->lh.next = AM_GET_OFFSET(pool, e);
         }
 
-        *(am->global_size) = am->local_size = pool->size = size; /*new size*/
+        *(am->global_size) = am->local_size = pool->size = size; /* new size */
         am->error = AM_SUCCESS;
     }
     return rv;

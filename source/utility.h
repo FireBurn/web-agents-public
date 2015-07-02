@@ -174,6 +174,7 @@ void am_shm_free(am_shm_t *am, void *ptr);
 void *am_shm_realloc(am_shm_t *am, void *ptr, size_t size);
 void am_shm_set_user_offset(am_shm_t *r, size_t s);
 void am_shm_info(am_shm_t *);
+void am_shm_destroy(am_shm_t* am);
 
 int am_create_agent_dir(const char *sep, const char *path, char **created_name, char **created_name_simple, uid_t* uid, gid_t* gid);
 

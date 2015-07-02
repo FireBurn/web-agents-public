@@ -21,9 +21,8 @@
 #include <setjmp.h>
 
 #include "am.h"
-#include "utility.h"
-
 #include "platform.h"
+#include "utility.h"
 #include "log.h"
 #include "cmocka.h"
 

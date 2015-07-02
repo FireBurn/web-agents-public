@@ -77,26 +77,3 @@ void test_logging_in_unit_test_mode(void** state) {
                      "ABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJ");
 }
 
-/**
- * am_strncat used to be used in the logging, but no more.
- */
-void test_am_strncat(void** state) {
-    
-    char   buf[10] = "a";
-
-    am_strncat(buf, "bcdefghijklmnopq", sizeof(buf));
-    assert_int_equal(strlen(buf), sizeof(buf) - 1);
-    assert_string_equal(buf, "abcdefghi");
-
-    am_strncat(buf, "1234567890", sizeof(buf));
-    assert_int_equal(strlen(buf), sizeof(buf) - 1);
-    assert_string_equal(buf, "abcdefghi");
-
-}
-
-/**
- */
-void test_logging(void** state) {
-    am_log_init(AM_SUCCESS);
-    AM_LOG_ALWAYS(getpid(), "Hello world");
-}
