@@ -49,7 +49,10 @@ void notification_worker(
         if (strcmp(e->n, "agentName") == 0) agentid = e->v;
         /*PolicyChangeNotification - ResourceName*/
         if (strcmp(e->n, "ResourceName") == 0) {
-            am_remove_cache_entry(r->instance_id, e->v);
+            am_request_t req;
+            memset(&req, 0, sizeof(am_request_t));
+            req.instance_id = r->instance_id;
+            am_add_policy_cache_entry(&req, AM_POLICY_CHANGE_KEY, 0);
         }
     }
 

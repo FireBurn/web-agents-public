@@ -201,9 +201,9 @@ am_bool_t zero_instance_logging_wanted(am_bool_t wanted);
             localtime_r(&tv.tv_sec, &now);\
             strftime(time_string, sizeof (time_string) - 1, "%Y-%m-%d %H:%M:%S", &now);\
             strftime(tz, sizeof (tz) - 1, "%z", &now);\
-            header_sz = snprintf(header, sizeof(header), "%s.%03ld %s ERROR [%p:%d][%s:%d] ", \
+            header_sz = snprintf(header, sizeof(header), "%s.%03ld %s ERROR [%p:%d] ", \
                 time_string, tv.tv_usec / 1000L, tz, (void *)(uintptr_t)pthread_self(), \
-                getpid(), __FILE__, __LINE__);\
+                getpid());\
             am_log_write(instance, AM_LOG_LEVEL_ERROR, header, header_sz, format, ##__VA_ARGS__);\
          }\
     }while (0)

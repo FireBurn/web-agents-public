@@ -19,12 +19,14 @@
 
 #include "pcre.h"
 
+#define AM_POLICY_CHANGE_KEY    "AM_POLICY_CHANGE_KEY"
 #define AM_CACHE_TIMEFORMAT     "%Y-%m-%d %H:%M:%S"
 #define ARRAY_SIZE(array)       sizeof(array) / sizeof(array[0])
 #define AM_BASE_TEN             10
 #define AM_SPACE_CHAR           " "
 #define AM_COMMA_CHAR           ","
 #define AM_PIPE_CHAR            "|"
+#define AM_BITMASK_CHECK(v,m)   (((v) & (m)) == (m))             
 
 #define AM_NULL_CHECK(...) \
   do { \

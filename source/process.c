@@ -858,9 +858,15 @@ static am_return_t validate_policy(am_request_t *r) {
         return AM_OK;
     }
 
-    /* look for an entry in a session cache */
-    status = am_get_session_policy_cache_entry(r, r->token,
+    /* 
+     * Look for an entry in a session cache, but only when we are not here because
+     * of a retry call of a failed cache lookup
+     **/
+    status = entry_status == AM_EAGAIN && r->retry > 0 ?
+            AM_EAGAIN : am_get_session_policy_cache_entry(r, r->token,
             &policy_cache, &session_cache, &cache_ts);
+    AM_LOG_DEBUG(r->instance_id, "%s get session cache status: %s",
+            thisfunc, am_strerror(status));
 
     if ((status == AM_SUCCESS && cache_ts > 0) || status != AM_SUCCESS) {
         struct am_policy_result *policy_cache_new = NULL;
@@ -1002,6 +1008,12 @@ static am_return_t validate_policy(am_request_t *r) {
         }
 
         AM_LIST_FOR_EACH(r->pattr, e, t) {//TODO: work on loop in 2 threads (split loop in 2; search&match in each thread)
+
+            if ((r->conf->debug_level & AM_LOG_LEVEL_DEBUG) != 0) {
+                AM_LOG_DEBUG(r->instance_id, "%s trying cache entry for: %s", thisfunc,
+                        LOGEMPTY(e->resource));
+            }
+            
             if (e->scope == scope) {
                 const char *pattern = e->resource;
                 policy_status = policy_compare_url(r, pattern, url);
@@ -1020,21 +1032,23 @@ static am_return_t validate_policy(am_request_t *r) {
                     }
 
                     if (remote) {
-                        /* in case its a fresh policy response, store it in a global policy cache (resource name only) */
-                        am_add_policy_cache_entry(r, pattern, 300); /* 5 minutes */
+                        /* in case its a fresh policy response, do not do policy-change cache entry validation */
                         break;
                     }
 
-                    rv = am_get_policy_cache_entry(r, pattern, e->created);
-                    AM_LOG_DEBUG(r->instance_id, "%s pattern: %s, global policy cache status: %s", thisfunc,
-                            pattern, am_strerror(rv));
+                    rv = am_get_policy_cache_entry(r, AM_POLICY_CHANGE_KEY, e->created);
+                    AM_LOG_DEBUG(r->instance_id, "%s global policy cache status: %s", thisfunc,
+                            am_strerror(rv));
                     if (rv == AM_SUCCESS) {
                         break;
                     }
 
-                    /* policy cache (resource) entry might be removed or updated by a notification
-                     * redo validate_policy in either case
+                    /* policy change cache entry might be removed or updated by a notification,
+                     * redo validate_policy in either case; remove session/policy cache entry.
                      */
+
+                    am_remove_cache_entry(r->instance_id, r->token);
+
                     r->response_attributes = NULL;
                     r->response_decisions = NULL;
                     r->policy_advice = NULL;
@@ -1142,9 +1156,7 @@ static am_return_t validate_policy(am_request_t *r) {
             delete_am_namevalue_list(&session_cache);
             r->sattr = NULL;
 
-            am_remove_cache_entry(r->instance_id, r->token);
-
-            r->status = entry_status;
+            r->status = AM_EAGAIN;
             /* technically, this is still a retry */
             r->retry++;
             return AM_RETRY;

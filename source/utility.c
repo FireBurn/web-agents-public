@@ -38,6 +38,7 @@ const char *request_method_str[] = {
     "UNKNOWN",
     "GET",
     "POST",
+    "HEAD",
     "PUT",
     "DELETE",
     "TRACE",

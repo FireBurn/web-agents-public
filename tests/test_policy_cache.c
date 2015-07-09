@@ -446,7 +446,9 @@ void test_policy_cache_with_many_different_entries_single_session(void **state) 
         "http://agent.b-example.com:8080/allowed.html?attr1=value1",
         "http://agent.c-example.com:8080/also-allowed.html",
         "http://agent.d-example.com:8080/allow.php",
+        "http://agent.c-example.com:8080/also-allowed.html",
         "http://agent.e-example.com:8080/allowed/index.html",
+        "http://agent.a-example.com:8080/allowed.html",
     };
     am_config_t                 config;
     am_request_t                request;
@@ -487,7 +489,7 @@ void test_policy_cache_with_many_different_entries_single_session(void **state) 
         memset(&request, 0, sizeof(am_request_t));
         request.conf = &config;
         request.orig_url = urls[i];
-        
+                
         if (am_get_session_policy_cache_entry(&request, fake_session, &r, &session, &ets) == AM_SUCCESS) {
             
             am_bool_t found = AM_FALSE;
@@ -506,7 +508,7 @@ void test_policy_cache_with_many_different_entries_single_session(void **state) 
             AM_LOG_ERROR(0, "Failed to retrieve policy for URL %s", urls[i]);
         }
     }
-    
+        
     am_shutdown_worker();
     am_cache_destroy();
     am_worker_pool_init_reset();

@@ -49,7 +49,7 @@ typedef enum {
 #endif
 
 #ifndef AM_HASH_TABLE_KEY_SIZE
-#define AM_HASH_TABLE_KEY_SIZE      128 /* TODO: ResourceResult name max size? */
+#define AM_HASH_TABLE_KEY_SIZE      128
 #endif
 
 #ifndef AM_HASH_TABLE_SIZE

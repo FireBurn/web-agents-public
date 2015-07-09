@@ -24,10 +24,10 @@
 #define AM_NET_CONNECT_TIMEOUT 8 /* in sec */
 
 struct request_data {
-    char*       data;
-    size_t      data_size;
-    int         error;
-    am_event_t* event;
+    char *data;
+    size_t data_size;
+    int error;
+    am_event_t *event;
 };
 
 static void on_agent_request_data_cb(void *udata, const char *data, size_t data_sz, int status) {
@@ -96,7 +96,6 @@ static int send_authcontext_request(am_net_t *conn, const char *realm, char **to
             "Host: %s:%d\r\n"
             "User-Agent: "MODINFO"\r\n"
             "Accept: text/xml\r\n"
-            "Content-Language: UTF-8\r\n"
             "Connection: Keep-Alive\r\n"
             "Content-Type: text/xml; charset=UTF-8\r\n"
             "Content-Length: %d\r\n\r\n"
@@ -179,13 +178,36 @@ static int send_authcontext_request(am_net_t *conn, const char *realm, char **to
 static int send_login_request(am_net_t *conn, char **token, const char *user,
         const char *password) {
     static const char *thisfunc = "send_login_request():";
-    size_t post_sz, post_data_sz;
+    size_t post_sz, post_data_sz, xml_esc_sz;
     char *post = NULL, *post_data = NULL;
     int status = AM_ERROR;
     struct request_data *req_data;
+    char *user_xml_esc = NULL, *pass_xml_esc = NULL;
 
     if (conn == NULL || conn->data == NULL || token == NULL ||
             !ISVALID(*token) || !ISVALID(user)) return AM_EINVAL;
+
+    /* do xml-escape */
+    xml_esc_sz = strlen(user);
+    user_xml_esc = malloc(xml_esc_sz * 6 + 1); /* worst case */
+    if (user_xml_esc != NULL) {
+        memcpy(user_xml_esc, user, xml_esc_sz);
+        xml_entity_escape(user_xml_esc, xml_esc_sz);
+    } else {
+        return AM_ENOMEM;
+    }
+
+    if (ISVALID(password)) {
+        xml_esc_sz = strlen(password);
+        pass_xml_esc = malloc(xml_esc_sz * 6 + 1); /* worst case */
+        if (pass_xml_esc != NULL) {
+            memcpy(pass_xml_esc, password, xml_esc_sz);
+            xml_entity_escape(pass_xml_esc, xml_esc_sz);
+        } else {
+            free(user_xml_esc);
+            return AM_ENOMEM;
+        }
+    }
 
     req_data = (struct request_data *) conn->data;
 
@@ -209,14 +231,17 @@ static int send_login_request(am_net_t *conn, char **token, const char *user,
             "</SubmitRequirements></Request></AuthContext>]]>"
             "</Request>"
             "</RequestSet>",
-            *token, *token, user, NOTNULL(password));
-    if (post_data == NULL) return AM_ENOMEM;
+            *token, *token, user_xml_esc, NOTNULL(pass_xml_esc));
+
+    AM_FREE(user_xml_esc, pass_xml_esc);
+    if (post_data == NULL) {
+        return AM_ENOMEM;
+    }
 
     post_sz = am_asprintf(&post, "POST %s/authservice HTTP/1.1\r\n"
             "Host: %s:%d\r\n"
             "User-Agent: "MODINFO"\r\n"
             "Accept: text/xml\r\n"
-            "Content-Language: UTF-8\r\n"
             "Connection: Keep-Alive\r\n"
             "Content-Type: text/xml; charset=UTF-8\r\n"
             "%s"
@@ -405,7 +430,6 @@ static int send_session_request(am_net_t *conn, char **token, const char *notify
             "Host: %s:%d\r\n"
             "User-Agent: "MODINFO"\r\n"
             "Accept: text/xml\r\n"
-            "Content-Language: UTF-8\r\n"
             "Connection: Keep-Alive\r\n"
             "Content-Type: text/xml; charset=UTF-8\r\n"
             "%s"
@@ -496,7 +520,6 @@ static int send_policychange_request(am_net_t *conn, char **token, const char *n
             "Host: %s:%d\r\n"
             "User-Agent: "MODINFO"\r\n"
             "Accept: text/xml\r\n"
-            "Content-Language: UTF-8\r\n"
             "Connection: Close\r\n"
             "Content-Type: text/xml; charset=UTF-8\r\n"
             "%s"
@@ -553,7 +576,7 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
     struct request_data req_data;
 
     if (!ISVALID(realm) || !ISVALID(user) ||
-        !ISVALID(pass) || !ISVALID(openam)) {
+            !ISVALID(pass) || !ISVALID(openam)) {
         return AM_EINVAL;
     }
 
@@ -673,7 +696,6 @@ int am_agent_logout(unsigned long instance_id, const char *openam,
                     "Host: %s:%d\r\n"
                     "User-Agent: "MODINFO"\r\n"
                     "Accept: text/xml\r\n"
-                    "Content-Language: UTF-8\r\n"
                     "Connection: Close\r\n"
                     "Content-Type: text/xml; charset=UTF-8\r\n"
                     "%s"
@@ -757,7 +779,6 @@ int am_agent_naming_request(unsigned long instance_id, const char *openam, const
                     "Host: %s:%d\r\n"
                     "User-Agent: "MODINFO"\r\n"
                     "Accept: text/xml\r\n"
-                    "Content-Language: UTF-8\r\n"
                     "Connection: close\r\n"
                     "Content-Type: text/xml; charset=UTF-8\r\n"
                     "Content-Length: %d\r\n\r\n"
@@ -846,7 +867,6 @@ int am_agent_session_request(unsigned long instance_id, const char *openam,
                     "Host: %s:%d\r\n"
                     "User-Agent: "MODINFO"\r\n"
                     "Accept: text/xml\r\n"
-                    "Content-Language: UTF-8\r\n"
                     "Connection: close\r\n"
                     "Content-Type: text/xml; charset=UTF-8\r\n"
                     "Content-Length: %d\r\n\r\n"
@@ -881,7 +901,7 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
         const char *server_id, struct am_ssl_options *info,
         struct am_namevalue **session_list,
         struct am_policy_result **policy_list) {
-    
+
     static const char *thisfunc = "am_agent_policy_request():";
     char *post = NULL, *post_data = NULL;
     am_net_t n;
@@ -891,7 +911,7 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
     struct request_data req_data;
 
     if (!ISVALID(token) || !ISVALID(user_token) || !ISVALID(notif_url) || !ISVALID(scope) ||
-        !ISVALID(req_url) || !ISVALID(openam) || !ISVALID(cip)) {
+            !ISVALID(req_url) || !ISVALID(openam) || !ISVALID(cip)) {
         return AM_EINVAL;
     }
 
@@ -952,7 +972,6 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
                     "Host: %s:%d\r\n"
                     "User-Agent: "MODINFO"\r\n"
                     "Accept: text/xml\r\n"
-                    "Content-Language: UTF-8\r\n"
                     "Connection: Keep-Alive\r\n"
                     "Content-Type: text/xml; charset=UTF-8\r\n"
                     "%s"
@@ -1026,7 +1045,6 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
                     "Host: %s:%d\r\n"
                     "User-Agent: "MODINFO"\r\n"
                     "Accept: text/xml\r\n"
-                    "Content-Language: UTF-8\r\n"
                     "Content-Type: text/xml; charset=UTF-8\r\n"
                     "Content-Length: %d\r\n"
                     "%s"
@@ -1066,7 +1084,7 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
 
         if (session_status == AM_SUCCESS && policy_list != NULL) {
             *policy_list = am_parse_policy_xml(instance_id, req_data.data, req_data.data_size,
-                am_scope_to_num(scope));
+                    am_scope_to_num(scope));
         }
     }
 
@@ -1087,7 +1105,7 @@ int am_url_validate(unsigned long instance_id, const char* url, struct am_ssl_op
     size_t get_sz;
     int status = AM_ERROR;
     struct request_data request_data;
-    
+
     AM_LOG_DEBUG(instance_id, "%s%s", thisfunc, LOGEMPTY(url));
 
     if (!ISVALID(url)) {
@@ -1133,7 +1151,7 @@ int am_url_validate(unsigned long instance_id, const char* url, struct am_ssl_op
     }
 
     AM_LOG_DEBUG(instance_id, "status is set to %d", status);
-    
+
     if (status == AM_SUCCESS) {
         wait_for_event(request_data.event, 0);
     } else {
