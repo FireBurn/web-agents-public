@@ -126,6 +126,8 @@ struct am_log {
 
 #ifndef _WIN32
 
+/*****************************************************************************************/
+
 static am_bool_t should_exit(pthread_mutex_t *mtx) {
     switch (pthread_mutex_trylock(mtx)) {
         case 0:
@@ -136,6 +138,8 @@ static am_bool_t should_exit(pthread_mutex_t *mtx) {
     }
     return AM_TRUE;
 }
+
+/*****************************************************************************************/
 
 static void rename_file(const char *file_name) {
     unsigned int idx = 1;
@@ -149,7 +153,9 @@ static void rename_file(const char *file_name) {
     }
 }
 
-#endif
+#endif /* _WIN32 */
+
+/*****************************************************************************************/
 
 static am_bool_t should_rotate_time(time_t ct) {
     time_t ts = ct;
@@ -159,6 +165,8 @@ static am_bool_t should_rotate_time(time_t ct) {
     }
     return AM_FALSE;
 }
+
+/*****************************************************************************************/
 
 static void *am_log_worker(void *arg) {
     struct am_log *log = AM_LOG();
@@ -207,14 +215,14 @@ static void *am_log_worker(void *arg) {
                 }
             }
         }
-#endif
+#endif  /* _WIN32 */
 
         log->bucket[index].ready_to_read = AM_FALSE;
 #ifdef _WIN32
         ReleaseMutex(am_log_lck.lock);
 #else
         pthread_mutex_unlock(&log->lock);
-#endif
+#endif  /* _WIN32 */
 
         data = log->bucket[index].data;
         data_sz = log->bucket[index].size;
@@ -232,7 +240,21 @@ static void *am_log_worker(void *arg) {
         }
 
         if (f != NULL) {
-
+            
+            if (ISINVALID(f->name_debug)) {
+                fprintf(stderr, "am_log_worker(): the debug file name is invalid (i.e. empty or null)\n");
+                f->fd_debug = -1;
+                f->fd_audit = -1;
+                return NULL;
+            }
+            
+            if (ISINVALID(f->name_audit)) {
+                fprintf(stderr, "am_log_worker(): the audit file name is invalid (i.e. empty or null)\n");
+                f->fd_debug = -1;
+                f->fd_audit = -1;
+                return NULL;
+            }
+            
             /* log files are not opened yet, do it now */
             if (f->fd_audit == -1 && f->fd_debug == -1) {
 #ifdef _WIN32
@@ -264,8 +286,11 @@ static void *am_log_worker(void *arg) {
 #endif
             }
 
-            if (f->fd_debug == -1 || f->fd_audit == -1) {
-                fprintf(stderr, "am_log_worker() log file open failed with error: %d", errno);
+            if (f->fd_debug == -1) {
+                fprintf(stderr, "am_log_worker() failed to open log file %s: error: %d", f->name_debug, errno);
+                f->fd_debug = f->fd_audit = -1;
+            } else if (f->fd_audit == -1) {
+                fprintf(stderr, "am_log_worker() failed to open audit file %s: error: %d", f->name_audit, errno);
                 f->fd_debug = f->fd_audit = -1;
             } else {
                 int file_handle = is_audit ? f->fd_audit : f->fd_debug;
@@ -389,6 +414,8 @@ static void *am_log_worker(void *arg) {
     return NULL;
 }
 
+/*****************************************************************************************/
+
 void am_log_re_init(int status) {
     struct am_log *log = AM_LOG();
     if (log != NULL && status == AM_RETRY_ERROR) {
@@ -411,6 +438,8 @@ void am_log_re_init(int status) {
 #endif
     }
 }
+
+/*****************************************************************************************/
 
 void am_log_init(int status) {
     int i;
@@ -577,6 +606,8 @@ void am_log_init(int status) {
 
 #endif
 }
+
+/*****************************************************************************************/
 
 void am_log_init_worker(int status) {
 #ifdef _WIN32
@@ -859,6 +890,8 @@ int am_log_get_current_owner() {
     return rv;
 }
 
+/***************************************************************************/
+
 void am_log_register_instance(unsigned long instance_id, const char *debug_log, int log_level, int log_size,
         const char *audit_log, int audit_level, int audit_size) {
     int i, exist = AM_NOT_FOUND;
@@ -924,6 +957,8 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
     }
 }
 
+/***************************************************************************/
+
 int get_valid_url_index(unsigned long instance_id) {
     int i, value = 0;
     struct am_log *log = AM_LOG();
@@ -951,6 +986,8 @@ int get_valid_url_index(unsigned long instance_id) {
 #endif
     return value;
 }
+
+/***************************************************************************/
 
 void set_valid_url_index(unsigned long instance_id, int value) {
     int i, set = AM_FALSE;

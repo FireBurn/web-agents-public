@@ -77,3 +77,120 @@ void test_logging_in_unit_test_mode(void** state) {
                      "ABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJ");
 }
 
+/*************************************************************************************/
+
+char log_file_name[20];
+char audit_file_name[20];
+
+#define ONE_K   1024
+#define ONE_MB  1024 * 1024
+#define TEN_MB  ONE_MB * 10
+
+/**
+ * Set up everything (shared memory, etc.) so we can log, just as we would if we were
+ * really running (as opposed to running in test harness mode).
+ */
+void logging_setup(int logging_level) {
+    
+    // destroy the cache, if it exists
+    am_cache_destroy();
+    
+    assert_int_equal(am_init(), AM_SUCCESS);
+    
+    sprintf(log_file_name, "log%d", rand() % 1000000);
+    
+    // Note that we need a valid audit file name, even though we never audit
+    sprintf(audit_file_name, "aud%d", rand() % 1000000);
+    
+    am_log_register_instance(getpid(),
+                             log_file_name, logging_level, TEN_MB,
+                             audit_file_name, AM_LOG_LEVEL_AUDIT, ONE_MB);
+    am_init_worker();
+}
+
+/**
+ * Tear down everything after doing some logging.
+ */
+void logging_teardown() {
+    am_log_shutdown();
+    am_shutdown_worker();
+    am_cache_destroy();
+    am_worker_pool_init_reset();
+    am_net_init_ssl_reset();
+    unlink(log_file_name);
+    unlink(audit_file_name);
+}
+
+/**
+ * Validate that the specified file contains the specified string.  Very limited.  The
+ * string searched for must occur entirely on a line and not span lines (if it does, it
+ * won't be matched).
+ *
+ * @param log_file_name The log file name
+ * @param text The text string to search for
+ * @return 1 if present, 0 if not present
+ */
+int validate_contains(const char* file_name, const char* text) {
+    FILE* fp;
+    int result = 0;
+    char line[10 * ONE_K];
+    
+    if ((fp = fopen(file_name, "r")) != NULL) {
+        while (fgets(line, sizeof(line), fp) != NULL && result == 0) {
+            result = strstr(line, text) != NULL;
+        }
+        fclose(fp);
+    } else {
+        fprintf(stderr, "Warning, failed to open log file %s\n", file_name);
+    }
+    return result;
+}
+
+/*************************************************************************************/
+
+/**
+ * Ensure that an impractically high log level we DO actually log text via AM_LOG_DEBUG.
+ */
+void test_log_debug_at_debug_level(void** state) {
+    int result;
+    const char* message = "Message written at DEBUG level.";
+
+    srand(time(NULL));
+    logging_setup(AM_LOG_LEVEL_AUDIT_DENY);
+    AM_LOG_DEBUG(getpid(), message);
+    sleep(5);
+    result = validate_contains(log_file_name, message);
+    logging_teardown();
+    assert_int_equal(result, 1);
+}
+
+/**
+ * Ensure that at warning log level we do NOT log something via AM_LOG_DEBUG.
+ */
+void test_log_debug_not_at_warning_level(void** state) {
+    int result;
+    const char* message = "Message written at DEBUG level.";
+
+    logging_setup(AM_LOG_LEVEL_WARNING);
+    AM_LOG_DEBUG(getpid(), message);
+    sleep(5);
+    result = validate_contains(log_file_name, message);
+    logging_teardown();
+    assert_int_equal(result, 0);
+}
+
+/**
+ * Ensure that at warning log level we DO log something via AM_LOG_WARNING.
+ */
+void test_log_warning_at_warning_level(void** state) {
+    int result;
+    const char* message = "Message written at WARNING level.";
+
+    logging_setup(AM_LOG_LEVEL_WARNING);
+    AM_LOG_WARNING(getpid(), message);
+    sleep(5);
+    result = validate_contains(log_file_name, message);
+    logging_teardown();
+    assert_int_equal(result, 1);
+}
+
