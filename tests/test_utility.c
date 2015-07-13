@@ -512,6 +512,11 @@ void test_parse_url(void** state) {
  */
 void test_url_encode_decode(void** state) {
     char buff[] = "abc !\"#$'+(here)--[:>>>there<<<]*+/-?@{xxx}.";
+    char test_a[] = "%20a";
+    char test_b[] = "a%20";
+    char test_c[] = "a% %1";
+    char test_d[] = "% %20%x +%";
+    char test_e[] = "%C4%81%C4%8D%C4%93%C4%A3%C4%AB%C4%B7%C4%BC%C5%86%C5%A1%C5%AB%C5%BE";
     
     char* encoded = url_encode(buff);
     char* decoded = url_decode(encoded);
@@ -530,5 +535,30 @@ void test_url_encode_decode(void** state) {
     assert_non_null(decoded);
     assert_string_equal(decoded, "");
     free(encoded);
+    free(decoded);
+    
+    decoded = url_decode(test_a);
+    assert_non_null(decoded);
+    assert_string_equal(decoded, " a");
+    free(decoded);
+    
+    decoded = url_decode(test_b);
+    assert_non_null(decoded);
+    assert_string_equal(decoded, "a ");
+    free(decoded);
+    
+    decoded = url_decode(test_c);
+    assert_non_null(decoded);
+    assert_string_equal(decoded, "a% %1");
+    free(decoded);
+    
+    decoded = url_decode(test_d);
+    assert_non_null(decoded);
+    assert_string_equal(decoded, "%  %x  %");
+    free(decoded);
+    
+    decoded = url_decode(test_e);
+    assert_non_null(decoded);
+    assert_string_equal(decoded, "āčēģīķļņšūž");
     free(decoded);
 }

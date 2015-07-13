@@ -557,49 +557,29 @@ char *url_encode(const char *str) {
  * passed in.
  */
 char *url_decode(const char *str) {
-    size_t s = 0, url_len = 0;
-    int d = 0;
-    char c;
-    char *dest = NULL;
+    const char *c;
+    char *ptr, *dest = NULL;
 
-    if (str != NULL) {
-        url_len = strlen(str) + 1;
-        dest = calloc(1, url_len);
-        if (!dest) {
-            return NULL;
-        }
-        while (s < url_len) {
-            c = str[s++];
-            if (c == '%' && s + 2 < url_len) {
-                char c2 = str[s++];
-                char c3 = str[s++];
-                if (isxdigit(c2) && isxdigit(c3)) {
-                    c2 = tolower(c2);
-                    c3 = tolower(c3);
-                    if (c2 <= '9') {
-                        c2 = c2 - '0';
-                    } else {
-                        c2 = c2 - 'a' + 10;
-                    }
-                    if (c3 <= '9') {
-                        c3 = c3 - '0';
-                    } else {
-                        c3 = c3 - 'a' + 10;
-                    }
-                    dest[d++] = 16 * c2 + c3;
-                } else {
-                    dest[d++] = c;
-                    dest[d++] = c2;
-                    dest[d++] = c3;
-                }
-            } else if (c == '+') {
-                dest[d++] = ' ';
-            } else {
-                dest[d++] = c;
-            }
-        }
-        dest[d] = '\0';
+    if (str == NULL) {
+        return NULL;
     }
+
+    dest = ptr = strdup(str);
+    if (dest == NULL) {
+        return NULL;
+    }
+
+#define BASE16_TO_BASE10(x) (isdigit(x) ? ((x) - '0') : (toupper((x)) - 'A' + 10))
+
+    for (c = str; *c; c++) {
+        if (*c != '%' || !isxdigit(c[1]) || !isxdigit(c[2])) {
+            *ptr++ = *c == '+' ? ' ' : *c;
+        } else {
+            *ptr++ = (BASE16_TO_BASE10(c[1]) * 16) + (BASE16_TO_BASE10(c[2]));
+            c += 2;
+        }
+    }
+    *ptr = 0;
     return dest;
 }
 
@@ -1882,8 +1862,7 @@ int encrypt_password(const char *key, char **password) {
         free(pass_enc);
         return AM_ENOMEM;
     }
-    free(pass_enc);
-    free(*password);
+    AM_FREE(key_clear, pass_enc, *password);
     *password = pass_enc_b64;
     return (int) pass_sz;
 }
@@ -2035,7 +2014,6 @@ int am_delete_file(const char *fn) {
     return -1;
 }
 
-
 /**
  * Make a directory, owned by the specifed uid (if not NULL) and group owned
  * by the specified group id (if not NULL).  Note that if uid is not null, then
@@ -2045,20 +2023,22 @@ int am_delete_file(const char *fn) {
  * @param path The directory path to create.
  * @param uid Pointer to the user id, null if not available.
  * @param gid Pointer to the group id, null if not available.
+ * @param log Pointer to the agentadmin logger, null if not available.
  */
-int am_make_path(const char* path, uid_t* uid, gid_t* gid) {
+int am_make_path(const char* path, uid_t* uid, gid_t* gid, void (*log)(const char *, ...)) {
 #ifdef _WIN32 
-    int s = '\\';
+    int skip = 0, s = '\\';
     int nmode = _S_IREAD | _S_IWRITE;
 #else
     int s = '/';
     int nmode = 0770;
 #endif
-    char* p = NULL;
+    int rv;
+    char *p = NULL;
     size_t len;
-    char* tmp = strdup(path);
+    char *tmp = strdup(path);
     struct stat st;
-    
+
     if (tmp != NULL) {
         len = strlen(tmp);
         if (tmp[len - 1] == '/' || tmp[len - 1] == '\\') {
@@ -2067,32 +2047,44 @@ int am_make_path(const char* path, uid_t* uid, gid_t* gid) {
         for (p = tmp + 1; *p; p++) {
             if (*p == '/' || *p == '\\') {
                 *p = 0;
-                
+
                 /* only do this if the entry does not exist in the file system */
-                if (stat(tmp, &st) != 0) {
-                    mkdir(tmp, nmode);
+                if (stat(tmp, &st) != 0
+#ifdef _WIN32
+                        && skip++ > 0  /* on Windows first segment is the drive name - skip it */
+#endif           
+                        ) {
+                    rv = mkdir(tmp, nmode);
+                    if (rv != 0 && log != NULL) {
+                        log("failed to create directory %s (error: %d)", LOGEMPTY(tmp), errno);
+                    }
 #ifndef _WIN32
                     if (uid != NULL) {
-                        /* if we are installing and this (chmod) fails, we should log that
-                         * somewhere.  Unfortunately install_log is defined in admin.c and is
-                         * static.  Furthermore if you invoke it (by removing its static-ness)
-                         * then it gives an error when loading the module into httpd.
-                         */
-                        chown(tmp, *uid, *gid);
+                        rv = chown(tmp, *uid, *gid);
+                        if (rv != 0 && log != NULL) {
+                            log("failed to change directory %s owner to %d:%d (error: %d)",
+                                    LOGEMPTY(tmp), *uid, *gid, errno);
+                        }
                     }
 #endif
                 }
                 *p = s;
             }
         }
-        
+
         /* again, only do this if the entry does not exist */
         if (stat(tmp, &st) != 0) {
-            mkdir(tmp, nmode);
+            rv = mkdir(tmp, nmode);
+            if (rv != 0 && log != NULL) {
+                log("failed to create directory %s (error: %d)", LOGEMPTY(tmp), errno);
+            }
 #ifndef _WIN32
             if (uid != NULL) {
-                /* again if this fails during installation, we should be logging somewhere */
-                chown(tmp, *uid, *gid);
+                rv = chown(tmp, *uid, *gid);
+                if (rv != 0 && log != NULL) {
+                    log("failed to change directory %s owner to %d:%d (error: %d)",
+                            LOGEMPTY(tmp), *uid, *gid, errno);
+                }
             }
 #endif
         }
@@ -2213,7 +2205,9 @@ static int readdir_r(DIR *dp, struct dirent *entry, struct dirent **result) {
 static int am_alphasort(const struct dirent **_a, const struct dirent **_b) {
     struct dirent **a = (struct dirent **) _a;
     struct dirent **b = (struct dirent **) _b;
-    return strcoll((*a)->d_name, (*b)->d_name);
+    int a_idx = atoi((*a)->d_name + 6); /* am_file_filter allows only 'agent_XYZ' file names here */
+    int b_idx = atoi((*b)->d_name + 6);
+    return a_idx == b_idx ? 0 : (a_idx > b_idx ? 1 : -1);
 }
 
 static int am_file_filter(const struct dirent *_a) {
@@ -2294,10 +2288,11 @@ static int am_scandir(const char *dirname, struct dirent ***ret_namelist,
  * @param created_name_simple
  * @param uid The user id who will own the directory, if not NULL
  * @param gid The group id which will own the directory, if not NULL
+ * @param log Pointer to the agentadmin logger, NULL if not available
  */
 int am_create_agent_dir(const char* sep, const char* path,
                         char** created_name, char** created_name_simple,
-                        uid_t* uid, gid_t* gid) {
+                        uid_t* uid, gid_t* gid, void (*log)(const char *, ...)) {
 
     struct dirent** instlist = NULL;
     int i, n, result = AM_ERROR, idx = 0;
@@ -2321,27 +2316,27 @@ int am_create_agent_dir(const char* sep, const char* path,
 
         /* create directory structure */
         if (created_name != NULL) {
-            result = am_make_path(*created_name, uid, gid);
+            result = am_make_path(*created_name, uid, gid, log);
         }
         am_asprintf(&p, "%s%sagent_1%sconfig", path, sep, sep);
         if (p == NULL) {
             return AM_ENOMEM;
         }
-        result = am_make_path(p, uid, gid);
+        result = am_make_path(p, uid, gid, log);
         free(p);
         p = NULL;
         am_asprintf(&p, "%s%sagent_1%slogs%sdebug", path, sep, sep, sep);
         if (p == NULL) {
             return AM_ENOMEM;
         }
-        result = am_make_path(p, uid, gid);
+        result = am_make_path(p, uid, gid, log);
         free(p);
         p = NULL;
         am_asprintf(&p, "%s%sagent_1%slogs%saudit", path, sep, sep, sep);
         if (p == NULL) {
             return AM_ENOMEM;
         }
-        result = am_make_path(p, uid, gid);
+        result = am_make_path(p, uid, gid, log);
         free(p);
         am_free(instlist);
 
@@ -2366,28 +2361,29 @@ int am_create_agent_dir(const char* sep, const char* path,
                     return AM_ENOMEM;
                 }
                 if (created_name != NULL) {
-                    result = am_make_path(*created_name, uid, gid);
+                    result = am_make_path(*created_name, uid, gid, log);
                 }
                 am_asprintf(&p, "%s%sagent_%d%sconfig", path, sep, idx + 1, sep);
                 if (p == NULL) {
                     return AM_ENOMEM;
                 }
-                result = am_make_path(p, uid, gid);
+                result = am_make_path(p, uid, gid, log);
                 free(p);
                 p = NULL;
                 am_asprintf(&p, "%s%sagent_%d%slogs%sdebug", path, sep, idx + 1, sep, sep);
                 if (p == NULL) {
                     return AM_ENOMEM;
                 }
-                result = am_make_path(p, uid, gid);
+                result = am_make_path(p, uid, gid, log);
                 free(p);
                 p = NULL;
                 am_asprintf(&p, "%s%sagent_%d%slogs%saudit", path, sep, idx + 1, sep, sep);
                 if (p == NULL) {
                     return AM_ENOMEM;
                 }
-                result = am_make_path(p, uid, gid);
+                result = am_make_path(p, uid, gid, log);
                 free(p);
+                p = NULL;
             }
         }
         free(instlist[i]);

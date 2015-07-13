@@ -30,6 +30,7 @@ void notification_worker(
     struct notification_worker_data *r = (struct notification_worker_data *) arg;
     struct am_namevalue *e, *t, *session_list;
     char *token = NULL, destroyed = 0;
+    am_bool_t policy_change_run = AM_FALSE;
     char *agentid = NULL;
 
     if (r == NULL) return;
@@ -43,16 +44,23 @@ void notification_worker(
     session_list = am_parse_session_xml(r->instance_id, r->post_data, r->post_data_sz);
 
     AM_LIST_FOR_EACH(session_list, e, t) {
-        /*SessionNotification*/
-        if (strcmp(e->n, "sid") == 0) token = e->v;
-        if (strcmp(e->n, "state") == 0 && strcmp(e->v, "destroyed") == 0) destroyed = 1;
-        if (strcmp(e->n, "agentName") == 0) agentid = e->v;
-        /*PolicyChangeNotification - ResourceName*/
-        if (strcmp(e->n, "ResourceName") == 0) {
+        /* SessionNotification */
+        if (strcmp(e->n, "sid") == 0) {
+            token = e->v;
+        }
+        if (strcmp(e->n, "state") == 0 && strcmp(e->v, "destroyed") == 0) {
+            destroyed = 1;
+        }
+        if (strcmp(e->n, "agentName") == 0) {
+            agentid = e->v;
+        }
+        /* PolicyChangeNotification - ResourceName */
+        if (!policy_change_run && strcmp(e->n, "ResourceName") == 0) {
             am_request_t req;
             memset(&req, 0, sizeof(am_request_t));
             req.instance_id = r->instance_id;
             am_add_policy_cache_entry(&req, AM_POLICY_CHANGE_KEY, 0);
+            policy_change_run = AM_TRUE; /* one AM_POLICY_CHANGE_KEY update per PolicyChangeNotification is enough */
         }
     }
 

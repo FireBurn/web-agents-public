@@ -422,7 +422,7 @@ static int send_session_request(am_net_t *conn, char **token, const char *notify
             "</RequestSet>",
             NOTNULL(token_b64), *token, NOTNULL(token_b64), notifyurl, *token);
     if (post_data == NULL) {
-        am_free(token_b64);
+        AM_FREE(token_b64, token_in);
         return AM_ENOMEM;
     }
 
@@ -437,8 +437,7 @@ static int send_session_request(am_net_t *conn, char **token, const char *notify
             "%s", conn->uv.path, conn->uv.host, conn->uv.port,
             NOTNULL(conn->req_headers), post_data_sz, post_data);
     if (post == NULL) {
-        free(post_data);
-        am_free(token_b64);
+        AM_FREE(post_data, token_b64, token_in);
         return AM_ENOMEM;
     }
 
@@ -456,9 +455,7 @@ static int send_session_request(am_net_t *conn, char **token, const char *notify
     }
 
     status = am_net_write(conn, post, post_sz);
-    free(post_data);
-    free(post);
-    am_free(token_b64);
+    AM_FREE(post, post_data, token_b64, token_in);
 
     if (status == AM_SUCCESS) {
         wait_for_event(req_data->event, 0);
@@ -1096,12 +1093,14 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
 }
 
 /**
- * Validate the specified URL by using http HEAD.
+ * Validate the specified URL by using HTTP HEAD request.
  */
-int am_url_validate(unsigned long instance_id, const char* url, struct am_ssl_options* info, int* httpcode) {
+int am_url_validate(unsigned long instance_id, const char* url,
+        struct am_ssl_options* info, int* httpcode, void(*log)(const char *, ...)) {
+
     static const char* thisfunc = "am_url_validate():";
     char* get = NULL;
-    am_net_t n;
+    am_net_t conn;
     size_t get_sz;
     int status = AM_ERROR;
     struct request_data request_data;
@@ -1113,13 +1112,13 @@ int am_url_validate(unsigned long instance_id, const char* url, struct am_ssl_op
     }
 
     memset(&request_data, 0, sizeof(struct request_data));
-    memset(&n, 0, sizeof(am_net_t));
-    n.log = NULL;
-    n.instance_id = instance_id;
-    n.timeout = AM_NET_CONNECT_TIMEOUT;
-    n.url = url;
+    memset(&conn, 0, sizeof(am_net_t));
+    conn.log = log;
+    conn.instance_id = instance_id;
+    conn.timeout = AM_NET_CONNECT_TIMEOUT;
+    conn.url = url;
     if (info != NULL) {
-        memcpy(&n.ssl.info, info, sizeof(struct am_ssl_options));
+        memcpy(&conn.ssl.info, info, sizeof(struct am_ssl_options));
     }
 
     request_data.event = create_event();
@@ -1127,44 +1126,62 @@ int am_url_validate(unsigned long instance_id, const char* url, struct am_ssl_op
         return AM_ENOMEM;
     }
 
-    n.data = &request_data;
-    n.on_connected = on_connected_cb;
-    n.on_close = on_close_cb;
-    n.on_data = on_agent_request_data_cb;
-    n.on_complete = on_complete_cb;
+    conn.data = &request_data;
+    conn.on_connected = on_connected_cb;
+    conn.on_close = on_close_cb;
+    conn.on_data = on_agent_request_data_cb;
+    conn.on_complete = on_complete_cb;
 
-    if (am_net_connect(&n) == 0) {
+    if (am_net_connect(&conn) == 0) {
         AM_LOG_DEBUG(instance_id, "am_net_connect(%s) returns zero", url);
+        if (log != NULL) {
+            log("am_net_connect(%s) returns zero", url);
+        }
         get_sz = am_asprintf(&get, "HEAD %s HTTP/1.1\r\n"
                 "Host: %s:%d\r\n"
                 "User-Agent: "MODINFO"\r\n"
                 "Accept: text/plain\r\n"
                 "Connection: close\r\n\r\n",
-                n.uv.path, n.uv.host, n.uv.port);
+                conn.uv.path, conn.uv.host, conn.uv.port);
         if (get != NULL) {
             AM_LOG_DEBUG(instance_id, "%s sending request:\n%s", thisfunc, get);
-            status = am_net_write(&n, get, get_sz);
+            if (log != NULL) {
+                log("%s sending request:\n%s", thisfunc, get);
+            }
+            status = am_net_write(&conn, get, get_sz);
             free(get);
         }
     } else {
         AM_LOG_DEBUG(instance_id, "am_net_connect(%s) returns NON zero", url);
+        if (log != NULL) {
+            log("am_net_connect(%s) returns NON zero", url);
+        }
     }
 
     AM_LOG_DEBUG(instance_id, "status is set to %d", status);
+    if (log != NULL) {
+        log("status is set to %d", status);
+    }
 
     if (status == AM_SUCCESS) {
         wait_for_event(request_data.event, 0);
     } else {
         AM_LOG_DEBUG(instance_id, "%s disconnecting", thisfunc);
-        am_net_diconnect(&n);
+        if (log != NULL) {
+            log("%s disconnecting", thisfunc);
+        }
+        am_net_diconnect(&conn);
     }
 
-    AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, n.http_status);
+    AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, conn.http_status);
+    if (log != NULL) {
+        log("%s response status code: %d", thisfunc, conn.http_status);
+    }
     if (httpcode) {
-        *httpcode = n.http_status;
+        *httpcode = conn.http_status;
     }
 
-    am_net_close(&n);
+    am_net_close(&conn);
     close_event(request_data.event);
 
     am_free(request_data.data);

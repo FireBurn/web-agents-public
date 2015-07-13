@@ -300,19 +300,18 @@ static int create_agent_instance(int status,
     char* created_name_path = NULL;
     char* created_name_simple = NULL;
     char* agent_conf_template = NULL;
+    size_t agent_conf_template_sz = 0;
     
     if (am_create_agent_dir(FILE_PATH_SEP, instance_path,
                             &created_name_path, &created_name_simple,
-                            uid, gid) != 0) {
+                            uid, gid, install_log) != 0) {
         install_log("failed to create agent instance configuration directories");
         AM_FREE(created_name_path, created_name_simple);
         return rv;
     }
 
     install_log("agent instance configuration directories created");
-
-    size_t agent_conf_template_sz = 0;
-
+    
     /* create agent configuration file (from a template) */
     agent_conf_template = load_file(config_template, &agent_conf_template_sz);
     if (agent_conf_template != NULL) {
@@ -343,7 +342,7 @@ static int create_agent_instance(int status,
             rv = string_replace(&agent_conf_template, AM_INSTALL_OPENAMURL, openam_url, &agent_conf_template_sz);
             if (rv != AM_SUCCESS) {
                 break;
-            }
+            } 
 
             rv = parse_url(agent_url, &u);
             if (rv != AM_SUCCESS) {
@@ -640,6 +639,9 @@ static void find_user(char* httpd_conf_file, uid_t** uid, gid_t** gid) {
  */
 static void find_group(char* httpd_conf_file, gid_t** gid) {
 #ifdef _WIN32
+    if (gid != NULL) {
+        *gid = NULL;
+    }
 #else
     char* p;
     char buff[AM_USER_GROUP_NAME_LIMIT];
@@ -751,7 +753,7 @@ static void install_interactive(int argc, char **argv) {
         if (ISVALID(input) && strcasecmp(input, "yes") == 0) {
             install_log("license accepted");
             lic_accepted = AM_TRUE;
-            am_make_path(instance_path, NULL, NULL);
+            am_make_path(instance_path, NULL, NULL, install_log);
             write_file(license_tracker_path, AM_SPACE_CHAR, 1);
         }
         am_free(input);
@@ -815,8 +817,12 @@ static void install_interactive(int argc, char **argv) {
                             input);
                     install_log("unable to load server configuration file %s", input);
                 }
-
-#if !defined(_WIN32) && !defined(SOLARIS)
+#ifdef _WIN32
+                am_free(uid);
+                am_free(gid);
+                uid = NULL;
+                gid = NULL;
+#else
                 /**
                  * If not running as root, we cannot offer to chown directories.
                  */
@@ -826,7 +832,7 @@ static void install_interactive(int argc, char **argv) {
                     uid = NULL;
                     gid = NULL;
                 }
-#endif
+
                 /**
                  * If we have a uid and gid by this stage, actually ask the user if they want us to chown the
                  * directories we create.  This saves a lot of guesswork looking at "Listen" values in the
@@ -843,7 +849,7 @@ static void install_interactive(int argc, char **argv) {
                         gid = NULL;
                     }
                 }
-
+#endif
                 free(input);
                 
                 break; /* avoid fall through into IIS */
@@ -910,7 +916,7 @@ static void install_interactive(int argc, char **argv) {
             if (ISVALID(input)) {
                 strncpy(openam_url, input, sizeof(openam_url) - 1);
                 install_log("OpenAM URL %s", openam_url);
-                if (am_url_validate(0, openam_url, NULL, &httpcode) == AM_SUCCESS) {
+                if (am_url_validate(0, openam_url, NULL, &httpcode, install_log) == AM_SUCCESS) {
                     inner_loop = AM_FALSE;
                 } else {
                     fprintf(stdout, "Cannot connect to OpenAM at URI %s, please make sure OpenAM is started\n", openam_url);
@@ -937,7 +943,7 @@ static void install_interactive(int argc, char **argv) {
                 strncpy(agent_url, input, sizeof(agent_url) - 1);
                 install_log("Agent URL %s", agent_url);
 
-                if (am_url_validate(0, agent_url, NULL, &httpcode) != AM_SUCCESS) {
+                if (am_url_validate(0, agent_url, NULL, &httpcode, install_log) != AM_SUCCESS) {
                     /* hopefully we cannot contact because the agent is not running,
                      * rather than because the URI is complete rubbish
                      */
@@ -1050,6 +1056,8 @@ static void install_interactive(int argc, char **argv) {
     if (agent_token != NULL) {
         fprintf(stdout, "\nCleaning up validation data...\n");
         am_agent_logout(0, openam_url, agent_token, NULL, NULL, install_log);
+        free(agent_token);
+        agent_token = NULL;
     }
 
     if (validated) {
@@ -1094,7 +1102,7 @@ static void install_interactive(int argc, char **argv) {
  * The important thing to know about the way this function works is that the arguments are:
  *
  * argv[1] == --s
- * argv[2] = http conf file path
+ * argv[2] = Apache: path to httpd.conf file; IIS: SiteId; Varnish: path to VMODS directory
  * argv[3] = OpenAM URL
  * argv[4] = Agent URL
  * argv[5] = Realm
@@ -1125,7 +1133,7 @@ static void install_silent(int argc, char** argv) {
         if (ISVALID(input) && strcasecmp(input, "yes") == 0) {
             install_log("license accepted");
             lic_accepted = AM_TRUE;
-            am_make_path(instance_path, NULL, NULL);
+            am_make_path(instance_path, NULL, NULL, install_log);
             write_file(license_tracker_path, AM_SPACE_CHAR, 1);
         }
         am_free(input);
@@ -1145,36 +1153,38 @@ static void install_silent(int argc, char** argv) {
         char validated = AM_FALSE;
         char *agent_token = NULL;
         char *agent_password;
-        uid_t* uid = NULL;
-        gid_t* gid = NULL;
-        char* conf;
-        
-        conf = load_file(argv[2], NULL);
-        if (conf != NULL) {
-            find_user(conf, &uid, &gid);
-            find_group(conf, &gid);
-            free(conf);
-        } else {
-            fprintf(stderr, "\nError reading config file %s. Exiting.\n", argv[2]);
-            install_log("exiting install because config file %s is not readable", argv[2]);
-            exit(1);
-        }
-#if !defined(_WIN32) && !defined(SOLARIS)
-        /**
-         * If not running as root, we cannot offer to chown directories.
-         */
-        if (getuid() != 0) {
-            am_free(uid);
-            am_free(gid);
-            uid = NULL;
-            gid = NULL;
-        }
+        uid_t *uid = NULL;
+        gid_t *gid = NULL;
+        char *conf;
+
+        if (instance_type == AM_I_APACHE) {
+            conf = load_file(argv[2], NULL);
+            if (conf != NULL) {
+                find_user(conf, &uid, &gid);
+                find_group(conf, &gid);
+                free(conf);
+            } else {
+                fprintf(stderr, "\nError reading config file %s. Exiting.\n", argv[2]);
+                install_log("exiting install because config file %s is not readable", argv[2]);
+                exit(1);
+            }
+#if !defined(_WIN32)
+            /**
+             * If not running as root, we cannot offer to chown directories.
+             */
+            if (getuid() != 0) {
+                am_free(uid);
+                am_free(gid);
+                uid = NULL;
+                gid = NULL;
+            }
 #endif
-        if (argc >= 8 && strcasecmp(argv[8], "n") == 0) {
-            am_free(uid);
-            am_free(gid);
-            uid = NULL;
-            gid = NULL;
+            if (argc >= 8 && strcasecmp(argv[8], "n") == 0) {
+                am_free(uid);
+                am_free(gid);
+                uid = NULL;
+                gid = NULL;
+            }
         }
 
         agent_password = load_file(argv[7], NULL);
@@ -1191,7 +1201,7 @@ static void install_silent(int argc, char** argv) {
 
         install_log("validating configuration parameters...");
         fprintf(stdout, "\nValidating...\n");
-
+        
         rv = am_agent_login(0, argv[3], NULL,
                 argv[6], agent_password, argv[5], AM_TRUE, 0, NULL,
                 &agent_token, NULL, NULL, NULL, install_log);
@@ -1199,6 +1209,7 @@ static void install_silent(int argc, char** argv) {
             fprintf(stdout, "\nError validating OpenAM - Agent configuration.\n"
                     "See installation log %s file for more details. Exiting.\n", log_path);
             install_log("error validating OpenAM agent configuration");
+            am_free(agent_token);
             exit(1);
         } else {
             fprintf(stdout, "\nValidating... Success.\n");
@@ -1209,6 +1220,8 @@ static void install_silent(int argc, char** argv) {
         if (agent_token != NULL) {
             fprintf(stdout, "\nCleaning up validation data...\n");
             am_agent_logout(0, argv[3], agent_token, NULL, NULL, install_log);
+            free(agent_token);
+            agent_token = NULL;
         }
 
         if (validated) {
@@ -1428,13 +1441,6 @@ static void disable_iis_mod(int argc, char **argv) {
     delete_conf_entry_list(&list);
 }
 
-/**
- * Enable debugging, i.e. logging.  Once we do this, everything will be logged.
- */
-static void enable_debug(int argc, char* argv[]) {
-    zero_instance_logging_wanted(AM_TRUE);
-}
-
 static void archive_files(int argc, char **argv) {
     int i;
     time_t tv;
@@ -1562,16 +1568,6 @@ int main(int argc, char **argv) {
         { "--a", archive_files },
         { NULL }
     };
-
-    /**
-     * This is my solution to logging.  If the user defines this environment variable
-     * (no matter what its value), then logging to the console is enabled.  I tried
-     * a command line flag, --x, but the flags are very much "one off" and inserting
-     * another command line argument throws everything out.
-     */
-    if (getenv("AGENT_INSTALL_DEBUG") != NULL) {
-        zero_instance_logging_wanted(AM_TRUE);
-    }
     
     if (argc > 1) {
         uid_t* uid = NULL;
@@ -1590,7 +1586,7 @@ int main(int argc, char **argv) {
         snprintf(log_path, sizeof(log_path),
                 "%s.."FILE_PATH_SEP"log",
                 app_path);
-        am_make_path(log_path, uid, gid);
+        am_make_path(log_path, uid, gid, install_log);
         strcat(log_path, FILE_PATH_SEP"install_");
         strcat(log_path, tm);
         strcat(log_path, ".log");
@@ -1631,7 +1627,7 @@ int main(int argc, char **argv) {
         if (file_exists(instance_type_mod)) {
             instance_type = AM_I_VARNISH;
         }
-
+       
         if (instance_type == AM_I_APACHE) {
             conf = load_file(argv[2], NULL);
             if (conf != NULL) {

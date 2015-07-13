@@ -178,7 +178,8 @@ void am_shm_set_user_offset(am_shm_t *r, size_t s);
 void am_shm_info(am_shm_t *);
 void am_shm_destroy(am_shm_t* am);
 
-int am_create_agent_dir(const char *sep, const char *path, char **created_name, char **created_name_simple, uid_t* uid, gid_t* gid);
+int am_create_agent_dir(const char *sep, const char *path, char **created_name, 
+        char **created_name_simple, uid_t* uid, gid_t* gid, void (*log)(const char *, ...));
 
 int decrypt_password(const char *key, char **password);
 int encrypt_password(const char *key, char **password);
@@ -229,7 +230,7 @@ char* am_strldup(const char* src);
 
 int compare_property(const char *line, const char *property);
 
-int am_make_path(const char *path, uid_t* uid, gid_t* gid);
+int am_make_path(const char *path, uid_t* uid, gid_t* gid, void (*log)(const char *, ...));
 int am_delete_file(const char *fn);
 int am_delete_directory(const char *path);
 
@@ -255,7 +256,8 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
         struct am_namevalue **session_list,
         struct am_policy_result **policy_list);
 
-int am_url_validate(unsigned long instance_id, const char *url, struct am_ssl_options *info, int *httpcode);
+int am_url_validate(unsigned long instance_id, const char *url, 
+        struct am_ssl_options *info, int *httpcode, void(*log)(const char *, ...));
 
 void *am_parse_session_xml(unsigned long instance_id, const char *xml, size_t xml_sz);
 void *am_parse_session_saml(unsigned long instance_id, const char *xml, size_t xml_sz);
