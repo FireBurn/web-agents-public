@@ -172,6 +172,7 @@ int am_shm_lock(am_shm_t *);
 am_shm_t *am_shm_create(const char *, size_t);
 void am_shm_shutdown(am_shm_t *);
 void *am_shm_alloc(am_shm_t *am, size_t usize);
+void *am_shm_alloc_and_purge(am_shm_t *am, size_t usize, int (*purge_f)(void));
 void am_shm_free(am_shm_t *am, void *ptr);
 void *am_shm_realloc(am_shm_t *am, void *ptr, size_t size);
 void am_shm_set_user_offset(am_shm_t *r, size_t s);

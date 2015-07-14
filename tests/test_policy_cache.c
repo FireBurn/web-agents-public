@@ -29,6 +29,7 @@
 void* am_parse_policy_xml(unsigned long instance_id, const char* xml, size_t xml_sz, int scope);
 void am_worker_pool_init_reset();
 void am_net_init_ssl_reset();
+int am_purge_caches(time_t expiry_time);
 
 char* policy_xml = "<PolicyService version='1.0' revisionNumber='60'>"
     "<PolicyResponse requestId='4' issueInstant='1424783306343' >"
@@ -339,27 +340,27 @@ void create_random_cache_key(char * buffer, size_t size)
     buffer[count] = 0;
 }
 
-static void test_cache(int test_size, am_request_t * request, struct am_policy_result * result)
+static void test_cache_with_seed(int seed, int test_size, am_request_t * request, struct am_policy_result * result)
 {
     int i;
     char key[64];
     
     /* create initial entries */
-    srand(543542);
+    srand(seed);
     for(i = 0; i < test_size; i++) {
         create_random_cache_key(key, sizeof(key));
         assert_int_equal(am_add_session_policy_cache_entry(request, key, result, NULL), AM_SUCCESS);
     }
     
     /* should refresh the whole lot */
-    srand(543542);
+    srand(seed);
     for(i = 0; i < test_size; i++) {
         create_random_cache_key(key, sizeof(key));
         assert_int_equal(am_add_session_policy_cache_entry(request, key, result, NULL), AM_SUCCESS);
     }
     
     /* read them all back */
-    srand(543542);
+    srand(seed);
     for(i = 0; i < test_size; i++) {
         time_t ets;
         struct am_policy_result * r = NULL;
@@ -370,6 +371,11 @@ static void test_cache(int test_size, am_request_t * request, struct am_policy_r
         test_policy_structure(r);
     }
 }
+
+static void test_cache(int test_size, am_request_t * request, struct am_policy_result * result) {
+    test_cache_with_seed(543542, test_size, request, result);
+}
+
 
 static void test_cache_keys(int test_size, char** keys, am_request_t* request, struct am_policy_result* result)
 {
@@ -430,6 +436,84 @@ void test_policy_cache_many_entries(void **state) {
     am_worker_pool_init_reset();
     am_net_init_ssl_reset();
 }
+
+void test_policy_cache_purge_many_entries(void **state) {
+    
+    const int test_size = 198;
+    char* buffer = NULL;
+    struct am_policy_result * result;
+    
+    am_config_t config;
+    am_request_t request;
+    
+    memset(&config, 0, sizeof(am_config_t));
+    memset(&request, 0, sizeof(am_request_t));
+    request.conf = &config;
+    
+    am_asprintf(&buffer, pll, policy_xml);
+    result = am_parse_policy_xml(0l, buffer, strlen(buffer), 0);
+    
+    free(buffer);
+    
+    // destroy the cache, if it exists
+    am_cache_destroy();
+    assert_int_equal(am_init(), AM_SUCCESS);
+    am_init_worker();
+    
+    test_cache(test_size, &request, result);
+ 
+    assert_int_equal(am_purge_caches(time(NULL) + 10), test_size);
+
+    delete_am_policy_result_list(&result);
+    
+    am_shutdown_worker();
+    am_cache_destroy();
+    am_worker_pool_init_reset();
+    am_net_init_ssl_reset();
+}
+
+void test_policy_cache_purge_during_insert(void **state) {
+    
+    const int test_size = 198;
+    char* buffer = NULL;
+    struct am_policy_result * result;
+    
+    am_config_t config;
+    am_request_t request;
+    
+    memset(&config, 0, sizeof(am_config_t));
+    memset(&request, 0, sizeof(am_request_t));
+    request.conf = &config;
+    
+    am_asprintf(&buffer, pll, policy_xml);
+    result = am_parse_policy_xml(0l, buffer, strlen(buffer), 0);
+    
+    free(buffer);
+    
+    // destroy the cache, if it exists
+    am_cache_destroy();
+    assert_int_equal(am_init(), AM_SUCCESS);
+    am_init_worker();
+    
+    test_cache(test_size, &request, result);
+    
+    // wait 2 seconds for the TTL to expire
+    sleep(2);
+
+    // another 10 is too many without the purge functionality
+    test_cache_with_seed(321213, 10, &request, result);
+    
+    // check that there are only these 10 left
+    assert_int_equal(am_purge_caches(time(NULL) + 10), 10);
+    
+    delete_am_policy_result_list(&result);
+    
+    am_shutdown_worker();
+    am_cache_destroy();
+    am_worker_pool_init_reset();
+    am_net_init_ssl_reset();
+}
+
 
 
 /**

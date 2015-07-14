@@ -571,7 +571,13 @@ static int am_shm_extend(am_shm_t *am, size_t usize) {
     return rv;
 }
 
-void *am_shm_alloc(am_shm_t *am, size_t usize) {
+/*
+ * This allocator will attempt to allocate, but on failure it will first try to purge
+ * from the memory pool (if the caller has passed a non-null purge_f argument), and then
+ * if the required usize cannot be allocated, it will try to resize the memory pool. It is
+ * unable to resize the pool on OS X
+ */
+void *am_shm_alloc_and_purge(am_shm_t *am, size_t usize, int (* purge_f)(void)) {
     struct mem_pool *pool;
     struct mem_chunk *e, *t, *n, *head, *cmin = NULL;
     void *ret = NULL;
@@ -638,9 +644,19 @@ void *am_shm_alloc(am_shm_t *am, size_t usize) {
     }
 
     if (ret == NULL) {
+        // purge obsolete cache data from the pool and retry allocation
+        if (purge_f != NULL) {
+            if (purge_f()) {
+                // some content was removed, so try to allocate again
+                am_shm_unlock(am);
+                return am_shm_alloc(am, usize);
+            }
+        }
+        
 #ifdef __APPLE__
         am->error = AM_EOPNOTSUPP;
 #else
+        // attempt to resize the memory pool
         if (pool->resize++ > AM_SHARED_MAX_RESIZE) {
             am->error = AM_ENOMEM;
         } else {
@@ -655,6 +671,14 @@ void *am_shm_alloc(am_shm_t *am, size_t usize) {
     am_shm_unlock(am);
     return ret;
 }
+
+/*
+ * This allocator will not call a routine to purge data before resize
+ */
+void *am_shm_alloc(am_shm_t *am, size_t usize) {
+    return am_shm_alloc_and_purge(am, usize, NULL);
+}
+
 
 void am_shm_free(am_shm_t *am, void *ptr) {
     size_t size;
