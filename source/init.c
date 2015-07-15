@@ -17,6 +17,7 @@
 #include "platform.h"
 #include "am.h"
 #include "net_client.h"
+#include "utility.h"
 
 #ifdef _WIN32
 
@@ -30,10 +31,10 @@ struct am_main_init init = {
     AM_ERROR
 };
 
-static void am_main_create() {
-    init.id = CreateMutex(NULL, FALSE, "Global\\am_main_init_lock");
+static void am_main_create(int id) {
+    init.id = CreateMutex(NULL, FALSE, get_global_name(AM_GLOBAL_PREFIX"am_main_init_lock", id));
     if (init.id == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
-        init.id = OpenMutexA(SYNCHRONIZE, TRUE, "Global\\am_main_init_lock");
+        init.id = OpenMutexA(SYNCHRONIZE, TRUE, get_global_name(AM_GLOBAL_PREFIX"am_main_init_lock", id));
     }
 }
 
@@ -68,21 +69,21 @@ static void am_main_init_unlock() {
 
 #endif
 
-int am_init() {
+int am_init(int id) {
     int rv = AM_SUCCESS;
 #ifndef _WIN32
     am_net_init();
-    am_log_init(AM_SUCCESS);
-    am_configuration_init();
-    rv = am_cache_init();
+    am_log_init(id, AM_SUCCESS);
+    am_configuration_init(id);
+    rv = am_cache_init(id);
 #endif
     return rv;
 }
 
-int am_shutdown() {
+int am_shutdown(int id) {
     am_cache_shutdown();
     am_configuration_shutdown();
-    am_log_shutdown();
+    am_log_shutdown(id);
 #ifdef _WIN32
     am_main_destroy();
 #else
@@ -91,14 +92,14 @@ int am_shutdown() {
     return 0;
 }
 
-int am_init_worker() {
+int am_init_worker(int id) {
 #ifdef _WIN32
     am_net_init();
-    am_main_create();
+    am_main_create(id);
     am_main_init_timed_lock();
-    am_log_init_worker(init.error);
-    am_configuration_init();
-    am_cache_init();
+    am_log_init_worker(id, init.error);
+    am_configuration_init(id);
+    am_cache_init(id);
 #endif
     am_worker_pool_init();
     return 0;

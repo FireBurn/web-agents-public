@@ -22,7 +22,7 @@ LINK = link
 RC = rc
 SHARED = /DLL
 
-CFLAGS  += /O2 /Oi /GL /Gy /D _CRT_SECURE_NO_WARNINGS /wd4996 /wd4101 /wd4244 /wd4995 /wd4275 \
+CFLAGS  += /O2 /Oi /GL /Gy /GT /D _CRT_SECURE_NO_WARNINGS /wd4996 /wd4101 /wd4244 /wd4995 /wd4275 \
 	/EHa /nologo /Zi /errorReport:none /MP /Gm- /W3 /c /TC /D WIN32 /D _WIN32 /D ZLIB_WINAPI /D PCRE_STATIC
 
 LDFLAGS += /SUBSYSTEM:CONSOLE /NOLOGO /INCREMENTAL:NO /errorReport:none /MANIFEST:NO \

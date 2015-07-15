@@ -25,6 +25,7 @@ typedef HANDLE am_thread_t;
 #define AM_MUTEX_DESTROY        DeleteCriticalSection
 #define AM_THREAD_CREATE(t,f,a) do { t = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) f, a, 0, NULL); } while(0)
 #define AM_THREAD_JOIN(t)       WaitForSingleObject(t, INFINITE)
+#define AM_THREAD_LOCAL         __declspec(thread)
 #else
 typedef pthread_mutex_t am_mutex_t;
 typedef pthread_t am_thread_t;
@@ -33,6 +34,7 @@ typedef pthread_t am_thread_t;
 #define AM_MUTEX_DESTROY        pthread_mutex_destroy
 #define AM_THREAD_CREATE(t,f,a) pthread_create(&(t), NULL, f, a)
 #define AM_THREAD_JOIN(t)       pthread_join(t, NULL)
+#define AM_THREAD_LOCAL         __thread
 #endif
 
 typedef struct {

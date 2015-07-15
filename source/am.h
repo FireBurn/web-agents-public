@@ -88,6 +88,12 @@ typedef enum {
 #define AM_LOG_MESSAGE_SIZE         16384
 #endif
 
+/* Default agent id.
+ * Used in: a) unit tests, 
+ * b) webserver environments which do not support multiple server instances.
+ */
+#define AM_DEFAULT_AGENT_ID         0 
+
 #define EMPTY               "(empty)"
 #define LOGEMPTY(x)         (x == NULL ? EMPTY : x)
 #define NOTNULL(x)          (x == NULL ? "" : x)
@@ -293,14 +299,14 @@ void am_request_free(am_request_t *r);
 const char *am_method_num_to_str(int method);
 int am_method_str_to_num(const char *method_str);
 
-int am_init();
-int am_init_worker();
-int am_shutdown();
+int am_init(int id);
+int am_init_worker(int id);
+int am_shutdown(int id);
 int am_shutdown_worker();
 
-int am_configuration_init();
+int am_configuration_init(int id);
 int am_configuration_shutdown();
-int am_cache_init();
+int am_cache_init(int id);
 int am_cache_shutdown();
 void am_cache_destroy();
 
@@ -308,9 +314,9 @@ int am_log_get_current_owner();
 int am_re_init_worker();
 void am_log_re_init(int status);
 
-void am_log_init(int s);
-void am_log_init_worker(int s);
-void am_log_shutdown();
+void am_log_init(int id, int s);
+void am_log_init_worker(int id, int s);
+void am_log_shutdown(int id);
 void am_log_register_instance(unsigned long instance_id, const char *debug_log, int log_level, int log_size,
         const char *audit_log, int audit_level, int audit_size);
 

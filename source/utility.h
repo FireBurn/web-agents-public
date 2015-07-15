@@ -172,7 +172,7 @@ int am_shm_lock(am_shm_t *);
 am_shm_t *am_shm_create(const char *, size_t);
 void am_shm_shutdown(am_shm_t *);
 void *am_shm_alloc(am_shm_t *am, size_t usize);
-void *am_shm_alloc_and_purge(am_shm_t *am, size_t usize, int (*purge_f)(void));
+void *am_shm_alloc_and_purge(am_shm_t *am, size_t usize, int (*purge_f)());
 void am_shm_free(am_shm_t *am, void *ptr);
 void *am_shm_realloc(am_shm_t *am, void *ptr, size_t size);
 void am_shm_set_user_offset(am_shm_t *r, size_t s);
@@ -284,10 +284,10 @@ void remove_agent_instance_byname(const char *name);
 
 void am_agent_init_set_value(unsigned long instance_id, char lock, int val);
 int am_agent_init_get_value(unsigned long instance_id, char lock);
-int am_agent_instance_init_init();
+int am_agent_instance_init_init(int id);
 void am_agent_instance_init_lock();
 void am_agent_instance_init_unlock();
-void am_agent_instance_init_release(char unlink);
+void am_agent_instance_init_release(int id, char unlink);
 
 void am_agent_init_set_value(unsigned long instance_id, char lock, int val);
 
@@ -309,5 +309,6 @@ void* mem2cpy(void* dest, const void* source1, size_t size1, const void* source2
 void* mem3cpy(void* dest, const void* source1, size_t size1, const void* source2, size_t size2, const void* source3, size_t size3);
 
 void update_agent_configuration_ttl(am_config_t *c);
+char *get_global_name(const char *name, int id);
 
 #endif

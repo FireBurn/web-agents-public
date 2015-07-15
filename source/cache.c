@@ -98,11 +98,11 @@ am_shm_t* get_cache(void) {
     return cache;
 }
 
-int am_cache_init() {
+int am_cache_init(int id) {
     size_t i;
     if (cache != NULL) return AM_SUCCESS;
 
-    cache = am_shm_create("am_shared_cache", sizeof(struct am_cache) +
+    cache = am_shm_create(get_global_name("am_shared_cache", id), sizeof(struct am_cache) +
             (sizeof(struct am_cache_entry) + sizeof(struct am_cache_entry_data)) * 2048);
     if (cache == NULL) {
         return AM_ERROR;

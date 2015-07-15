@@ -441,11 +441,11 @@ void am_log_re_init(int status) {
 
 /*****************************************************************************************/
 
-void am_log_init(int status) {
+void am_log_init(int id, int status) {
     int i;
     char opened = 0;
 
-    am_agent_instance_init_init();
+    am_agent_instance_init_init(id);
 
     if (am_log_handle == NULL) {
         am_log_handle = (struct am_shared_log *) malloc(sizeof (struct am_shared_log));
@@ -463,7 +463,7 @@ void am_log_init(int status) {
 #else
             AM_GLOBAL_PREFIX"am_log_%d"
 #endif
-            , 0);
+            , id);
     am_log_handle->area_size = page_size(sizeof (struct am_log));
 
 #ifdef _WIN32
@@ -498,21 +498,21 @@ void am_log_init(int status) {
                 f->max_size_debug = f->max_size_audit = 0;
             }
 
-            am_log_lck.exit = CreateEvent(NULL, FALSE, FALSE, AM_GLOBAL_PREFIX"am_log_exit");
+            am_log_lck.exit = CreateEvent(NULL, FALSE, FALSE, get_global_name(AM_GLOBAL_PREFIX"am_log_exit", id));
             if (am_log_lck.exit == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
-                am_log_lck.exit = OpenEventA(SYNCHRONIZE, TRUE, AM_GLOBAL_PREFIX"am_log_exit");
+                am_log_lck.exit = OpenEventA(SYNCHRONIZE, TRUE, get_global_name(AM_GLOBAL_PREFIX"am_log_exit", id));
             }
-            am_log_lck.lock = CreateMutex(NULL, FALSE, AM_GLOBAL_PREFIX"am_log_lock");
+            am_log_lck.lock = CreateMutex(NULL, FALSE, get_global_name(AM_GLOBAL_PREFIX"am_log_lock", id));
             if (am_log_lck.lock == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
-                am_log_lck.lock = OpenMutexA(SYNCHRONIZE, TRUE, AM_GLOBAL_PREFIX"am_log_lock");
+                am_log_lck.lock = OpenMutexA(SYNCHRONIZE, TRUE, get_global_name(AM_GLOBAL_PREFIX"am_log_lock", id));
             }
-            am_log_lck.new_data_cond = CreateEvent(NULL, FALSE, FALSE, AM_GLOBAL_PREFIX"am_log_queue_empty");
+            am_log_lck.new_data_cond = CreateEvent(NULL, FALSE, FALSE, get_global_name(AM_GLOBAL_PREFIX"am_log_queue_empty", id));
             if (am_log_lck.new_data_cond == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
-                am_log_lck.new_data_cond = OpenEventA(SYNCHRONIZE, TRUE, AM_GLOBAL_PREFIX"am_log_queue_empty");
+                am_log_lck.new_data_cond = OpenEventA(SYNCHRONIZE, TRUE, get_global_name(AM_GLOBAL_PREFIX"am_log_queue_empty", id));
             }
-            am_log_lck.new_space_cond = CreateEvent(NULL, FALSE, FALSE, AM_GLOBAL_PREFIX"am_log_queue_overflow");
+            am_log_lck.new_space_cond = CreateEvent(NULL, FALSE, FALSE, get_global_name(AM_GLOBAL_PREFIX"am_log_queue_overflow", id));
             if (am_log_lck.new_space_cond == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
-                am_log_lck.new_space_cond = OpenEventA(SYNCHRONIZE, TRUE, AM_GLOBAL_PREFIX"am_log_queue_overflow");
+                am_log_lck.new_space_cond = OpenEventA(SYNCHRONIZE, TRUE, get_global_name(AM_GLOBAL_PREFIX"am_log_queue_overflow", id));
             }
 
             log->owner = getpid();
@@ -609,9 +609,9 @@ void am_log_init(int status) {
 
 /*****************************************************************************************/
 
-void am_log_init_worker(int status) {
+void am_log_init_worker(int id, int status) {
 #ifdef _WIN32
-    am_log_init(status);
+    am_log_init(id, status);
 #endif
 }
 
@@ -782,7 +782,7 @@ void am_log_write(unsigned long instance_id, int level, const char* header, int 
 #endif
 }
 
-void am_log_shutdown() {
+void am_log_shutdown(int id) {
     static const char *thisfunc = "am_log_shutdown():";
     int i;
     int pid = getpid();
@@ -862,7 +862,7 @@ void am_log_shutdown() {
     }
 #endif
 
-    am_agent_instance_init_release(AM_TRUE);
+    am_agent_instance_init_release(id, AM_TRUE);
 
     free(am_log_handle);
     am_log_handle = NULL;
@@ -1026,10 +1026,10 @@ void set_valid_url_index(unsigned long instance_id, int value) {
 #endif
 }
 
-int am_agent_instance_init_init() {
+int am_agent_instance_init_init(int id) {
     int status = AM_ERROR;
 #if defined(_WIN32)
-    ic_sem = CreateSemaphoreA(NULL, 1, 1, "Global\\"AM_CONFIG_INIT_NAME);
+    ic_sem = CreateSemaphoreA(NULL, 1, 1, get_global_name("Global\\"AM_CONFIG_INIT_NAME, id));
     if (ic_sem != NULL) {
         status = AM_SUCCESS;
     }
@@ -1039,7 +1039,7 @@ int am_agent_instance_init_init() {
         status = AM_SUCCESS;
     }
 #else
-    ic_sem = sem_open(AM_CONFIG_INIT_NAME, O_CREAT, 0600, 1);
+    ic_sem = sem_open(get_global_name(AM_CONFIG_INIT_NAME, id), O_CREAT, 0600, 1);
     if (ic_sem != SEM_FAILED) {
         status = AM_SUCCESS;
     }
@@ -1067,7 +1067,7 @@ void am_agent_instance_init_unlock() {
 #endif 
 }
 
-void am_agent_instance_init_release(char unlink) {
+void am_agent_instance_init_release(int id, char unlink) {
 #if defined(_WIN32)
     CloseHandle(ic_sem);
 #elif defined(__APPLE__)
@@ -1075,7 +1075,7 @@ void am_agent_instance_init_release(char unlink) {
 #else
     sem_close(ic_sem);
     if (unlink) {
-        sem_unlink(AM_CONFIG_INIT_NAME);
+        sem_unlink(get_global_name(AM_CONFIG_INIT_NAME, id));
     }
 #endif
 }

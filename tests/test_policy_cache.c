@@ -310,8 +310,8 @@ void test_policy_cache_simple(void **state) {
     
     // destroy the cache, if it exists
     am_cache_destroy();
-    assert_int_equal(am_init(), AM_SUCCESS);
-    am_init_worker();
+    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
+    am_init_worker(AM_DEFAULT_AGENT_ID);
         
     am_add_session_policy_cache_entry(&request, "Policy-key", result, NULL);
     am_get_session_policy_cache_entry(&request, "Policy-key", &r, &session, &ets);
@@ -424,8 +424,8 @@ void test_policy_cache_many_entries(void **state) {
     
     // destroy the cache, if it exists
     am_cache_destroy();
-    assert_int_equal(am_init(), AM_SUCCESS);
-    am_init_worker();
+    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
+    am_init_worker(AM_DEFAULT_AGENT_ID);
         
     test_cache(test_size, &request, result);
     
@@ -457,8 +457,8 @@ void test_policy_cache_purge_many_entries(void **state) {
     
     // destroy the cache, if it exists
     am_cache_destroy();
-    assert_int_equal(am_init(), AM_SUCCESS);
-    am_init_worker();
+    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
+    am_init_worker(AM_DEFAULT_AGENT_ID);
     
     test_cache(test_size, &request, result);
  
@@ -492,8 +492,8 @@ void test_policy_cache_purge_during_insert(void **state) {
     
     // destroy the cache, if it exists
     am_cache_destroy();
-    assert_int_equal(am_init(), AM_SUCCESS);
-    am_init_worker();
+    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
+    am_init_worker(AM_DEFAULT_AGENT_ID);
     
     test_cache(test_size, &request, result);
     
@@ -540,8 +540,8 @@ void test_policy_cache_with_many_different_entries_single_session(void **state) 
     // destroy the cache, if it exists
     am_cache_destroy();
     
-    assert_int_equal(am_init(), AM_SUCCESS);
-    am_init_worker();
+    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
+    am_init_worker(AM_DEFAULT_AGENT_ID);
     
     create_random_cache_key(fake_session, sizeof(fake_session));
     
@@ -667,7 +667,7 @@ void test_policy_cache_multithread() {
             keys[i] = strdup(key_buffer);
         }
 
-        assert_int_equal(am_cache_init(), AM_SUCCESS);
+        assert_int_equal(am_cache_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
 
         fprintf(stdout, "info: started multithreaded cache tests.. ");
         fflush(stdout);

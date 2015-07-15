@@ -24,6 +24,9 @@
 #include "log.h"
 #include "cmocka.h"
 
+void am_worker_pool_init_reset();
+void am_net_init_ssl_reset();
+
 /**
  * This is the simplest of tests to check we can log things without crashing.
  *
@@ -95,7 +98,7 @@ void logging_setup(int logging_level) {
     // destroy the cache, if it exists
     am_cache_destroy();
     
-    assert_int_equal(am_init(), AM_SUCCESS);
+    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
     
     sprintf(log_file_name, "log%d", rand() % 1000000);
     
@@ -105,14 +108,14 @@ void logging_setup(int logging_level) {
     am_log_register_instance(getpid(),
                              log_file_name, logging_level, TEN_MB,
                              audit_file_name, AM_LOG_LEVEL_AUDIT, ONE_MB);
-    am_init_worker();
+    am_init_worker(AM_DEFAULT_AGENT_ID);
 }
 
 /**
  * Tear down everything after doing some logging.
  */
 void logging_teardown() {
-    am_log_shutdown();
+    am_log_shutdown(AM_DEFAULT_AGENT_ID);
     am_shutdown_worker();
     am_cache_destroy();
     am_worker_pool_init_reset();

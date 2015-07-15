@@ -1258,7 +1258,7 @@ class OpenAMHttpModuleFactory : public IHttpModuleFactory{
 
     OpenAMHttpModuleFactory() {
         eventLog = RegisterEventSource(NULL, "IISADMIN");
-        am_init_worker();
+        am_init_worker(AM_DEFAULT_AGENT_ID);
     }
 
     ~OpenAMHttpModuleFactory() {
@@ -1288,7 +1288,7 @@ class OpenAMHttpModuleFactory : public IHttpModuleFactory{
 
     virtual void Terminate() {
         am_shutdown_worker();
-        am_shutdown();
+        am_shutdown(AM_DEFAULT_AGENT_ID);
         delete this;
     }
 

@@ -577,7 +577,7 @@ static int am_shm_extend(am_shm_t *am, size_t usize) {
  * if the required usize cannot be allocated, it will try to resize the memory pool. It is
  * unable to resize the pool on OS X
  */
-void *am_shm_alloc_and_purge(am_shm_t *am, size_t usize, int (* purge_f)(void)) {
+void *am_shm_alloc_and_purge(am_shm_t *am, size_t usize, int (* purge_f)()) {
     struct mem_pool *pool;
     struct mem_chunk *e, *t, *n, *head, *cmin = NULL;
     void *ret = NULL;

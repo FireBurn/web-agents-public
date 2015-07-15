@@ -2749,3 +2749,9 @@ void update_agent_configuration_ttl(am_config_t *conf) {
     /* com.sun.identity.agents.config.postcache.entry.lifetime */
     UPDATE_VALUE_TO_SEC(conf->pdp_cache_valid);
 }
+
+char *get_global_name(const char *name, int id) {
+    static AM_THREAD_LOCAL char out[AM_PATH_SIZE];
+    snprintf(out, sizeof(out), "%s_%d", name, id);
+    return out;
+}

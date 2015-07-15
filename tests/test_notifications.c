@@ -167,8 +167,8 @@ void test_simple_notification(void **state) {
     am_test_get_state_funcs(&func_array, &array_len);
     notification_handler = func_array[2];
     
-    assert_int_equal(am_init(), AM_SUCCESS);
-    am_init_worker();
+    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
+    am_init_worker(AM_DEFAULT_AGENT_ID);
     
     sleep(2); /* must wait till worker pool is all set */
     
@@ -178,7 +178,7 @@ void test_simple_notification(void **state) {
     sleep(2);
     
     am_shutdown_worker();
-    am_shutdown();
+    am_shutdown(AM_DEFAULT_AGENT_ID);
     am_worker_pool_init_reset();
     am_net_init_ssl_reset();
 }
@@ -302,8 +302,8 @@ void test_session_notification_on_policy_cache(void **state) {
     am_test_get_state_funcs(&func_array, &array_len);
     notification_handler = func_array [2];
     
-    assert_int_equal(am_init(), AM_SUCCESS);
-    am_init_worker();
+    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
+    am_init_worker(AM_DEFAULT_AGENT_ID);
     
     sleep(2); /* must wait till worker pool is all set */
     
@@ -324,7 +324,7 @@ void test_session_notification_on_policy_cache(void **state) {
     assert_int_equal(am_get_session_policy_cache_entry(&request, session_id, &r, &session, &ets), AM_NOT_FOUND);
     
     am_shutdown_worker();
-    am_shutdown();
+    am_shutdown(AM_DEFAULT_AGENT_ID);
     am_worker_pool_init_reset();
     am_net_init_ssl_reset();
 }
@@ -453,8 +453,8 @@ void test_resource_notification_on_policy_cache(void **state) {
     am_test_get_state_funcs(&func_array, &array_len);
     notification_handler = func_array [2];
     
-    assert_int_equal(am_init(), AM_SUCCESS);
-    am_init_worker();
+    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
+    am_init_worker(AM_DEFAULT_AGENT_ID);
     
     sleep(2); /* must wait till worker pool is all set */
     
@@ -480,7 +480,7 @@ void test_resource_notification_on_policy_cache(void **state) {
     delete_am_policy_result_list(&r);
 
     am_shutdown_worker();
-    am_shutdown();
+    am_shutdown(AM_DEFAULT_AGENT_ID);
     am_worker_pool_init_reset();
     am_net_init_ssl_reset();
 }

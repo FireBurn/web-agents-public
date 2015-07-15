@@ -62,6 +62,7 @@ typedef struct {
     int debug_size;
     int audit_size;
     int error;
+    int agent_id;
     unsigned long config_id;
 } amagent_config_t; /*per server config*/
 
@@ -92,6 +93,8 @@ static const char *am_set_opt(cmd_parms *c, void *cfg, const char *arg) {
         }
     } else if (strcmp(name, "AmAgent") == 0) {
         conf->enabled = !strcasecmp(arg, "on");
+    } else if (strcmp(name, "AmAgentId") == 0) {
+        conf->agent_id = strtol(arg, NULL, 10);
     }
     return NULL;
 }
@@ -100,15 +103,17 @@ static const char *am_set_opt(cmd_parms *c, void *cfg, const char *arg) {
 static const command_rec amagent_cmds[] = {
     AP_INIT_TAKE1("AmAgent", am_set_opt, NULL, RSRC_CONF, "Module enabled/disabled"),
     AP_INIT_TAKE1("AmAgentConf", am_set_opt, NULL, RSRC_CONF, "Module configuration file"),
+    AP_INIT_TAKE1("AmAgentId", am_set_opt, NULL, RSRC_CONF, "Module Id"),
     { NULL }
 };
 
 static apr_status_t amagent_cleanup(void *arg) {
     /* main process cleanup */
     server_rec *s = (server_rec *) arg;
+    amagent_config_t *config = ap_get_module_config(s->module_config, &amagent_module);
     LOG_S(APLOG_DEBUG, s, "amagent_cleanup() %d", getpid());
 #ifndef _WIN32
-    am_shutdown();
+    am_shutdown(config->agent_id);
 #endif
     return APR_SUCCESS;
 }
@@ -119,6 +124,7 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
     int status;
     apr_status_t rv = APR_SUCCESS;
     void *data;
+    amagent_config_t *config = ap_get_module_config(s->module_config, &amagent_module);
 
 #define AMAGENT_INIT_ONCE "AMAGENT_INIT_ONCE"
     apr_pool_userdata_get(&data, AMAGENT_INIT_ONCE, s->process->pool);
@@ -133,7 +139,7 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
     LOG_S(APLOG_DEBUG, s, "amagent_init() %d", getpid());
 
 #ifndef _WIN32
-    status = am_init();
+    status = am_init(config->agent_id);
     if (status != AM_SUCCESS) {
         rv = APR_EINIT;
         LOG_S(APLOG_ERR, s, "amagent_init() status: %s", am_strerror(status));
@@ -145,18 +151,22 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
 static apr_status_t amagent_worker_cleanup(void *arg) {
     /* worker process cleanup */
     server_rec *s = (server_rec *) arg;
+#ifdef _WIN32
+    amagent_config_t *config = ap_get_module_config(s->module_config, &amagent_module);
+#endif
     LOG_S(APLOG_DEBUG, s, "amagent_worker_cleanup() %d", getpid());
     am_shutdown_worker();
 #ifdef _WIN32
-    am_shutdown();
+    am_shutdown(config->agent_id);
 #endif
     return APR_SUCCESS;
 }
 
 static void amagent_worker_init(apr_pool_t *p, server_rec *s) {
     /* worker process init */
+    amagent_config_t *config = ap_get_module_config(s->module_config, &amagent_module);
     LOG_S(APLOG_DEBUG, s, "amagent_worker_init() %d", getpid());
-    am_init_worker();
+    am_init_worker(config->agent_id);
     apr_pool_cleanup_register(p, s, amagent_worker_cleanup, apr_pool_cleanup_null);
 }
 
@@ -171,6 +181,7 @@ static void *amagent_srv_config(apr_pool_t *p, server_rec *srv) {
         c->debug_level = 0;
         c->audit_level = 0;
         c->error = 0;
+        c->agent_id = 0;
     }
     return (void *) c;
 }
