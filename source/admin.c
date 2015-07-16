@@ -898,6 +898,9 @@ static void install_interactive(int argc, char **argv) {
     } while (error == AM_TRUE);
 
     am_bool_t outer_loop = AM_TRUE;
+    
+    am_net_init();
+    
     do {
         
         /**
@@ -1036,8 +1039,6 @@ static void install_interactive(int argc, char **argv) {
     
     install_log("validating configuration parameters...");
     fprintf(stdout, "\nValidating...\n");
-
-    am_net_init();
 
     rv = am_agent_login(0, openam_url, NULL,
             agent_user, agent_password, agent_realm, AM_TRUE, 0, NULL,
