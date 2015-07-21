@@ -339,7 +339,7 @@ static am_return_t handle_notification(am_request_t *r) {
 static am_return_t validate_fqdn_access(am_request_t *r) {
     static const char *thisfunc = "validate_fqdn_access():";
     int i;
-    am_return_t status = AM_OK;
+    int (*compare)(const char *, const char*);
 
     AM_LOG_DEBUG(r->instance_id, "%s", thisfunc);
 
@@ -348,68 +348,62 @@ static am_return_t validate_fqdn_access(am_request_t *r) {
         return AM_OK;
     }
 
-    if (!ISVALID(r->conf->fqdn_default)) {
+    if (ISINVALID(r->conf->fqdn_default)) {
         AM_LOG_WARNING(r->instance_id,
                 "%s failed - default fqdn value is not set", thisfunc);
+        r->status = AM_ACCESS_DENIED;
         return AM_FAIL;
     }
 
-    status = AM_FAIL;
+    compare = r->conf->url_eval_case_ignore ? strcasecmp : strcmp;
 
     /* check if its the default fqdn */
-    if (r->conf->url_eval_case_ignore) {
-        status = (strcasecmp(r->url.host, r->conf->fqdn_default) == 0) ? AM_OK : AM_FAIL;
-    } else {
-        status = (strcmp(r->url.host, r->conf->fqdn_default) == 0) ? AM_OK : AM_FAIL;
-    }
-
-    if (status == AM_OK) {
+    if (compare(r->url.host, r->conf->fqdn_default) == 0) {
         r->client_fqdn = r->conf->fqdn_default;
+        AM_LOG_DEBUG(r->instance_id, "%s host name %s is valid (maps to fqdn default: %s)",
+                thisfunc, r->url.host, LOGEMPTY(r->conf->fqdn_default));
+        return AM_OK;
     }
 
-    /* if not, check if its another valid fqdn */
-    if (status != AM_OK && r->conf->fqdn_map_sz > 0) {
-        for (i = 0; i < r->conf->fqdn_map_sz; i++) {
-            am_config_map_t *m = &r->conf->fqdn_map[i];
+    /* if not, look into map values first */
+    for (i = 0; i < r->conf->fqdn_map_sz; i++) {
+        am_config_map_t *m = &r->conf->fqdn_map[i];
+        if (ISVALID(m->name)) {
+
             AM_LOG_DEBUG(r->instance_id, "%s comparing a valid host name %s with %s",
                     thisfunc, LOGEMPTY(m->value), r->url.host);
-            if (r->conf->url_eval_case_ignore) {
-                status = (strcasecmp(r->url.host, NOTNULL(m->value)) == 0) ? AM_OK : AM_FAIL;
-            } else {
-                status = (strcmp(r->url.host, NOTNULL(m->value)) == 0) ? AM_OK : AM_FAIL;
-            }
 
-            /* still no match? look into a key value ('invalid') */
-            if (status != AM_OK) {
-                AM_LOG_DEBUG(r->instance_id,
-                        "%s comparing an invalid host name %s with %s",
-                        thisfunc, LOGEMPTY(m->name), r->url.host);
-                if (r->conf->url_eval_case_ignore) {
-                    status = (strcasecmp(r->url.host, NOTNULL(m->name)) == 0) ? AM_OK : AM_FAIL;
-                } else {
-                    status = (strcmp(r->url.host, NOTNULL(m->name)) == 0) ? AM_OK : AM_FAIL;
-                }
-            }
-
-            if (status == AM_OK) {
+            if (compare(r->url.host, NOTNULL(m->value)) == 0) {
                 r->client_fqdn = m->value;
-                break;
+                AM_LOG_DEBUG(r->instance_id, "%s host name %s is valid (maps to %s, key: %s)",
+                        thisfunc, r->url.host, r->client_fqdn, m->name);
+                return AM_OK;
             }
         }
     }
 
-    if (status == AM_OK) {
-        AM_LOG_DEBUG(r->instance_id, "%s host name %s is valid (maps to %s)",
-                thisfunc, r->url.host, LOGEMPTY(r->client_fqdn));
-        return AM_OK;
+    /* still no match? look into map keys now to get the value to redirect to */
+    for (i = 0; i < r->conf->fqdn_map_sz; i++) {
+        am_config_map_t *m = &r->conf->fqdn_map[i];
+        if (ISVALID(m->name) && strcasecmp(m->name, "valid") != 0) { /* ignore 'valid' keys */
+
+            AM_LOG_DEBUG(r->instance_id, "%s comparing an invalid host name %s with %s",
+                    thisfunc, m->name, r->url.host);
+
+            if (compare(r->url.host, m->name) == 0) {
+                r->client_fqdn = m->value;
+                AM_LOG_DEBUG(r->instance_id, "%s host name %s is valid (maps to %s, key: %s), will redirect",
+                        thisfunc, r->url.host, LOGEMPTY(r->client_fqdn), m->name);
+                r->status = AM_INVALID_FQDN_ACCESS;
+                return AM_FAIL;
+            }
+        }
     }
 
     AM_LOG_WARNING(r->instance_id,
-            "%s host name %s is not valid (no corresponding map value) ",
-            thisfunc, r->url.host);
-    r->status = AM_INVALID_FQDN_ACCESS;
-
-    return status;
+            "%s host name %s is not valid (no corresponding map value)", thisfunc, r->url.host);
+    r->status = AM_ACCESS_DENIED;
+    return AM_FAIL;
 }
 
 static am_bool_t url_matches_pattern(am_request_t *r, const char *pattern,
@@ -1189,11 +1183,11 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
     struct tm now;
     time_t raw;
     long sec;
-    char *cookie_value, *cookie = NULL;
+    char *cookie_value, *cookie = NULL, *name_tmp, *name_sep;
     int sep_count = 0;
 
     if (r == NULL || r->conf == NULL || r->am_add_header_in_response_f == NULL || !ISVALID(name)) return;
-
+    
     /* cookie-reset list can contain the following values:
      *  cookiename
      *  cookiename[=value][;Domain=value]
@@ -1205,7 +1199,7 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
      *  3 ==> name and domain
      */
     sep_count = ISVALID(value) ? 0 : char_count(name, '=', NULL);
-    if (sep_count == 1 && strstr(name, ";Domain=") != NULL) {
+    if (sep_count == 1 && stristr((char *) name, ";Domain=") != NULL) {
         sep_count = 3;
     }
 
@@ -1214,9 +1208,28 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
 
     /* set cookie name */
     if (cookie != NULL) {
-        am_asprintf(&cookie, "%s%s%s", cookie, name, sep_count == 0 ? "=" : "");
+        if (sep_count == 3) {
+            /* cookie-reset with "name and domain" is supplied without '=' after the name - add it here
+             * as otherwise cookie might not get reset in a browser
+             */
+            name_tmp = strdup(name);
+            if (name_tmp != NULL) {
+                name_sep = strchr(name_tmp, ';');
+                if (name_sep != NULL) {
+                    *name_sep++ = '\0';
+                    am_asprintf(&cookie, "%s%s=;%s", cookie, name_tmp, name_sep);
+                }
+                free(name_tmp);
+            } else {
+                AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
+                am_free(cookie);
+                return;
+            }
+        } else {
+            am_asprintf(&cookie, "%s%s%s", cookie, name, sep_count == 0 ? "=" : "");
+        }
     }
-
+    
     /* set cookie value */
     if (cookie != NULL) {
         cookie_value = r->conf->cookie_encode_chars ? url_encode((char *) value) : (char *) value;
@@ -1235,6 +1248,7 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
              * if not - try cookie_maxage parameter;
              * if none of the above is provided/valid use a default 300 sec value
              */
+            errno = 0;
             sec = ISVALID(maxage) ? strtol(maxage, NULL, AM_BASE_TEN)
                     : r->conf->cookie_maxage > 0 ? r->conf->cookie_maxage : 300;
             if (sec <= 0 || errno == ERANGE) {

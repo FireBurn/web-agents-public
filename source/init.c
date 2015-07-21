@@ -32,7 +32,7 @@ struct am_main_init init = {
 };
 
 static void am_main_create(int id) {
-    init.id = CreateMutex(NULL, FALSE, get_global_name(AM_GLOBAL_PREFIX"am_main_init_lock", id));
+    init.id = CreateMutexA(NULL, FALSE, get_global_name(AM_GLOBAL_PREFIX"am_main_init_lock", id));
     if (init.id == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
         init.id = OpenMutexA(SYNCHRONIZE, TRUE, get_global_name(AM_GLOBAL_PREFIX"am_main_init_lock", id));
     }

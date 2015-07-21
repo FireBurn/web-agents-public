@@ -279,7 +279,7 @@ am_event_t *create_event() {
     am_event_t *e = malloc(sizeof (am_event_t));
     if (e != NULL) {
 #ifdef _WIN32
-        e->e = CreateEvent(NULL, FALSE, FALSE, NULL);
+        e->e = CreateEventA(NULL, FALSE, FALSE, NULL);
 #else
         pthread_mutexattr_t a;
         pthread_mutexattr_init(&a);
@@ -297,7 +297,7 @@ am_exit_event_t *create_exit_event() {
     am_exit_event_t *e = malloc(sizeof (am_exit_event_t));
     if (e != NULL) {
 #ifdef _WIN32
-        e->e = CreateEvent(NULL, FALSE, FALSE, NULL);
+        e->e = CreateEventA(NULL, FALSE, FALSE, NULL);
 #else
         pthread_mutexattr_t a;
         pthread_mutexattr_init(&a);

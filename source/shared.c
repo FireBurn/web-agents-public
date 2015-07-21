@@ -43,7 +43,11 @@ struct mem_pool {
 int am_shm_lock(am_shm_t *am) {
     struct mem_pool *pool;
     int rv = AM_SUCCESS;
-
+#ifdef _WIN32
+    SECURITY_DESCRIPTOR sec_descr;
+    SECURITY_ATTRIBUTES sec_attr, *sec = NULL;
+#endif
+    
     /* once we enter the critical section, check if any other process hasn't 
      * re-mapped our segment somewhere else (compare local_size to global_size which
      * will differ after successful am_shm_resize)
@@ -54,7 +58,18 @@ int am_shm_lock(am_shm_t *am) {
         am->error = WaitForSingleObject(am->h[0], INFINITE);
     } while (am->error == WAIT_ABANDONED);
 
+    if (am->error == WAIT_FAILED) return AM_ERROR;
+    
     if (am->local_size != *(am->global_size)) {
+        
+        if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
+                SetSecurityDescriptorDacl(&sec_descr, TRUE, 0, FALSE)) {
+            sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
+            sec_attr.lpSecurityDescriptor = &sec_descr;
+            sec_attr.bInheritHandle = FALSE;
+            sec = &sec_attr;
+        } 
+
         if (UnmapViewOfFile(am->pool) == 0) {
             am->error = GetLastError();
             return AM_EFAULT;
@@ -63,7 +78,7 @@ int am_shm_lock(am_shm_t *am) {
             am->error = GetLastError();
             return AM_EFAULT;
         }
-        am->h[2] = CreateFileMappingA(am->h[1], NULL, PAGE_READWRITE, 0, (DWORD) *(am->global_size), NULL);
+        am->h[2] = CreateFileMappingA(am->h[1], sec, PAGE_READWRITE, 0, (DWORD) *(am->global_size), NULL);
         am->error = GetLastError();
         if (am->h[2] == NULL) {
             return AM_EFAULT;
@@ -212,6 +227,8 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
     DWORD error = 0;
     HMODULE hm = NULL;
     void *caller = _ReturnAddress();
+    SECURITY_DESCRIPTOR sec_descr;
+    SECURITY_ATTRIBUTES sec_attr, *sec = NULL;
 #else
     int fdflags;
     int error = 0;
@@ -253,6 +270,14 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
     size = page_size(usize + SIZEOF_mem_pool); /* need at least the size of the mem_pool header */
 
 #ifdef _WIN32
+    if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
+            SetSecurityDescriptorDacl(&sec_descr, TRUE, 0, FALSE)) {
+        sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
+        sec_attr.lpSecurityDescriptor = &sec_descr;
+        sec_attr.bInheritHandle = FALSE;
+        sec = &sec_attr;
+    }
+    
     ret->h[0] = CreateMutexA(NULL, TRUE, ret->name[0]);
     error = GetLastError();
     if (ret->h[0] != NULL && error == ERROR_ALREADY_EXISTS) {
@@ -271,12 +296,12 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
 
     ret->h[1] = CreateFileA(ret->name[2], GENERIC_WRITE | GENERIC_READ,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            NULL, CREATE_NEW, FILE_FLAG_WRITE_THROUGH | FILE_FLAG_NO_BUFFERING, NULL);
+            sec, CREATE_NEW, FILE_FLAG_WRITE_THROUGH | FILE_FLAG_NO_BUFFERING, NULL);
     error = GetLastError();
     if (ret->h[1] == INVALID_HANDLE_VALUE && error == ERROR_FILE_EXISTS) {
         ret->h[1] = CreateFileA(ret->name[2], GENERIC_WRITE | GENERIC_READ,
                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                NULL, OPEN_EXISTING, FILE_FLAG_WRITE_THROUGH | FILE_FLAG_NO_BUFFERING, NULL);
+                sec, OPEN_EXISTING, FILE_FLAG_WRITE_THROUGH | FILE_FLAG_NO_BUFFERING, NULL);
         error = GetLastError();
         if (ret->h[1] != INVALID_HANDLE_VALUE) {
             opened = AM_TRUE;
@@ -292,13 +317,13 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
     }
 
     if (!opened) {
-        ret->h[2] = CreateFileMappingA(ret->h[1], NULL, PAGE_READWRITE, 0, (DWORD) size, ret->name[1]);
+        ret->h[2] = CreateFileMappingA(ret->h[1], sec, PAGE_READWRITE, 0, (DWORD) size, ret->name[1]);
         error = GetLastError();
     } else {
         ret->h[2] = OpenFileMappingA(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, ret->name[1]);
         error = GetLastError();
         if (ret->h[2] == NULL && error == ERROR_FILE_NOT_FOUND) {
-            ret->h[2] = CreateFileMappingA(ret->h[1], NULL, PAGE_READWRITE, 0, (DWORD) size, ret->name[1]);
+            ret->h[2] = CreateFileMappingA(ret->h[1], sec, PAGE_READWRITE, 0, (DWORD) size, ret->name[1]);
             error = GetLastError();
         }
     }
@@ -322,7 +347,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         return ret;
     }
 
-    ret->h[3] = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, (DWORD) sizeof(size_t), ret->name[3]);
+    ret->h[3] = CreateFileMappingA(INVALID_HANDLE_VALUE, sec, PAGE_READWRITE, 0, (DWORD) sizeof(size_t), ret->name[3]);
     if (ret->h[3] == NULL) {
         ret->error = GetLastError();
         CloseHandle(ret->h[0]);
@@ -497,6 +522,10 @@ static BOOL resize_file(HANDLE file, size_t new_size) {
 static int am_shm_extend(am_shm_t *am, size_t usize) {
     size_t size, osize;
     int rv = AM_SUCCESS;
+#ifdef _WIN32
+    SECURITY_DESCRIPTOR sec_descr;
+    SECURITY_ATTRIBUTES sec_attr, *sec = NULL;
+#endif
 
     if (usize == 0 || am == NULL || am->pool == NULL) {
         return AM_EINVAL;
@@ -504,7 +533,16 @@ static int am_shm_extend(am_shm_t *am, size_t usize) {
 
     size = page_size(usize + SIZEOF_mem_pool);
 
-#ifdef _WIN32    
+#ifdef _WIN32
+
+    if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
+            SetSecurityDescriptorDacl(&sec_descr, TRUE, 0, FALSE)) {
+        sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
+        sec_attr.lpSecurityDescriptor = &sec_descr;
+        sec_attr.bInheritHandle = FALSE;
+        sec = &sec_attr;
+    }
+
     if (UnmapViewOfFile(am->pool) == 0) {
         am->error = GetLastError();
         return AM_ERROR;
@@ -516,7 +554,7 @@ static int am_shm_extend(am_shm_t *am, size_t usize) {
     if (resize_file(am->h[1], size) == FALSE) {
         return AM_ERROR;
     }
-    am->h[2] = CreateFileMappingA(am->h[1], NULL, PAGE_READWRITE, 0, (DWORD) size, NULL);
+    am->h[2] = CreateFileMappingA(am->h[1], sec, PAGE_READWRITE, 0, (DWORD) size, NULL);
     am->error = GetLastError();
     if (am->h[2] == NULL) {
         return AM_ERROR;

@@ -206,7 +206,7 @@ size_t strnlen(const char *string, size_t maxlen);
 #endif
 
 char *stristr(char *str1, char *str2);
-int concat(char **str, size_t *str_sz, const char *s2, size_t s2sz);
+am_status_t concat(char **str, size_t *str_sz, const char *s2, size_t s2sz);
 
 int copy_file(const char *from, const char *to);
 

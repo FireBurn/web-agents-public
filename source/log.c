@@ -444,6 +444,10 @@ void am_log_re_init(int status) {
 void am_log_init(int id, int status) {
     int i;
     char opened = 0;
+#ifdef _WIN32
+    SECURITY_DESCRIPTOR sec_descr;
+    SECURITY_ATTRIBUTES sec_attr, *sec = NULL;
+#endif
 
     am_agent_instance_init_init(id);
 
@@ -467,11 +471,22 @@ void am_log_init(int id, int status) {
     am_log_handle->area_size = page_size(sizeof (struct am_log));
 
 #ifdef _WIN32
-    am_log_handle->area_file_id = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
+    if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
+            SetSecurityDescriptorDacl(&sec_descr, TRUE, 0, FALSE)) {
+        sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
+        sec_attr.lpSecurityDescriptor = &sec_descr;
+        sec_attr.bInheritHandle = FALSE;
+        sec = &sec_attr;
+    }
+
+    am_log_handle->area_file_id = CreateFileMappingA(INVALID_HANDLE_VALUE, sec, PAGE_READWRITE,
             0, (DWORD) am_log_handle->area_size, am_log_handle->area_file_name);
 
-    if (am_log_handle->area_file_id == NULL) return;
-    if (NULL != am_log_handle->area_file_id && GetLastError() == ERROR_ALREADY_EXISTS) {
+    if (am_log_handle->area_file_id == NULL) {
+        return;
+    }
+    
+    if (am_log_handle->area_file_id != NULL && GetLastError() == ERROR_ALREADY_EXISTS) {
         opened = 1;
     }
 
@@ -479,12 +494,38 @@ void am_log_init(int id, int status) {
         am_log_handle->area = MapViewOfFile(am_log_handle->area_file_id, FILE_MAP_ALL_ACCESS,
                 0, 0, am_log_handle->area_size);
     }
+    
     if (am_log_handle->area != NULL) {
+
+        am_log_lck.exit = CreateEventA(NULL, FALSE, FALSE,
+                get_global_name(AM_GLOBAL_PREFIX"am_log_exit", id));
+        if (am_log_lck.exit == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
+            am_log_lck.exit = OpenEventA(SYNCHRONIZE, TRUE,
+                    get_global_name(AM_GLOBAL_PREFIX"am_log_exit", id));
+        }
+        am_log_lck.lock = CreateMutexA(NULL, FALSE,
+                get_global_name(AM_GLOBAL_PREFIX"am_log_lock", id));
+        if (am_log_lck.lock == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
+            am_log_lck.lock = OpenMutexA(SYNCHRONIZE, TRUE,
+                    get_global_name(AM_GLOBAL_PREFIX"am_log_lock", id));
+        }
+        am_log_lck.new_data_cond = CreateEventA(NULL, FALSE, FALSE,
+                get_global_name(AM_GLOBAL_PREFIX"am_log_queue_empty", id));
+        if (am_log_lck.new_data_cond == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
+            am_log_lck.new_data_cond = OpenEventA(SYNCHRONIZE, TRUE,
+                    get_global_name(AM_GLOBAL_PREFIX"am_log_queue_empty", id));
+        }
+        am_log_lck.new_space_cond = CreateEventA(NULL, FALSE, FALSE,
+                get_global_name(AM_GLOBAL_PREFIX"am_log_queue_overflow", id));
+        if (am_log_lck.new_space_cond == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
+            am_log_lck.new_space_cond = OpenEventA(SYNCHRONIZE, TRUE,
+                    get_global_name(AM_GLOBAL_PREFIX"am_log_queue_overflow", id));
+        }
+
         if (status == AM_SUCCESS || status == AM_EAGAIN) {
             struct am_log *log = (struct am_log *) am_log_handle->area;
 
             memset(log, 0, am_log_handle->area_size);
-
             log->bucket_count = AM_LOG_QUEUE_SIZE;
             log->bucket_size = AM_LOG_MESSAGE_SIZE;
             log->in = log->out = log->read_count = log->write_count = 0;
@@ -496,23 +537,6 @@ void am_log_init(int id, int status) {
                 f->instance_id = 0;
                 f->level_debug = f->level_audit = AM_LOG_LEVEL_NONE;
                 f->max_size_debug = f->max_size_audit = 0;
-            }
-
-            am_log_lck.exit = CreateEvent(NULL, FALSE, FALSE, get_global_name(AM_GLOBAL_PREFIX"am_log_exit", id));
-            if (am_log_lck.exit == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
-                am_log_lck.exit = OpenEventA(SYNCHRONIZE, TRUE, get_global_name(AM_GLOBAL_PREFIX"am_log_exit", id));
-            }
-            am_log_lck.lock = CreateMutex(NULL, FALSE, get_global_name(AM_GLOBAL_PREFIX"am_log_lock", id));
-            if (am_log_lck.lock == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
-                am_log_lck.lock = OpenMutexA(SYNCHRONIZE, TRUE, get_global_name(AM_GLOBAL_PREFIX"am_log_lock", id));
-            }
-            am_log_lck.new_data_cond = CreateEvent(NULL, FALSE, FALSE, get_global_name(AM_GLOBAL_PREFIX"am_log_queue_empty", id));
-            if (am_log_lck.new_data_cond == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
-                am_log_lck.new_data_cond = OpenEventA(SYNCHRONIZE, TRUE, get_global_name(AM_GLOBAL_PREFIX"am_log_queue_empty", id));
-            }
-            am_log_lck.new_space_cond = CreateEvent(NULL, FALSE, FALSE, get_global_name(AM_GLOBAL_PREFIX"am_log_queue_overflow", id));
-            if (am_log_lck.new_space_cond == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
-                am_log_lck.new_space_cond = OpenEventA(SYNCHRONIZE, TRUE, get_global_name(AM_GLOBAL_PREFIX"am_log_queue_overflow", id));
             }
 
             log->owner = getpid();
@@ -791,7 +815,7 @@ void am_log_shutdown(int id) {
     if (log == NULL) {
         return;
     }
-
+    
     /* notify the logger exit */
     for (i = 0; i < AM_MAX_INSTANCES; i++) {
         struct log_files *f = &log->files[i];
@@ -806,6 +830,7 @@ void am_log_shutdown(int id) {
     CloseHandle(am_log_lck.exit);
     CloseHandle(am_log_lck.new_data_cond);
     CloseHandle(am_log_lck.new_space_cond);
+    CloseHandle(am_log_handle->reader_thr);
 
     WaitForSingleObject(am_log_lck.lock, INFINITE);
     /* close log file(s) */
@@ -822,14 +847,20 @@ void am_log_shutdown(int id) {
             }
             f->used = AM_FALSE;
             f->instance_id = 0;
+            f->owner = 0;
             f->level_debug = f->level_audit = AM_LOG_LEVEL_NONE;
             f->max_size_debug = f->max_size_audit = 0;
+            break;
         }
     }
     ReleaseMutex(am_log_lck.lock);
     CloseHandle(am_log_lck.lock);
     UnmapViewOfFile(am_log_handle->area);
     CloseHandle(am_log_handle->area_file_id);
+    am_log_lck.lock = NULL;
+    am_log_lck.exit = NULL;
+    am_log_lck.new_data_cond = NULL;
+    am_log_lck.new_space_cond = NULL;
 #else
     pthread_mutex_unlock(&log->exit);
     pthread_join(am_log_handle->reader_thr, NULL);

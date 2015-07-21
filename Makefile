@@ -102,9 +102,11 @@ endif
 TEST_SOURCES := $(wildcard cmocka/*.c) $(wildcard tests/*.c)
 TEST_OBJECTS := $(addprefix $(OBJDIR)/,$(TEST_SOURCES:.c=.$(OBJ)))
 
-$(APACHE_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache24/include $(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache24/include -DAPACHE2 -DAPACHE24
+$(APACHE_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache24/include \
+	$(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache24/include $(COMPILEFLAG)DAPACHE2 $(COMPILEFLAG)DAPACHE24
 $(VARNISH_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/varnish/include
-$(APACHE22_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache22/include $(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache22/include -DAPACHE2
+$(APACHE22_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache22/include \
+	$(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache22/include $(COMPILEFLAG)DAPACHE2
 $(TEST_OBJECTS): CFLAGS += $(COMPILEFLAG)I.$(PS)cmocka $(COMPILEFLAG)I.$(PS)tests $(COMPILEFLAG)I.$(PS)$(OBJDIR)$(PS)tests \
 	$(COMPILEFLAG)DHAVE_SIGNAL_H
 	
@@ -169,7 +171,8 @@ test_includes:
 	$(SED) -$(SED_ROPT)n "s/void (test_.*[^\(])\(.*/cmocka_unit_test(\1),/p" $(OBJDIR)$(PS)tests$(PS)tests.h.template >> $(OBJDIR)$(PS)tests$(PS)tests.h
 	$(ECHO) "};" >> $(OBJDIR)$(PS)tests$(PS)tests.h
 	$(SED) -ie "s$(SUB)\"$(SUB) $(SUB)g" $(OBJDIR)$(PS)tests$(PS)tests.h
-	
+
+apachezip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"2.4.x"'	
 apachezip: clean build version apache agentadmin
 	@$(ECHO) "[***** Building Apache 2.4 agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
@@ -194,6 +197,7 @@ apache22_pre:
 apache22_post:
 	-$(RMALL) source$(PS)apache$(PS)agent22.c
 
+apache22zip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"2.2.x"'
 apache22zip: clean build version apache22 agentadmin
 	@$(ECHO) "[***** Building Apache 2.2 agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
@@ -212,6 +216,7 @@ apache22zip: clean build version apache22 agentadmin
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)legal$(PS)
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Apache_v22_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
 
+iiszip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"7.5, 8.x"'
 iiszip: clean build version iis agentadmin
 	@$(ECHO) "[***** Building IIS agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
@@ -229,6 +234,7 @@ iiszip: clean build version iis agentadmin
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)legal$(PS)
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a IIS_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
 
+varnishzip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"4.0.x"'
 varnishzip: clean build version varnish agentadmin
 	@$(ECHO) "[***** Building Varnish agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents

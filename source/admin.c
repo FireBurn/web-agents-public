@@ -199,7 +199,14 @@ static void generate_key(int argc, char **argv) {
 }
 
 static void show_version(int argc, char **argv) {
-    fprintf(stdout, "\n%s\n", DESCRIPTION);
+    static const char *server_version =
+#ifdef SERVER_VERSION
+            SERVER_VERSION;
+#else
+            "";
+#endif
+    fprintf(stdout, "\n%s for %s Server %s\n", DESCRIPTION,
+            am_container_str(instance_type), server_version);
     fprintf(stdout, " Version: %s\n", VERSION);
     fprintf(stdout, " %s\n", VERSION_VCS);
     fprintf(stdout, " Build machine: %s\n", BUILD_MACHINE);
@@ -416,6 +423,14 @@ static int create_agent_instance(int status,
             /* write an updated template to the agent configuration file */
             install_log("writing configuration to %s", conf_file_path);
             if (write_file(conf_file_path, agent_conf_template, agent_conf_template_sz) > 0) {
+#ifndef _WIN32
+                if (instance_type == AM_I_APACHE && uid != NULL && gid != NULL) {
+                    if (chown(conf_file_path, *uid, *gid) != 0) {
+                        install_log("failed to change file %s owner to %d:%d (error: %d)",
+                                conf_file_path, *uid, *gid, errno);
+                    }
+                }
+#endif
                 rv = AM_SUCCESS;
             } else {
                 install_log("failed to write agent configuration to %s", conf_file_path);
@@ -464,13 +479,13 @@ static int create_agent_instance(int status,
             break;
         }
         case AM_I_IIS: {
-            if (rv == AM_SUCCESS && status == 0) {
+            if (rv == AM_SUCCESS && (status == ADMIN_IIS_MOD_NONE || status == ADMIN_IIS_MOD_ERROR)) {
                 char schema_file[AM_URI_SIZE];
                 char lib_file[AM_URI_SIZE];
-                snprintf(schema_file, sizeof(schema_file),
+                snprintf(schema_file, sizeof (schema_file),
                         "%s.."FILE_PATH_SEP"config"FILE_PATH_SEP"mod_iis_openam_schema.xml",
                         app_path);
-                snprintf(lib_file, sizeof(lib_file),
+                snprintf(lib_file, sizeof (lib_file),
                         "%s.."FILE_PATH_SEP"lib"FILE_PATH_SEP"mod_iis_openam."LIB_FILE_EXT,
                         app_path);
 
@@ -480,6 +495,8 @@ static int create_agent_instance(int status,
                 } else {
                     install_log("webserver site global configuration updated");
                 }
+            } else {
+                rv = AM_ERROR;
             }
             if (rv == AM_SUCCESS) {
                 char iis_instc_file[AM_URI_SIZE];
@@ -946,14 +963,18 @@ static void install_interactive(int argc, char **argv) {
                 strncpy(agent_url, input, sizeof(agent_url) - 1);
                 install_log("Agent URL %s", agent_url);
 
-                if (am_url_validate(0, agent_url, NULL, &httpcode, install_log) != AM_SUCCESS) {
-                    /* hopefully we cannot contact because the agent is not running,
-                     * rather than because the URI is complete rubbish
-                     */
-                    inner_loop = AM_FALSE;
+                if (instance_type == AM_I_APACHE) { /* only Apache server needs to be shut down prior agent installation */
+                    if (am_url_validate(0, agent_url, NULL, &httpcode, install_log) != AM_SUCCESS) {
+                        /* hopefully we cannot contact because the agent is not running,
+                         * rather than because the URI is complete rubbish
+                         */
+                        inner_loop = AM_FALSE;
+                    } else {
+                        fprintf(stdout, "The Agent at URI %s should be stopped before installation", agent_url);
+                        install_log("Agent URI %s rejected because agent is running", agent_url);
+                    }
                 } else {
-                    fprintf(stdout, "The Agent at URI %s should be stopped before installation", agent_url);
-                    install_log("Agent URI %s rejected because agent is running", agent_url);
+                    inner_loop = AM_FALSE;
                 }
             }
             am_free(input);

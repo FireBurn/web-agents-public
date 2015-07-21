@@ -116,7 +116,7 @@ struct dirent {
 };
 
 typedef struct {
-    long handle;
+    intptr_t handle;
     short offset;
     short finished;
     struct _finddata_t fileinfo;
@@ -2098,7 +2098,7 @@ int am_make_path(const char* path, uid_t* uid, gid_t* gid, void (*log)(const cha
 static DIR *opendir(const char *dir) {
     DIR *dp;
     char *filespec;
-    long handle;
+    intptr_t handle;
     int index;
 
     if (dir == NULL) return NULL;
@@ -2110,7 +2110,7 @@ static DIR *opendir(const char *dir) {
     if (index >= 0 && (filespec[index] == '/' || filespec[index] == '\\')) {
         filespec[index] = '\0';
     }
-    strcat(filespec, "/*");
+    strcat(filespec, "\\*");
 
     dp = (DIR *) malloc(sizeof (DIR));
     if (dp == NULL) {
@@ -2570,10 +2570,12 @@ void read_directory(const char *path, struct am_namevalue **list) {
 
 int get_ttl_value(struct am_namevalue *session, const char *name, int def, int value_in_minutes) {
     struct am_namevalue *element, *tmp;
+    int result;
 
     AM_LIST_FOR_EACH(session, element, tmp) {
         if (strcmp(element->n, name) == 0) {
-            int result = (int) strtol(element->v, NULL, AM_BASE_TEN);
+            errno = 0;
+            result = (int) strtol(element->v, NULL, AM_BASE_TEN);
             if (result < 0 || errno == ERANGE) {
                 break;
             }
