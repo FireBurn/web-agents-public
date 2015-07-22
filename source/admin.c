@@ -1201,7 +1201,7 @@ static void install_silent(int argc, char** argv) {
                 gid = NULL;
             }
 #endif
-            if (argc >= 8 && strcasecmp(argv[8], "n") == 0) {
+            if (argc > 8 && strcasecmp(argv[8], "n") == 0) {
                 am_free(uid);
                 am_free(gid);
                 uid = NULL;
