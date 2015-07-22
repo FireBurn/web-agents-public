@@ -1736,12 +1736,15 @@ static am_return_t handle_exit(am_request_t *r) {
 
             if (r->token_in_post && r->conf->cdsso_enable &&
                     !r->is_dummypost_url && r->am_set_custom_response_f != NULL) {
-                /* special GET handling after LARES re-post (do a redirect only on memory failure) */
-                am_asprintf(&url, "<html><head></head><body onload=\"document.getform.submit()\">"
+                /* special GET handling after LARES re-post (do redirect only on memory failure) */
+                am_asprintf(&url, "<html><head><script type=\"text/javascript\">function submitform(sform) {window.location.href = sform.action;}</script></head>"
+                        "<body onload=\"return submitform(document.getform);\">"
                         "<form name=\"getform\" method=\"GET\" action=\"%s\">"
                         "</form></body></html>",
                         r->normalized_url);
                 if (url != NULL) {
+                    AM_LOG_DEBUG(r->instance_id, "%s CDSSO GET request form auto-submitted to %s",
+                            thisfunc, r->normalized_url);
                     r->status = AM_DONE;
                     r->am_set_custom_response_f(r, url, "text/html");
                     free(url);
