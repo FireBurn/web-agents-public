@@ -41,7 +41,6 @@ struct mem_pool {
 #define AM_ALIGN(size) (((size) + (AM_ALIGNMENT-1)) & ~(AM_ALIGNMENT-1))
 
 int am_shm_lock(am_shm_t *am) {
-    struct mem_pool *pool;
     int rv = AM_SUCCESS;
 #ifdef _WIN32
     SECURITY_DESCRIPTOR sec_descr;
@@ -89,11 +88,7 @@ int am_shm_lock(am_shm_t *am) {
             return AM_EFAULT;
         }
 
-        pool = (struct mem_pool *) am->pool;
         am->local_size = *(am->global_size);
-        if (pool->user_offset > 0) {
-            am->user = AM_GET_POINTER(pool, pool->user_offset);
-        }
     }
 
 #else
@@ -116,11 +111,7 @@ int am_shm_lock(am_shm_t *am) {
             rv = AM_EFAULT;
         }
 
-        pool = (struct mem_pool *) am->pool;
         am->local_size = *(am->global_size);
-        if (pool->user_offset > 0) {
-            am->user = AM_GET_POINTER(pool, pool->user_offset);
-        }
     }
 #endif
     return rv;
@@ -214,6 +205,16 @@ void am_shm_set_user_offset(am_shm_t *am, size_t off) {
     if (am != NULL && am->pool != NULL) {
         ((struct mem_pool *) am->pool)->user_offset = off;
     }
+}
+
+void *am_shm_get_user_pointer(am_shm_t *am) {
+    if (am != NULL && am->pool != NULL) {
+        struct mem_pool *pool = (struct mem_pool *) am->pool;
+        if (pool->user_offset) {
+            return AM_GET_POINTER(pool, pool->user_offset);
+        }
+    }
+    return NULL;
 }
 
 am_shm_t *am_shm_create(const char *name, size_t usize) {
@@ -488,9 +489,6 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         /* update head prev/next pointers */
         pool->lh.next = pool->lh.prev = AM_GET_OFFSET(pool, e);
     } else {
-        if (pool->user_offset > 0) {
-            ret->user = AM_GET_POINTER(pool, pool->user_offset);
-        }
         pool->open++;
     }
 

@@ -176,13 +176,11 @@ int am_configuration_init(int id) {
         /* allocate the table itself */
         struct am_instance *instance_data = (struct am_instance *) am_shm_alloc(conf, sizeof (struct am_instance));
         if (instance_data == NULL) {
-            conf->user = NULL;
             return AM_ENOMEM;
         }
         am_shm_lock(conf);
         /* initialize head node */
         instance_data->list.next = instance_data->list.prev = 0;
-        conf->user = instance_data;
         /* store instance_data offset (for other processes) */
         am_shm_set_user_offset(conf, AM_GET_OFFSET(conf->pool, instance_data));
         am_shm_unlock(conf);
@@ -197,9 +195,13 @@ int am_configuration_shutdown() {
     return AM_SUCCESS;
 }
 
+static struct am_instance * get_instance_data() {
+    return (struct am_instance *)am_shm_get_user_pointer(conf);
+}
+
 static struct am_instance_entry *get_instance_entry(unsigned long instance_id) {
     struct am_instance_entry *e, *t, *h;
-    struct am_instance *instance_data = conf != NULL ? (struct am_instance *) conf->user : NULL;
+    struct am_instance *instance_data = get_instance_data();
 
     if (instance_data != NULL) {
         h = (struct am_instance_entry *) AM_GET_POINTER(conf->pool, instance_data->list.prev);
@@ -216,9 +218,9 @@ static struct am_instance_entry *get_instance_entry(unsigned long instance_id) {
 static int delete_instance_entry(struct am_instance_entry *e) {
     int rv = 0;
     struct am_instance_entry_data *i, *t, *h;
-    struct am_instance *instance_data = (struct am_instance *) conf->user;
+    struct am_instance *instance_data = get_instance_data();
 
-    if (e == NULL) return AM_EINVAL;
+    if (e == NULL || instance_data == NULL) return AM_EINVAL;
 
     /* cleanup instance entry data */
     h = (struct am_instance_entry_data *) AM_GET_POINTER(conf->pool, e->data.prev);
@@ -244,13 +246,22 @@ static int delete_instance_entry(struct am_instance_entry *e) {
 
 void remove_agent_instance_byname(const char *name) {
     struct am_instance_entry *e, *t, *h;
-    struct am_instance *instance_data = conf != NULL ? (struct am_instance *) conf->user : NULL;
-
-    if (instance_data == NULL) return;
+    struct am_instance *instance_data;
+    int ret;
+    
+    ret = am_shm_lock(conf);
+    if (ret != AM_SUCCESS) {
+        return;
+    }
+    
+    instance_data = get_instance_data();
+    if (instance_data == NULL) {
+        am_shm_unlock(conf);
+        return;
+    }
+    
     h = (struct am_instance_entry *) AM_GET_POINTER(conf->pool, instance_data->list.prev);
-
-    am_shm_lock(conf);
-
+    
     AM_OFFSET_LIST_FOR_EACH(conf->pool, h, e, t, struct am_instance_entry) {
         if (strcmp(e->name, name) == 0) {
             am_remove_cache_entry(e->instance_id, e->token); /* delete cached agent session data */
@@ -264,23 +275,23 @@ void remove_agent_instance_byname(const char *name) {
     am_shm_unlock(conf);
 }
 
-#define SAVE_NUM_VALUE(cf,h,t,v) \
+#define HEADER_FROM_OFFSET(shm, offset) ((struct offset_list *)AM_GET_POINTER((shm)->pool, offset))
+
+#define SAVE_NUM_VALUE(shm, hdr_offset, t, v) \
     do {\
-        struct am_instance_entry_data *x = NULL;\
-        x = am_shm_alloc(cf, sizeof (struct am_instance_entry_data));\
+        struct am_instance_entry_data *x = am_shm_alloc(shm, sizeof (struct am_instance_entry_data));\
         if (x == NULL) return AM_ENOMEM;\
         x->type = t;\
         x->num_value = v;\
         x->size[0] = x->size[1] = 0;\
         x->lh.next = x->lh.prev = 0;\
-        AM_OFFSET_LIST_INSERT(cf->pool, x, h, struct am_instance_entry_data);\
+        AM_OFFSET_LIST_INSERT(shm->pool, x, HEADER_FROM_OFFSET(shm, hdr_offset), struct am_instance_entry_data);\
     } while(0)
 
-#define SAVE_CHAR_VALUE(cf,h,t,v) \
+#define SAVE_CHAR_VALUE(shm, hdr_offset, t, v) \
     do {\
         size_t sz = strlen(v);\
-        struct am_instance_entry_data *x = NULL;\
-        x = am_shm_alloc(cf, sizeof (struct am_instance_entry_data) + sz + 1);\
+        struct am_instance_entry_data *x = am_shm_alloc(shm, sizeof (struct am_instance_entry_data) + sz + 1);\
         if (x == NULL) return AM_ENOMEM;\
         x->type = t;\
         x->num_value = 0;\
@@ -288,15 +299,14 @@ void remove_agent_instance_byname(const char *name) {
         memcpy(x->value, v, x->size[0]);\
         x->value[x->size[0]] = 0;\
         x->lh.next = x->lh.prev = 0;\
-        AM_OFFSET_LIST_INSERT(cf->pool, x, h, struct am_instance_entry_data);\
+        AM_OFFSET_LIST_INSERT(shm->pool, x, HEADER_FROM_OFFSET(shm, hdr_offset), struct am_instance_entry_data);\
     } while(0)
 
-#define SAVE_CHAR2_VALUE(cf,h,t,v,k) \
+#define SAVE_CHAR2_VALUE(shm, hdr_offset, t, v, k) \
     do {\
         size_t sz = strlen(v);\
         size_t kz = strlen(k);\
-        struct am_instance_entry_data *x = NULL;\
-        x = am_shm_alloc(cf, sizeof (struct am_instance_entry_data) + sz + kz + 2);\
+        struct am_instance_entry_data *x = am_shm_alloc(shm, sizeof (struct am_instance_entry_data) + sz + kz + 2);\
         if (x == NULL) return AM_ENOMEM;\
         x->type = t;\
         x->num_value = 0;\
@@ -306,227 +316,227 @@ void remove_agent_instance_byname(const char *name) {
         memcpy(x->value + x->size[0] + 1, k, x->size[1]);\
         x->value[x->size[0] + x->size[1] + 1] = 0;\
         x->lh.next = x->lh.prev = 0;\
-        AM_OFFSET_LIST_INSERT(cf->pool, x, h, struct am_instance_entry_data);\
+        AM_OFFSET_LIST_INSERT(shm->pool, x, HEADER_FROM_OFFSET(shm, hdr_offset), struct am_instance_entry_data);\
     } while(0)
 
-static int am_create_instance_entry_data(am_shm_t *cf, struct offset_list *h, am_config_t *c, char all) {
+static int am_create_instance_entry_data(int h, am_config_t *c, char all) {
     int i;
 
     if (all == AM_CONF_ALL || all == AM_CONF_BOOT) {
 
         if (c->local > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_LOCAL, 0), c->local);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_LOCAL, 0), c->local);
         }
         if (ISVALID(c->pdp_dir)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_PDP_DIR, 0), c->pdp_dir);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_PDP_DIR, 0), c->pdp_dir);
         }
         if (c->naming_url_sz > 0 && c->naming_url != NULL) {
             for (i = 0; i < c->naming_url_sz; i++) {
-                SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_NAMING_URL, c->naming_url_sz), c->naming_url[i]);
+                SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_NAMING_URL, c->naming_url_sz), c->naming_url[i]);
             }
         }
         if (ISVALID(c->realm)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_REALM, 0), c->realm);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_REALM, 0), c->realm);
         }
         if (ISVALID(c->user)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_USER, 0), c->user);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_USER, 0), c->user);
         }
         if (ISVALID(c->pass)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_PASSWORD, 0), c->pass);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_PASSWORD, 0), c->pass);
         }
         if (ISVALID(c->key)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_KEY, 0), c->key);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_KEY, 0), c->key);
         }
         if (c->debug > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_DEBUG, 0), c->debug);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_DEBUG, 0), c->debug);
         }
         if (c->debug_level > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_DEBUG_LEVEL, 0), c->debug_level);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_DEBUG_LEVEL, 0), c->debug_level);
         }
         if (ISVALID(c->debug_file)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_DEBUG_FILE, 0), c->debug_file);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_DEBUG_FILE, 0), c->debug_file);
         }
         if (c->audit > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_AUDIT, 0), c->audit);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_AUDIT, 0), c->audit);
         }
         if (c->audit_level > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_AUDIT_LEVEL, 0), c->audit_level);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_AUDIT_LEVEL, 0), c->audit_level);
         }
         if (ISVALID(c->audit_file)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_AUDIT_FILE, 0), c->audit_file);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_AUDIT_FILE, 0), c->audit_file);
         }
         if (ISVALID(c->cert_key_file)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_CERT_KEY_FILE, 0), c->cert_key_file);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_CERT_KEY_FILE, 0), c->cert_key_file);
         }
         if (ISVALID(c->cert_key_pass)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_CERT_KEY_PASS, 0), c->cert_key_pass);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_CERT_KEY_PASS, 0), c->cert_key_pass);
         }
         if (ISVALID(c->cert_file)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_CERT_FILE, 0), c->cert_file);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_CERT_FILE, 0), c->cert_file);
         }
         if (ISVALID(c->cert_ca_file)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_CERT_CA_FILE, 0), c->cert_ca_file);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_CERT_CA_FILE, 0), c->cert_ca_file);
         }
         if (ISVALID(c->ciphers)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_CIPHERS, 0), c->ciphers);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_CIPHERS, 0), c->ciphers);
         }
         if (ISVALID(c->tls_opts)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_TLS_OPTIONS, 0), c->tls_opts);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_TLS_OPTIONS, 0), c->tls_opts);
         }
         if (c->cert_trust > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_CERT_TRUST, 0), c->cert_trust);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_CERT_TRUST, 0), c->cert_trust);
         }
         if (c->net_timeout > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_NET_TIMEOUT, 0), c->net_timeout);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_NET_TIMEOUT, 0), c->net_timeout);
         }
         if (c->valid_level > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_VALID_LEVEL, 0), c->valid_level);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_VALID_LEVEL, 0), c->valid_level);
         }
         if (c->valid_ping > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_VALID_PING, 0), c->valid_ping);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_VALID_PING, 0), c->valid_ping);
         }
         if (c->valid_ping_miss > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_VALID_PING_MISS, 0), c->valid_ping_miss);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_VALID_PING_MISS, 0), c->valid_ping_miss);
         }
         if (c->valid_ping_ok > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_VALID_PING_OK, 0), c->valid_ping_ok);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_VALID_PING_OK, 0), c->valid_ping_ok);
         }
         if (c->valid_default_url_sz > 0 && c->valid_default_url != NULL) {
             for (i = 0; i < c->valid_default_url_sz; i++) {
-                SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_VALID_DEFAULT_IDX, c->valid_default_url_sz), c->valid_default_url[i]);
+                SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_VALID_DEFAULT_IDX, c->valid_default_url_sz), c->valid_default_url[i]);
             }
         }
         if (c->hostmap_sz > 0 && c->hostmap != NULL) {
             for (i = 0; i < c->hostmap_sz; i++) {
-                SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_HOST_MAP, c->hostmap_sz), c->hostmap[i]);
+                SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_HOST_MAP, c->hostmap_sz), c->hostmap[i]);
             }
         }
         if (c->retry_max > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_RETRY_MAX, 0), c->retry_max);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_RETRY_MAX, 0), c->retry_max);
         }
         if (c->retry_wait > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_RETRY_WAIT, 0), c->retry_wait);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_RETRY_WAIT, 0), c->retry_wait);
         }
     }
 
     if (all == AM_CONF_ALL || all == AM_CONF_REMOTE) {
 
         if (ISVALID(c->agenturi)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_AGENT_URI, 0), c->agenturi);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_AGENT_URI, 0), c->agenturi);
         }
         if (ISVALID(c->cookie_name)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_COOKIE, 0), c->cookie_name);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_COOKIE, 0), c->cookie_name);
         }
         if (c->login_url_sz > 0 && c->login_url != NULL) {
             for (i = 0; i < c->login_url_sz; i++) {
                 am_config_map_t *v = &c->login_url[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_LOGIN_URL, c->login_url_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_LOGIN_URL, c->login_url_sz), v->name, v->value);
                 }
             }
         }
         if (c->cookie_secure > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_COOKIE_SECURE, 0), c->cookie_secure);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_COOKIE_SECURE, 0), c->cookie_secure);
         }
         if (c->notif_enable > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_NOTIF_ENABLE, 0), c->notif_enable);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_NOTIF_ENABLE, 0), c->notif_enable);
         }
         if (ISVALID(c->notif_url)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_NOTIF_URL, 0), c->notif_url);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_NOTIF_URL, 0), c->notif_url);
         }
         if (c->url_eval_case_ignore > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_EVAL_CASE, 0), c->url_eval_case_ignore);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_EVAL_CASE, 0), c->url_eval_case_ignore);
         }
         if (c->policy_cache_valid > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_POLICY_CACHE_VALID, 0), c->policy_cache_valid);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_POLICY_CACHE_VALID, 0), c->policy_cache_valid);
         }
         if (c->token_cache_valid > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_TOKEN_CACHE_VALID, 0), c->token_cache_valid);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_TOKEN_CACHE_VALID, 0), c->token_cache_valid);
         }
         if (ISVALID(c->userid_param)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_UID_PARAM, 0), c->userid_param);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_UID_PARAM, 0), c->userid_param);
         }
         if (ISVALID(c->userid_param_type)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_UID_PARAM_TYPE, 0), c->userid_param_type);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_UID_PARAM_TYPE, 0), c->userid_param_type);
         }
         if (c->profile_attr_fetch > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_PROF_ATTR, 0), c->profile_attr_fetch);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_PROF_ATTR, 0), c->profile_attr_fetch);
         }
         if (c->profile_attr_map_sz > 0 && c->profile_attr_map != NULL) {
             for (i = 0; i < c->profile_attr_map_sz; i++) {
                 am_config_map_t *v = &c->profile_attr_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_PROF_ATTR_MAP, c->profile_attr_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_PROF_ATTR_MAP, c->profile_attr_map_sz), v->name, v->value);
                 }
             }
         }
         if (c->session_attr_fetch > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_SESS_ATTR, 0), c->session_attr_fetch);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_SESS_ATTR, 0), c->session_attr_fetch);
         }
         if (c->session_attr_map_sz > 0 && c->session_attr_map != NULL) {
             for (i = 0; i < c->session_attr_map_sz; i++) {
                 am_config_map_t *v = &c->session_attr_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_SESS_ATTR_MAP, c->session_attr_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_SESS_ATTR_MAP, c->session_attr_map_sz), v->name, v->value);
                 }
             }
         }
         if (c->response_attr_fetch > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_RESP_ATTR, 0), c->response_attr_fetch);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_RESP_ATTR, 0), c->response_attr_fetch);
         }
         if (c->response_attr_map_sz > 0 && c->response_attr_map != NULL) {
             for (i = 0; i < c->response_attr_map_sz; i++) {
                 am_config_map_t *v = &c->response_attr_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_RESP_ATTR_MAP, c->response_attr_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_RESP_ATTR_MAP, c->response_attr_map_sz), v->name, v->value);
                 }
             }
         }
         if (c->lb_enable > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_LB_ENABLE, 0), c->lb_enable);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_LB_ENABLE, 0), c->lb_enable);
         }
         if (c->sso_only > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_SSO_ONLY, 0), c->sso_only);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_SSO_ONLY, 0), c->sso_only);
         }
         if (ISVALID(c->access_denied_url)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_ACC_DENIED, 0), c->access_denied_url);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_ACC_DENIED, 0), c->access_denied_url);
         }
         if (c->fqdn_check_enable > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_FQDN_CHECK, 0), c->fqdn_check_enable);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_FQDN_CHECK, 0), c->fqdn_check_enable);
         }
         if (ISVALID(c->fqdn_default)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_FQDN_DEFAULT, 0), c->fqdn_default);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_FQDN_DEFAULT, 0), c->fqdn_default);
         }
         if (c->fqdn_map_sz > 0 && c->fqdn_map != NULL) {
             for (i = 0; i < c->fqdn_map_sz; i++) {
                 am_config_map_t *v = &c->fqdn_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_FQDN_MAP, c->fqdn_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_FQDN_MAP, c->fqdn_map_sz), v->name, v->value);
                 }
             }
         }
         if (c->cookie_reset_enable > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_COOKIE_RESET, 0), c->cookie_reset_enable);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_COOKIE_RESET, 0), c->cookie_reset_enable);
         }
         if (c->cookie_reset_map_sz > 0 && c->cookie_reset_map != NULL) {
             for (i = 0; i < c->cookie_reset_map_sz; i++) {
                 am_config_map_t *v = &c->cookie_reset_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_COOKIE_RESET_MAP, c->cookie_reset_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_COOKIE_RESET_MAP, c->cookie_reset_map_sz), v->name, v->value);
                 }
             }
         }
         if (c->not_enforced_invert > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_NEF_INVERT, 0), c->not_enforced_invert);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_NEF_INVERT, 0), c->not_enforced_invert);
         }
         if (c->not_enforced_fetch_attr > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_NEF_ATTR, 0), c->not_enforced_fetch_attr);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_NEF_ATTR, 0), c->not_enforced_fetch_attr);
         }
         if (c->not_enforced_map_sz > 0 && c->not_enforced_map != NULL) {
             for (i = 0; i < c->not_enforced_map_sz; i++) {
                 am_config_map_t *v = &c->not_enforced_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_NEF_MAP, c->not_enforced_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_NEF_MAP, c->not_enforced_map_sz), v->name, v->value);
                 }
             }
         }
@@ -534,7 +544,7 @@ static int am_create_instance_entry_data(am_shm_t *cf, struct offset_list *h, am
             for (i = 0; i < c->not_enforced_ext_map_sz; i++) {
                 am_config_map_t *v = &c->not_enforced_ext_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_NEF_EXT_MAP, c->not_enforced_ext_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_NEF_EXT_MAP, c->not_enforced_ext_map_sz), v->name, v->value);
                 }
             }
         }
@@ -542,57 +552,57 @@ static int am_create_instance_entry_data(am_shm_t *cf, struct offset_list *h, am
             for (i = 0; i < c->not_enforced_ip_map_sz; i++) {
                 am_config_map_t *v = &c->not_enforced_ip_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_NEF_IP_MAP, c->not_enforced_ip_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_NEF_IP_MAP, c->not_enforced_ip_map_sz), v->name, v->value);
                 }
             }
         }
         if (c->not_enforced_regex_enable > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_NEF_REGEX_ENABLE, 0), c->not_enforced_regex_enable);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_NEF_REGEX_ENABLE, 0), c->not_enforced_regex_enable);
         }
         if (c->not_enforced_ext_regex_enable > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_NEF_EXT_REGEX_ENABLE, 0), c->not_enforced_ext_regex_enable);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_NEF_EXT_REGEX_ENABLE, 0), c->not_enforced_ext_regex_enable);
         }
         if (c->logout_regex_enable > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_LOGOUT_REGEX_ENABLE, 0), c->logout_regex_enable);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_LOGOUT_REGEX_ENABLE, 0), c->logout_regex_enable);
         }
         if (c->pdp_enable > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_PDP, 0), c->pdp_enable);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_PDP, 0), c->pdp_enable);
         }
         if (ISVALID(c->pdp_lb_cookie)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_PDP_LBCOOKIE, 0), c->pdp_lb_cookie);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_PDP_LBCOOKIE, 0), c->pdp_lb_cookie);
         }
         if (ISVALID(c->pdp_sess_mode)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_PDP_SMODE, 0), c->pdp_sess_mode);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_PDP_SMODE, 0), c->pdp_sess_mode);
         }
         if (ISVALID(c->pdp_sess_value)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_PDP_SVALUE, 0), c->pdp_sess_value);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_PDP_SVALUE, 0), c->pdp_sess_value);
         }
         if (ISVALID(c->pdp_uri_prefix)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_PDP_PREFIX, 0), c->pdp_uri_prefix);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_PDP_PREFIX, 0), c->pdp_uri_prefix);
         }
         if (c->pdp_cache_valid > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_PDP_CACHE, 0), c->pdp_cache_valid);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_PDP_CACHE, 0), c->pdp_cache_valid);
         }
         if (c->pdp_js_repost > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_PDP_JS, 0), c->pdp_js_repost);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_PDP_JS, 0), c->pdp_js_repost);
         }
         if (c->client_ip_validate > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_IP_VALIDATE, 0), c->client_ip_validate);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_IP_VALIDATE, 0), c->client_ip_validate);
         }
         if (ISVALID(c->cookie_prefix)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_COOKIE_PREFIX, 0), c->cookie_prefix);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_COOKIE_PREFIX, 0), c->cookie_prefix);
         }
         if (c->cookie_maxage > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_COOKIE_MAXAGE, 0), c->cookie_maxage);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_COOKIE_MAXAGE, 0), c->cookie_maxage);
         }
         if (c->cdsso_enable > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_CDSSO, 0), c->cdsso_enable);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_CDSSO, 0), c->cdsso_enable);
         }
         if (c->cdsso_login_map_sz > 0 && c->cdsso_login_map != NULL) {
             for (i = 0; i < c->cdsso_login_map_sz; i++) {
                 am_config_map_t *v = &c->cdsso_login_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_CDSSO_LOGIN_MAP, c->cdsso_login_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_CDSSO_LOGIN_MAP, c->cdsso_login_map_sz), v->name, v->value);
                 }
             }
         }
@@ -600,7 +610,7 @@ static int am_create_instance_entry_data(am_shm_t *cf, struct offset_list *h, am
             for (i = 0; i < c->cdsso_cookie_domain_map_sz; i++) {
                 am_config_map_t *v = &c->cdsso_cookie_domain_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_CDSSO_COOKIE_MAP, c->cdsso_cookie_domain_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_CDSSO_COOKIE_MAP, c->cdsso_cookie_domain_map_sz), v->name, v->value);
                 }
             }
         }
@@ -608,24 +618,24 @@ static int am_create_instance_entry_data(am_shm_t *cf, struct offset_list *h, am
             for (i = 0; i < c->logout_cookie_reset_map_sz; i++) {
                 am_config_map_t *v = &c->logout_cookie_reset_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_LOGOUT_COOKIE_MAP, c->logout_cookie_reset_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_LOGOUT_COOKIE_MAP, c->logout_cookie_reset_map_sz), v->name, v->value);
                 }
             }
         }
         if (ISVALID(c->logout_redirect_url)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_LOGOUT_REDIRECT, 0), c->logout_redirect_url);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_LOGOUT_REDIRECT, 0), c->logout_redirect_url);
         }
         if (ISVALID(c->logout_url_regex)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_LOGOUT_URL_REGEX, 0), c->logout_url_regex);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_LOGOUT_URL_REGEX, 0), c->logout_url_regex);
         }
         if (c->logout_redirect_disable > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_LOGOUT_REDIR_DISABLE, 0), c->logout_redirect_disable);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_LOGOUT_REDIR_DISABLE, 0), c->logout_redirect_disable);
         }
         if (c->logout_map_sz > 0 && c->logout_map != NULL) {
             for (i = 0; i < c->logout_map_sz; i++) {
                 am_config_map_t *v = &c->logout_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_LOGOUT_MAP, c->logout_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_LOGOUT_MAP, c->logout_map_sz), v->name, v->value);
                 }
             }
         }
@@ -633,86 +643,86 @@ static int am_create_instance_entry_data(am_shm_t *cf, struct offset_list *h, am
             for (i = 0; i < c->openam_logout_map_sz; i++) {
                 am_config_map_t *v = &c->openam_logout_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_AMLOGOUT_MAP, c->openam_logout_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_AMLOGOUT_MAP, c->openam_logout_map_sz), v->name, v->value);
                 }
             }
         }
         if (c->policy_scope_subtree > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_SCOPE, 0), c->policy_scope_subtree);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_SCOPE, 0), c->policy_scope_subtree);
         }
         if (c->resolve_client_host > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_CRESOLVE, 0), c->resolve_client_host);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_CRESOLVE, 0), c->resolve_client_host);
         }
         if (c->policy_eval_encode_chars > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_PE_ENC_CHARS, 0), c->policy_eval_encode_chars);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_PE_ENC_CHARS, 0), c->policy_eval_encode_chars);
         }
         if (c->cookie_encode_chars > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_CK_ENC_CHARS, 0), c->cookie_encode_chars);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_CK_ENC_CHARS, 0), c->cookie_encode_chars);
         }
         if (c->override_protocol > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_OV_PROTO, 0), c->override_protocol);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_OV_PROTO, 0), c->override_protocol);
         }
         if (c->override_host > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_OV_HOST, 0), c->override_host);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_OV_HOST, 0), c->override_host);
         }
         if (c->override_port > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_OV_PORT, 0), c->override_port);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_OV_PORT, 0), c->override_port);
         }
         if (c->override_notif_url > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_OV_NURL, 0), c->override_notif_url);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_OV_NURL, 0), c->override_notif_url);
         }
         if (c->config_valid > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_VALID, 0), c->config_valid);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_VALID, 0), c->config_valid);
         }
         if (ISVALID(c->password_replay_key)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_PASS_REPLY_KEY, 0), c->password_replay_key);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_PASS_REPLY_KEY, 0), c->password_replay_key);
         }
         if (c->policy_clock_skew > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_POL_CSKEW, 0), c->policy_clock_skew);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_POL_CSKEW, 0), c->policy_clock_skew);
         }
         if (ISVALID(c->url_redirect_param)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_URL_REDIR_PARAM, 0), c->url_redirect_param);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_URL_REDIR_PARAM, 0), c->url_redirect_param);
         }
         if (c->cache_control_enable > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_CACHE_HEADERS, 0), c->cache_control_enable);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_CACHE_HEADERS, 0), c->cache_control_enable);
         }
         if (c->use_redirect_for_advice > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_REDIRECT_ADVICE, 0), c->use_redirect_for_advice);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_REDIRECT_ADVICE, 0), c->use_redirect_for_advice);
         }
         if (ISVALID(c->client_ip_header)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_CLIENT_IP_HEADER, 0), c->client_ip_header);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_CLIENT_IP_HEADER, 0), c->client_ip_header);
         }
         if (ISVALID(c->client_hostname_header)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_CLIENT_HOST_HEADER, 0), c->client_hostname_header);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_CLIENT_HOST_HEADER, 0), c->client_hostname_header);
         }
         if (ISVALID(c->url_check_regex)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_URL_CHECK, 0), c->url_check_regex);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_URL_CHECK, 0), c->url_check_regex);
         }
         if (c->cond_login_url_sz > 0 && c->cond_login_url != NULL) {
             for (i = 0; i < c->cond_login_url_sz; i++) {
                 am_config_map_t *v = &c->cond_login_url[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_CONDLOGIN_MAP, c->cond_login_url_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_CONDLOGIN_MAP, c->cond_login_url_sz), v->name, v->value);
                 }
             }
         }
         if (c->cookie_http_only > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_HTTP_ONLY_COOKIE, 0), c->cookie_http_only);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_HTTP_ONLY_COOKIE, 0), c->cookie_http_only);
         }
         if (ISVALID(c->multi_attr_separator)) {
-            SAVE_CHAR_VALUE(cf, h, MAKE_TYPE(AM_CONF_ATTR_SEP, 0), c->multi_attr_separator);
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_ATTR_SEP, 0), c->multi_attr_separator);
         }
         if (c->logon_user_enable > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_WIN_LOGON, 0), c->logon_user_enable);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_WIN_LOGON, 0), c->logon_user_enable);
         }
         if (c->password_header_enable > 0) {
-            SAVE_NUM_VALUE(cf, h, MAKE_TYPE(AM_CONF_WIN_PASS_HEADER, 0), c->password_header_enable);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_WIN_PASS_HEADER, 0), c->password_header_enable);
         }
         if (c->json_url_map_sz > 0 && c->json_url_map != NULL) {
             for (i = 0; i < c->json_url_map_sz; i++) {
                 am_config_map_t *v = &c->json_url_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(cf, h, MAKE_TYPE(AM_CONF_JSON_URL_MAP, c->json_url_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_JSON_URL_MAP, c->json_url_map_sz), v->name, v->value);
                 }
             }
         }
@@ -1200,12 +1210,15 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
     static const char *thisfunc = "am_set_agent_config():";
     struct am_instance_entry *c;
     int ret;
-    struct am_instance *instance_data = conf != NULL ? (struct am_instance *) conf->user : NULL;
-
+    struct am_instance *instance_data;
+    int hdr_offset;
+    
     if (bc == NULL) return AM_EINVAL;
-    if (instance_data == NULL) return AM_ENOMEM;
 
-    am_shm_lock(conf);
+    ret = am_shm_lock(conf);
+    if (ret != AM_SUCCESS) {
+        return ret;
+    }
 
     c = get_instance_entry(instance_id);
     if (c != NULL) {
@@ -1228,6 +1241,15 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
         return AM_ENOMEM;
     }
 
+    instance_data = get_instance_data();
+    if (instance_data == NULL) {
+        am_shm_unlock(conf);
+        am_shm_free(conf, c);
+        return AM_ENOMEM;
+    }
+
+    hdr_offset = AM_GET_OFFSET(conf->pool, &c->data);
+    
     c->instance_id = instance_id;
     c->ts = time(NULL);
     memset(c->token, 0, sizeof (c->token));
@@ -1245,10 +1267,10 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
 
     c->data.next = c->data.prev = 0;
     c->lh.next = c->lh.prev = 0;
-    AM_OFFSET_LIST_INSERT(conf->pool, c, &(instance_data->list), struct am_instance_entry);
+    AM_OFFSET_LIST_INSERT(conf->pool, c, &instance_data->list, struct am_instance_entry);
 
     if (bc->local) {
-        ret = am_create_instance_entry_data(conf, &(c->data), bc, AM_CONF_ALL);
+        ret = am_create_instance_entry_data(hdr_offset, bc, AM_CONF_ALL);
     } else {
         if (xml == NULL || xsz == 0) {
             ret = AM_EINVAL;
@@ -1259,8 +1281,8 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
                         thisfunc);
                 ret = AM_XML_ERROR;
             } else {
-                ret = am_create_instance_entry_data(conf, &(c->data), bc, AM_CONF_BOOT); /* store bootstrap properties */
-                ret = am_create_instance_entry_data(conf, &(c->data), cf, AM_CONF_REMOTE);
+                ret = am_create_instance_entry_data(hdr_offset, bc, AM_CONF_BOOT); /* store bootstrap properties */
+                ret = am_create_instance_entry_data(hdr_offset, cf, AM_CONF_REMOTE);
                 am_config_free(&cf);
             }
         }

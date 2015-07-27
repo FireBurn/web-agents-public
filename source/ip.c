@@ -18,7 +18,7 @@
 #include "am.h"
 #include "utility.h"
 
-#define IP6_QUADS 4 /* the number of 32 bit words */
+#define IP6_32BIT_COMPONENTS 4
 
 #ifndef s6_addr32
 #ifdef __sun
@@ -56,6 +56,143 @@ struct win_in6_addr {
 
 #define in6_addr win_in6_addr
 #endif
+
+/*
+ * IPV6 presentation parser
+ *
+ * @return AM_TRUE if the string can be parsed as an ip v6 presentation
+ */
+static am_bool_t ipv6_parse(const char * p, struct in6_addr * n) {
+    return INETPTON(AF_INET6, p, n) == 1;
+}
+
+/*
+ * IPV4 presentation parser
+ *
+ * @return AM_TRUE if the string can be parsed as an ip v4 presentation
+ */
+static am_bool_t ipv4_parse(const char * p, struct in_addr * n) {
+    return INETPTON(AF_INET, p, n) == 1;
+}
+
+/*
+ * IPV6 presentation parser for a subsection of a string specified by length
+ *
+ * @return AM_TRUE if the section of a string can be parsed as an ip v6 presentation
+ */
+static am_bool_t ipv6_parse_section(const char * p, size_t length, struct in6_addr * n) {
+    am_bool_t output;
+    char * a = strndup(p, length);
+    if (a) {
+        output = ipv6_parse(a, n);
+        free(a);
+    } else {
+        output = AM_FALSE;
+    }
+    return output;
+}
+
+/*
+ * IPV4 presentation parser for a subsection of a string specified by length
+ *
+ * @return AM_TRUE if the section of a string can be parsed as an ip v4 presentation
+ */
+static am_bool_t ipv4_parse_section(const char * p, size_t length, struct in_addr * n) {
+    am_bool_t output;
+    char * a = strndup(p, length);
+    if (a) {
+        output = ipv4_parse(a, n);
+        free(a);
+    } else {
+        output = AM_FALSE;
+    }
+    return output;
+}
+
+/*
+ * Modify the binary address to set only the network mask bits
+ */
+static void ipv6_set_mask(struct in6_addr * n, int bits) {
+    int quads = bits >> 5;                      /* number of whole quads masked = bits/32 */
+    int remainder = bits & 0x1F;                /* number of bits masked in the subsequent quad = bits%32 */
+
+    if (quads < 4 && remainder)
+        n->s6_addr32 [quads++] &= htonl(0xFFFFFFFFu << (32 - remainder));
+
+    while (quads < 4)
+        n->s6_addr32 [quads++] = 0;
+}
+
+/*
+ * Modify the binary address to set only the network mask bits
+ */
+static void ipv4_set_mask(struct in_addr * n, int bits) {
+    n->s_addr &= htonl(0xFFFFFFFFu << (32 - bits));
+}
+
+/*
+ * Convert ip v6 presentation to binary and set network mask if CIDR notation is present
+ *
+ * @return number of bits in the network mask, 128 if no CIDR mask is present
+ */
+int ipv6_pton(const char * p, struct in6_addr * n) {
+    char * e = strchr(p, '/');
+    if (e) {
+        char * endp;
+        uint64_t bits64 = strtoul(e + 1, &endp, 10);
+
+        if (e + 1 == endp)
+            return -1;                          /* digits not present */
+
+        if (* endp)
+            return -1;                          /* junk after digits */
+
+        if (128 < bits64)
+            return -1;                          /* out of range */
+
+        if (ipv6_parse_section(p, e - p, n)) {
+            ipv6_set_mask(n, (int)bits64);
+            return (int)bits64;
+        }
+    } else {
+        if (ipv6_parse(p, n)) {
+            return 128;                         /* no CIDR notation */
+        }
+    }
+    return -1;                                  /* ip v6 part fails */
+}
+
+/*
+ * Convert ip v4 presentation to binary and set network mask if CIDR notation is present
+ *
+ * @return number of bits in the network mask, 32 if no CIDR mask is present
+ */
+int ipv4_pton(const char * p, struct in_addr * n) {
+    char * e = strchr(p, '/');
+    if (e) {
+        char * endp;
+        uint64_t bits64 = strtoul(e + 1, &endp, 10);
+
+        if (e + 1 == endp)
+            return -1;                          /* digits not present */
+
+        if (* endp)
+            return -1;                          /* junk after digits */
+
+        if (32 < bits64)
+            return -1;                          /* out of range */
+
+        if (ipv4_parse_section(p, e - p, n)) {
+            ipv4_set_mask(n, (int) bits64);
+            return (int) bits64;
+        }
+    } else {
+        if (ipv4_parse(p, n)) {
+            return 32;                         /* no CIDR notation */
+        }
+    }
+    return -1;                                  /* ip v4 part fails */
+}
 
 /**
  * Test equivalence masked bits in two ipv4 addresses in network form
@@ -125,7 +262,7 @@ static signed int cmp_ip_range(const struct in_addr * addr, const struct in_addr
  */
 static signed int cmp_net(const uint32_t * a, const uint32_t * b) {
     int i, c = 0;
-    for (i = IP6_QUADS; 0 < i--;) {
+    for (i = IP6_32BIT_COMPONENTS; 0 < i--;) {
         uint32_t ha = ntohl(a [i]), hb = ntohl(b [i]);
         c = CMP(ha, hb);
         if (c) {
@@ -159,41 +296,7 @@ static signed int cmp_ip6_range(const struct in6_addr * addr, const struct in6_a
  * @return AM_FALSE if the presentation cannot be read as an ipv4 address in CIDR notation
  */
 static am_bool_t read_ip(const char * p, struct in_addr * n, int * pbits) {
-#ifdef _WIN32
-    wchar_t *pw;
-    DWORD rva, rvn, len = 0;
-    NET_ADDRESS_INFO aia, ain;
-    size_t sz = p != NULL ? strlen(p) : 0;
-    if (sz == 0) {
-        return AM_FALSE;
-    }
-    pw = malloc(sz * sizeof (wchar_t) + 2);
-    if (pw == NULL) {
-        return AM_FALSE;
-    }
-    swprintf(pw, sz + 1, L"%hs", p);
-    rva = rvn = ERROR_INVALID_PARAMETER;
-
-    rva = ParseNetworkString(pw, NET_STRING_IPV4_ADDRESS, &aia, NULL, NULL);
-    if (rva != ERROR_SUCCESS) {
-        rvn = ParseNetworkString(pw, NET_STRING_IPV4_NETWORK, &ain, NULL, (BYTE *) & len);
-    }
-    free(pw);
-    if (rva != ERROR_SUCCESS && rvn != ERROR_SUCCESS) {
-        return AM_FALSE;
-    }
-    if (rva == ERROR_SUCCESS) {
-        *pbits = 32;
-        memcpy(n, &aia.Ipv4Address.sin_addr, sizeof (struct in_addr));
-    }
-    if (rvn == ERROR_SUCCESS) {
-        *pbits = len;
-        memcpy(n, &ain.Ipv4Address.sin_addr, sizeof (struct in_addr));
-    }
-#else
-    memset(n, 0, sizeof (struct in_addr));
-    *pbits = inet_net_pton(AF_INET, p, n, sizeof (struct in_addr));
-#endif
+    *pbits = ipv4_pton(p, n);
     if (*pbits == -1) {
         return AM_FALSE;
     }
@@ -221,42 +324,7 @@ static am_bool_t read_full_ip(const char * p, struct in_addr * n) {
  * @return AM_FALSE iff the presentation form cannot be parsed as an ipv6 address in CIDR notation
  */
 static am_bool_t read_ip6(const char * p, struct in6_addr * n, int * pbits) {
-#ifdef _WIN32
-    wchar_t *pw;
-    DWORD rva, rvn, len = 0;
-    NET_ADDRESS_INFO aia, ain;
-    size_t sz = p != NULL ? strlen(p) : 0;
-    if (sz == 0) {
-        return AM_FALSE;
-    }
-    pw = malloc(sz * sizeof (wchar_t) + 2);
-    if (pw == NULL) {
-        return AM_FALSE;
-    }
-    swprintf(pw, sz + 1, L"%hs", p);
-    rva = rvn = ERROR_INVALID_PARAMETER;
-
-    rva = ParseNetworkString(pw, NET_STRING_IPV6_ADDRESS_NO_SCOPE, &aia, NULL, NULL);
-    if (rva != ERROR_SUCCESS) {
-        /* example: 21DA:D3::/48 */
-        rvn = ParseNetworkString(pw, NET_STRING_IPV6_NETWORK, &ain, NULL, (BYTE *) & len);
-    }
-    free(pw);
-    if (rva != ERROR_SUCCESS && rvn != ERROR_SUCCESS) {
-        return AM_FALSE;
-    }
-    if (rva == ERROR_SUCCESS) {
-        *pbits = 128;
-        memcpy(n, &aia.Ipv6Address.sin6_addr, sizeof (struct in6_addr));
-    }
-    if (rvn == ERROR_SUCCESS) {
-        *pbits = len;
-        memcpy(n, &ain.Ipv6Address.sin6_addr, sizeof (struct in6_addr));
-    }
-#else
-    memset(n, 0, sizeof (struct in6_addr));
-    *pbits = inet_net_pton(AF_INET6, p, n, sizeof (struct in6_addr));
-#endif
+    *pbits = ipv6_pton(p, n);
     if (*pbits == -1) {
         return AM_FALSE;
     }
