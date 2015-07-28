@@ -400,9 +400,10 @@ static am_return_t validate_fqdn_access(am_request_t *r) {
         }
     }
 
+    /* since the client_fqdn is not set, this will redirect to the default fqdn */
     AM_LOG_WARNING(r->instance_id,
             "%s host name %s is not valid (no corresponding map value)", thisfunc, r->url.host);
-    r->status = AM_ACCESS_DENIED;
+    r->status = AM_INVALID_FQDN_ACCESS;
     return AM_FAIL;
 }
 
