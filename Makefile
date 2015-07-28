@@ -19,7 +19,7 @@
 #  DEBUG=1 builds debug binary version
 
 64=1
-DEBUG=1
+# DEBUG=1
 
 VERSION := 4.0.0-SNAPSHOT
 
