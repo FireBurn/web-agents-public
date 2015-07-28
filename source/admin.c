@@ -496,7 +496,7 @@ static int create_agent_instance(int status,
                     install_log("webserver site global configuration updated");
                 }
             } else {
-                rv = AM_ERROR;
+                rv = status == ADMIN_IIS_MOD_GLOBAL ? AM_SUCCESS : AM_ERROR;
             }
             if (rv == AM_SUCCESS) {
                 char iis_instc_file[AM_URI_SIZE];
