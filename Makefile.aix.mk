@@ -20,7 +20,7 @@ AIX_MK_INCLUDED := true
 CC := xlc_r
 SHARED := -G -qmkshrobj
 
-CFLAGS += -qpic -g -D_REENTRANT -D_THREAD_SAFE -DAIX -qlanglvl=extc99:noucs -DPIC -D_LARGEFILE64_SOURCE
+CFLAGS += -qtls -qpic -g -D_REENTRANT -D_THREAD_SAFE -DAIX -qlanglvl=extc99:noucs -DPIC -D_LARGEFILE64_SOURCE
 
 ifdef DEBUG
  CFLAGS += -DDEBUG
