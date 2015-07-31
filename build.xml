@@ -135,10 +135,18 @@
     <property name="agentversion" value="4.0.0-SNAPSHOT"/>
 
     <target name="clean">
+        <antcall target="cleandispatch" />
+        <antcall target="cleandistribution" />
+    </target>
+    
+    <target name="cleandispatch">
         <echo message="Dispatch to clean"/>
         <exec executable="gmake" failonerror="true">
             <arg value="clean" />
         </exec>
+    </target>
+    
+    <target name="cleandistribution">
     	<echo message="Remove product distribution folder"/>
     	<delete dir="${prd.nightly.dist.dir}"/>
     </target>
