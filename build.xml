@@ -114,13 +114,13 @@
         <equals arg1="${build.type}" arg2="64"/>
     </condition>
 	
-	<condition property="build.type.is64Bit" value="1" else="">
-	    <equals arg1="${build.type}" arg2="64"/>
-	</condition>
+    <condition property="build.type.is64Bit" value="1" else="">
+        <equals arg1="${build.type}" arg2="64"/>
+    </condition>
 	
-	<condition property="build.type.isDebug" value="1" else="">
-	    <equals arg1="${DEBUG}" arg2="1"/>
-	</condition>
+    <condition property="build.type.isDebug" value="1" else="">
+        <equals arg1="${DEBUG}" arg2="1"/>
+    </condition>
 
     <condition property="target.jdk.set" value="${target.jdk}">
         <isset property="target.jdk"/>
@@ -221,7 +221,14 @@
         </exec>
     </target>
 	
-	<target name="nightly">
+    <target name="upgradesvn">
+        <echo message="Run 'svn upgrade' so 'svn info' won't fail horribly because of 'working copy is too old' messages"/>
+        <exec executable="svn" failonerror="true">
+        	<arg value="upgrade" />
+        </exec>
+    </target>
+	
+    <target name="nightly">
     	<echo file="${prd.nightly.dist.dir}/webagents/${nightly.date}/Apache-v2.2-${build.os}-${build.type}-build_date.js" append="false">var apache_v22_${build.os}${build.type.suffix}_build_date = "${nightly.date}";
     	</echo>
     	<echo file="${prd.nightly.dist.dir}/webagents/${nightly.date}/Apache-v2.4-${build.os}-${build.type}-build_date.js" append="false">var apache_v24_${build.os}${build.type.suffix}_build_date = "${nightly.date}";
@@ -249,13 +256,13 @@
         </copy>
     </target>
 
-
     <target name="usage">
         <echo message=" "/>
         <echo message=" Following targets are available for Web Agents:"/>
         <echo message=" "/>
         <echo message=" all             : builds all the Web agents"/>
         <echo message=" clean           : deletes all the generated files"/>
+        <echo message=" upgradesvn      : this is a fudge to avoid 'workspace is too old' messages when 'svn info' is run"/>
         <echo message=" sjsws           : builds the Sun Java System Web Server 6.1/7.0 agent"/>
         <echo message=" apache22        : builds the Apache Web Server 2.2.x agent"/>
         <echo message=" apache24        : builds the Apache Web Server 2.4.x agent"/>
