@@ -153,17 +153,17 @@ static int send_authcontext_request(am_net_t *conn, const char *realm, char **to
             req_temp.token = strdup(*token);
 
             decode_status = am_session_decode(&req_temp);
-            if (decode_status == AM_SUCCESS && req_temp.si.error == AM_SUCCESS) {
+            if (decode_status == AM_SUCCESS && req_temp.session_info.error == AM_SUCCESS) {
 
-                if (ISVALID(req_temp.si.si)) {
-                    am_asprintf(&conn->req_headers, "%s%s\r\n", conn->req_headers, req_temp.si.si);
+                if (ISVALID(req_temp.session_info.si)) {
+                    am_asprintf(&conn->req_headers, "%s%s\r\n", conn->req_headers, req_temp.session_info.si);
                 } else {
                     am_free(conn->req_headers);
                     conn->req_headers = NULL;
                 }
 
                 AM_LOG_DEBUG(conn->instance_id, "%s app token SI: %s, S1: %s", thisfunc,
-                        LOGEMPTY(req_temp.si.si), LOGEMPTY(req_temp.si.s1));
+                        LOGEMPTY(req_temp.session_info.si), LOGEMPTY(req_temp.session_info.s1));
             }
             am_request_free(&req_temp);
         }
@@ -1185,5 +1185,80 @@ int am_url_validate(unsigned long instance_id, const char* url,
     close_event(request_data.event);
 
     am_free(request_data.data);
+    return status;
+}
+
+int am_agent_audit_request(unsigned long instance_id, const char *openam,
+        const char *logdata, const char *server_id, struct am_ssl_options *info) {
+    static const char *thisfunc = "am_agent_audit_request():";
+    am_net_t conn;
+    int status = AM_ERROR;
+    size_t post_sz, post_data_sz;
+    char *post = NULL, *post_data = NULL;
+    struct request_data req_data;
+
+    if (!ISVALID(logdata) || !ISVALID(openam)) return AM_EINVAL;
+
+    memset(&req_data, 0, sizeof (struct request_data));
+    memset(&conn, 0, sizeof (am_net_t));
+    conn.log = NULL;
+    conn.instance_id = instance_id;
+    conn.timeout = AM_NET_CONNECT_TIMEOUT;
+    conn.url = openam;
+    if (info != NULL) {
+        memcpy(&conn.ssl.info, info, sizeof (struct am_ssl_options));
+    }
+
+    if (ISVALID(server_id)) {
+        am_asprintf(&conn.req_headers, "Cookie: amlbcookie=%s\r\n", server_id);
+    }
+
+    req_data.event = create_event();
+    if (req_data.event == NULL) return AM_ENOMEM;
+
+    conn.data = &req_data;
+    conn.on_connected = on_connected_cb;
+    conn.on_close = on_close_cb;
+    conn.on_data = on_agent_request_data_cb;
+    conn.on_complete = on_complete_cb;
+
+    if (am_net_connect(&conn) == 0) {
+        post_data_sz = am_asprintf(&post_data,
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                "<RequestSet vers=\"1.0\" svcid=\"Logging\" reqid=\"0\">%s</RequestSet>",
+                logdata);
+        if (post_data != NULL) {
+            post_sz = am_asprintf(&post, "POST %s/loggingservice HTTP/1.1\r\n"
+                    "Host: %s:%d\r\n"
+                    "User-Agent: "MODINFO"\r\n"
+                    "Accept: text/xml\r\n"
+                    "Connection: Close\r\n"
+                    "Content-Type: text/xml; charset=UTF-8\r\n"
+                    "%s"
+                    "Content-Length: %d\r\n\r\n"
+                    "%s", conn.uv.path, conn.uv.host, conn.uv.port,
+                    NOTNULL(conn.req_headers), post_data_sz, post_data);
+            if (post != NULL) {
+                AM_LOG_DEBUG(instance_id, "%s sending request:\n%s", thisfunc, post);
+                status = am_net_write(&conn, post, post_sz);
+                free(post);
+            }
+            free(post_data);
+        }
+    }
+
+    if (status == AM_SUCCESS) {
+        wait_for_event(req_data.event, 0);
+    } else {
+        AM_LOG_DEBUG(instance_id, "%s disconnecting", thisfunc);
+        am_net_diconnect(&conn);
+    }
+
+    AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, conn.http_status);
+
+    am_net_close(&conn);
+    close_event(req_data.event);
+
+    am_free(req_data.data);
     return status;
 }

@@ -1530,7 +1530,7 @@ int am_session_decode(am_request_t *r) {
 
     if (token == NULL) return AM_EINVAL;
 
-    memset(&r->si, 0, sizeof (struct am_session_info));
+    memset(&r->session_info, 0, sizeof (struct am_session_info));
     tl = strlen(token);
 
     if (strchr(token, '*') != NULL) {
@@ -1591,29 +1591,29 @@ int am_session_decode(am_request_t *r) {
                         }
                     } else {
                         if (ty == AM_SI) {
-                            r->si.si = malloc(sz + 1);
-                            if (r->si.si == NULL) {
-                                r->si.error = AM_ENOMEM;
+                            r->session_info.si = malloc(sz + 1);
+                            if (r->session_info.si == NULL) {
+                                r->session_info.error = AM_ENOMEM;
                                 break;
                             }
-                            memcpy(r->si.si, raw, sz);
-                            r->si.si[sz] = 0;
+                            memcpy(r->session_info.si, raw, sz);
+                            r->session_info.si[sz] = 0;
                         } else if (ty == AM_SK) {
-                            r->si.sk = malloc(sz + 1);
-                            if (r->si.sk == NULL) {
-                                r->si.error = AM_ENOMEM;
+                            r->session_info.sk = malloc(sz + 1);
+                            if (r->session_info.sk == NULL) {
+                                r->session_info.error = AM_ENOMEM;
                                 break;
                             }
-                            memcpy(r->si.sk, raw, sz);
-                            r->si.sk[sz] = 0;
+                            memcpy(r->session_info.sk, raw, sz);
+                            r->session_info.sk[sz] = 0;
                         } else if (ty == AM_S1) {
-                            r->si.s1 = malloc(sz + 1);
-                            if (r->si.s1 == NULL) {
-                                r->si.error = AM_ENOMEM;
+                            r->session_info.s1 = malloc(sz + 1);
+                            if (r->session_info.s1 == NULL) {
+                                r->session_info.error = AM_ENOMEM;
                                 break;
                             }
-                            memcpy(r->si.s1, raw, sz);
-                            r->si.s1[sz] = 0;
+                            memcpy(r->session_info.s1, raw, sz);
+                            r->session_info.s1[sz] = 0;
                         }
                     }
                     l -= sz;
@@ -1904,7 +1904,7 @@ void am_request_free(am_request_t *r) {
     if (r != NULL) {
         AM_FREE(r->normalized_url, r->overridden_url, r->token,
                 r->client_ip, r->client_host, r->post_data,
-                r->si.s1, r->si.si, r->si.sk);
+                r->session_info.s1, r->session_info.si, r->session_info.sk);
         delete_am_policy_result_list(&r->pattr);
         delete_am_namevalue_list(&r->sattr);
     }
@@ -2750,6 +2750,30 @@ void update_agent_configuration_ttl(am_config_t *conf) {
     
     /* com.sun.identity.agents.config.postcache.entry.lifetime */
     UPDATE_VALUE_TO_SEC(conf->pdp_cache_valid);
+}
+
+void update_agent_configuration_audit(am_config_t *conf) {
+    int value;
+
+    if (conf == NULL) {
+        return;
+    }
+
+    if (AM_BITMASK_CHECK(conf->audit_level, (AM_LOG_LEVEL_AUDIT_ALLOW | AM_LOG_LEVEL_AUDIT_DENY))) {
+
+        value = conf->audit_level;
+
+        if (ISINVALID(conf->audit_file_disposition) || strcasecmp(conf->audit_file_disposition, "LOCAL") == 0) {
+            value |= AM_LOG_LEVEL_AUDIT;
+        } else if (strcasecmp(conf->audit_file_disposition, "REMOTE") == 0) {
+            value |= AM_LOG_LEVEL_AUDIT_REMOTE;
+        } else {
+            value |= AM_LOG_LEVEL_AUDIT;
+            value |= AM_LOG_LEVEL_AUDIT_REMOTE;
+        }
+
+        conf->audit_level = value;
+    }
 }
 
 char *get_global_name(const char *name, int id) {

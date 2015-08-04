@@ -47,7 +47,7 @@ typedef struct {
     unsigned long instance_id;
     char *token;
     char *config;
-    struct am_session_info si;
+    struct am_session_info session_info;
 
     /* bootstrap options */
 
@@ -69,6 +69,9 @@ typedef struct {
     int audit; /* 0 do not rotate, x rotate at x bytes, -1 rotate once a day */
     int audit_level;
     char *audit_file;
+    char *audit_file_remote;
+    int audit_remote_interval; /* minutes */
+    char *audit_file_disposition;
 
     char *cert_key_file;
     char *cert_key_pass;
@@ -371,5 +374,9 @@ typedef struct {
 #define AM_AGENTS_CONFIG_EXT_NOT_ENFORCED_REGEX_ENABLE "org.forgerock.agents.config.notenforced.ext.regex.enable"
 
 #define AM_AGENTS_CONFIG_JSON_URL "org.forgerock.agents.config.json.url"
+
+#define AM_AGENTS_CONFIG_AUDIT_REMOTE_FILE "com.sun.identity.agents.config.remote.logfile"
+#define AM_AGENTS_CONFIG_AUDIT_REMOTE_INTERVAL "com.sun.identity.agents.config.remote.log.interval"
+#define AM_AGENTS_CONFIG_AUDIT_DISPOSITION "com.sun.identity.agents.config.log.disposition"
 
 #endif

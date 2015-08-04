@@ -55,6 +55,31 @@ typedef struct {
 #endif
 } am_exit_event_t;
 
+enum {
+    AM_TIMER_EVENT_ONCE = 0,
+    AM_TIMER_EVENT_RECURRING
+};
+
+typedef struct {
+    int type;
+    unsigned int interval;
+    void *args;
+    int error;
+#ifdef _WIN32
+    HANDLE tick;
+    HANDLE tick_q;
+#elif defined(__sun) 
+    timer_t tick;
+    int port;
+#elif defined(__APPLE__) 
+    int tick;
+#else
+    timer_t tick;
+#endif
+    am_thread_t tick_thr;
+    am_exit_event_t *exit_ev;
+} am_timer_event_t;
+
 am_event_t *create_event();
 am_exit_event_t *create_exit_event();
 
@@ -66,6 +91,10 @@ void set_exit_event(am_exit_event_t *e);
 
 void close_event(am_event_t *e);
 void close_exit_event(am_exit_event_t *e);
+
+am_timer_event_t *am_create_timer_event(int type, unsigned int interval, void *args, void (*callback)(void *));
+void am_start_timer_event(am_timer_event_t *e);
+void am_close_timer_event(am_timer_event_t *e);
 
 void am_worker_pool_shutdown();
 void am_worker_pool_init();
@@ -81,6 +110,14 @@ void notification_worker(
         inst, void *arg);
 
 void session_logout_worker(
+#ifdef _WIN32
+        PTP_CALLBACK_INSTANCE
+#else
+        void *
+#endif
+        inst, void *arg);
+
+void remote_audit_worker(
 #ifdef _WIN32
         PTP_CALLBACK_INSTANCE
 #else

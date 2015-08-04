@@ -75,18 +75,24 @@ int am_init(int id) {
     am_net_init();
     am_log_init(id, AM_SUCCESS);
     am_configuration_init(id);
+    am_audit_init(id);
+    am_audit_processor_init();
     rv = am_cache_init(id);
+    am_worker_pool_init();
 #endif
     return rv;
 }
 
 int am_shutdown(int id) {
+    am_audit_processor_shutdown();
+    am_audit_shutdown();
     am_cache_shutdown();
     am_configuration_shutdown();
     am_log_shutdown(id);
 #ifdef _WIN32
     am_main_destroy();
 #else
+    am_worker_pool_shutdown();
     am_net_shutdown();
 #endif
     return 0;
@@ -99,6 +105,10 @@ int am_init_worker(int id) {
     am_main_init_timed_lock();
     am_log_init_worker(id, init.error);
     am_configuration_init(id);
+    am_audit_init(id);
+    if (init.error == AM_SUCCESS || init.error == AM_EAGAIN) {
+        am_audit_processor_init();
+    }
     am_cache_init(id);
 #endif
     am_worker_pool_init();
@@ -110,6 +120,7 @@ int am_re_init_worker() {
     am_main_init_timed_lock();
     if (init.error == AM_SUCCESS || init.error == AM_EAGAIN) {
         am_log_re_init(AM_RETRY_ERROR);
+        am_audit_processor_init();
     }
 #endif
     return 0;

@@ -29,7 +29,7 @@ LDFLAGS += /SUBSYSTEM:CONSOLE /NOLOGO /INCREMENTAL:NO /errorReport:none /MANIFES
 	/OPT:REF /OPT:ICF /LTCG /DYNAMICBASE /NXCOMPAT /DEBUG \
 	/MACHINE:X64
 	
-LIBS = kernel32.lib user32.lib ws2_32.lib crypt32.lib advapi32.lib shlwapi.lib shell32.lib iphlpapi.lib
+LIBS = kernel32.lib user32.lib ws2_32.lib crypt32.lib advapi32.lib shlwapi.lib shell32.lib
 
 $(IIS_OUT_OBJS): COMPILEOPTS += /TP
 $(TEST_OBJECTS): CFLAGS += /D HAVE_MSVC_THREAD_LOCAL_STORAGE /D HAVE__SNPRINTF_S /D HAVE__VSNPRINTF_S /D UNIT_TESTING_DEBUG=1
@@ -39,7 +39,7 @@ $(error Only 64bit targets are supported)
 endif
 
 ifdef DEBUG
- CFLAGS += /MTd /D _DEBUG
+ CFLAGS += /MTd /D _DEBUG /D DEBUG
 else
  CFLAGS += /MT
 endif

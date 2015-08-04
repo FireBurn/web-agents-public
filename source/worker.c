@@ -57,7 +57,7 @@ void notification_worker(
         /* PolicyChangeNotification - ResourceName */
         if (!policy_change_run && strcmp(e->n, "ResourceName") == 0) {
             am_request_t req;
-            memset(&req, 0, sizeof(am_request_t));
+            memset(&req, 0, sizeof (am_request_t));
             req.instance_id = r->instance_id;
             am_add_policy_cache_entry(&req, AM_POLICY_CHANGE_KEY, 0);
             policy_change_run = AM_TRUE; /* one AM_POLICY_CHANGE_KEY update per PolicyChangeNotification is enough */
@@ -94,4 +94,16 @@ void session_logout_worker(
         am_remove_cache_entry(r->instance_id, r->token);
     }
     AM_FREE(r->openam, r->token, r->server_id, r);
+}
+
+void remote_audit_worker(
+#ifdef _WIN32
+        PTP_CALLBACK_INSTANCE
+#else
+        void *
+#endif
+        inst, void *arg) {
+    struct audit_worker_data *r = (struct audit_worker_data *) arg;
+    am_agent_audit_request(r->instance_id, r->openam, r->logdata, r->server_id, &r->info);
+    AM_FREE(r->openam, r->logdata, r->server_id, r);
 }

@@ -63,10 +63,10 @@ varnish: $(OUT_OBJS) $(VARNISH_OUT_OBJS)
 	
 agentadmin: $(OUT_OBJS) $(ADMIN_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" binary ***]"
-	${CC} $(LDFLAGS) $(OUT_OBJS) $(ADMIN_OUT_OBJS) -o build/agentadmin
+	${CC} $(CFLAGS) $(LDFLAGS) $(OUT_OBJS) $(ADMIN_OUT_OBJS) -o build/agentadmin
 
 tests: clean build version test_includes $(OUT_OBJS) $(TEST_OBJECTS) 
 	@$(ECHO) "[***** Building "$@" binary *****]"
-	${CC} $(LDFLAGS) $(OUT_OBJS) $(TEST_OBJECTS) -o build$(PS)test
+	${CC} $(CFLAGS) $(LDFLAGS) $(OUT_OBJS) $(TEST_OBJECTS) -o build$(PS)test
 	
 endif

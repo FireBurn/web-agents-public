@@ -730,9 +730,9 @@ static am_return_t validate_token(am_request_t *r) {
     /* get site/server info */
     if (status == AM_SUCCESS && ISVALID(r->token)) {
         int decode_status = am_session_decode(r);
-        if (decode_status == AM_SUCCESS && r->si.error == AM_SUCCESS) {
+        if (decode_status == AM_SUCCESS && r->session_info.error == AM_SUCCESS) {
             AM_LOG_DEBUG(r->instance_id, "%s sso token SI: %s, S1: %s", thisfunc,
-                    LOGEMPTY(r->si.si), LOGEMPTY(r->si.s1));
+                    LOGEMPTY(r->session_info.si), LOGEMPTY(r->session_info.s1));
         }
     }
 
@@ -869,7 +869,7 @@ static am_return_t validate_policy(am_request_t *r) {
         struct am_ssl_options info;
         const char *service_url = get_valid_openam_url(r);
         int max_retry = 3;
-        unsigned int retry = 3, retry_wait = 2; //TODO: conf values
+        unsigned int retry = 3, retry_wait = 2;
 
         am_net_set_ssl_options(r->conf, &info);
 
@@ -885,7 +885,7 @@ static am_return_t validate_policy(am_request_t *r) {
                     r->conf->token, r->token,
                     url,
                     r->conf->notif_url, am_scope_to_str(scope), r->client_ip, pattrs,
-                    r->conf->lb_enable && ISVALID(r->si.si) ? r->si.si : NULL, &info,
+                    r->conf->lb_enable && ISVALID(r->session_info.si) ? r->session_info.si : NULL, &info,
                     &session_cache_new,
                     &policy_cache_new);
             if (status == AM_SUCCESS && session_cache_new != NULL && policy_cache_new != NULL) {
@@ -1008,7 +1008,7 @@ static am_return_t validate_policy(am_request_t *r) {
                 AM_LOG_DEBUG(r->instance_id, "%s trying cache entry for: %s", thisfunc,
                         LOGEMPTY(e->resource));
             }
-            
+
             if (e->scope == scope) {
                 const char *pattern = e->resource;
                 policy_status = policy_compare_url(r, pattern, url);
@@ -1188,7 +1188,7 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
     int sep_count = 0;
 
     if (r == NULL || r->conf == NULL || r->am_add_header_in_response_f == NULL || !ISVALID(name)) return;
-    
+
     /* cookie-reset list can contain the following values:
      *  cookiename
      *  cookiename[=value][;Domain=value]
@@ -1230,7 +1230,7 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
             am_asprintf(&cookie, "%s%s%s", cookie, name, sep_count == 0 ? "=" : "");
         }
     }
-    
+
     /* set cookie value */
     if (cookie != NULL) {
         cookie_value = r->conf->cookie_encode_chars ? url_encode((char *) value) : (char *) value;
@@ -1666,7 +1666,7 @@ static am_return_t handle_exit(am_request_t *r) {
                         if (oam != NULL) {
                             wd->token = strdup(r->token);
                             wd->openam = strdup(oam);
-                            wd->server_id = r->conf->lb_enable && ISVALID(r->si.si) ? strdup(r->si.si) : NULL;
+                            wd->server_id = r->conf->lb_enable && ISVALID(r->session_info.si) ? strdup(r->session_info.si) : NULL;
 
                             am_net_set_ssl_options(r->conf, &wd->info);
 
@@ -1730,9 +1730,19 @@ static am_return_t handle_exit(am_request_t *r) {
             /* set user attributes */
             set_user_attributes(r);
 
-            if ((r->conf->audit_level & AM_LOG_LEVEL_AUDIT_ALLOW) == AM_LOG_LEVEL_AUDIT_ALLOW) {
+            if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_ALLOW)) {
                 AM_LOG_AUDIT(r->instance_id, AUDIT_ALLOW_USER_MESSAGE,
                         LOGEMPTY(r->user), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
+                if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE)) {
+                    int audit_status = am_add_remote_audit_entry(r->instance_id, r->conf->token,
+                            r->session_info.si, r->conf->audit_file_remote,
+                            r->token, AUDIT_ALLOW_USER_MESSAGE,
+                            LOGEMPTY(r->user), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
+                    if (audit_status != AM_SUCCESS) {
+                        AM_LOG_ERROR(r->instance_id, "%s failed to store remote audit log message (%s)",
+                                thisfunc, am_strerror(audit_status));
+                    }
+                }
             }
 
             if (r->token_in_post && r->conf->cdsso_enable &&
@@ -1887,9 +1897,19 @@ static am_return_t handle_exit(am_request_t *r) {
         case AM_INVALID_FQDN_ACCESS:
 
             if (status == AM_ACCESS_DENIED &&
-                    (r->conf->audit_level & AM_LOG_LEVEL_AUDIT_DENY) == AM_LOG_LEVEL_AUDIT_DENY) {
+                    AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_DENY)) {
                 AM_LOG_AUDIT(r->instance_id, AUDIT_DENY_USER_MESSAGE,
                         LOGEMPTY(r->user), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
+                if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE)) {
+                    int audit_status = am_add_remote_audit_entry(r->instance_id, r->conf->token,
+                            r->session_info.si, r->conf->audit_file_remote,
+                            r->token, AUDIT_DENY_USER_MESSAGE,
+                            LOGEMPTY(r->user), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
+                    if (audit_status != AM_SUCCESS) {
+                        AM_LOG_ERROR(r->instance_id, "%s failed to store remote audit log message (%s)",
+                                thisfunc, am_strerror(audit_status));
+                    }
+                }
             }
 
             if (r->am_set_custom_response_f != NULL) {

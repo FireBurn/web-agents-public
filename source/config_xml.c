@@ -137,7 +137,7 @@ static void parse_config_value(am_xml_parser_ctx_t *x, const char *prm, int type
         {
             int *value = (int *) itm;
             *value = AM_LOG_LEVEL_NONE;
-            if (strncasecmp(val, "all", 3) == 0) {
+            if (strncasecmp(val, "all", 3) == 0 || strncasecmp(val, "debug", len) == 0) {
                 *value = AM_LOG_LEVEL_DEBUG;
             } else if (strncasecmp(val, "error", len) == 0) {
                 *value = AM_LOG_LEVEL_ERROR;
@@ -180,14 +180,7 @@ static void parse_config_value(am_xml_parser_ctx_t *x, const char *prm, int type
                 *value |= AM_LOG_LEVEL_AUDIT_DENY;
             } else if (strncasecmp(val, "LOG_DENY", len) == 0) {
                 *value |= AM_LOG_LEVEL_AUDIT_DENY;
-            } else if (strncasecmp(val, "ALL", len) == 0) {
-                *value |= AM_LOG_LEVEL_AUDIT;
-                *value |= AM_LOG_LEVEL_AUDIT_REMOTE;
-            } else if (strncasecmp(val, "LOCAL", len) == 0) {
-                *value |= AM_LOG_LEVEL_AUDIT;
-            } else if (strncasecmp(val, "REMOTE", len) == 0) {
-                *value |= AM_LOG_LEVEL_AUDIT_REMOTE;
-            }
+            } 
             if (x->log_enable) {
                 AM_LOG_DEBUG(x->conf->instance_id, "am_parse_config_xml() %s is set to '%d'",
                         prm, *value);
@@ -376,6 +369,11 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
     parse_config_value(ctx, AM_AGENTS_CONFIG_PDP_JS_REPOST, CONF_NUMBER, NULL, &ctx->conf->pdp_js_repost, val, len);
 
     parse_config_value(ctx, AM_AGENTS_CONFIG_JSON_URL, CONF_STRING_MAP, &ctx->conf->json_url_map_sz, &ctx->conf->json_url_map, val, len);
+
+    parse_config_value(ctx, AM_AGENTS_CONFIG_AUDIT_REMOTE_INTERVAL, CONF_NUMBER, NULL, &ctx->conf->audit_remote_interval, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_AUDIT_REMOTE_FILE, CONF_STRING, NULL, &ctx->conf->audit_file_remote, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_AUDIT_DISPOSITION, CONF_STRING, NULL, &ctx->conf->audit_file_disposition, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_AUDIT_LEVEL, CONF_AUDIT_LEVEL, NULL, &ctx->conf->audit_level, val, len);
 }
 
 static void end_element(void * userData, const char * name) {
@@ -400,7 +398,6 @@ static void end_element(void * userData, const char * name) {
     parse_config_value(ctx, AM_AGENTS_CONFIG_DEBUG_LEVEL, CONF_DEBUG_LEVEL, NULL, &ctx->conf->debug_level, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_DEBUG_OPT, CONF_NUMBER, NULL, &ctx->conf->debug, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_AUDIT_FILE, CONF_STRING, NULL, &ctx->conf->audit_file, val, len);
-    parse_config_value(ctx, AM_AGENTS_CONFIG_AUDIT_LEVEL, CONF_AUDIT_LEVEL, NULL, &ctx->conf->audit_level, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_AUDIT_OPT, CONF_NUMBER, NULL, &ctx->conf->audit, val, len);
 
     parse_config_value(ctx, AM_AGENTS_CONFIG_CERT_KEY_FILE, CONF_STRING, NULL, &ctx->conf->cert_key_file, val, len);
@@ -578,5 +575,6 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
 
     decrypt_agent_passwords(r);
     update_agent_configuration_ttl(r);
+    update_agent_configuration_audit(r);
     return r;
 }

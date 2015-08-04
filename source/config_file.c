@@ -105,7 +105,7 @@ static void *parse_value(const char *line, const char *name,
                     break;
                 }
                 value_int = (int *) value;
-                if (strncasecmp(token, "all", 3) == 0) {
+                if (strncasecmp(token, "all", 3) == 0 || strcasecmp(token, "debug") == 0) {
                     *value_int = AM_LOG_LEVEL_DEBUG;
                     break;
                 }
@@ -160,19 +160,6 @@ static void *parse_value(const char *line, const char *name,
                 }
                 if (strcasecmp(token, "LOG_DENY") == 0) {
                     *value_int |= AM_LOG_LEVEL_AUDIT_DENY;
-                    break;
-                }
-                if (strcasecmp(token, "ALL") == 0) {
-                    *value_int |= AM_LOG_LEVEL_AUDIT;
-                    *value_int |= AM_LOG_LEVEL_AUDIT_REMOTE;
-                    break;
-                }
-                if (strcasecmp(token, "LOCAL") == 0) {
-                    *value_int |= AM_LOG_LEVEL_AUDIT;
-                    break;
-                }
-                if (strcasecmp(token, "REMOTE") == 0) {
-                    *value_int |= AM_LOG_LEVEL_AUDIT_REMOTE;
                     break;
                 }
                 break;
@@ -443,7 +430,6 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_DEBUG_FILE, CONF_STRING, NULL, &conf->debug_file, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_DEBUG_LEVEL, CONF_DEBUG_LEVEL, NULL, &conf->debug_level, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_FILE, CONF_STRING, NULL, &conf->audit_file, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_LEVEL, CONF_AUDIT_LEVEL, NULL, &conf->audit_level, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_OPT, CONF_NUMBER, NULL, &conf->audit, NULL);
 
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CERT_KEY_FILE, CONF_STRING, NULL, &conf->cert_key_file, NULL);
@@ -473,7 +459,7 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
 
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOTIF_ENABLE, CONF_NUMBER, NULL, &conf->notif_enable, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOTIF_URL, CONF_STRING, NULL, &conf->notif_url, NULL);
-        
+
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LB_ENABLE, CONF_NUMBER, NULL, &conf->lb_enable, NULL);
 
         if (conf->local) { /* do read other options in case configuration is local */
@@ -577,6 +563,11 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_JS_REPOST, CONF_NUMBER, NULL, &conf->pdp_js_repost, NULL);
 
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_JSON_URL, CONF_STRING_MAP, &conf->json_url_map_sz, &conf->json_url_map, NULL);
+
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_LEVEL, CONF_AUDIT_LEVEL, NULL, &conf->audit_level, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_REMOTE_INTERVAL, CONF_NUMBER, NULL, &conf->audit_remote_interval, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_REMOTE_FILE, CONF_STRING, NULL, &conf->audit_file_remote, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_DISPOSITION, CONF_STRING, NULL, &conf->audit_file_disposition, NULL);
         }
     }
 
@@ -587,6 +578,7 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
 
     decrypt_agent_passwords(conf);
     update_agent_configuration_ttl(conf);
+    update_agent_configuration_audit(conf);
     return conf;
 }
 
@@ -623,7 +615,8 @@ void am_config_free(am_config_t **cp) {
                 c->fqdn_default, c->pdp_lb_cookie, c->cookie_prefix, c->logout_redirect_url,
                 c->password_replay_key, c->url_redirect_param, c->client_ip_header,
                 c->client_hostname_header, c->url_check_regex, c->multi_attr_separator,
-                c->pdp_sess_mode, c->pdp_sess_value, c->pdp_uri_prefix, c->logout_url_regex);
+                c->pdp_sess_mode, c->pdp_sess_value, c->pdp_uri_prefix, c->logout_url_regex,
+                c->audit_file_remote, c->audit_file_disposition);
 
         AM_CONF_FREE(c->naming_url_sz, c->naming_url);
         AM_CONF_FREE(c->hostmap_sz, c->hostmap);

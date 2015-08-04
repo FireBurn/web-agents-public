@@ -73,7 +73,7 @@ typedef enum {
 #endif
 
 #ifndef AM_MAX_THREADS_POOL
-#define AM_MAX_THREADS_POOL         4
+#define AM_MAX_THREADS_POOL         AM_MAX_INSTANCES
 #endif
 
 #ifndef AM_USER_GROUP_NAME_LIMIT
@@ -241,7 +241,7 @@ typedef struct am_request {
     char method;
 
     char *token;
-    struct am_session_info si;
+    struct am_session_info session_info;
 
     char *client_ip;
     char *client_host;

@@ -134,7 +134,10 @@ enum {
     AM_CONF_NEF_EXT_REGEX_ENABLE,
     AM_CONF_LOGOUT_REGEX_ENABLE,
     AM_CONF_LOGOUT_URL_REGEX,
-    AM_CONF_LOGOUT_REDIR_DISABLE
+    AM_CONF_LOGOUT_REDIR_DISABLE,
+    AM_CONF_AUDIT_REMOTE_FILE,
+    AM_CONF_AUDIT_REMOTE_INTERVAL,
+    AM_CONF_AUDIT_FILE_DISPOSITION
 };
 
 struct am_instance {
@@ -196,7 +199,7 @@ int am_configuration_shutdown() {
 }
 
 static struct am_instance * get_instance_data() {
-    return (struct am_instance *)am_shm_get_user_pointer(conf);
+    return (struct am_instance *) am_shm_get_user_pointer(conf);
 }
 
 static struct am_instance_entry *get_instance_entry(unsigned long instance_id) {
@@ -248,20 +251,20 @@ void remove_agent_instance_byname(const char *name) {
     struct am_instance_entry *e, *t, *h;
     struct am_instance *instance_data;
     int ret;
-    
+
     ret = am_shm_lock(conf);
     if (ret != AM_SUCCESS) {
         return;
     }
-    
+
     instance_data = get_instance_data();
     if (instance_data == NULL) {
         am_shm_unlock(conf);
         return;
     }
-    
+
     h = (struct am_instance_entry *) AM_GET_POINTER(conf->pool, instance_data->list.prev);
-    
+
     AM_OFFSET_LIST_FOR_EACH(conf->pool, h, e, t, struct am_instance_entry) {
         if (strcmp(e->name, name) == 0) {
             am_remove_cache_entry(e->instance_id, e->token); /* delete cached agent session data */
@@ -358,9 +361,6 @@ static int am_create_instance_entry_data(int h, am_config_t *c, char all) {
         }
         if (c->audit > 0) {
             SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_AUDIT, 0), c->audit);
-        }
-        if (c->audit_level > 0) {
-            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_AUDIT_LEVEL, 0), c->audit_level);
         }
         if (ISVALID(c->audit_file)) {
             SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_AUDIT_FILE, 0), c->audit_file);
@@ -726,6 +726,18 @@ static int am_create_instance_entry_data(int h, am_config_t *c, char all) {
                 }
             }
         }
+        if (c->audit_level > 0) {
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_AUDIT_LEVEL, 0), c->audit_level);
+        }
+        if (c->audit_remote_interval > 0) {
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_AUDIT_REMOTE_INTERVAL, 0), c->audit_remote_interval);
+        }
+        if (ISVALID(c->audit_file_remote)) {
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_AUDIT_REMOTE_FILE, 0), c->audit_file_remote);
+        }
+        if (ISVALID(c->audit_file_disposition)) {
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_AUDIT_FILE_DISPOSITION, 0), c->audit_file_disposition);
+        }
     }
     return AM_SUCCESS;
 }
@@ -786,6 +798,15 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 break;
             case AM_CONF_AUDIT_FILE:
                 r->audit_file = strndup(i->value, i->size[0]);
+                break;
+            case AM_CONF_AUDIT_REMOTE_INTERVAL:
+                r->audit_remote_interval = i->num_value;
+                break;
+            case AM_CONF_AUDIT_REMOTE_FILE:
+                r->audit_file_remote = strndup(i->value, i->size[0]);
+                break;
+            case AM_CONF_AUDIT_FILE_DISPOSITION:
+                r->audit_file_disposition = strndup(i->value, i->size[0]);
                 break;
             case AM_CONF_CERT_KEY_FILE:
                 r->cert_key_file = strndup(i->value, i->size[0]);
@@ -1212,7 +1233,7 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
     int ret;
     struct am_instance *instance_data;
     int hdr_offset;
-    
+
     if (bc == NULL) return AM_EINVAL;
 
     ret = am_shm_lock(conf);
@@ -1249,7 +1270,7 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
     }
 
     hdr_offset = AM_GET_OFFSET(conf->pool, &c->data);
-    
+
     c->instance_id = instance_id;
     c->ts = time(NULL);
     memset(c->token, 0, sizeof (c->token));
@@ -1296,11 +1317,11 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
 int am_get_agent_config(unsigned long instance_id, const char *config_file, am_config_t **cnf) {
     static const char *thisfunc = "am_get_agent_config():";
     struct am_instance_entry *c;
-    int rv = 1, in_progress = AM_FALSE;
+    int rv = AM_ERROR, in_progress = AM_FALSE;
     char *profile_xml = NULL;
     size_t profile_xml_sz = 0;
     int max_retry = 3;
-    unsigned int retry = 3, retry_wait = 2; //TODO: conf values
+    unsigned int retry = 3, retry_wait = 2;
 
     if (conf == NULL) {
         AM_LOG_ERROR(instance_id, "%s unable to fetch agent configuration (shared memory error)",
@@ -1411,6 +1432,15 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
                 AM_LOG_DEBUG(instance_id, "%s agent configuration read from a cache",
                         thisfunc);
                 am_shm_unlock(conf);
+                if (AM_BITMASK_CHECK((*cnf)->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE)) {
+                    /* register or update remote audit logging configuration */
+                    rv = am_audit_register_instance(*cnf);
+                    if (rv != AM_SUCCESS) {
+                        AM_LOG_WARNING(instance_id,
+                                "%s failed to register remote audit log instance (%s)",
+                                thisfunc, am_strerror(rv));
+                    }
+                }
                 break;
             }
         }

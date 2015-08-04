@@ -134,6 +134,14 @@ struct logout_worker_data {
     struct am_ssl_options info;
 };
 
+struct audit_worker_data {
+    unsigned long instance_id;
+    char *logdata;
+    char *openam;
+    char *server_id;
+    struct am_ssl_options info;
+};
+
 typedef struct {
     uint64_t start;
     uint64_t stop;
@@ -179,7 +187,7 @@ void *am_shm_get_user_pointer(am_shm_t *am);
 void am_shm_info(am_shm_t *);
 void am_shm_destroy(am_shm_t* am);
 
-int am_create_agent_dir(const char *sep, const char *path, char **created_name, 
+int am_create_agent_dir(const char *sep, const char *path, char **created_name,
         char **created_name_simple, uid_t* uid, gid_t* gid, void (*log)(const char *, ...));
 
 int decrypt_password(const char *key, char **password);
@@ -257,7 +265,7 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
         struct am_namevalue **session_list,
         struct am_policy_result **policy_list);
 
-int am_url_validate(unsigned long instance_id, const char *url, 
+int am_url_validate(unsigned long instance_id, const char *url,
         struct am_ssl_options *info, int *httpcode, void(*log)(const char *, ...));
 
 void *am_parse_session_xml(unsigned long instance_id, const char *xml, size_t xml_sz);
@@ -269,6 +277,17 @@ int am_agent_login(unsigned long instance_id, const char *openam, const char *no
         int lb_enable, struct am_ssl_options *info,
         char **agent_token, char **pxml, size_t *pxsz, struct am_namevalue **session_list,
         void(*log)(const char *, ...));
+
+int am_audit_init(int id);
+int am_audit_shutdown();
+int am_audit_processor_init();
+void am_audit_processor_shutdown();
+int am_audit_register_instance(am_config_t *conf);
+int am_add_remote_audit_entry(unsigned long instance_id, const char *agent_token,
+        const char *agent_token_server_id, const char *file_name,
+        const char *user_token, const char *format, ...);
+int am_agent_audit_request(unsigned long instance_id, const char *openam,
+        const char *logdata, const char *server_id, struct am_ssl_options *info);
 
 int am_scope_to_num(const char *scope);
 const char *am_scope_to_str(int scope);
@@ -309,6 +328,7 @@ void* mem2cpy(void* dest, const void* source1, size_t size1, const void* source2
 void* mem3cpy(void* dest, const void* source1, size_t size1, const void* source2, size_t size2, const void* source3, size_t size3);
 
 void update_agent_configuration_ttl(am_config_t *c);
+void update_agent_configuration_audit(am_config_t *c);
 char *get_global_name(const char *name, int id);
 
 #endif
