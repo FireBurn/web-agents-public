@@ -63,7 +63,7 @@ else
 endif
 
 SED_ROPT := r
-	
+
 ifdef 64
  OS_BITS := _64bit
 else
@@ -109,12 +109,13 @@ $(APACHE22_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache22/includ
 	$(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache22/include $(COMPILEFLAG)DAPACHE2
 $(TEST_OBJECTS): CFLAGS += $(COMPILEFLAG)I.$(PS)cmocka $(COMPILEFLAG)I.$(PS)tests $(COMPILEFLAG)I.$(PS)$(OBJDIR)$(PS)tests \
 	$(COMPILEFLAG)DHAVE_SIGNAL_H
-	
+
 ifeq ($(OS_ARCH), Linux)
  include Makefile.linux.mk
 endif
 ifeq ($(OS_ARCH), SunOS)
  include Makefile.solaris.mk
+ SED_ROPT := e
 endif
 ifeq ($(OS_ARCH), AIX)
  include Makefile.aix.mk
