@@ -115,7 +115,6 @@ ifeq ($(OS_ARCH), Linux)
 endif
 ifeq ($(OS_ARCH), SunOS)
  include Makefile.solaris.mk
- SED_ROPT := e
 endif
 ifeq ($(OS_ARCH), AIX)
  include Makefile.aix.mk
