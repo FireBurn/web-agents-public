@@ -75,6 +75,7 @@ int disable_module(const char *, const char *);
 int test_module(const char *);
 int install_module(const char *, const char *);
 int remove_module();
+int add_directory_acl(char *site_id, char *directory);
 
 static const char *am_container_str(int v) {
     switch (v) {
@@ -88,6 +89,7 @@ static const char *am_container_str(int v) {
 static int instance_type = AM_I_UNKNOWN;
 static char app_path[AM_URI_SIZE];
 static char log_path[AM_URI_SIZE];
+static char log_path_dir[AM_URI_SIZE];
 static char license_tracker_path[AM_URI_SIZE];
 static char instance_path[AM_URI_SIZE];
 static char instance_config[AM_URI_SIZE];
@@ -498,12 +500,25 @@ static int create_agent_instance(int status,
             } else {
                 rv = status == ADMIN_IIS_MOD_GLOBAL ? AM_SUCCESS : AM_ERROR;
             }
+            
+            if (rv == AM_SUCCESS) {
+                /* add read/write ACL to the agent instance directory */
+                rv = add_directory_acl((char *) web_conf_path, (char *) created_name_path);
+                install_log("agent instance directory %s ACL (site %s) update status: %s", created_name_path,
+                        web_conf_path, am_strerror(rv));
+
+                /* add read/write ACL to the agent log directory */
+                rv = add_directory_acl((char *) web_conf_path, (char *) log_path_dir);
+                install_log("agent log directory %s ACL (site %s) update status: %s", log_path_dir,
+                        web_conf_path, am_strerror(rv));
+            }
+            
             if (rv == AM_SUCCESS) {
                 char iis_instc_file[AM_URI_SIZE];
                 snprintf(iis_instc_file, sizeof(iis_instc_file),
                         "%s"FILE_PATH_SEP"config"FILE_PATH_SEP"agent.conf",
                         created_name_path);
-
+                
                 /* module is already loaded in global configuration */
                 if (enable_module(web_conf_path, iis_instc_file) == 0) {
                     rv = AM_ERROR;
@@ -1248,20 +1263,24 @@ static void install_silent(int argc, char** argv) {
 
         if (validated) {
             fprintf(stdout, "\nCreating configuration...\n");
+
             if (instance_type == AM_I_APACHE) {
-                if (create_agent_instance(0, argv[2], argv[3], argv[5],
-                        argv[4], argv[6], agent_password, uid, gid) == AM_SUCCESS) {
-                    fprintf(stdout, "\nInstallation complete.\n");
-                    install_log("installation complete");
-                }
+                rv = create_agent_instance(0, argv[2], argv[3], argv[5],
+                        argv[4], argv[6], agent_password, uid, gid);
             } else if (instance_type == AM_I_IIS) {
-                if (create_agent_instance(0, argv[2], argv[3], argv[5],
-                        argv[4], argv[6], agent_password, uid, gid) == AM_SUCCESS) {
-                    fprintf(stdout, "\nInstallation complete.\n");
-                    install_log("installation complete");
-                }
+                rv = create_agent_instance(0, argv[2], argv[3], argv[5],
+                        argv[4], argv[6], agent_password, uid, gid);
             } else if (instance_type == AM_I_VARNISH) {
+                rv = AM_EOPNOTSUPP;
                 //TODO
+            }
+
+            if (rv == AM_SUCCESS) {
+                fprintf(stdout, "\nInstallation complete.\n");
+                install_log("installation complete");
+            } else {
+                fprintf(stdout, "\nInstallation error.\n");
+                install_log("installation error: %s", am_strerror(rv));
             }
         }
 
@@ -1608,6 +1627,7 @@ int main(int argc, char **argv) {
         snprintf(log_path, sizeof(log_path),
                 "%s.."FILE_PATH_SEP"log",
                 app_path);
+        strcpy(log_path_dir, log_path);
         am_make_path(log_path, uid, gid, install_log);
         strcat(log_path, FILE_PATH_SEP"install_");
         strcat(log_path, tm);

@@ -25,6 +25,8 @@
 #include <objbase.h>
 #include <oleauto.h>
 #include <ahadmin.h>
+#include <accctrl.h>
+#include <aclapi.h>
 
 typedef enum {
     MODE_UNKNOWN,
@@ -41,6 +43,8 @@ typedef enum {
 #define AM_IIS_ENAME L"name"
 #define AM_IIS_EADD L"add"
 #define AM_IIS_EID L"id"
+#define AM_IIS_EPOOL L"applicationPool"
+#define AM_IIS_EPATH L"path"
 
 static BSTR module_name = L"OpenAmModule";
 static BSTR system_webserver = L"system.webServer";
@@ -1067,6 +1071,170 @@ int test_module(const char *siteid) {
     return rv;
 }
 
+static char *get_site_application_pool(const char *site_id) {
+    IAppHostWritableAdminManager *admin_manager = NULL;
+    IAppHostElement *root = NULL;
+    IAppHostElementCollection *host_element_collection = NULL;
+    HRESULT hresult = S_OK;
+    DWORD site_count = 0;
+    UINT i, j;
+    VARIANT id_value;
+    static char app_pool[AM_URI_SIZE];
+    BSTR bstr_id = SysAllocString(AM_IIS_EID);
+    BSTR bstr_app_pool = SysAllocString(AM_IIS_EPOOL);
+    BSTR bstr_path = SysAllocString(AM_IIS_EPATH);
+    BOOL env_init = FALSE;
+
+    memset(&app_pool[0], 0, sizeof (app_pool));
+    do {
+        hresult = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+        if (FAILED(hresult)) {
+            break;
+        }
+        env_init = TRUE;
+        
+        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
+                CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID *) & admin_manager);
+        if (FAILED(hresult)) {
+            break;
+        }
+        hresult = IAppHostWritableAdminManager_GetAdminSection(admin_manager,
+                AM_IIS_SITES, AM_IIS_APPHOST, &root);
+        if (FAILED(hresult) || &root == NULL) {
+            break;
+        }
+        hresult = IAppHostElement_get_Collection(root, &host_element_collection);
+        if (FAILED(hresult)) {
+            break;
+        }
+        hresult = IAppHostElementCollection_get_Count(host_element_collection, &site_count);
+        if (FAILED(hresult)) {
+            break;
+        }
+        for (i = 0; i < site_count; i++) {
+            IAppHostElement *site = NULL;
+            VARIANT index;
+            index.vt = VT_UINT;
+            index.uintVal = i;
+            hresult = IAppHostElementCollection_get_Item(host_element_collection, index, &site);
+            if (SUCCEEDED(hresult)) {
+                char *id = get_property_value_byname(site, &id_value, &bstr_id, VT_UI4);
+                if (id != NULL && strcmp(id, site_id) == 0) {
+                    IAppHostElementCollection *site_element_collection = NULL;
+                    DWORD app_count = 0;
+                    hresult = IAppHostElement_get_Collection(site, &site_element_collection);
+                    if (SUCCEEDED(hresult) && site_element_collection != NULL &&
+                            SUCCEEDED(IAppHostElementCollection_get_Count(site_element_collection, &app_count))) {
+                        for (j = 0; j < app_count; j++) {
+                            IAppHostElement *app_element = NULL;
+                            VARIANT app_index;
+                            app_index.vt = VT_UINT;
+                            app_index.uintVal = j;
+                            hresult = IAppHostElementCollection_get_Item(site_element_collection, app_index, &app_element);
+                            if (SUCCEEDED(hresult)) {
+                                VARIANT path_value, app_pool_value;
+                                BSTR app_element_name = NULL;
+                                hresult = IAppHostElement_get_Name(app_element, &app_element_name);
+                                if (SUCCEEDED(hresult) && app_element_name != NULL &&
+                                        wcscmp(app_element_name, L"application") == 0) {
+                                    char *path_str = get_property_value_byname(app_element, &path_value, &bstr_path, VT_BSTR);
+                                    if (path_str != NULL && strcmp(path_str, "/") == 0) {
+                                        char *pool_str = get_property_value_byname(app_element, &app_pool_value, &bstr_app_pool, VT_BSTR);
+                                        if (pool_str != NULL) {
+                                            sprintf_s(app_pool, sizeof (app_pool), "IIS APPPOOL\\%s", pool_str);
+                                            free(pool_str);
+                                        }
+                                    }
+                                    am_free(path_str);
+                                }
+                                if (app_element_name != NULL) {
+                                    SysFreeString(app_element_name);
+                                }
+                            }
+                            if (app_element != NULL) {
+                                IAppHostElement_Release(app_element);
+                            }
+                        }
+                    }
+                    if (site_element_collection != NULL) {
+                        IAppHostElementCollection_Release(site_element_collection);
+                    }
+                }
+                am_free(id);
+            }
+            if (site != NULL) {
+                IAppHostElement_Release(site);
+            }
+        }
+        if (host_element_collection != NULL) {
+            IAppHostElementCollection_Release(host_element_collection);
+        }
+    } while (FALSE);
+
+    if (root != NULL) {
+        IAppHostElement_Release(root);
+    }
+    SysFreeString(bstr_id);
+    SysFreeString(bstr_app_pool);
+    SysFreeString(bstr_path);
+    if (env_init) {
+        CoUninitialize();
+    }
+    return app_pool;
+}
+
+int add_directory_acl(char *site_id, char *directory) {
+    PACL acl = NULL;
+    DWORD rv;
+    PACL directory_acl = NULL;
+    PSECURITY_DESCRIPTOR directory_secd = NULL;
+    EXPLICIT_ACCESS ea[1];
+    char *app_pool_name;
+    int status = AM_ERROR;
+
+    if (ISINVALID(site_id) || ISINVALID(directory)) {
+        return AM_EINVAL;
+    }
+
+    app_pool_name = get_site_application_pool(site_id);
+    if (ISINVALID(app_pool_name)) {
+        return AM_ERROR;
+    }
+
+    rv = GetNamedSecurityInfo(directory, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+            NULL, NULL, &directory_acl, NULL, &directory_secd);
+    if (rv != ERROR_SUCCESS) {
+        if (directory_secd != NULL) {
+            LocalFree(directory_secd);
+        }
+        return AM_FILE_ERROR;
+    }
+
+    ZeroMemory(&ea, sizeof (EXPLICIT_ACCESS));
+    ea[0].grfAccessPermissions = FILE_GENERIC_READ | FILE_GENERIC_WRITE;
+    ea[0].grfAccessMode = GRANT_ACCESS;
+    ea[0].grfInheritance = CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE;
+    ea[0].Trustee.TrusteeForm = TRUSTEE_IS_NAME;
+    ea[0].Trustee.TrusteeType = TRUSTEE_IS_USER;
+    ea[0].Trustee.ptstrName = (LPTSTR) app_pool_name;
+
+    rv = SetEntriesInAcl(1, ea, directory_acl, &acl);
+    if (rv == ERROR_SUCCESS) {
+        rv = SetNamedSecurityInfo(directory, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+                NULL, NULL, acl, NULL);
+        if (rv == ERROR_SUCCESS) {
+            status = AM_SUCCESS;
+        }
+    }
+    if (acl != NULL) {
+        LocalFree(acl);
+    }
+    if (directory_secd != NULL) {
+        LocalFree(directory_secd);
+    }
+    return status;
+}
+
 #else 
 
 /*no-ops on this platform*/
@@ -1092,6 +1260,10 @@ int install_module(const char *modpath, const char *modconf) {
 }
 
 int remove_module() {
+    return 0;
+}
+
+int add_directory_acl(char *site_id, char *directory) {
     return 0;
 }
 
