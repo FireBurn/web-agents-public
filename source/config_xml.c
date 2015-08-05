@@ -374,6 +374,9 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
     parse_config_value(ctx, AM_AGENTS_CONFIG_AUDIT_REMOTE_FILE, CONF_STRING, NULL, &ctx->conf->audit_file_remote, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_AUDIT_DISPOSITION, CONF_STRING, NULL, &ctx->conf->audit_file_disposition, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_AUDIT_LEVEL, CONF_AUDIT_LEVEL, NULL, &ctx->conf->audit_level, val, len);
+    
+    parse_config_value(ctx, AM_AGENTS_CONFIG_ANONYMOUS_USER_ENABLE, CONF_NUMBER, NULL, &ctx->conf->anon_remote_user_enable, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_ANONYMOUS_USER_ID, CONF_STRING, NULL, &ctx->conf->unauthenticated_user, val, len);
 }
 
 static void end_element(void * userData, const char * name) {

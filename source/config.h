@@ -228,6 +228,9 @@ typedef struct {
 
     int json_url_map_sz;
     am_config_map_t *json_url_map;
+    
+    int anon_remote_user_enable;
+    char *unauthenticated_user;
 
 } am_config_t;
 
@@ -378,5 +381,8 @@ typedef struct {
 #define AM_AGENTS_CONFIG_AUDIT_REMOTE_FILE "com.sun.identity.agents.config.remote.logfile"
 #define AM_AGENTS_CONFIG_AUDIT_REMOTE_INTERVAL "com.sun.identity.agents.config.remote.log.interval"
 #define AM_AGENTS_CONFIG_AUDIT_DISPOSITION "com.sun.identity.agents.config.log.disposition"
+
+#define AM_AGENTS_CONFIG_ANONYMOUS_USER_ENABLE "com.sun.identity.agents.config.anonymous.user.enable"
+#define AM_AGENTS_CONFIG_ANONYMOUS_USER_ID "com.sun.identity.agents.config.anonymous.user.id"
 
 #endif

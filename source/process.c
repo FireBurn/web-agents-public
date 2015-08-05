@@ -1721,6 +1721,13 @@ static am_return_t handle_exit(am_request_t *r) {
                 free(url);
                 break;
             }
+            
+            if (ISINVALID(r->user) && r->conf->anon_remote_user_enable
+                    && ISVALID(r->conf->unauthenticated_user)) {
+                r->user = r->conf->unauthenticated_user;
+                AM_LOG_DEBUG(r->instance_id, "%s remote user set to unauthenticated user %s",
+                        thisfunc, r->user);
+            } 
 
             /* set user */
             if (r->am_set_user_f != NULL && ISVALID(r->user)) {

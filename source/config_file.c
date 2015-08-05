@@ -568,6 +568,9 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_REMOTE_INTERVAL, CONF_NUMBER, NULL, &conf->audit_remote_interval, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_REMOTE_FILE, CONF_STRING, NULL, &conf->audit_file_remote, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_DISPOSITION, CONF_STRING, NULL, &conf->audit_file_disposition, NULL);
+        
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ANONYMOUS_USER_ENABLE, CONF_NUMBER, NULL, &conf->anon_remote_user_enable, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ANONYMOUS_USER_ID, CONF_STRING, NULL, &conf->unauthenticated_user, NULL);
         }
     }
 
@@ -616,7 +619,7 @@ void am_config_free(am_config_t **cp) {
                 c->password_replay_key, c->url_redirect_param, c->client_ip_header,
                 c->client_hostname_header, c->url_check_regex, c->multi_attr_separator,
                 c->pdp_sess_mode, c->pdp_sess_value, c->pdp_uri_prefix, c->logout_url_regex,
-                c->audit_file_remote, c->audit_file_disposition);
+                c->audit_file_remote, c->audit_file_disposition, c->unauthenticated_user);
 
         AM_CONF_FREE(c->naming_url_sz, c->naming_url);
         AM_CONF_FREE(c->hostmap_sz, c->hostmap);

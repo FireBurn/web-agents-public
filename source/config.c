@@ -137,7 +137,9 @@ enum {
     AM_CONF_LOGOUT_REDIR_DISABLE,
     AM_CONF_AUDIT_REMOTE_FILE,
     AM_CONF_AUDIT_REMOTE_INTERVAL,
-    AM_CONF_AUDIT_FILE_DISPOSITION
+    AM_CONF_AUDIT_FILE_DISPOSITION,
+    AM_CONF_ANON_USER_ENABLE,
+    AM_CONF_ANON_USER_ID
 };
 
 struct am_instance {
@@ -738,6 +740,12 @@ static int am_create_instance_entry_data(int h, am_config_t *c, char all) {
         if (ISVALID(c->audit_file_disposition)) {
             SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_AUDIT_FILE_DISPOSITION, 0), c->audit_file_disposition);
         }
+        if (c->anon_remote_user_enable > 0) {
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_ANON_USER_ENABLE, 0), c->anon_remote_user_enable);
+        }
+        if (ISVALID(c->unauthenticated_user)) {
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_ANON_USER_ID, 0), c->unauthenticated_user);
+        }
     }
     return AM_SUCCESS;
 }
@@ -1218,6 +1226,12 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                     memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
                     m->value = m->name + i->size[0] + 1;
                 }
+                break;
+            case AM_CONF_ANON_USER_ENABLE:
+                r->anon_remote_user_enable = i->num_value;
+                break;
+            case AM_CONF_ANON_USER_ID:
+                r->unauthenticated_user = strndup(i->value, i->size[0]);
                 break;
         }
     }
