@@ -562,3 +562,65 @@ void test_url_encode_decode(void** state) {
     assert_string_equal(decoded, "āčēģīķļņšūž");
     free(decoded);
 }
+
+void test_string_replace(void ** state) {
+    char * original;
+    size_t size;
+
+    original = strdup("abcXXXdefAM_AGENT_REALMXXXnXXXAM_AGENT_REALMv");
+    size = strlen(original);
+    assert_int_equal(string_replace(&original, "AM_AGENT_REALM", "realm1", &size), AM_SUCCESS);
+    assert_string_equal("abcXXXdefrealm1XXXnXXXrealm1v", original);
+    free(original);
+    
+    original = strdup("abcXXXdefAM_AGENT_REALMXXXnXXXAM_AGENT_REALM");
+    size = strlen(original);
+    assert_int_equal(string_replace(&original, "AM_AGENT_REALM", "realm1", &size), AM_SUCCESS);
+    assert_string_equal("abcXXXdefrealm1XXXnXXXrealm1", original);
+    free(original);
+    
+    original = strdup("abcXXXdefXXXnXXXv");
+    size = strlen(original);
+    assert_int_equal(string_replace(&original, "X", "YX", &size), AM_SUCCESS);
+    assert_string_equal("abcYXYXYXdefYXYXYXnYXYXYXv", original);
+    free(original);
+    
+    original = strdup("abcXXXdefXXXnXXX");
+    size = strlen(original);
+    assert_int_equal(string_replace(&original, "XXX", "YYY", &size), AM_SUCCESS);
+    assert_string_equal(original, "abcYYYdefYYYnYYY");
+    free(original);
+ 
+    original = strdup("abcXXXdefXXXnXXX");
+    size = strlen(original);
+    assert_int_equal(string_replace(&original, "X", "YX", &size), AM_SUCCESS);
+    assert_string_equal(original, "abcYXYXYXdefYXYXYXnYXYXYX");
+    free(original);
+    
+    original = strdup("abcXXXdefXXXnXXX");
+    size = strlen(original);
+    assert_int_equal(string_replace(&original, "XXX", "Y", &size), AM_SUCCESS);
+    assert_string_equal(original, "abcYdefYnY");
+    free(original);
+    
+    original = strdup("abcXXXdefXXXnXXX");
+    size = strlen(original);
+    assert_int_equal(string_replace(&original, "X", "YYY", &size), AM_SUCCESS);
+    assert_string_equal(original, "abcYYYYYYYYYdefYYYYYYYYYnYYYYYYYYY");
+    free(original);
+    
+    original = strdup("abcXXXdefXXXnXXX");
+    size = strlen(original);
+    assert_int_equal(string_replace(&original, "XXX", "", &size), AM_SUCCESS);
+    assert_string_equal(original, "abcdefn");
+    free(original);
+    
+    original = strdup("abcXXXdefXXXnXXX");
+    size = strlen(original);
+    assert_int_equal(string_replace(&original, "", "YYY", &size), AM_NOT_FOUND);
+    assert_string_equal(original, "abcXXXdefXXXnXXX");
+    free(original);
+    
+}
+
+

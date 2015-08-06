@@ -2394,52 +2394,55 @@ int am_create_agent_dir(const char* sep, const char* path,
 }
 
 int string_replace(char **original, const char *pattern, const char *replace, size_t *sz) {
-
     size_t pcnt = 0;
-    const char *optr;
-    const char *ploc;
-
+    size_t replace_sz, pattern_sz, new_sz, e;
+    char *p, *new_str;
+    
     if (original == NULL || *original == NULL || pattern == NULL
             || replace == NULL || sz == NULL) {
         return AM_EINVAL;
     }
-
-    size_t rlen = strlen(replace);
-    size_t plen = strlen(pattern);
-    size_t retlen;
-    char *newop, *ret, *op = *original;
-
-    /* count the number of patterns */
-    for (optr = op; (ploc = strstr(optr, pattern)); optr = ploc + plen) {
+    
+    pattern_sz = strlen(pattern);
+    replace_sz = strlen(replace);
+    
+    // strstr requires this and an empty pattern is nonsense
+    if (pattern_sz == 0) {
+        return AM_NOT_FOUND;
+    }
+    
+    // count number of times pattern occurs
+    for (p = * original; ( p = strstr(p, pattern) ); p += pattern_sz) {
         pcnt++;
     }
     if (pcnt == 0) {
         return AM_NOT_FOUND;
     }
-
-    retlen = (*sz) + pcnt * (rlen + plen); /* worst case */
-    newop = (char *) realloc(op, retlen + 1);
-    if (newop == NULL) {
-        am_free(op);
-        return AM_ENOMEM;
+    
+    // reallocate only if replacement is larger than pattern
+    new_sz = *sz + pcnt * (replace_sz - pattern_sz);
+    if (*sz < new_sz) {
+        new_str = realloc(*original, new_sz + 1);
+        if (new_str == NULL) {
+            free(*original);
+            return AM_ENOMEM;
+        }
+    } else {
+        new_str = *original;
     }
-
-    retlen = *sz;
-    ret = newop;
-    /* go through each of the patterns, make a space (by moving) 
-     * for a replacement string, copy replacement in, 
-     * repeat until all patterns are found
-     */
-    for (optr = ret; (ploc = strstr(optr, pattern)); optr = ploc + plen) {
-        size_t move_sz = retlen - (ploc + plen - ret);
-        memmove((void *) (ploc + rlen), ploc + plen, move_sz);
-        memcpy((void *) ploc, replace, rlen);
-        retlen = (ploc - ret) + rlen + move_sz;
+    
+    // step through patterns, shifting from end of pattern and inserting replacement
+    e = (*sz) + 1;
+    for (p = new_str; ( p = strstr(p, pattern) ); p += replace_sz, e += (replace_sz - pattern_sz)) {
+        char *src = p + pattern_sz, *dest = p + replace_sz;
+        memmove(dest, src, e - (src - new_str));
+        memcpy(p, replace, replace_sz);
     }
-    newop[retlen] = '\0';
-    *original = newop;
-    *sz = retlen;
-
+    
+    // set return values
+    *sz = new_sz;
+    *original = new_str;
+    
     return AM_SUCCESS;
 }
 
