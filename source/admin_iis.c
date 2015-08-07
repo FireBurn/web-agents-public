@@ -52,12 +52,16 @@ static BSTR system_webserver = L"system.webServer";
 char *utf8_encode(const wchar_t *wstr, size_t *outlen) {
     char *tmp = NULL;
     size_t out_len = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, NULL, 0, NULL, NULL);
-    if (outlen) *outlen = 0;
+    if (outlen) {
+        *outlen = 0;
+    }
     if (out_len > 0) {
         tmp = (char *) malloc(out_len);
         WideCharToMultiByte(CP_UTF8, 0, wstr, -1, tmp, (DWORD) out_len, NULL, NULL);
         tmp[out_len - 1] = 0;
-        if (outlen) *outlen = out_len - 1;
+        if (outlen) {
+            *outlen = out_len - 1;
+        }
         return tmp;
     }
     return NULL;
@@ -66,12 +70,16 @@ char *utf8_encode(const wchar_t *wstr, size_t *outlen) {
 wchar_t *utf8_decode(const char *str, size_t *outlen) {
     wchar_t *tmp = NULL;
     size_t out_len = MultiByteToWideChar(CP_UTF8, 0, str, -1, NULL, 0);
-    if (outlen) *outlen = 0;
+    if (outlen) {
+        *outlen = 0;
+    }
     if (out_len > 0) {
         tmp = (wchar_t *) malloc(sizeof (wchar_t) * out_len);
         MultiByteToWideChar(CP_UTF8, 0, str, -1, tmp, (DWORD) out_len);
         tmp[out_len - 1] = 0;
-        if (outlen) *outlen = out_len - 1;
+        if (outlen) {
+            *outlen = out_len - 1;
+        }
         return tmp;
     }
     return NULL;
@@ -100,13 +108,17 @@ static char *get_property_value_byname(IAppHostElement* ahe, VARIANT* value, BST
     hresult = IAppHostProperty_get_Value(property, value);
     if (FAILED(hresult)) {
         fwprintf(stderr, L"get_property_value_byname(%s) failed. Value not set.\n", *name);
-        if (property != NULL) IAppHostProperty_Release(property);
+        if (property != NULL) {
+            IAppHostProperty_Release(property);
+        }
         return NULL;
     }
     if (value->vt != type) {
         fwprintf(stderr, L"get_property_value_byname(%s) failed. Property type %d differs from type expected %d.",
                 *name, value->vt, type);
-        if (property != NULL) IAppHostProperty_Release(property);
+        if (property != NULL) {
+            IAppHostProperty_Release(property);
+        }
         return NULL;
     }
 
@@ -126,7 +138,9 @@ static char *get_property_value_byname(IAppHostElement* ahe, VARIANT* value, BST
             }
         }
     }
-    if (property != NULL) IAppHostProperty_Release(property);
+    if (property != NULL) {
+        IAppHostProperty_Release(property);
+    }
     return ret;
 }
 
@@ -190,14 +204,22 @@ void list_iis_sites(int argc, char **argv) {
                 name = NULL;
                 id = NULL;
             }
-            if (ce != NULL) IAppHostElement_Release(ce);
+            if (ce != NULL) {
+                IAppHostElement_Release(ce);
+            }
         }
 
     } while (FALSE);
 
-    if (he != NULL) IAppHostElement_Release(he);
-    if (hec != NULL) IAppHostElementCollection_Release(hec);
-    if (admin_manager != NULL) IAppHostWritableAdminManager_Release(admin_manager);
+    if (he != NULL) {
+        IAppHostElement_Release(he);
+    }
+    if (hec != NULL) {
+        IAppHostElementCollection_Release(hec);
+    }
+    if (admin_manager != NULL) {
+        IAppHostWritableAdminManager_Release(admin_manager);
+    }
     SysFreeString(bstr_config_path);
     SysFreeString(bstr_sites);
     SysFreeString(bstr_name);
@@ -227,7 +249,9 @@ static BOOL set_property(IAppHostElement* element, BSTR name, BSTR value) {
         }
     } while (FALSE);
 
-    if (property != NULL) IAppHostProperty_Release(property);
+    if (property != NULL) {
+        IAppHostProperty_Release(property);
+    }
     SysFreeString(bstr_name);
     SysFreeString(bstr_value);
 
@@ -251,7 +275,9 @@ static BOOL get_property(IAppHostElement* element, BSTR name, VARIANT* value) {
         }
     } while (FALSE);
 
-    if (property != NULL) IAppHostProperty_Release(property);
+    if (property != NULL) {
+        IAppHostProperty_Release(property);
+    }
     SysFreeString(bstr_name);
 
     return SUCCEEDED(hresult);
@@ -298,7 +324,9 @@ static BOOL get_from_collection_idx(IAppHostElementCollection* collection,
         }
     } while (FALSE);
 
-    if (element != NULL) IAppHostElement_Release(element);
+    if (element != NULL) {
+        IAppHostElement_Release(element);
+    }
 
     return SUCCEEDED(hresult);
 }
@@ -397,12 +425,24 @@ static BOOL update_config_sections(IAppHostWritableAdminManager* manager, BOOL r
 
     } while (FALSE);
 
-    if (modsec != NULL) IAppHostSectionDefinitionCollection_Release(modsec);
-    if (swsgcol != NULL) IAppHostSectionGroup_Release(swsgcol);
-    if (swsg != NULL) IAppHostSectionGroup_Release(swsg);
-    if (root != NULL) IAppHostConfigFile_Release(root);
-    if (cfile != NULL) IAppHostConfigManager_Release(cfile);
-    if (cmgr != NULL) IAppHostWritableAdminManager_Release(cmgr);
+    if (modsec != NULL) {
+        IAppHostSectionDefinitionCollection_Release(modsec);
+    }
+    if (swsgcol != NULL) {
+        IAppHostSectionGroup_Release(swsgcol);
+    }
+    if (swsg != NULL) {
+        IAppHostSectionGroup_Release(swsg);
+    }
+    if (root != NULL) {
+        IAppHostConfigFile_Release(root);
+    }
+    if (cfile != NULL) {
+        IAppHostConfigManager_Release(cfile);
+    }
+    if (cmgr != NULL) {
+        IAppHostWritableAdminManager_Release(cmgr);
+    }
 
     return result;
 }
@@ -413,6 +453,7 @@ static BOOL add_to_global_modules(IAppHostWritableAdminManager* manager, BSTR im
     IAppHostElement* element = NULL;
     HRESULT hresult = S_OK;
     BOOL result = FALSE;
+
     do {
         hresult = IAppHostWritableAdminManager_GetAdminSection(manager, AM_IIS_GLOBAL, AM_IIS_APPHOST, &parent);
         if (FAILED(hresult) || &parent == NULL) {
@@ -452,11 +493,9 @@ static BOOL add_to_global_modules(IAppHostWritableAdminManager* manager, BSTR im
                     fprintf(stderr, "Failed to set name property.\n");
                     break;
                 }
-            } else {
-                if (!set_property(element, L"preCondition", L"bitness32")) {
-                    fprintf(stderr, "Failed to set name property.\n");
-                    break;
-                }
+            } else if (!set_property(element, L"preCondition", L"bitness32")) {
+                fprintf(stderr, "Failed to set name property.\n");
+                break;
             }
 
             hresult = IAppHostElementCollection_AddElement(collection, element, -1);
@@ -474,81 +513,46 @@ static BOOL add_to_global_modules(IAppHostWritableAdminManager* manager, BSTR im
         result = TRUE;
     } while (FALSE);
 
-    if (element != NULL) IAppHostElement_Release(element);
-    if (collection != NULL) IAppHostElementCollection_Release(collection);
-    if (parent != NULL) IAppHostElement_Release(parent);
+    if (element != NULL) {
+        IAppHostElement_Release(element);
+    }
+    if (collection != NULL) {
+        IAppHostElementCollection_Release(collection);
+    }
+    if (parent != NULL) {
+        IAppHostElement_Release(parent);
+    }
     return result;
 }
 
-static BOOL add_to_modules(IAppHostWritableAdminManager* manager, BSTR config_path) {
-    IAppHostElement* parent = NULL;
-    IAppHostElementCollection* collection = NULL;
-    IAppHostElement* element = NULL;
+/**
+ * Turn the HRESULT in "hr" into a piece of text we can display to the user.
+ * The text is copied into a static buffer which will be overwritten with each
+ * call - caveat programmer.
+ */
+static char* ErrorDescription(HRESULT hr)
+{
+    static char buff[255];
+    char* msg;
 
-    BSTR bstr_config_path = SysAllocString(config_path);
+    if (FACILITY_WINDOWS == HRESULT_FACILITY(hr)) {
+        hr = HRESULT_CODE(hr);
+    }
 
-    HRESULT hresult = S_OK;
-    BOOL result = FALSE;
-    do {
-        hresult = IAppHostWritableAdminManager_GetAdminSection(manager, AM_IIS_MODULES,
-                bstr_config_path, &parent);
-        if (FAILED(hresult) || &parent == NULL) {
-            fprintf(stderr, "Unable to get modules configuration.\n");
-            break;
-        }
+    if (FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                       NULL, hr,
+                       MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                       (LPSTR)&msg, 
+                       0, NULL)) {
 
-        hresult = IAppHostElement_get_Collection(parent, &collection);
-        if (FAILED(hresult) || &collection == NULL) {
-            fprintf(stderr, "Unable to get modules child collection.\n");
-            break;
-        }
-
-        if (!get_from_collection(collection, AM_IIS_ENAME, module_name, &element)) {
-            fprintf(stderr, "Failed to try detect old modules.\n");
-            break;
-        }
-
-        if (element == NULL) {
-            hresult = IAppHostElementCollection_CreateNewElement(collection, AM_IIS_EADD, &element);
-            if (FAILED(hresult)) {
-                fprintf(stderr, "Failed to create modules/add element.\n");
-                break;
-            }
-
-            if (!set_property(element, AM_IIS_ENAME, module_name)) {
-                fprintf(stderr, "Failed to set name property.\n");
-                break;
-            }
-
-            if (get_app_mode() == MODE_X64) {
-                if (!set_property(element, L"preCondition", L"bitness64")) {
-                    fprintf(stderr, "Failed to set name property.\n");
-                    break;
-                }
-            } else {
-                if (!set_property(element, L"preCondition", L"bitness32")) {
-                    fprintf(stderr, "Failed to set name property.\n");
-                    break;
-                }
-            }
-
-            hresult = IAppHostElementCollection_AddElement(collection, element, -1);
-            if (FAILED(hresult)) {
-                fprintf(stderr, "Failed to add modules/add element.\n");
-                break;
-            }
-        }
-
-        result = TRUE;
-    } while (FALSE);
-
-    if (element != NULL) IAppHostElement_Release(element);
-    if (collection != NULL) IAppHostElementCollection_Release(collection);
-    if (parent != NULL) IAppHostElement_Release(parent);
-
-    SysFreeString(bstr_config_path);
-    return result;
+        sprintf(buff, "%s", msg);
+        LocalFree(msg);
+    } else {
+        sprintf(buff, "[Could not find a description for error # %#x.]\n", hr);
+    }
+    return buff;
 }
+
 
 static BOOL update_module_site_config(IAppHostWritableAdminManager* manager, BSTR config_path, BSTR mod_config_path, BOOL enabled) {
     IAppHostElement *element = NULL;
@@ -608,10 +612,18 @@ static BOOL update_module_site_config(IAppHostWritableAdminManager* manager, BST
         result = TRUE;
     } while (FALSE);
 
-    if (cfile_prop != NULL) IAppHostPropertyCollection_Release(cfile_prop);
-    if (enabled_prop != NULL) IAppHostPropertyCollection_Release(enabled_prop);
-    if (properties != NULL) IAppHostElement_Release(properties);
-    if (element != NULL) IAppHostElement_Release(element);
+    if (cfile_prop != NULL) {
+        IAppHostPropertyCollection_Release(cfile_prop);
+    }
+    if (enabled_prop != NULL) {
+        IAppHostPropertyCollection_Release(enabled_prop);
+    }
+    if (properties != NULL) {
+        IAppHostElement_Release(properties);
+    }
+    if (element != NULL) {
+        IAppHostElement_Release(element);
+    }
     SysFreeString(bstr_value);
     return result;
 }
@@ -672,10 +684,18 @@ static BOOL remove_from_modules(IAppHostWritableAdminManager* manager, BSTR conf
         }
     } while (FALSE);
 
-    if (name_property != NULL) IAppHostProperty_Release(name_property);
-    if (element != NULL) IAppHostElement_Release(element);
-    if (collection != NULL) IAppHostElementCollection_Release(collection);
-    if (parent != NULL) IAppHostElement_Release(parent);
+    if (name_property != NULL) {
+        IAppHostProperty_Release(name_property);
+    }
+    if (element != NULL) {
+        IAppHostElement_Release(element);
+    }
+    if (collection != NULL) {
+        IAppHostElementCollection_Release(collection);
+    }
+    if (parent != NULL) {
+        IAppHostElement_Release(parent);
+    }
     SysFreeString(bstr_section_name);
     SysFreeString(bstr_config_path);
     return result;
@@ -694,7 +714,9 @@ int install_module(const char *modpath, const char *schema) {
     strcat(schema_sys_file, IIS_SCHEMA_CONF_FILE);
 
     location = utf8_decode(modpath, NULL);
-    if (location == NULL) return rv;
+    if (location == NULL) {
+        return rv;
+    }
     module_wpath = SysAllocString(location);
 
     do {
@@ -737,7 +759,9 @@ int install_module(const char *modpath, const char *schema) {
     } while (FALSE);
 
     free(location);
-    if (admin_manager != NULL) IAppHostWritableAdminManager_Release(admin_manager);
+    if (admin_manager != NULL) {
+        IAppHostWritableAdminManager_Release(admin_manager);
+    }
     SysFreeString(module_wpath);
     CoUninitialize();
 
@@ -783,7 +807,9 @@ int remove_module() {
 
     } while (FALSE);
 
-    if (admin_manager != NULL) IAppHostWritableAdminManager_Release(admin_manager);
+    if (admin_manager != NULL) {
+        IAppHostWritableAdminManager_Release(admin_manager);
+    }
     CoUninitialize();
 
     return rv;
@@ -850,14 +876,22 @@ static char *get_site_name(const char *sid) {
                 name = NULL;
                 id = NULL;
             }
-            if (ce != NULL) IAppHostElement_Release(ce);
+            if (ce != NULL) {
+                IAppHostElement_Release(ce);
+            }
         }
 
     } while (FALSE);
 
-    if (he != NULL) IAppHostElement_Release(he);
-    if (hec != NULL) IAppHostElementCollection_Release(hec);
-    if (admin_manager != NULL) IAppHostWritableAdminManager_Release(admin_manager);
+    if (he != NULL) {
+        IAppHostElement_Release(he);
+    }
+    if (hec != NULL) {
+        IAppHostElementCollection_Release(hec);
+    }
+    if (admin_manager != NULL) {
+        IAppHostWritableAdminManager_Release(admin_manager);
+    }
     SysFreeString(bstr_config_path);
     SysFreeString(bstr_sites);
     SysFreeString(bstr_name);
@@ -910,7 +944,7 @@ int enable_module(const char *siteid, const char *modconf) {
             break;
         }
 
-        if (!add_to_modules(admin_manager, config_path_w)) {
+        if (!add_to_modules(admin_manager, config_path_w, siteid)) {
             fprintf(stderr, "Failed to add entry to modules.\n");
             break;
         } else {
@@ -929,7 +963,9 @@ int enable_module(const char *siteid, const char *modconf) {
 
     AM_FREE(modconf_w, config_path_w);
 
-    if (admin_manager != NULL) IAppHostWritableAdminManager_Release(admin_manager);
+    if (admin_manager != NULL) {
+        IAppHostWritableAdminManager_Release(admin_manager);
+    }
     CoUninitialize();
     return rv;
 }
@@ -997,9 +1033,104 @@ int disable_module(const char *siteid, const char *modconf) {
 
     AM_FREE(modconf_w, config_path_w);
 
-    if (admin_manager != NULL) IAppHostWritableAdminManager_Release(admin_manager);
+    if (admin_manager != NULL) {
+        IAppHostWritableAdminManager_Release(admin_manager);
+    }
     CoUninitialize();
     return rv;
+}
+
+static BOOL add_to_modules(IAppHostWritableAdminManager* manager, BSTR config_path, const char* siteid) {
+    IAppHostElement* parent = NULL;
+    IAppHostElementCollection* collection = NULL;
+    IAppHostElement* element = NULL;
+
+    BSTR bstr_config_path = SysAllocString(config_path);
+
+    HRESULT hresult = S_OK;
+    BOOL result = FALSE;
+    do {
+        hresult = IAppHostWritableAdminManager_GetAdminSection(manager, AM_IIS_MODULES, bstr_config_path, &parent);
+        if (FAILED(hresult) || parent == NULL) {
+            fprintf(stderr, "Unable to get modules configuration.\n");
+            break;
+        }
+
+        hresult = IAppHostElement_get_Collection(parent, &collection);
+        if (FAILED(hresult) || collection == NULL) {
+            fprintf(stderr, "Unable to get modules child collection.\n");
+            break;
+        }
+
+        if (!get_from_collection(collection, AM_IIS_ENAME, module_name, &element)) {
+            fprintf(stderr, "Failed to try detect old modules.\n");
+            break;
+        }
+
+        if (element == NULL) {
+            hresult = IAppHostElementCollection_CreateNewElement(collection, AM_IIS_EADD, &element);
+            if (FAILED(hresult)) {
+                fprintf(stderr, "Failed to create modules/add element.\n");
+                break;
+            }
+
+            if (!set_property(element, AM_IIS_ENAME, module_name)) {
+                fprintf(stderr, "Failed to set name property.\n");
+                break;
+            }
+
+            if (get_app_mode() == MODE_X64) {
+                if (!set_property(element, L"preCondition", L"bitness64")) {
+                    fprintf(stderr, "Failed to set name property.\n");
+                    break;
+                }
+            } else if (!set_property(element, L"preCondition", L"bitness32")) {
+                fprintf(stderr, "Failed to set name property.\n");
+                break;
+            }
+
+            hresult = IAppHostElementCollection_AddElement(collection, element, -1);
+            switch (hresult) {
+                case S_OK:
+                    fprintf(stderr, "AddElement succeeded\n");
+                    result = TRUE;
+                    break;
+                case ERROR_INVALID_INDEX:
+                    fprintf(stderr, "AddElement failed with ERROR_INVALID_INDEX");
+                    break;
+                case ERROR_FILE_NOT_FOUND: {
+                    char* c_str_config_path = get_site_name(siteid);
+                    fprintf(stderr, "AddElement failed, file %s: ERROR_FILE_NOT_FOUND", c_str_config_path);
+                    free(c_str_config_path);
+                    break;
+                }
+                default: {
+                    char* c_str_config_path = get_site_name(siteid);
+                    fprintf(stderr, "AddElement failed, file %s: %s\n",
+                        c_str_config_path,
+                        ErrorDescription(hresult));
+                    free(c_str_config_path);
+                    break;
+                }
+            }
+        } else {
+            // True when element was NULL?  Oh well, it is what the old code did.
+            result = TRUE;
+        }
+    } while (FALSE);
+
+    if (element != NULL) {
+        IAppHostElement_Release(element);
+    }
+    if (collection != NULL) {
+        IAppHostElementCollection_Release(collection);
+    }
+    if (parent != NULL) {
+        IAppHostElement_Release(parent);
+    }
+
+    SysFreeString(bstr_config_path);
+    return result;
 }
 
 int test_module(const char *siteid) {
@@ -1066,7 +1197,9 @@ int test_module(const char *siteid) {
     } while (FALSE);
 
     am_free(config_path_w);
-    if (admin_manager != NULL) IAppHostWritableAdminManager_Release(admin_manager);
+    if (admin_manager != NULL) {
+        IAppHostWritableAdminManager_Release(admin_manager);
+    }
     CoUninitialize();
     return rv;
 }
