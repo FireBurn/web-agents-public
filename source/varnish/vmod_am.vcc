@@ -1,0 +1,8 @@
+$Module am 3
+$Init init_function
+$Function VOID init(PRIV_VCL, STRING)
+$Function BOOL authenticate(PRIV_VCL)
+$Function VOID done(PRIV_VCL)
+$Function VOID ok(PRIV_VCL)
+$Function VOID cleanup(PRIV_VCL)
+$Function VOID request_cleanup(PRIV_VCL)
