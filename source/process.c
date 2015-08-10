@@ -2036,10 +2036,8 @@ static am_return_t handle_exit(am_request_t *r) {
                     /* if previous status was invalid fqdn access,
                      * redirect to a valid fqdn url
                      */
-                    char *goto_value = NULL, *goto_encoded = NULL;
                     const char *host = ISVALID(r->client_fqdn) ? r->client_fqdn : r->conf->fqdn_default;
-
-                    if (!ISVALID(host)) {
+                    if (ISINVALID(host)) {
                         /* still nothing - return http403 error
                          * TODO: redirect to access denied page?
                          */
@@ -2047,19 +2045,8 @@ static am_return_t handle_exit(am_request_t *r) {
                         break;
                     }
 
-                    am_asprintf(&goto_value, "%s://%s:%d%s%s",
-                            r->url.proto, host,
+                    am_asprintf(&url, "%s://%s:%d%s%s", r->url.proto, host,
                             r->url.port, r->url.path, r->url.query);
-                    goto_encoded = url_encode(goto_value);
-
-                    url = find_active_login_server(r, AM_FALSE);
-                    am_asprintf(&url, "%s%s%s=%s",
-                            url,
-                            strchr(url, '?') != NULL ? "&" : "?",
-                            ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
-                            NOTNULL(goto_encoded));
-                    AM_FREE(goto_value, goto_encoded);
-
                 } else {
                     /* if previous status was invalid session or if there was a policy
                      * advice, redirect to the OpenAM login page. If not, redirect to the
