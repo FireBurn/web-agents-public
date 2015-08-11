@@ -1068,56 +1068,58 @@ static BOOL add_to_modules(IAppHostWritableAdminManager* manager, BSTR config_pa
             fprintf(stderr, "Failed to try detect old modules.\n");
             break;
         }
+        
+        if (element != NULL) {
+            /* module is already registered */
+            result = TRUE;
+            break;
+        }
 
-        if (element == NULL) {
-            hresult = IAppHostElementCollection_CreateNewElement(collection, AM_IIS_EADD, &element);
-            if (FAILED(hresult)) {
-                fprintf(stderr, "Failed to create modules/add element.\n");
+        hresult = IAppHostElementCollection_CreateNewElement(collection, AM_IIS_EADD, &element);
+        if (FAILED(hresult)) {
+            fprintf(stderr, "Failed to create modules/add element.\n");
+            break;
+        }
+
+        if (!set_property(element, AM_IIS_ENAME, module_name)) {
+            fprintf(stderr, "Failed to set name property.\n");
+            break;
+        }
+
+        if (get_app_mode() == MODE_X64) {
+            if (!set_property(element, L"preCondition", L"bitness64")) {
+                fprintf(stderr, "Failed to set preCondition property.\n");
                 break;
             }
+        } else if (!set_property(element, L"preCondition", L"bitness32")) {
+            fprintf(stderr, "Failed to set preCondition property.\n");
+            break;
+        }
 
-            if (!set_property(element, AM_IIS_ENAME, module_name)) {
-                fprintf(stderr, "Failed to set name property.\n");
+        hresult = IAppHostElementCollection_AddElement(collection, element, -1);
+        switch (hresult) {
+            case S_OK:
+                result = TRUE;
+                break;
+            case ERROR_INVALID_INDEX:
+                fprintf(stderr, "AddElement failed with ERROR_INVALID_INDEX");
+                break;
+            case ERROR_FILE_NOT_FOUND:
+            {
+                char* c_str_config_path = get_site_name(siteid);
+                fprintf(stderr, "AddElement failed, file %s: ERROR_FILE_NOT_FOUND", c_str_config_path);
+                free(c_str_config_path);
                 break;
             }
-
-            if (get_app_mode() == MODE_X64) {
-                if (!set_property(element, L"preCondition", L"bitness64")) {
-                    fprintf(stderr, "Failed to set name property.\n");
-                    break;
-                }
-            } else if (!set_property(element, L"preCondition", L"bitness32")) {
-                fprintf(stderr, "Failed to set name property.\n");
-                break;
-            }
-
-            hresult = IAppHostElementCollection_AddElement(collection, element, -1);
-            switch (hresult) {
-                case S_OK:
-                    fprintf(stderr, "AddElement succeeded\n");
-                    result = TRUE;
-                    break;
-                case ERROR_INVALID_INDEX:
-                    fprintf(stderr, "AddElement failed with ERROR_INVALID_INDEX");
-                    break;
-                case ERROR_FILE_NOT_FOUND: {
-                    char* c_str_config_path = get_site_name(siteid);
-                    fprintf(stderr, "AddElement failed, file %s: ERROR_FILE_NOT_FOUND", c_str_config_path);
-                    free(c_str_config_path);
-                    break;
-                }
-                default: {
-                    char* c_str_config_path = get_site_name(siteid);
-                    fprintf(stderr, "AddElement failed, file %s: %s\n",
+            default:
+            {
+                char* c_str_config_path = get_site_name(siteid);
+                fprintf(stderr, "AddElement failed, file %s: %s\n",
                         c_str_config_path,
                         ErrorDescription(hresult));
-                    free(c_str_config_path);
-                    break;
-                }
+                free(c_str_config_path);
+                break;
             }
-        } else {
-            // True when element was NULL?  Oh well, it is what the old code did.
-            result = TRUE;
         }
     } while (FALSE);
 

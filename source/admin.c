@@ -345,51 +345,60 @@ static int create_agent_instance(int status,
             size_t sz = 16;
 
             if (log_path == NULL || audit_log_path == NULL || conf_file_path == NULL) {
+                install_log("log_path, audit_log_path or conf_file_path is NULL");
                 rv = AM_ENOMEM;
                 break;
             }
 
             /* do a search-n-replace (in memory) */
-            install_log("updating %s", AM_INSTALL_OPENAMURL);
+            install_log("updating %s with %s", AM_INSTALL_OPENAMURL, openam_url);
             rv = string_replace(&agent_conf_template, AM_INSTALL_OPENAMURL, openam_url, &agent_conf_template_sz);
             if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_OPENAMURL, am_strerror(rv));
                 break;
             } 
 
+            install_log("parsing %s", agent_url);
             rv = parse_url(agent_url, &u);
             if (rv != AM_SUCCESS) {
+                install_log("failed to parse_url %s, %s", agent_url, am_strerror(rv));
                 break;
             }
 
-            install_log("updating %s %s", AM_INSTALL_AGENT_FQDN, u.host);
+            install_log("updating %s with %s", AM_INSTALL_AGENT_FQDN, u.host);
             rv = string_replace(&agent_conf_template, AM_INSTALL_AGENT_FQDN, u.host, &agent_conf_template_sz);
             if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_AGENT_FQDN, am_strerror(rv));
                 break;
             }
 
-            install_log("updating %s", AM_INSTALL_REALM);
+            install_log("updating %s with %s", AM_INSTALL_REALM, agent_realm);
             rv = string_replace(&agent_conf_template, AM_INSTALL_REALM, agent_realm, &agent_conf_template_sz);
             if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_REALM, am_strerror(rv));
                 break;
             }
 
-            install_log("updating %s", AM_INSTALL_AGENTURL);
+            install_log("updating %s with %s", AM_INSTALL_AGENTURL, agent_url);
             rv = string_replace(&agent_conf_template, AM_INSTALL_AGENTURL, agent_url, &agent_conf_template_sz);
             if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_AGENTURL, am_strerror(rv));
                 break;
             }
 
-            install_log("updating %s", AM_INSTALL_AGENTURL);
+            install_log("updating %s with %s", AM_INSTALL_AGENTURL, agent_user);
             rv = string_replace(&agent_conf_template, AM_INSTALL_AGENT, agent_user, &agent_conf_template_sz);
             if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_AGENTURL, am_strerror(rv));
                 break;
             }
 
             uuid(key, sizeof(key));
             encoded = base64_encode(key, &sz);
-            install_log("updating %s", AM_INSTALL_KEY);
+            install_log("updating %s with %s", AM_INSTALL_KEY, encoded);
             rv = string_replace(&agent_conf_template, AM_INSTALL_KEY, encoded, &agent_conf_template_sz);
             if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_KEY, am_strerror(rv));
                 am_free(encoded);
                 break;
             }
@@ -402,8 +411,11 @@ static int create_agent_instance(int status,
             }
 
             if (encrypt_password(encoded, &password) > 0) {
-                install_log("updating %s", AM_INSTALL_PASSWORD);
+                install_log("updating %s with %s", AM_INSTALL_PASSWORD, password);
                 rv = string_replace(&agent_conf_template, AM_INSTALL_PASSWORD, password, &agent_conf_template_sz);
+                if (rv != AM_SUCCESS) {
+                    install_log("failed to update %s, %s", AM_INSTALL_PASSWORD, am_strerror(rv));
+                }
             }
             am_free(password);
             am_free(encoded);
@@ -411,13 +423,14 @@ static int create_agent_instance(int status,
                 break;
             }
 
-            install_log("updating %s", AM_INSTALL_DEBUGPATH);
+            install_log("updating %s with %s", AM_INSTALL_DEBUGPATH, log_path);
             rv = string_replace(&agent_conf_template, AM_INSTALL_DEBUGPATH, log_path, &agent_conf_template_sz);
             if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_DEBUGPATH, am_strerror(rv));
                 break;
             }
 
-            install_log("updating %s", AM_INSTALL_AUDITPATH);
+            install_log("updating %s with %s", AM_INSTALL_AUDITPATH, audit_log_path);
             rv = string_replace(&agent_conf_template, AM_INSTALL_AUDITPATH, audit_log_path, &agent_conf_template_sz);
             if (rv != AM_SUCCESS) {
                 install_log("failed to update agent configuration template file %s (%s)",
@@ -934,7 +947,7 @@ static void install_interactive(int argc, char **argv) {
                  * directories we create.  This saves a lot of guesswork looking at "Listen" values in the
                  * httpd.conf file.
                  */
-                if (uid != NULL && gid != NULL) {
+                if (error == AM_FALSE && uid != NULL && gid != NULL) {
                     input = prompt_and_read("\nChange ownership of created directories using User and Group settings in httpd.conf\n"
                                             "[ q or 'ctrl+c' to exit ]\n"
                                             "(yes/no): [no]:");
