@@ -49,6 +49,8 @@ typedef enum {
 static BSTR module_name = L"OpenAmModule";
 static BSTR system_webserver = L"system.webServer";
 
+static BOOL add_to_modules(IAppHostWritableAdminManager* manager, BSTR config_path, const char* siteid);
+
 char *utf8_encode(const wchar_t *wstr, size_t *outlen) {
     char *tmp = NULL;
     size_t out_len = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, NULL, 0, NULL, NULL);

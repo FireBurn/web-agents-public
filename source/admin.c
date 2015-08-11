@@ -980,6 +980,7 @@ static void install_interactive(int argc, char **argv) {
                 break; /* avoid fall through into varnish */
             }
             case AM_I_VARNISH: {
+#ifndef _WIN32
                 input = prompt_and_read("\nEnter the complete path to Varnish server VMODS directory.\n"
                         "[ q or 'ctrl+c' to exit ]\n"
                         "Directory ["VARNISH_DEFAULT_VMODS_DIR"]:");
@@ -1003,6 +1004,7 @@ static void install_interactive(int argc, char **argv) {
                 }
                 free(input);
                 break;
+#endif
             }
             default: {
                 fprintf(stdout, "Error: unknown installation type. Exiting.\n");
