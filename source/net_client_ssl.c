@@ -81,6 +81,7 @@ static struct ssl_func ssl_sw[] = {
     {"BIO_new", NULL},
     {"BIO_write", NULL},
     {"BIO_read", NULL},
+    {"BIO_ctrl", NULL},
 #endif
     {NULL, NULL}
 };
@@ -102,6 +103,7 @@ static struct ssl_func crypto_sw[] = {
     {"BIO_new", NULL},
     {"BIO_write", NULL},
     {"BIO_read", NULL},
+    {"BIO_ctrl", NULL},
 #endif
     {NULL, NULL}
 };
@@ -126,6 +128,12 @@ static struct ssl_func crypto_sw[] = {
 #define SSL_CTRL_OPTIONS 32
 #define SSL_CTRL_SET_MSG_CALLBACK_ARG 16
 #define SSL_ST_OK 0x03
+#define SSL_MODE_AUTO_RETRY 0x4
+#define SSL_CTRL_MODE 33
+#define SSL_MODE_ENABLE_PARTIAL_WRITE 0x1
+#define SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER 0x2
+#define BIO_C_SET_BUF_MEM_EOF_RETURN 130
+#define BIO_CTRL_PENDING 10
 
 typedef struct ssl_st SSL;
 typedef struct ssl_ctx_st SSL_CTX;
@@ -177,6 +185,7 @@ typedef struct bio_method_st BIO_METHOD;
 #define BIO_new (* (BIO * (*)(BIO_METHOD *)) ssl_sw[34].ptr)
 #define BIO_write (* (int (*)(BIO *, const void *, int)) ssl_sw[35].ptr)
 #define BIO_read (* (int (*)(BIO *, void *, int)) ssl_sw[36].ptr)
+#define BIO_ctrl (* (long (*)(BIO *, int, long, void *)) ssl_sw[37].ptr)
 #endif
 
 #define CRYPTO_num_locks (* (int (*)(void)) crypto_sw[0].ptr)
@@ -195,6 +204,7 @@ typedef struct bio_method_st BIO_METHOD;
 #define BIO_new (* (BIO * (*)(BIO_METHOD *)) crypto_sw[12].ptr)
 #define BIO_write (* (int (*)(BIO *, const void *, int)) crypto_sw[13].ptr)
 #define BIO_read (* (int (*)(BIO *, void *, int)) crypto_sw[14].ptr)
+#define BIO_ctrl (* (long (*)(BIO *, int, long, void *)) crypto_sw[15].ptr)
 #endif
 
 static void *get_function(void *lib, const char *name) {
@@ -216,7 +226,9 @@ static void close_library(void *lib) {
 static void *load_library(const char *lib, struct ssl_func *sw) {
     char name[AM_PATH_SIZE];
 #if !defined(_WIN32) && !defined(__APPLE__)
-    char name1[AM_PATH_SIZE], name2[AM_PATH_SIZE];
+    int i;
+    const char *name_variants[] = {"%s.so.10", "%s.so.1.0.0", "%s.so.0.9.8", NULL};
+    char temp[AM_PATH_SIZE];
 #endif
     void *lib_handle = NULL;
     struct ssl_func *fp, *fpd;
@@ -244,13 +256,16 @@ static void *load_library(const char *lib, struct ssl_func *sw) {
 #ifdef __APPLE__
     lib_handle = dlopen(name, RTLD_LAZY | RTLD_GLOBAL);
 #else
-    snprintf(name1, sizeof (name1), "%s.so.1.0.0", NOTNULL(lib));
-    snprintf(name2, sizeof (name2), "%s.so.0.9.8", NOTNULL(lib));
-    lib_handle = dlopen(name1, RTLD_LAZY | RTLD_GLOBAL);
-    if (lib_handle == NULL) {
-        lib_handle = dlopen(name2, RTLD_LAZY | RTLD_GLOBAL);
-        if (lib_handle == NULL) {
-            lib_handle = dlopen(name, RTLD_LAZY | RTLD_GLOBAL);
+    name_variants[ARRAY_SIZE(name_variants) - 1] = name;
+    for (i = 0; i < ARRAY_SIZE(name_variants); i++) {
+        if (strchr(name_variants[i], '%') != NULL) {
+            snprintf(temp, sizeof (temp), name_variants[i], NOTNULL(lib));
+        } else {
+            strncpy(temp, name_variants[i], sizeof (temp) - 1);
+        }
+        lib_handle = dlopen(temp, RTLD_LAZY | RTLD_GLOBAL);
+        if (lib_handle != NULL) {
+            break;
         }
     }
 #endif
@@ -268,9 +283,8 @@ static void *load_library(const char *lib, struct ssl_func *sw) {
             }
             close_library(lib_handle);
             return NULL;
-        } else {
-            fp->ptr = u.fp;
         }
+        fp->ptr = u.fp;
     }
     return lib_handle;
 }
@@ -428,25 +442,36 @@ void net_shutdown_ssl() {
 }
 
 static void write_bio_to_socket(am_net_t *n) {
-    char buf[1024], *p;
-    int len, remaining,
-            hasread = BIO_read ? BIO_read(n->ssl.write_bio, buf, sizeof (buf)) : -1;
-    if (hasread > 0) {
-        p = buf;
-        remaining = hasread;
-        while (remaining) {
-            len = send(n->sock, p, remaining, 0);
-            if (len <= 0) {
-#ifdef _WIN32
-                n->ssl.sys_error = WSAGetLastError();
-#else
-                n->ssl.sys_error = errno;
-#endif
-                return;
-            }
-            remaining -= len;
-            p += len;
+    char *buf, *p;
+    int len, remaining, hasread, pending;
+
+    pending = BIO_ctrl ? BIO_ctrl(n->ssl.write_bio, BIO_CTRL_PENDING, 0, NULL) : -1;
+    if (pending > 0) {
+        buf = malloc(pending);
+        if (buf == NULL) {
+            return;
         }
+
+        hasread = BIO_read ? BIO_read(n->ssl.write_bio, buf, pending) : -1;
+        if (hasread > 0) {
+            p = buf;
+            remaining = hasread;
+            while (remaining) {
+                len = send(n->sock, p, remaining, 0);
+                if (len <= 0) {
+#ifdef _WIN32
+                    n->ssl.sys_error = WSAGetLastError();
+#else
+                    n->ssl.sys_error = errno;
+#endif
+                    free(buf);
+                    return;
+                }
+                remaining -= len;
+                p += len;
+            }
+        }
+        free(buf);
     }
 }
 
@@ -470,6 +495,7 @@ void net_connect_ssl(am_net_t *n) {
     int status = -1, err = 0;
     if (n != NULL) {
         n->ssl.on = AM_FALSE;
+        n->ssl.error = AM_SUCCESS;
 
         /*check whether we have ssl library loaded and symbols are available*/
         if (SSL_CTX_new == NULL || SSLv23_client_method == NULL ||
@@ -483,6 +509,11 @@ void net_connect_ssl(am_net_t *n) {
         n->ssl.ssl_context = SSL_CTX_new(SSLv23_client_method());
 
         SSL_CTX_ctrl(n->ssl.ssl_context, SSL_CTRL_OPTIONS, SSL_OP_NO_SSLv2, NULL);
+        SSL_CTX_ctrl(n->ssl.ssl_context, SSL_CTRL_MODE,
+                SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER, NULL);
+
+        /* TODO: SSL_MODE_AUTO_RETRY, SSL_SESS_CACHE_OFF, SSL_OP_NO_TICKET */
+
         if (ISVALID(n->ssl.info.tls_opts)) {
             char *v, *t, *c = strdup(n->ssl.info.tls_opts);
             if (c != NULL) {
@@ -557,9 +588,11 @@ void net_connect_ssl(am_net_t *n) {
             n->ssl.read_bio = BIO_new(BIO_s_mem());
             n->ssl.write_bio = BIO_new(BIO_s_mem());
             if (n->ssl.read_bio != NULL && n->ssl.write_bio != NULL) {
+                BIO_ctrl(n->ssl.read_bio, BIO_C_SET_BUF_MEM_EOF_RETURN, -1, NULL);
+                BIO_ctrl(n->ssl.write_bio, BIO_C_SET_BUF_MEM_EOF_RETURN, -1, NULL);
                 SSL_set_bio(n->ssl.ssl_handle, n->ssl.read_bio, n->ssl.write_bio);
                 SSL_set_connect_state(n->ssl.ssl_handle);
-                /*begin the handshake*/
+                /* do the handshake */
                 status = SSL_do_handshake(n->ssl.ssl_handle);
                 write_bio_to_socket(n);
                 if (status != 1) {
@@ -574,59 +607,86 @@ void net_connect_ssl(am_net_t *n) {
     }
 }
 
-static void read_data_after_handshake(am_net_t *n) {
-    char buf[1024];
-    int ret = 0;
+static int read_data_after_handshake(am_net_t *n) {
+    char *buf;
+    int err, ret = 0, status = AM_SUCCESS;
+
+#define AM_SSL_BUFFER_SZ 1024
+
+    buf = malloc(AM_SSL_BUFFER_SZ);
+    if (buf == NULL) {
+        return AM_ENOMEM;
+    }
+
     do {
-        memset(&buf[0], 0, sizeof (buf));
-        ret = SSL_read(n->ssl.ssl_handle, buf, sizeof (buf) - 1);
+        ret = SSL_read(n->ssl.ssl_handle, buf, AM_SSL_BUFFER_SZ);
+        if (ret == 0) {
+            /* connection closed */
+            break;
+        }
         if (ret < 0) {
-            int err = SSL_get_error(n->ssl.ssl_handle, ret);
+            err = SSL_get_error(n->ssl.ssl_handle, ret);
+            if (!ssl_is_fatal_error(err)) {
+                write_bio_to_socket(n);
+                free(buf);
+                return AM_EAGAIN;
+            }
+            break;
+        }
+
+        http_parser_execute(n->hp, n->hs, buf, ret);
+    } while (ret > 0);
+
+    free(buf);
+    return status;
+}
+
+void net_write_ssl(am_net_t *n) {
+    int err, ret = 0, written = 0;
+    do {
+        ret = SSL_write(n->ssl.ssl_handle, n->ssl.request_data + written,
+                (int) n->ssl.request_data_sz - written);
+        if (ret == 0) {
+            /* connection closed */
+            break;
+        }
+        if (ret < 0) {
+            err = SSL_get_error(n->ssl.ssl_handle, ret);
+            if (!ssl_is_fatal_error(err)) {
+                write_bio_to_socket(n);
+            }
+            break;
+        }
+
+        written += ret;
+        write_bio_to_socket(n);
+    } while (ret > 0);
+}
+
+int net_read_ssl(am_net_t *n, const char *buf, int sz) {
+    int ret, err, status = AM_SUCCESS;
+    if (sz == 0) {
+        read_data_after_handshake(n);
+        return AM_EOF;
+    }
+
+    BIO_write(n->ssl.read_bio, buf, sz);
+    if (SSL_state(n->ssl.ssl_handle) != SSL_ST_OK) {
+        ret = SSL_connect(n->ssl.ssl_handle);
+        write_bio_to_socket(n);
+        if (ret != 1) {
+            err = SSL_get_error(n->ssl.ssl_handle, ret);
             if (!ssl_is_fatal_error(err)) {
                 write_bio_to_socket(n);
             }
         } else {
-            http_parser_execute(n->hp, n->hs, buf, ret);
+            net_write_ssl(n);
         }
-    } while (ret > 0);
-}
-
-static void send_data_after_handshake(am_net_t *n) {
-    int ret = SSL_write(n->ssl.ssl_handle, n->ssl.request_data, (int) n->ssl.request_data_sz);
-    if (ret > 0) {
-        write_bio_to_socket(n);
-    } else if (ret == 0) {
-        /* connection closed */
     } else {
-        int err = SSL_get_error(n->ssl.ssl_handle, ret);
-        if (!ssl_is_fatal_error(err)) {
-            write_bio_to_socket(n);
-        }
+        status = read_data_after_handshake(n);
     }
-}
 
-int net_read_ssl(am_net_t *n, const char *buf, int sz) {
-    if (sz == 0) {
-        read_data_after_handshake(n);
-        return AM_EOF;
-    } else {
-        BIO_write(n->ssl.read_bio, buf, sz);
-        if (SSL_state(n->ssl.ssl_handle) != SSL_ST_OK) {
-            int ret = SSL_connect(n->ssl.ssl_handle);
-            write_bio_to_socket(n);
-            if (ret != 1) {
-                int err = SSL_get_error(n->ssl.ssl_handle, ret);
-                if (!ssl_is_fatal_error(err)) {
-                    write_bio_to_socket(n);
-                }
-            } else {
-                send_data_after_handshake(n);
-            }
-        } else {
-            read_data_after_handshake(n);
-        }
-    }
-    return AM_SUCCESS;
+    return status;
 }
 
 void am_net_set_ssl_options(am_config_t *ac, struct am_ssl_options *info) {

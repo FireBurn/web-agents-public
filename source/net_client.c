@@ -79,6 +79,7 @@ void net_shutdown_ssl();
 void net_connect_ssl(am_net_t *n);
 void net_close_ssl(am_net_t *n);
 int net_read_ssl(am_net_t *n, const char *buf, int sz);
+void net_write_ssl(am_net_t *n);
 
 void am_net_init() {
 #ifdef _WIN32
@@ -155,104 +156,42 @@ static int set_nonblocking(am_net_t *n, int cmd) {
     return 0;
 }
 
-
-#ifdef _WIN32
-
-static void CALLBACK net_async_poll_timeout(PVOID arg, BOOLEAN timer_or_wait_fired) {
+static void net_async_poll_timeout(void *arg) {
+    static const char *thisfunc = "net_async_poll_timeout():";
     am_net_t *n = (am_net_t *) arg;
-    static const char *thisfunc = "net_async_poll_timeout()";
-
-#elif defined(__APPLE__)
-
-static void *net_async_poll_timeout(void *arg) {
-    am_net_t *n = (am_net_t *) arg;
-    static const char *thisfunc = "net_async_poll_timeout()";
-    int rv;
-    clock_serv_t host_clock;
-    struct timespec abstime;
-    mach_timespec_t now;
-
-    host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &host_clock);
-    abstime.tv_sec = AM_NET_POOL_TIMEOUT;
-    abstime.tv_nsec = 0;
-
-    pthread_mutex_lock(&n->tm_lk);
-    clock_get_time(host_clock, &now);
-    ADD_MACH_TIMESPEC(&abstime, &now);
-
-    rv = pthread_cond_timedwait(&n->tm_cv, &n->tm_lk, &abstime);
-    if (rv != ETIMEDOUT) {
-        /*cv was signaled prior timeout*/
-        pthread_mutex_unlock(&n->tm_lk);
-        return NULL;
-    }
-#else
-
-static void net_async_poll_timeout(union sigval si) {
-    am_net_t *n = (am_net_t *) si.sival_ptr;
-    static const char *thisfunc = "net_async_poll_timeout()";
-#endif
-
-    AM_LOG_WARNING(n->instance_id, "%s timeout waiting for a response from a server", thisfunc);
+    AM_LOG_WARNING(n->instance_id,
+            "%s timeout waiting for a response from a server", thisfunc);
     n->error = AM_ETIMEDOUT;
+    if (n->on_close) n->on_close(n->data, 0);
     am_net_diconnect(n);
-
-#ifdef __APPLE__
-    pthread_mutex_unlock(&n->tm_lk);
-    return NULL;
-#endif
 }
 
 static void net_async_poll(am_net_t *n) {
+    static const char *thisfunc = "net_async_poll():";
     int ev = 0;
     char first_run = 1;
 #ifdef _WIN32
     WSAPOLLFD fds[1];
 #else
     struct pollfd fds[1];
-#ifndef __APPLE__
-    struct itimerspec ts;
-    struct sigevent se;
-#endif
 #endif
 
-#ifdef _WIN32
-    n->tm = CreateTimerQueue();
-    if (n->tm == NULL) return;
-    if (CreateTimerQueueTimer(&n->tm_tick, n->tm,
-            (WAITORTIMERCALLBACK) net_async_poll_timeout, n,
-            AM_NET_POOL_TIMEOUT * 1000, 0, WT_EXECUTELONGFUNCTION) == 0) {
-        n->tm_tick = NULL;
+    n->tm = am_create_timer_event(AM_TIMER_EVENT_ONCE, AM_NET_POOL_TIMEOUT, n,
+            net_async_poll_timeout);
+    if (n->tm == NULL) {
+        AM_LOG_ERROR(n->instance_id,
+                "%s failed to create response timeout control", thisfunc);
+        n->error = AM_ENOMEM;
         return;
     }
-#else
+    if (n->tm->error != 0) {
+        AM_LOG_ERROR(n->instance_id,
+                "%s error %d creating response timeout control", thisfunc, n->tm->error);
+        n->error = AM_ERROR;
+        return;
+    }
 
-#ifdef __APPLE__
-    pthread_attr_t tm_ta;
-    pthread_mutex_init(&n->tm_lk, NULL);
-    pthread_cond_init(&n->tm_cv, NULL);
-    pthread_attr_init(&tm_ta);
-    pthread_attr_setdetachstate(&tm_ta, PTHREAD_CREATE_DETACHED);
-    pthread_create(&n->tm_th, &tm_ta, net_async_poll_timeout, n);
-    pthread_attr_destroy(&tm_ta);
-#else
-    se.sigev_notify = SIGEV_THREAD; //TODO: sol10 ?
-    se.sigev_value.sival_ptr = n;
-    se.sigev_notify_function = net_async_poll_timeout;
-    se.sigev_notify_attributes = NULL;
-    if (timer_create(CLOCK_REALTIME, &se, &n->tm) == -1) {
-        return;
-    }
-    ts.it_value.tv_sec = AM_NET_POOL_TIMEOUT;
-    ts.it_value.tv_nsec = 0;
-    ts.it_interval.tv_sec = 0;
-    ts.it_interval.tv_nsec = 0;
-    if (timer_settime(n->tm, 0, &ts, 0) == -1) {
-        return;
-    }
-#endif
-
-#endif
+    am_start_timer_event(n->tm);
 
     memset(fds, 0, sizeof (fds));
     while (ev != -1) {
@@ -294,8 +233,10 @@ static void net_async_poll(am_net_t *n) {
             if (n->ssl.on) {
                 error = net_read_ssl(n, tmp, got);
                 if (error != AM_SUCCESS) {
-                    if (n->on_close) n->on_close(n->data, 0);
-                    break;
+                    if (error != AM_EAGAIN) {
+                        if (n->on_close) n->on_close(n->data, 0);
+                        break;
+                    }
                 }
             } else {
                 if (got < 0) {
@@ -334,6 +275,7 @@ int am_net_write(am_net_t *n, const char *data, size_t data_sz) {
                 if (n->ssl.request_data != NULL) {
                     memcpy(n->ssl.request_data, data, data_sz);
                     n->ssl.request_data_sz = data_sz;
+                    net_write_ssl(n);
                 } else {
                     set_event(n->ce);
                     return AM_ENOMEM;
@@ -383,7 +325,7 @@ int am_net_write(am_net_t *n, const char *data, size_t data_sz) {
 
 static void *net_async_connect(void *arg) {
     am_net_t *n = (am_net_t *) arg;
-    static const char *thisfunc = "net_async_connect()";
+    static const char *thisfunc = "net_async_connect():";
     struct in6_addr serveraddr;
     struct addrinfo *rp, hints;
     int err = 0, on = 1;
@@ -460,6 +402,17 @@ static void *net_async_connect(void *arg) {
             n->error = 0;
             if (n->uv.ssl) {
                 net_connect_ssl(n);
+                if (n->ssl.error != AM_SUCCESS) {
+                    AM_LOG_ERROR(n->instance_id,
+                            "%s: SSL/TLS connection to %s:%d (%s) failed (%s)",
+                            thisfunc, n->uv.host, n->uv.port,
+                            rp->ai_family == AF_INET ? "IPv4" : "IPv6",
+                            am_strerror(n->ssl.error));
+                    net_close_socket(n->sock);
+                    n->sock = INVALID_SOCKET;
+                    n->error = n->ssl.error;
+                    break;
+                }
             }
             net_async_poll(n);
             break;
@@ -489,6 +442,17 @@ static void *net_async_connect(void *arg) {
                     n->error = 0;
                     if (n->uv.ssl) {
                         net_connect_ssl(n);
+                        if (n->ssl.error != AM_SUCCESS) {
+                            AM_LOG_ERROR(n->instance_id,
+                                    "%s: SSL/TLS connection to %s:%d (%s) failed (%s)",
+                                    thisfunc, n->uv.host, n->uv.port,
+                                    rp->ai_family == AF_INET ? "IPv4" : "IPv6",
+                                    am_strerror(n->ssl.error));
+                            net_close_socket(n->sock);
+                            n->sock = INVALID_SOCKET;
+                            n->error = n->ssl.error;
+                            break;
+                        }
                     }
                     net_async_poll(n);
                     break;
@@ -497,7 +461,7 @@ static void *net_async_connect(void *arg) {
                 n->error = AM_ECONNREFUSED;
             } else if (err == 0) {
                 AM_LOG_WARNING(n->instance_id,
-                        "%s: timeout connecting to to %s:%d (%s)",
+                        "%s: timeout connecting to %s:%d (%s)",
                         thisfunc, n->uv.host, n->uv.port,
                         rp->ai_family == AF_INET ? "IPv4" : "IPv6");
                 n->error = AM_ETIMEDOUT;
@@ -591,7 +555,10 @@ void am_net_diconnect(am_net_t *n) {
 }
 
 int am_net_close(am_net_t *n) {
-    if (n == NULL) return AM_EINVAL;
+    if (n == NULL) {
+        return AM_EINVAL;
+    }
+
 #ifdef _WIN32   
     WaitForSingleObject(n->pw, INFINITE);
     CloseHandle(n->pw);
@@ -600,30 +567,23 @@ int am_net_close(am_net_t *n) {
     pthread_join(n->pw, NULL);
     pthread_mutex_destroy(&n->lk);
 #endif
+
+    /* close ssl/socket */
     am_net_diconnect(n);
+
+    /* shut down connected/disconnected events */
     close_event(n->ce);
     close_exit_event(n->de);
 
-#ifdef __APPLE__        
-    pthread_cond_broadcast(&n->tm_cv);
-    pthread_cond_destroy(&n->tm_cv);
-    pthread_mutex_destroy(&n->tm_lk);
-#endif
+    /* shut down response timeout handler */
+    am_close_timer_event(n->tm);
+    n->tm = NULL;
 
-#ifdef _WIN32 
-    if (n->tm != NULL && n->tm_tick != NULL)
-        DeleteTimerQueueTimer(n->tm, n->tm_tick, NULL);
-    n->tm_tick = NULL;
-    if (n->tm != NULL) DeleteTimerQueue(n->tm);
-    n->tm = NULL;
-#else
-#if !defined(__APPLE__)
-    if (n->tm != NULL) timer_delete(n->tm);
-    n->tm = NULL;
-#endif
-#endif
-    if (n->ra != NULL) freeaddrinfo(n->ra);
+    if (n->ra != NULL) {
+        freeaddrinfo(n->ra);
+    }
     n->ra = NULL;
+
     AM_FREE(n->hs, n->hp, n->req_headers);
     n->hs = NULL;
     n->hp = NULL;

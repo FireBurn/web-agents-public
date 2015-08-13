@@ -671,7 +671,9 @@ am_timer_event_t *am_create_timer_event(int type, unsigned int interval, void *a
 
 static void *timer_event_loop(void *args) {
     am_timer_event_t *e = (am_timer_event_t *) args;
+
 #if defined(__sun)
+
     port_event_t ev;
     struct timer_callback_args *cba;
     struct itimerspec ts;
@@ -684,6 +686,10 @@ static void *timer_event_loop(void *args) {
     } else {
         return NULL;
     }
+
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+
     while (1) {
         if (port_get(e->port, &ev, NULL) < 0) {
             break;
@@ -697,7 +703,9 @@ static void *timer_event_loop(void *args) {
         }
         cba->callback(cba->args);
     }
+
 #elif defined(__APPLE__)
+
     int n;
     u_short flags = EV_ADD | EV_ENABLE;
     struct kevent ch, ev;
@@ -708,16 +716,25 @@ static void *timer_event_loop(void *args) {
     if (e->type == AM_TIMER_EVENT_ONCE) {
         flags |= EV_ONESHOT;
     }
+
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+
+    /* set event */
     EV_SET(&ch, 1, EVFILT_TIMER, flags, NOTE_SECONDS, e->interval, NULL);
+    kevent(e->tick, &ch, 1, NULL, 0, NULL);
+
     while (1) {
-        n = kevent(e->tick, &ch, 1, &ev, 1, NULL);
+        n = kevent(e->tick, NULL, 0, &ev, 1, NULL); /* retrieve event */
         if (n <= 0 || (ev.flags & EV_ERROR)) {
             break;
         }
         cba->callback(cba->args);
     }
+
 #else
 #ifndef _WIN32
+
     struct itimerspec ts;
     if (e->error == 0) {
         ts.it_value.tv_sec = e->interval;
@@ -728,13 +745,19 @@ static void *timer_event_loop(void *args) {
     } else {
         return NULL;
     }
+
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+
 #endif
+
     while (1) {
         if (wait_for_exit_event(e->exit_ev) != 0) {
             break;
         }
         sleep(1);
     }
+
 #endif
     return NULL;
 }
@@ -750,6 +773,9 @@ void am_start_timer_event(am_timer_event_t *e) {
 void am_close_timer_event(am_timer_event_t *e) {
     if (e == NULL) return;
     set_exit_event(e->exit_ev);
+#ifndef _WIN32
+    pthread_cancel(e->tick_thr);
+#endif
 #if defined(__sun)
     close(e->port);
     timer_delete(e->tick);
