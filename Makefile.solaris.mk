@@ -65,6 +65,9 @@ iis:
 
 varnish: 
 	$(error Varnish target is not supported on this platform)
+
+varnish3: 
+	$(error Varnish target is not supported on this platform)
 	
 agentadmin: $(OUT_OBJS) $(ADMIN_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" binary ***]"

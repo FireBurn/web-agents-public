@@ -60,6 +60,11 @@ varnish: $(OUT_OBJS) $(VARNISH_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
 	${CC} $(SHARED) -fPIC -Wl,-soname,libvmod_am.so $(LDFLAGS) \
 	    $(OUT_OBJS) -Wl,--version-script=source/varnish/agent.map $(VARNISH_OUT_OBJS) -o build/libvmod_am.so
+
+varnish3: $(OUT_OBJS) $(VARNISH3_OUT_OBJS)
+	@$(ECHO) "[*** Creating "$@" shared library ***]"
+	${CC} $(SHARED) -fPIC -Wl,-soname,libvmod_am.so $(LDFLAGS) \
+	    $(OUT_OBJS) -Wl,--version-script=source/varnish3/agent.map $(VARNISH3_OUT_OBJS) -o build/libvmod_am.so
 	
 agentadmin: $(OUT_OBJS) $(ADMIN_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" binary ***]"

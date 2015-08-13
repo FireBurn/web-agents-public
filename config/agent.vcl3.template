@@ -1,5 +1,3 @@
-vcl 4.0;
-
 import am;
 
 backend default {
@@ -14,17 +12,18 @@ backend default {
 
 sub vcl_init {
     am.init("AM_AGENT_CONF_PATH");
+    return (ok);
 }
 
 sub vcl_recv {
     if(!am.authenticate()) {
-        return (synth(800));
+        error 800;
     }
-    return (hash);
+    return (lookup);
 }
 
-sub vcl_synth {
-    if(resp.status == 800) {
+sub vcl_error {
+    if(obj.status == 800) {
         am.done();
         return (deliver);
     }
@@ -32,7 +31,6 @@ sub vcl_synth {
 
 sub vcl_deliver {
     am.ok();
-    return (deliver);
 }
 
 sub vcl_fini {

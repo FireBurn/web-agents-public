@@ -17,13 +17,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <vrt.h>
-#include <vrt_obj.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-#include <vsa.h>
-#include <cache/cache.h>
+#include <vrt.h>
+#include <cache.h>
+#include <vct.h>
+#include <vrt_obj.h>
 #include <pthread.h>
 #include <unistd.h>
 #include "version.h"
@@ -57,7 +58,7 @@ struct header {
 };
 
 struct request {
-    const struct vrt_ctx *ctx;
+    struct sess *ctx;
     uint32_t xid;
     int status;
     int inauth;
@@ -71,11 +72,11 @@ static pthread_mutex_t init_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_once_t thread_once = PTHREAD_ONCE_INIT;
 static pthread_key_t thread_key;
 static int n_init = 0;
-static const ssize_t min_stack_sz = 128 * 1024;
+static const size_t min_stack_sz = 128 * 1024;
 
 char *url_decode(const char *str);
 
-void vmod_init(const struct vrt_ctx *ctx, struct vmod_priv *priv, const char *conf) {
+void vmod_init(struct sess *ctx, struct vmod_priv *priv, const char *conf) {
     am_config_t *boot;
     struct agent_instance *settings = (struct agent_instance *) priv->priv;
     pthread_mutex_lock(&init_mutex);
@@ -88,15 +89,20 @@ void vmod_init(const struct vrt_ctx *ctx, struct vmod_priv *priv, const char *co
             break;
         }
 
-        if (cache_param->wthread_stacksize > 0) {
-            fprintf(stderr, "am_vmod_init current thread pool stack size limit is %ld bytes\n",
-                    cache_param->wthread_stacksize);
-            /*if (cache_param->wthread_stacksize < min_stack_sz) {
+        if (params->wthread_stacksize > 0) {
+            fprintf(stderr, "am_vmod_init current thread pool stack size limit is %d bytes\n",
+                    params->wthread_stacksize);
+            /*if (params->wthread_stacksize < min_stack_sz) {
                 fprintf(stderr, "am_vmod_init failed. minimum stack size required %ld, configured %ld bytes. "
                         "Consider adjusting thread_pool_stack parameter value\n",
                         min_stack_sz, cache_param->wthread_stacksize);
                 break;
             }*/
+        }
+
+        if (params->sess_workspace > 0) {
+            fprintf(stderr, "am_vmod_init current session workspace limit is %d bytes\n",
+                    params->sess_workspace);
         }
 
         if (settings->status != AM_SUCCESS) {
@@ -144,7 +150,7 @@ static int am_add_header(struct request *r, const char *name, const char *value,
 
     h = (struct header *) WS_Alloc(r->ctx->ws, sizeof (struct header));
     if (h == NULL) {
-        VSLb(r->ctx->vsl, SLT_VCL_Log, "am_add_header failed to allocate %ld bytes (%p)", sz, THREAD_ID);
+        WSP(r->ctx, SLT_VCL_Log, "am_add_header failed to allocate %ld bytes (%p)", sz, THREAD_ID);
         return AM_ENOMEM;
     }
 
@@ -155,7 +161,7 @@ static int am_add_header(struct request *r, const char *name, const char *value,
     sz = strlen(name);
     h->name = WS_Alloc(r->ctx->ws, sz + 1);
     if (h->name == NULL) {
-        VSLb(r->ctx->vsl, SLT_VCL_Log, "am_add_header failed to allocate %ld bytes (%p)", sz, THREAD_ID);
+        WSP(r->ctx, SLT_VCL_Log, "am_add_header failed to allocate %ld bytes (%p)", sz, THREAD_ID);
         return AM_ENOMEM;
     }
     memcpy(h->name, name, sz);
@@ -166,7 +172,7 @@ static int am_add_header(struct request *r, const char *name, const char *value,
         sz = strlen(name + 1) + strlen(value) + 1;
         h->value = WS_Alloc(r->ctx->ws, sz + 1);
         if (h->value == NULL) {
-            VSLb(r->ctx->vsl, SLT_VCL_Log, "am_add_header failed to allocate %ld bytes (%p)", sz, THREAD_ID);
+            WSP(r->ctx, SLT_VCL_Log, "am_add_header failed to allocate %ld bytes (%p)", sz, THREAD_ID);
             return AM_ENOMEM;
         }
         strcpy(h->value, name + 1);
@@ -180,7 +186,7 @@ static int am_add_header(struct request *r, const char *name, const char *value,
     return AM_SUCCESS;
 }
 
-static struct request *create_request(const struct vrt_ctx *ctx) {
+static struct request *create_request(struct sess *ctx) {
     struct request *req_list, *req_list_entry;
     if (ctx == NULL) return NULL;
 
@@ -190,11 +196,11 @@ static struct request *create_request(const struct vrt_ctx *ctx) {
          * create one now and register this request */
         req_list = (struct request *) calloc(1, sizeof (struct request));
         if (req_list == NULL) {
-            VSLb(ctx->vsl, SLT_VCL_Log, "am_vmod memory allocation failure (%p)", THREAD_ID);
+            WSP(ctx, SLT_VCL_Log, "am_vmod memory allocation failure (%p)", THREAD_ID);
             return NULL;
         }
         req_list->ctx = ctx;
-        req_list->xid = ctx->req->sp->vxid;
+        req_list->xid = ctx->xid;
         req_list->inauth = 1;
         pthread_setspecific(thread_key, req_list);
         return req_list;
@@ -203,52 +209,90 @@ static struct request *create_request(const struct vrt_ctx *ctx) {
     /* list is there already, register this request */
     req_list_entry = (struct request *) calloc(1, sizeof (struct request));
     if (req_list_entry == NULL) {
-        VSLb(ctx->vsl, SLT_VCL_Log, "am_vmod memory allocation failure (%p)", THREAD_ID);
+        WSP(ctx, SLT_VCL_Log, "am_vmod memory allocation failure (%p)", THREAD_ID);
         return NULL;
     }
     req_list_entry->ctx = ctx;
-    req_list_entry->xid = ctx->req->sp->vxid;
+    req_list_entry->xid = ctx->xid;
     req_list_entry->inauth = 1;
     AM_LIST_INSERT(req_list, req_list_entry);
     return req_list_entry;
 }
 
-static struct request *get_request(const struct vrt_ctx *ctx) {
+static struct request *get_request(struct sess *ctx) {
     struct request *e, *t, *request_list = pthread_getspecific(thread_key);
     if (request_list == NULL) {
-        VSLb(ctx->vsl, SLT_VCL_Log, "am_vmod failed to get request data (%p)", THREAD_ID);
+        WSP(ctx, SLT_VCL_Log, "am_vmod failed to get request data (%p)", THREAD_ID);
         return NULL;
     }
 
     AM_LIST_FOR_EACH(request_list, e, t) {
-        if (e->xid == ctx->req->sp->vxid) {
+        if (e->xid == ctx->xid) {
             return e;
         }
     }
-    VSLb(ctx->vsl, SLT_VCL_Log, "am_vmod failed to locate xid %d in request list (%p)",
-            ctx->req->sp->vxid, THREAD_ID);
+    WSP(ctx, SLT_VCL_Log, "am_vmod failed to locate xid %d in request list (%p)",
+            ctx->xid, THREAD_ID);
     return NULL;
 }
 
 static char *make_header_key(const char *value) {
     static __thread char header[AM_PATH_SIZE];
-    if (!ISVALID(value)) {
+    if (ISINVALID(value)) {
         return NULL;
     }
     snprintf(header, sizeof (header), "%c%s:", (unsigned) strlen(value) + 1, value);
     return header;
 }
 
-static const char *get_request_header(const struct vrt_ctx *ctx, const char *key) {
-    const struct gethdr_s hdr = {HDR_REQ, make_header_key(key)};
-    if (!ISVALID(hdr.what)) {
+static const char *get_request_header(struct sess *ctx, const char *key) {
+    char *header_key = make_header_key(key);
+    if (ISINVALID(header_key)) {
         return NULL;
     }
-    return VRT_GetHdr(ctx, &hdr);
+    return VRT_GetHdr(ctx, HDR_REQ, header_key);
 }
 
+#ifndef VSA_Port
+
+static unsigned VSA_Port(struct sockaddr_storage *addr) {
+    switch (addr->ss_family) {
+        case AF_INET:
+            return ntohs(((struct sockaddr_in *) addr)->sin_port);
+        case AF_INET6:
+            return ntohs(((struct sockaddr_in6 *) addr)->sin6_port);
+        default:
+            return 80;
+    }
+}
+#endif
+
+#ifndef WS_Printf
+
+static void *WS_Printf(struct ws *ws, const char *fmt, ...) {
+    unsigned u, v;
+    va_list ap;
+    char *p;
+
+    WS_Assert(ws);
+    assert(ws->r == NULL);
+    u = WS_Reserve(ws, 0);
+    p = ws->f;
+    va_start(ap, fmt);
+    v = vsnprintf(p, u, fmt, ap);
+    va_end(ap);
+    if (v >= u) {
+        WS_Release(ws, 0);
+        p = NULL;
+    } else {
+        WS_Release(ws, v + 1);
+    }
+    return p;
+}
+#endif
+
 static am_status_t get_request_url(am_request_t *ar) {
-    VCL_IP server_addr;
+    struct sockaddr_storage *server_addr;
     struct request *req = (struct request *) ar->ctx;
     if (req == NULL || req->ctx == NULL || req->ctx->ws == NULL) return AM_EINVAL;
 
@@ -278,8 +322,7 @@ static am_status_t set_cookie(am_request_t *ar, const char *header) {
     const char *current_cookies;
     if (req == NULL || !ISVALID(header)) return AM_EINVAL;
 
-    AM_ADD_HEADER_RESP_DELIVER(req, H_Set_Cookie, header);
-    AM_ADD_HEADER_RESP_SYNTH(req, H_Set_Cookie, header);
+    AM_ADD_HEADER_RESP_DELIVER(req, make_header_key("Set-Cookie"), header);
 
     current_cookies = get_request_header(req->ctx, HTTP_HDR_COOKIE);
     if (ISVALID(current_cookies)) {
@@ -311,7 +354,7 @@ static am_status_t add_header_in_response(am_request_t *ar, const char *key, con
 static am_status_t set_method(am_request_t *ar) {
     struct request *req = (struct request *) ar->ctx;
     if (req == NULL) return AM_EINVAL;
-    http_ForceField(req->ctx->http_req, HTTP_HDR_METHOD, am_method_num_to_str(ar->method));
+    http_SetH(req->ctx->http, HTTP_HDR_REQ, am_method_num_to_str(ar->method));
     return AM_SUCCESS;
 }
 
@@ -342,6 +385,13 @@ static int am_status_value(am_status_t v) {
             return 500;
     }
 }
+
+#ifndef VRT_INT_string
+
+static char *VRT_INT_string(struct sess *ctx, long num) {
+    return WS_Printf(ctx->ws, "%ld", num);
+}
+#endif
 
 static am_status_t set_custom_response(am_request_t *ar, const char *text, const char *cont_type) {
     struct request *req = (struct request *) ar->ctx;
@@ -443,7 +493,7 @@ static am_status_t set_custom_response(am_request_t *ar, const char *text, const
         case AM_INTERNAL_REDIRECT:
         case AM_REDIRECT:
         {
-            AM_ADD_HEADER_RESP_SYNTH(req, H_Location, text);
+            AM_ADD_HEADER_RESP_DELIVER(req, H_Location, text);
             store_custom_response(req, am_status_value(status), NULL);
             break;
         }
@@ -489,11 +539,11 @@ static am_status_t get_request_body(am_request_t *ar) {
     }
 
     while (content_length) {
-        bytes_read = HTTP1_Read(req->ctx->req->htc, buf,
+        bytes_read = HTC_Read(req->ctx->wrk, req->ctx->htc, buf,
                 content_length > sizeof (buf) ? sizeof (buf) : content_length);
         if (bytes_read <= 0) {
             free(body);
-            AM_LOG_ERROR(ar->instance_id, "%s HTTP1_Read failure", thisfunc);
+            AM_LOG_ERROR(ar->instance_id, "%s HTC_Read failure", thisfunc);
             return AM_ERROR;
         }
 
@@ -525,22 +575,22 @@ static am_status_t set_request_body(am_request_t *ar) {
     return AM_SUCCESS;
 }
 
-unsigned int vmod_authenticate(const struct vrt_ctx *ctx, struct vmod_priv *priv) {
+unsigned int vmod_authenticate(struct sess *ctx, struct vmod_priv *priv) {
     unsigned int result = 0;
     int status;
     am_request_t am_request;
     am_config_t *boot = NULL;
-    VCL_IP client_addr = VRT_r_client_ip(ctx);
+    struct sockaddr_storage *client_addr = VRT_r_client_ip(ctx);
     struct agent_instance *settings = (struct agent_instance *) priv->priv;
     struct request *req = create_request(ctx);
 
     if (settings == NULL || req == NULL) {
-        VSLb(ctx->vsl, SLT_VCL_Error, "am_vmod failed to allocate memory for agent instance data structures");
+        WSP(ctx, SLT_VCL_Log, "am_vmod failed to allocate memory for agent instance data structures");
         return result;
     }
 
     if (settings->status != AM_SUCCESS) {
-        VSLb(ctx->vsl, SLT_VCL_Error, "am_vmod failed to initialize agent instance, configuration: %s, error: %s",
+        WSP(ctx, SLT_VCL_Log, "am_vmod failed to initialize agent instance, configuration: %s, error: %s",
                 settings->conf_file, am_strerror(settings->status));
         AM_LOG_ERROR(settings->instance_id, "vmod_authenticate(): failed to initialize agent instance, error: %s",
                 am_strerror(settings->status));
@@ -549,7 +599,7 @@ unsigned int vmod_authenticate(const struct vrt_ctx *ctx, struct vmod_priv *priv
 
     status = am_get_agent_config(settings->instance_id, settings->conf_file, &boot);
     if (boot == NULL || status != AM_SUCCESS) {
-        VSLb(ctx->vsl, SLT_VCL_Error, "am_vmod failed to get agent configuration instance, configuration: %s, error: %s",
+        WSP(ctx, SLT_VCL_Log, "am_vmod failed to get agent configuration instance, configuration: %s, error: %s",
                 settings->conf_file, am_strerror(status));
         AM_LOG_ERROR(settings->instance_id, "vmod_authenticate(): failed to get agent configuration instance, error: %s",
                 am_strerror(status));
@@ -561,7 +611,7 @@ unsigned int vmod_authenticate(const struct vrt_ctx *ctx, struct vmod_priv *priv
     am_request.status = AM_ERROR;
     am_request.instance_id = settings->instance_id;
     am_request.ctx = req;
-    am_request.method = am_method_str_to_num(VRT_r_req_method(ctx));
+    am_request.method = am_method_str_to_num(http_GetReq(ctx->http));
     am_request.content_type = get_request_header(ctx, HTTP_HDR_CONTENT_TYPE);
     am_request.cookies = get_request_header(ctx, HTTP_HDR_COOKIE);
 
@@ -599,41 +649,41 @@ unsigned int vmod_authenticate(const struct vrt_ctx *ctx, struct vmod_priv *priv
     return result;
 }
 
-static struct http *get_sess_http(const struct vrt_ctx *ctx, enum gethdr_e where) {
+static struct http *get_sess_http(struct sess *ctx, enum gethdr_e where) {
     if (ctx == NULL) return NULL;
     switch (where) {
         case HDR_REQ:
-            return ctx->http_req;
+            return ctx->http;
         case HDR_BEREQ:
-            return ctx->http_bereq;
+            return ctx->wrk->bereq;
         case HDR_BERESP:
-            return ctx->http_beresp;
+            return ctx->wrk->beresp;
         case HDR_RESP:
-            return ctx->http_resp;
+            return ctx->wrk->resp;
         default:
             return NULL;
     }
 }
 
-void vmod_cleanup(const struct vrt_ctx *ctx, struct vmod_priv *priv) {
+void vmod_cleanup(struct sess *ctx, struct vmod_priv *priv) {
     static const char *thisfunc = "vmod_cleanup():";
     struct request *request_list = pthread_getspecific(thread_key);
-    VSLb(ctx->vsl, SLT_Debug, "%s xid: %d", thisfunc, ctx->req->sp->vxid);
+    VSL(SLT_Debug, 0, "%s xid: %d", thisfunc, ctx->xid);
     delete_request_list(&request_list);
 }
 
-void vmod_request_cleanup(const struct vrt_ctx *ctx, struct vmod_priv *priv) {
+void vmod_request_cleanup(struct sess *ctx, struct vmod_priv *priv) {
     static const char *thisfunc = "vmod_request_cleanup():";
     struct request *e, *t, *tmp;
     struct request *request_list = pthread_getspecific(thread_key);
 
     if (request_list == NULL) return;
 
-    VSLb(ctx->vsl, SLT_Debug, "%s xid: %d", thisfunc, ctx->req->sp->vxid);
+    VSL(SLT_Debug, 0, "%s xid: %d", thisfunc, ctx->xid);
 
     AM_LIST_FOR_EACH(request_list, e, t) {
-        if (e->xid == ctx->req->sp->vxid) {
-            VSLb(ctx->vsl, SLT_Debug, "%s removing request %d (%p)",
+        if (e->xid == ctx->xid) {
+            VSL(SLT_Debug, 0, "%s removing request %d (%p)",
                     thisfunc, e->xid, THREAD_ID);
             e->headers = NULL; /* headers are WS allocated */
             am_free(e->body);
@@ -659,75 +709,68 @@ void vmod_request_cleanup(const struct vrt_ctx *ctx, struct vmod_priv *priv) {
     }
 }
 
-void vmod_done(const struct vrt_ctx *ctx, struct vmod_priv *priv) {
+void vmod_done(struct sess *ctx, struct vmod_priv *priv) {
     static const char *thisfunc = "vmod_done():";
+    struct http *hp;
+    struct header *h, *t;
+    struct agent_instance *settings = (struct agent_instance *) priv->priv;
+    struct request *req = get_request(ctx);
+
+    if (req == NULL || !req->inauth) return;
+
+    VSL(SLT_Debug, 0, "%s xid: %d", thisfunc, ctx->xid);
+
+    AM_LIST_FOR_EACH(req->headers, h, t) {
+
+        if (h->type != AM_DONE || !ISVALID(h->value)) continue;
+
+        hp = get_sess_http(ctx, h->where);
+        if (hp == NULL) continue;
+
+        if (settings != NULL) {
+            AM_LOG_DEBUG(settings->instance_id, "%s setting response header \"%s\"",
+                    thisfunc, h->value);
+        }
+
+        http_SetHeader(ctx->wrk, ctx->fd, hp, h->value);
+    }
+
+    if (ISVALID(req->body)) {
+        VRT_synth_page(ctx, 0, req->body, vrt_magic_string_end);
+    }
+}
+
+void vmod_ok(struct sess *ctx, struct vmod_priv *priv) {
+    static const char *thisfunc = "vmod_ok():";
     int status;
     struct http *hp;
     struct header *h, *t;
     struct agent_instance *settings = (struct agent_instance *) priv->priv;
     struct request *req = get_request(ctx);
 
-    if (settings == NULL || req == NULL) {
-        http_PutResponse(ctx->http_resp, "HTTP/1.1", am_status_value(AM_ERROR), NULL); /* fatal */
-        return;
-    }
+    VSL(SLT_Debug, 0, "%s xid: %d", thisfunc, ctx->xid);
 
-    if (req->inauth) {
+    if (req != NULL && req->inauth) {
         status = req->status;
         if (status < 100 || status > 999) {
             status = 503;
         }
-
-        VSLb(ctx->vsl, SLT_Debug, "%s xid: %d", thisfunc, ctx->req->sp->vxid);
-
-        http_PutResponse(ctx->http_resp, "HTTP/1.1", status, NULL);
-        AM_LOG_DEBUG(settings->instance_id, "%s setting response status %d",
-                thisfunc, status);
-
-        AM_LIST_FOR_EACH(req->headers, h, t) {
-
-            if (h->type != AM_DONE || !ISVALID(h->value)) continue;
-
-            hp = get_sess_http(ctx, h->where);
-            if (hp == NULL) continue;
-
-            AM_LOG_DEBUG(settings->instance_id, "%s setting response header \"%s\"",
-                    thisfunc, h->value);
-
-            http_SetHeader(hp, h->value);
-        }
-
-        if (ISVALID(req->body)) {
-            VRT_synth_page(ctx, req->body, vrt_magic_string_end);
-        }
-    }
-
-    vmod_request_cleanup(ctx, priv);
-}
-
-void vmod_ok(const struct vrt_ctx *ctx, struct vmod_priv *priv) {
-    static const char *thisfunc = "vmod_ok():";
-    int status;
-    struct http *hp;
-    struct header *h, *t;
-    struct request *req = get_request(ctx);
-
-    VSLb(ctx->vsl, SLT_Debug, "%s xid: %d", thisfunc, ctx->req->sp->vxid);
-
-    if (req && req->inauth) {
-        status = req->status;
-        if (status < 100 || status > 999) {
-            status = 503;
-        }
-        if (status == 200 && ctx->http_resp->status != 200
-                && ctx->http_resp->status != 800) {
+        if (status == 200 && ctx->wrk->resp->status != 200
+                && ctx->wrk->resp->status != 800) {
             /* pass backend response status to the caller */
-            status = ctx->http_resp->status;
+            status = ctx->wrk->resp->status;
         }
 
-        http_PutResponse(ctx->http_resp, "HTTP/1.1", status, NULL);
+        if (settings != NULL) {
+            AM_LOG_DEBUG(settings->instance_id, "%s setting response status %d",
+                    thisfunc, status);
+        }
+
+        http_PutStatus(ctx->wrk->resp, status);
+        http_PutResponse(ctx->wrk, ctx->fd, ctx->wrk->resp, http_StatusMessage(status));
 
         AM_LIST_FOR_EACH(req->headers, h, t) {
+
             if (h->type != AM_SUCCESS) continue;
 
             hp = get_sess_http(ctx, h->where);
@@ -738,10 +781,9 @@ void vmod_ok(const struct vrt_ctx *ctx, struct vmod_priv *priv) {
                 if (!h->unset) continue;
             }
 
-            http_SetHeader(hp, h->value);
+            http_SetHeader(ctx->wrk, ctx->fd, hp, h->value);
         }
     }
-
     vmod_request_cleanup(ctx, priv);
 }
 

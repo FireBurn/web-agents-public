@@ -1,0 +1,19 @@
+{
+    global:
+            vmod_init;
+            vmod_authenticate;
+            vmod_done;
+            vmod_ok;
+            vmod_cleanup;
+            vmod_request_cleanup;
+            init_function;
+            Vmod_Name;
+            Vmod_Varnish_ABI;
+            Vmod_Spec;
+            Vmod_Proto;
+            Vmod_Len;
+            Vmod_Func;
+            Vmod_Id;
+    local:
+            *;
+};

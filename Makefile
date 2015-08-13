@@ -80,6 +80,7 @@ APACHE_SOURCES := source/apache/agent.c
 APACHE22_SOURCES := source/apache/agent22.c
 IIS_SOURCES := source/iis/agent.c
 VARNISH_SOURCES := source/varnish/agent.c source/varnish/vcc_if.c
+VARNISH3_SOURCES := source/varnish3/agent.c source/varnish3/vcc_if.c
 ADMIN_SOURCES := source/admin.c source/admin_iis.c
 SOURCES := $(filter-out $(ADMIN_SOURCES), $(wildcard source/*.c)) $(wildcard expat/*.c) $(wildcard pcre/*.c) $(wildcard zlib/*.c)
 OBJECTS := $(SOURCES:.c=.$(OBJ))
@@ -94,6 +95,8 @@ IIS_OBJECTS := $(IIS_SOURCES:.c=.$(OBJ))
 IIS_OUT_OBJS := $(addprefix $(OBJDIR)/,$(IIS_OBJECTS))
 VARNISH_OBJECTS := $(VARNISH_SOURCES:.c=.$(OBJ))
 VARNISH_OUT_OBJS := $(addprefix $(OBJDIR)/,$(VARNISH_OBJECTS))
+VARNISH3_OBJECTS := $(VARNISH3_SOURCES:.c=.$(OBJ))
+VARNISH3_OUT_OBJS := $(addprefix $(OBJDIR)/,$(VARNISH3_OBJECTS))
 ifdef TESTS
  TEST_FILES := $(addprefix tests/,$(addsuffix .c,$(TESTS)))
 else
@@ -105,6 +108,7 @@ TEST_OBJECTS := $(addprefix $(OBJDIR)/,$(TEST_SOURCES:.c=.$(OBJ)))
 $(APACHE_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache24/include \
 	$(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache24/include $(COMPILEFLAG)DAPACHE2 $(COMPILEFLAG)DAPACHE24
 $(VARNISH_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/varnish/include
+$(VARNISH3_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/varnish3/include
 $(APACHE22_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache22/include \
 	$(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache22/include $(COMPILEFLAG)DAPACHE2
 $(TEST_OBJECTS): CFLAGS += $(COMPILEFLAG)I.$(PS)cmocka $(COMPILEFLAG)I.$(PS)tests $(COMPILEFLAG)I.$(PS)$(OBJDIR)$(PS)tests \
@@ -132,7 +136,7 @@ VERSION_NUM := $(shell $(ECHO) $(VERSION) | $(SED) -$(SED_ROPT) "s/^([.0-9]*)-.*
 $(OBJDIR)/%.$(OBJ): %.c
 	@$(ECHO) "[*** Compiling "$<" ***]"
 	$(CC) $(CFLAGS) $< $(COMPILEOPTS)
-
+	
 .DEFAULT_GOAL := all
 
 all: apachezip
@@ -147,6 +151,7 @@ build:
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)apache
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)iis
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)varnish
+	$(MKDIR) $(OBJDIR)$(PS)source$(PS)varnish3
 
 version:
 	@$(ECHO) "[***** Updating version.h *****]"
@@ -250,3 +255,23 @@ varnishzip: clean build version varnish agentadmin
 	-$(CP) config$(PS)* $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)config$(PS)
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)legal$(PS)
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Varnish_v4_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
+
+varnish3zip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"3.0.x"'
+varnish3zip: clean build version varnish3 agentadmin
+	@$(ECHO) "[***** Building Varnish agent archive *****]"
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)bin
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)lib
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)legal
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)instances
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)log
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)config
+	-$(CP) $(OBJDIR)$(PS)agentadmin* $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)bin$(PS)
+	-$(CP) $(OBJDIR)$(PS)libvmod_am.so $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)lib$(PS)
+	-$(CP) config$(PS)* $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)config$(PS)
+	-$(CP) $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)config$(PS)agent.vcl3.template $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)config$(PS)agent.vcl.template
+	-$(RMALL) $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)config$(PS)agent.vcl3.template
+	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)legal$(PS)
+	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Varnish_v3_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
+	
