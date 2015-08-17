@@ -474,7 +474,7 @@ void test_policy_cache_purge_many_entries(void **state) {
 
 void test_policy_cache_purge_during_insert(void **state) {
     
-    const int test_size = 198;
+    const int test_size = 192;
     char* buffer = NULL;
     struct am_policy_result * result;
     
@@ -501,10 +501,10 @@ void test_policy_cache_purge_during_insert(void **state) {
     sleep(2);
 
     // another 10 is too many without the purge functionality
-    test_cache_with_seed(321213, 10, &request, result);
+    test_cache_with_seed(321213, 100, &request, result);
     
-    // check that there are only these 10 left
-    assert_int_equal(am_purge_caches(time(NULL) + 10), 10);
+    // check that there are only these 100 left
+    assert_int_equal(am_purge_caches(time(NULL) + 10), 100);
     
     delete_am_policy_result_list(&result);
     

@@ -62,22 +62,12 @@ int inet_net_pton(int af, const char * src, void * dst, size_t size)
  */
 static void ipv6_compare(int expected, const char * p)
 {
-    char buffer [INET6_ADDRSTRLEN];
-    char ctl_buffer [INET6_ADDRSTRLEN];
+    char buffer [INET6_ADDRSTRLEN], ctl_buffer [INET6_ADDRSTRLEN];
     
-    struct in6_addr addr;
-    int bits = ipv6_pton(p, &addr);
+    struct in6_addr addr, ctl_addr;
+    int bits, ctl_bits;
     
-    struct in6_addr ctl_addr;
-    memset(&ctl_addr, 0, sizeof(ctl_addr));
-    int ctl_bits = inet_net_pton(AF_INET6, p, &ctl_addr, sizeof(ctl_addr));
-    
-    if (bits != ctl_bits)
-    {
-        printf("different results: inet_net_pton returns %d\n", ctl_bits);
-        ipv6_pton(p, &addr);
-    }
-    
+    bits = ipv6_pton(p, &addr);
     if (bits != -1)
     {
         struct in6_addr addr2;
@@ -86,15 +76,20 @@ static void ipv6_compare(int expected, const char * p)
         // roundtrip
         ipv6_pton(buffer, &addr2);
         assert_int_equal(memcmp(&addr, &addr2, sizeof(addr)), 0);
-        
-        //inet_net_ntop(AF_INET6, &addr, bits, buffer, sizeof(buffer));
-        printf("%s -> %s\n", p, buffer);
     }
     
+#if 0
+    memset(&ctl_addr, 0, sizeof(ctl_addr));
+    ctl_bits = inet_net_pton(AF_INET6, p, &ctl_addr, sizeof(ctl_addr));
+    if (bits != ctl_bits)
+    {
+        //printf("different results: inet_net_pton returns %d\n", ctl_bits);
+        ipv6_pton(p, &addr);
+    }
+
     if (ctl_bits != -1)
     {
         inet_ntop(AF_INET6, &ctl_addr, ctl_buffer, INET6_ADDRSTRLEN);
-        //inet_net_ntop(AF_INET6, &ctl_addr, ctl_bits, ctl_buffer, sizeof(ctl_buffer));
         printf("%s -> %s (control)\n", p, ctl_buffer);
     }
     
@@ -113,6 +108,7 @@ static void ipv6_compare(int expected, const char * p)
         }
     }
     printf("--------\n");
+#endif
     assert_int_equal(expected, bits);
 }
 
@@ -349,13 +345,13 @@ void test_cidr_ip6_notenforced_get(void **state) {
         .conf                       = &config,
         .ctx                        = &ctx,
         
-        .method                     = AM_REQUEST_POST,
+        .method                     = AM_REQUEST_GET,
         .token                      = NULL,
         
         .overridden_url             = "https://www.override.com:90/am",
         .normalized_url             = "https://www.notify.com:90/am",
         
-        .client_ip                  = "2001:5c0:9168:0:0:0:0:2", /* not in the range for posts */
+        .client_ip                  = "2001:5c0:9168:0:0:0:0:2", /* in the range for get */
     };
     
     am_test_get_state_funcs(&func_array, &array_len);
@@ -363,8 +359,8 @@ void test_cidr_ip6_notenforced_get(void **state) {
     
     parse_url("http://www.url.com/path", &request.url);
     
-    assert_int_equal(notenforced_handler(&request), AM_FAIL);
-    assert_int_equal(request.not_enforced, AM_FALSE);
+    assert_int_equal(notenforced_handler(&request), AM_OK);
+    assert_int_equal(request.not_enforced, AM_TRUE);
 }
 
 
@@ -401,7 +397,8 @@ void test_url_notenforced_get(void **state) {
         .not_enforced_ip_map_sz     = array_len(not_enforced_ips),
         .not_enforced_ip_map        = not_enforced_ips,
         
-        .not_enforced_fetch_attr    = 1,
+        .not_enforced_fetch_attr    = AM_FALSE,
+        .not_enforced_regex_enable  = AM_TRUE,
         
         .not_enforced_map_sz        = array_len(not_enforced_map),
         .not_enforced_map           = not_enforced_map,
@@ -431,7 +428,7 @@ void test_url_notenforced_get(void **state) {
     
     parse_url("http://www.url.com/path", &request.url);
     
-    assert_int_equal(notenforced_handler(&request), AM_OK);
+    assert_int_equal(notenforced_handler(&request), config.not_enforced_fetch_attr ? AM_OK : AM_QUIT);
     assert_int_equal(request.not_enforced, AM_TRUE);
 }
 

@@ -474,8 +474,9 @@ void test_resource_notification_on_policy_cache(void **state) {
     assert_int_equal(am_get_session_policy_cache_entry(&request, session_id, &r, &session, &ets), AM_SUCCESS);
     
     if (r != NULL) {
+        // check that the notification has been received, which will invalidate the cache entry
         assert_int_equal(strcmp(r->resource, "a.b.c:3232/d/e/f"), 0);
-        assert_int_equal(am_get_policy_cache_entry(&request, r->resource, 0), AM_NOT_FOUND);
+        assert_int_equal(am_get_policy_cache_entry(&request, r->resource, 0), AM_SUCCESS);
     }
     delete_am_policy_result_list(&r);
 

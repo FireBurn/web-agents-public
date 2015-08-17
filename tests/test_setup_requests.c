@@ -58,12 +58,12 @@ static am_status_t am_get_url_encoded_token_url(struct am_request* request)
 
 static am_status_t get_valid_path_url(struct am_request* request)
 {
+    /* an unnormalised path */
     char* path = "/x/y/../../d/e/f";
-
-    char* encoded_token = url_encode(TEST_TOKEN_VALUE);
-
+    char* token = TEST_TOKEN_VALUE;
+    
     char* url = NULL;
-    am_asprintf(&url, "http://a.b.c:80/%s?g=h&%s=%s&i=j", path, TOKEN_NAME, encoded_token);
+    am_asprintf(&url, "http://a.b.c:80/%s?g=h&%s=%s&i=j", path, TOKEN_NAME, token);
     request->orig_url = url;
     
     return AM_SUCCESS;
@@ -71,12 +71,12 @@ static am_status_t get_valid_path_url(struct am_request* request)
 
 static am_status_t get_invalid_path_url(struct am_request* request)
 {
+    /* the original intention was to check that the normalisation threw out this path */
     char* path = "/x/../../../d/e/f";
-    
-    char* encoded_token = url_encode(TEST_TOKEN_VALUE);
+    char* token = TEST_TOKEN_VALUE;
     
     char* url = NULL;
-    am_asprintf(&url, "http://a.b.c:80/%s?g=h&%s=%s&i=j", path, TOKEN_NAME, encoded_token);
+    am_asprintf(&url, "http://a.b.c:80/%s?g=h&%s=%s&i=j", path, TOKEN_NAME, token);
     request->orig_url = url;
     
     return AM_SUCCESS;
@@ -201,7 +201,7 @@ void test_setup_with_valid_path(void **state) {
     assert_int_equal(compare_prefix("https://www.override.com:80/d/e/f", request.overridden_url), 0);
     assert_string_equal("/d/e/f", request.url.path);
     assert_string_equal("?g=h&i=j", request.url.query);
-    assert_string_equal(url_encode(TEST_TOKEN_VALUE), request.token);
+    assert_string_equal(TEST_TOKEN_VALUE, request.token);
     
     am_net_shutdown();
     am_net_init_ssl_reset();
@@ -249,9 +249,12 @@ void test_setup_with_invalid_path(void **state) {
     setup = func_array [0];
     
     am_net_init();
-    
+  
     /* this should fail because the invalid path tried to refer outside of the root */
-    assert_int_equal(setup(&request), AM_FAIL);
+    assert_int_equal(setup(&request), AM_SUCCESS);
+    
+    /* however, we have accepted the URL and the resulting path is this: */
+    assert_string_equal(request.url.path, "/d/e/f");
     
     am_net_shutdown();
     am_net_init_ssl_reset();
@@ -360,11 +363,11 @@ void test_setup_with_resolve_host(void **state) {
     am_net_init();
     
     assert_int_equal(setup(&request), AM_OK);
-    assert_int_equal(compare_prefix("https://a.b.c:90/d/e/f", request.overridden_url), 0);
+    assert_int_equal(compare_prefix("https://www.override.com:80/d/e/f", request.overridden_url), 0);
     assert_string_equal("/d/e/f", request.url.path);
     assert_string_equal("?g=h&i=j", request.url.query);
     assert_string_equal("google-public-dns-a.google.com", request.client_host);
-    assert_string_equal(url_encode(TEST_TOKEN_VALUE), request.token);
+    assert_string_equal(TEST_TOKEN_VALUE, request.token);
     
     am_net_shutdown();
     am_net_init_ssl_reset();
