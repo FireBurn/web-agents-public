@@ -69,6 +69,15 @@ static void am_main_init_unlock() {
 
 #endif
 
+/*
+ * Initialising the agent:
+ *
+ * On Unix, where fork is used by the webserver to spawn a new child (worker) process, there is a
+ * main-process-init and a child-process init. Whereas on windows there is no main process (fork is not
+ * available) - all processes are equal and must be dealt with appropriately. Thus the difference in
+ * init calls to get agent bootstrapped in different environments, i.e. for unix (and it's variants) we
+ * call this function am_init.  For Windows, call am_init_worker.
+ */
 int am_init(int id) {
     int rv = AM_SUCCESS;
 #ifndef _WIN32
@@ -81,21 +90,6 @@ int am_init(int id) {
     am_worker_pool_init();
 #endif
     return rv;
-}
-
-int am_shutdown(int id) {
-    am_audit_processor_shutdown();
-    am_audit_shutdown();
-    am_cache_shutdown();
-    am_configuration_shutdown();
-    am_log_shutdown(id);
-#ifdef _WIN32
-    am_main_destroy();
-#else
-    am_worker_pool_shutdown();
-    am_net_shutdown();
-#endif
-    return 0;
 }
 
 int am_init_worker(int id) {
@@ -112,6 +106,21 @@ int am_init_worker(int id) {
     am_cache_init(id);
 #endif
     am_worker_pool_init();
+    return 0;
+}
+
+int am_shutdown(int id) {
+    am_audit_processor_shutdown();
+    am_audit_shutdown();
+    am_cache_shutdown();
+    am_configuration_shutdown();
+    am_log_shutdown(id);
+#ifdef _WIN32
+    am_main_destroy();
+#else
+    am_worker_pool_shutdown();
+    am_net_shutdown();
+#endif
     return 0;
 }
 

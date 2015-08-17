@@ -13,15 +13,21 @@
 # Copyright 2015 ForgeRock AS.
 
 
-This directory contains the unit tests for OpenAM Web Policy Agent.
+This directory contains the unit tests for the C OpenAM Web Policy Agent.
 
 Tests are placed in C source files and will look something like the following.  
-Let us assume this is the file test_blah.c:
+Let us assume this is the file test_blah.c.  You will definitely need cmocka.h and
+for that you will need setjmp.h.
+-------------------------------------------------------------------------------------
 
 
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <setjmp.h>
 
-
-#include <relevant-headers.h>
+#include "cmocka.h"
 
 /**
  * Test the blah functionality.
@@ -42,9 +48,33 @@ void test_blah2(void** state) {
 }
 
 
-Make target "test_includes", which is a part of a global "tests" target, extracts
-all of the test method prototypes from each of the test files and creates "tests.h" 
-header file. The same target automatically creates "struct CMUnitTest tests[]" object 
-to be used inside test_MAIN cmocka_run_group_tests().
+-------------------------------------------------------------------------------------
+You can build all the tests with:
 
-Resulting test executable "test" is available under "build" directory. 
+    make tests
+
+or alternatively if you only want to run the tests in the file, say, test_blah.c then use
+this (note you must drop the ".c" suffix from the filename):
+
+    make "TESTS=test_blah" tests
+
+Make invokes sed to produce a number of files, all of which can be ignored except for
+
+    build/tests/tests.h
+
+which will look something like this:
+
+-------------------------------------------------------------------------------------
+void test_blah1(void** state) ;
+void test_blah2(void** state) ;
+const struct CMUnitTest tests[] = {
+cmocka_unit_test(test_blah1),
+cmocka_unit_test(test_blah2),
+};
+-------------------------------------------------------------------------------------
+
+Note that tests are only included in the array if:
+- the return value is void
+- function has single void** parameter called "state"
+- the function is "public", as opposed to static
+- the function name starts with "test_"

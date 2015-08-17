@@ -99,6 +99,8 @@ void logging_setup(int logging_level) {
     am_cache_destroy();
     
     assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
+
+    am_init_worker(AM_DEFAULT_AGENT_ID);
     
     sprintf(log_file_name, "log%d", rand() % 1000000);
     
