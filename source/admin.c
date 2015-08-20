@@ -793,7 +793,7 @@ static void find_group(char* httpd_conf_file, gid_t** gid) {
 #endif /* _WIN32 */
 }
 
-
+/****************************************************************************************************************/
 
 static void install_interactive(int argc, char **argv) {
     int rv;
@@ -1039,6 +1039,7 @@ static void install_interactive(int argc, char **argv) {
         am_bool_t inner_loop = AM_TRUE;
         do {
             int httpcode = 0;
+            struct url parsed_url;
             
             input = prompt_and_read("\nEnter the URL where the OpenAM server is running. Please include the\n"
                     "deployment URI also as shown below:\n"
@@ -1049,11 +1050,16 @@ static void install_interactive(int argc, char **argv) {
             if (ISVALID(input)) {
                 strncpy(openam_url, input, sizeof(openam_url) - 1);
                 install_log("OpenAM URL %s", openam_url);
-                if (am_url_validate(0, openam_url, NULL, &httpcode, install_log) == AM_SUCCESS) {
-                    inner_loop = AM_FALSE;
+                if (parse_url(openam_url, &parsed_url) == AM_ERROR) {
+                    fprintf(stdout, "That OpenAM URL (%s) doesn't appear to be valid\n", openam_url);
+                    install_log("parse_url fails the OpenAM URL \"%s\"", openam_url);
                 } else {
-                    fprintf(stdout, "Cannot connect to OpenAM at URI %s, please make sure OpenAM is started\n", openam_url);
-                    install_log("OpenAM at %s cannot be contacted (invalid, or not running)", openam_url);
+                    if (am_url_validate(0, openam_url, NULL, &httpcode, install_log) == AM_SUCCESS) {
+                        inner_loop = AM_FALSE;
+                    } else {
+                        fprintf(stdout, "Cannot connect to OpenAM at URI %s, please make sure OpenAM is started\n", openam_url);
+                        install_log("OpenAM at %s cannot be contacted (invalid, or not running)", openam_url);
+                    }
                 }
             }
             am_free(input);
@@ -1061,12 +1067,13 @@ static void install_interactive(int argc, char **argv) {
         } while (inner_loop == AM_TRUE);
 
         /**
-         * Get the URL of the Agent and try to verify it is not running.
+         * Get the URL of the Agent and try to verify it is not running (if it is an Apache agent).
          */
         inner_loop = AM_TRUE;
         do {
             int httpcode = 0;
-
+            struct url parsed_url;
+            
             input = prompt_and_read("\nEnter the Agent URL as shown below:\n"
                     "(http://agent.sample.com:1234)\n"
                     "[ q or 'ctrl+c' to exit ]\n"
@@ -1076,18 +1083,25 @@ static void install_interactive(int argc, char **argv) {
                 strncpy(agent_url, input, sizeof(agent_url) - 1);
                 install_log("Agent URL %s", agent_url);
 
-                if (instance_type == AM_I_APACHE) { /* only Apache server needs to be shut down prior agent installation */
-                    if (am_url_validate(0, agent_url, NULL, &httpcode, install_log) != AM_SUCCESS) {
-                        /* hopefully we cannot contact because the agent is not running,
-                         * rather than because the URI is complete rubbish
-                         */
-                        inner_loop = AM_FALSE;
-                    } else {
-                        fprintf(stdout, "The Agent at URI %s should be stopped before installation", agent_url);
-                        install_log("Agent URI %s rejected because agent is running", agent_url);
-                    }
+                if (parse_url(agent_url, &parsed_url) == AM_ERROR) {
+                    fprintf(stdout, "That Agent URL (%s) doesn't appear to be valid\n", agent_url);
+                    install_log("parse_url fails the Agent URL \"%s\"", agent_url);
                 } else {
-                    inner_loop = AM_FALSE;
+                    
+                    if (instance_type == AM_I_APACHE) {
+                        /* only Apache server needs to be shut down prior agent installation */
+                        if (am_url_validate(0, agent_url, NULL, &httpcode, install_log) != AM_SUCCESS) {
+                            /* hopefully we cannot contact because the agent is not running,
+                             * rather than because the URL looks reasonable but isn't
+                             */
+                            inner_loop = AM_FALSE;
+                        } else {
+                            fprintf(stdout, "The Agent at URI %s should be stopped before installation", agent_url);
+                            install_log("Agent URI %s rejected because (Apache) agent is running", agent_url);
+                        }
+                    } else {
+                        inner_loop = AM_FALSE;
+                    }
                 }
             }
             am_free(input);
