@@ -17,7 +17,9 @@
 #ifndef ERROR_H
 #define ERROR_H
 
-#define AM__UNKNOWN                 (-28)
+#define AM__UNKNOWN                 (-30)
+#define AM__ENOTSTARTED             (-29)
+#define AM__EINPROGRESS             (-28)
 #define AM__JSON_RESPONSE           (-27)
 #define AM__ENOSSL                  (-26)
 #define AM__NOTIFICATION_DONE       (-25)
@@ -55,6 +57,8 @@
 
 #define AM_ERRNO_MAP(AE) \
   AE(EINVAL, "invalid argument") \
+  AE(ENOTSTARTED, "operation not started") \
+  AE(EINPROGRESS, "operation in progress") \
   AE(JSON_RESPONSE, "json response") \
   AE(ENOSSL, "no ssl/library support") \
   AE(INTERNAL_REDIRECT, "internal redirect") \

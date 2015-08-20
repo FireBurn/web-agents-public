@@ -504,30 +504,51 @@ static int on_message_complete_cb(http_parser *parser) {
 
 int am_net_connect(am_net_t *n) {
     int status = 0;
-    if (n == NULL) return AM_EINVAL;
+    if (n == NULL) {
+        /* fatal - must not happen */
+        return AM_EINVAL;
+    }
+
+    n->error = AM_ENOTSTARTED;
     n->sock = INVALID_SOCKET;
 
-    if (n->url == NULL) return AM_EINVAL;
+    if (n->url == NULL) {
+        return AM_EINVAL;
+    }
 
+    /* create "connected" event */
     n->ce = create_event();
-    if (n->ce == NULL) return AM_ENOMEM;
+    if (n->ce == NULL) {
+        return AM_ENOMEM;
+    }
+    
+    /* create "disconnect" event */
     n->de = create_exit_event();
-    if (n->de == NULL) return AM_ENOMEM;
+    if (n->de == NULL) {
+        return AM_ENOMEM;
+    }
 
     if (parse_url(n->url, &n->uv) != 0) {
         return n->uv.error;
     }
 
+    /* allocate memory for http_parser and initialize it */
     n->hs = calloc(1, sizeof (http_parser_settings));
-    if (n->hs == NULL) return AM_ENOMEM;
+    if (n->hs == NULL) {
+        return AM_ENOMEM;
+    }
+    
     n->hp = calloc(1, sizeof (http_parser));
-    if (n->hp == NULL) return AM_ENOMEM;
+    if (n->hp == NULL) {
+        return AM_ENOMEM;
+    }
 
     n->hs->on_headers_complete = on_headers_complete_cb;
     n->hs->on_body = on_body_cb;
     n->hs->on_message_complete = on_message_complete_cb;
     http_parser_init(n->hp, HTTP_RESPONSE);
 
+    /* do asynchronous connect and start the event loop */
 #ifdef _WIN32
     InitializeCriticalSection(&n->lk);
     n->pw = CreateThread(NULL, 0,
@@ -559,14 +580,16 @@ int am_net_close(am_net_t *n) {
         return AM_EINVAL;
     }
 
+    if (n->error != AM_ENOTSTARTED) {
 #ifdef _WIN32   
-    WaitForSingleObject(n->pw, INFINITE);
-    CloseHandle(n->pw);
-    DeleteCriticalSection(&n->lk);
+        WaitForSingleObject(n->pw, INFINITE);
+        CloseHandle(n->pw);
+        DeleteCriticalSection(&n->lk);
 #else
-    pthread_join(n->pw, NULL);
-    pthread_mutex_destroy(&n->lk);
+        pthread_join(n->pw, NULL);
+        pthread_mutex_destroy(&n->lk);
 #endif
+    }
 
     /* close ssl/socket */
     am_net_diconnect(n);
