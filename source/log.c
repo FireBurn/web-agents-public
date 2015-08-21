@@ -238,7 +238,7 @@ static void *am_log_worker(void *arg) {
                 break;
             }
         }
-
+        
         if (f != NULL) {
             
             if (ISINVALID(f->name_debug)) {
@@ -258,6 +258,7 @@ static void *am_log_worker(void *arg) {
             /* log files are not opened yet, do it now */
             if (f->fd_audit == -1 && f->fd_debug == -1) {
 #ifdef _WIN32
+                
                 f->fd_debug = _open(f->name_debug, _O_CREAT | _O_WRONLY | _O_APPEND | _O_BINARY,
                         _S_IREAD | _S_IWRITE);
                 f->fd_audit = _open(f->name_audit, _O_CREAT | _O_WRONLY | _O_APPEND | _O_BINARY,
@@ -270,6 +271,7 @@ static void *am_log_worker(void *arg) {
                     f->created_audit = st.st_ctime;
                     f->owner = getpid();
                 }
+                
 #else
                 f->fd_debug = open(f->name_debug, O_CREAT | O_WRONLY | O_APPEND, S_IWUSR | S_IRUSR);
                 f->fd_audit = open(f->name_audit, O_CREAT | O_WRONLY | O_APPEND, S_IWUSR | S_IRUSR);
@@ -313,11 +315,13 @@ static void *am_log_worker(void *arg) {
                     HANDLE fh = (HANDLE) _get_osfhandle(file_handle);
                     unsigned int idx = 1;
                     static char tmp[AM_PATH_SIZE];
+                    
                     do {
                         snprintf(tmp, sizeof (tmp), "%s.%d", file_name, idx);
                         idx++;
                     } while (_access(tmp, 0) == 0);
-                    if (CopyFileA(file_name, tmp, FALSE)) {
+                    
+                    if (CopyFileExA(file_name, tmp, NULL, NULL, FALSE, COPY_FILE_NO_BUFFERING)) {
                         SetFilePointer(fh, 0, NULL, FILE_BEGIN);
                         SetEndOfFile(fh);
                         if (is_audit) {
@@ -343,11 +347,13 @@ static void *am_log_worker(void *arg) {
                     if ((fsz + 1024) > max_size) {
                         unsigned int idx = 1;
                         static char tmp[AM_PATH_SIZE];
+                        
                         do {
                             snprintf(tmp, sizeof (tmp), "%s.%d", file_name, idx);
                             idx++;
                         } while (_access(tmp, 0) == 0);
-                        if (CopyFileA(file_name, tmp, FALSE)) {
+                        
+                        if (CopyFileExA(file_name, tmp, NULL, NULL, FALSE, COPY_FILE_NO_BUFFERING)) {
                             SetFilePointer(fh, 0, NULL, FILE_BEGIN);
                             SetEndOfFile(fh);
                             if (is_audit) {
@@ -360,6 +366,13 @@ static void *am_log_worker(void *arg) {
                                     file_name, GetLastError());
                         }
                     }
+                }
+                
+                _close(file_handle);
+                if (is_audit) {
+                    f->fd_audit = -1;
+                } else {
+                    f->fd_debug = -1;
                 }
 #else
                 wrote = write(file_handle, "\n", 1);
@@ -417,26 +430,16 @@ static void *am_log_worker(void *arg) {
 /*****************************************************************************************/
 
 void am_log_re_init(int status) {
+#ifdef _WIN32
     struct am_log *log = AM_LOG();
     if (log != NULL && status == AM_RETRY_ERROR) {
-#ifdef _WIN32
         WaitForSingleObject(am_log_lck.lock, INFINITE);
-#else
-        pthread_mutex_lock(&log->lock);
-#endif
         log->owner = getpid();
-#ifdef _WIN32
         am_log_handle->reader_thr = CreateThread(NULL, 0,
                 (LPTHREAD_START_ROUTINE) am_log_worker, NULL, 0, NULL);
-#else
-        pthread_create(&am_log_handle->reader_thr, NULL, am_log_worker, NULL);
-#endif
-#ifdef _WIN32
         ReleaseMutex(am_log_lck.lock);
-#else
-        pthread_mutex_unlock(&log->lock);
-#endif
     }
+#endif
 }
 
 /*****************************************************************************************/
@@ -456,11 +459,15 @@ void am_log_init(int id, int status) {
         if (am_log_handle == NULL) {
             return;
         }
-    } else if (am_log_handle->reader_pid == getpid()) {
+    }
+#ifndef _WIN32
+    else if (am_log_handle->reader_pid == getpid()) {
         return;
     }
 
     am_log_handle->reader_pid = getpid();
+#endif
+    
     snprintf(am_log_handle->area_file_name, sizeof (am_log_handle->area_file_name),
 #ifdef __sun
             "/am_log_%d"
@@ -472,10 +479,10 @@ void am_log_init(int id, int status) {
 
 #ifdef _WIN32
     if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
-            SetSecurityDescriptorDacl(&sec_descr, TRUE, 0, FALSE)) {
+            SetSecurityDescriptorDacl(&sec_descr, TRUE, (PACL) NULL, FALSE)) {
         sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
         sec_attr.lpSecurityDescriptor = &sec_descr;
-        sec_attr.bInheritHandle = FALSE;
+        sec_attr.bInheritHandle = TRUE;
         sec = &sec_attr;
     }
 
@@ -494,28 +501,28 @@ void am_log_init(int id, int status) {
         am_log_handle->area = MapViewOfFile(am_log_handle->area_file_id, FILE_MAP_ALL_ACCESS,
                 0, 0, am_log_handle->area_size);
     }
-    
+        
     if (am_log_handle->area != NULL) {
 
-        am_log_lck.exit = CreateEventA(NULL, FALSE, FALSE,
+        am_log_lck.exit = CreateEventA(sec, FALSE, FALSE,
                 get_global_name(AM_GLOBAL_PREFIX"am_log_exit", id));
         if (am_log_lck.exit == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
             am_log_lck.exit = OpenEventA(SYNCHRONIZE, TRUE,
                     get_global_name(AM_GLOBAL_PREFIX"am_log_exit", id));
         }
-        am_log_lck.lock = CreateMutexA(NULL, FALSE,
+        am_log_lck.lock = CreateMutexA(sec, FALSE,
                 get_global_name(AM_GLOBAL_PREFIX"am_log_lock", id));
         if (am_log_lck.lock == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
             am_log_lck.lock = OpenMutexA(SYNCHRONIZE, TRUE,
                     get_global_name(AM_GLOBAL_PREFIX"am_log_lock", id));
         }
-        am_log_lck.new_data_cond = CreateEventA(NULL, FALSE, FALSE,
+        am_log_lck.new_data_cond = CreateEventA(sec, FALSE, FALSE,
                 get_global_name(AM_GLOBAL_PREFIX"am_log_queue_empty", id));
         if (am_log_lck.new_data_cond == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
             am_log_lck.new_data_cond = OpenEventA(SYNCHRONIZE, TRUE,
                     get_global_name(AM_GLOBAL_PREFIX"am_log_queue_empty", id));
         }
-        am_log_lck.new_space_cond = CreateEventA(NULL, FALSE, FALSE,
+        am_log_lck.new_space_cond = CreateEventA(sec, FALSE, FALSE,
                 get_global_name(AM_GLOBAL_PREFIX"am_log_queue_overflow", id));
         if (am_log_lck.new_space_cond == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
             am_log_lck.new_space_cond = OpenEventA(SYNCHRONIZE, TRUE,
@@ -825,8 +832,11 @@ void am_log_shutdown(int id) {
     }
 
 #ifdef _WIN32
-    SetEvent(am_log_lck.exit);
-    WaitForSingleObject(am_log_handle->reader_thr, INFINITE);
+    if (log->owner == pid) {
+        SetEvent(am_log_lck.exit);
+        WaitForSingleObject(am_log_handle->reader_thr, INFINITE);
+        log->owner = 0;
+    }
     CloseHandle(am_log_lck.exit);
     CloseHandle(am_log_lck.new_data_cond);
     CloseHandle(am_log_lck.new_space_cond);
@@ -934,6 +944,9 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
     }
 
 #ifdef _WIN32
+    if (log->owner != getpid()) {
+        am_re_init_worker();
+    }
     WaitForSingleObject(am_log_lck.lock, INFINITE);
 #else
     pthread_mutex_lock(&log->lock);
@@ -1060,7 +1073,18 @@ void set_valid_url_index(unsigned long instance_id, int value) {
 int am_agent_instance_init_init(int id) {
     int status = AM_ERROR;
 #if defined(_WIN32)
-    ic_sem = CreateSemaphoreA(NULL, 1, 1, get_global_name("Global\\"AM_CONFIG_INIT_NAME, id));
+    SECURITY_DESCRIPTOR sec_descr;
+    SECURITY_ATTRIBUTES sec_attr, *sec = NULL;
+    
+    if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
+            SetSecurityDescriptorDacl(&sec_descr, TRUE, (PACL) NULL, FALSE)) {
+        sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
+        sec_attr.lpSecurityDescriptor = &sec_descr;
+        sec_attr.bInheritHandle = TRUE;
+        sec = &sec_attr;
+    }
+    
+    ic_sem = CreateSemaphoreA(sec, 1, 1, get_global_name("Global\\"AM_CONFIG_INIT_NAME, id));
     if (ic_sem != NULL) {
         status = AM_SUCCESS;
     }

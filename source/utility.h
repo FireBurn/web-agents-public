@@ -330,5 +330,6 @@ void* mem3cpy(void* dest, const void* source1, size_t size1, const void* source2
 void update_agent_configuration_ttl(am_config_t *c);
 void update_agent_configuration_audit(am_config_t *c);
 char *get_global_name(const char *name, int id);
+am_bool_t validate_directory_access(const char *path, int mask);
 
 #endif

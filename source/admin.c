@@ -77,7 +77,7 @@ int disable_module(const char *, const char *);
 int test_module(const char *);
 int install_module(const char *, const char *);
 int remove_module();
-int add_directory_acl(char *site_id, char *directory);
+int add_directory_acl(char *site_id, char *directory, char *user);
 
 static const char *am_container_str(int v) {
     switch (v) {
@@ -201,6 +201,27 @@ static void generate_key(int argc, char **argv) {
     encoded = base64_encode(key, &sz);
     fprintf(stdout, "\nEncryption key value: %s\n\n", encoded);
     am_free(encoded);
+}
+
+static am_bool_t validate_os_version() {
+#ifdef _WIN32
+    OSVERSIONINFOEXA osvi = {
+        sizeof (osvi), 0, 0, 0, 0, { 0 }, 0, 0
+    };
+    DWORDLONG const mask = VerSetConditionMask(
+            VerSetConditionMask(
+            VerSetConditionMask(
+            0, VER_MAJORVERSION, VER_GREATER_EQUAL),
+            VER_MINORVERSION, VER_GREATER_EQUAL),
+            VER_SERVICEPACKMAJOR, VER_GREATER_EQUAL);
+    osvi.dwMajorVersion = HIBYTE(_WIN32_WINNT_WIN7);
+    osvi.dwMinorVersion = LOBYTE(_WIN32_WINNT_WIN7);
+    osvi.wServicePackMajor = 0;
+    
+    return VerifyVersionInfoA(&osvi, VER_MAJORVERSION | VER_MINORVERSION | VER_SERVICEPACKMAJOR, mask) != FALSE;
+#else
+    return AM_TRUE;
+#endif
 }
 
 static void show_version(int argc, char **argv) {
@@ -518,13 +539,13 @@ static int create_agent_instance(int status,
             }
             
             if (rv == AM_SUCCESS) {
-                /* add read/write ACL to the agent instance directory */
-                rv = add_directory_acl((char *) web_conf_path, (char *) created_name_path);
-                install_log("agent instance directory %s ACL (site %s) update status: %s", created_name_path,
+                /* add read/write ACL to the agent instances directory */
+                rv = add_directory_acl((char *) web_conf_path, (char *) instance_path, NULL);
+                install_log("agent instance directory %s ACL (site %s) update status: %s", instance_path,
                         web_conf_path, am_strerror(rv));
 
                 /* add read/write ACL to the agent log directory */
-                rv = add_directory_acl((char *) web_conf_path, (char *) log_path_dir);
+                rv = add_directory_acl((char *) web_conf_path, (char *) log_path_dir, NULL);
                 install_log("agent log directory %s ACL (site %s) update status: %s", log_path_dir,
                         web_conf_path, am_strerror(rv));
             }
@@ -1710,6 +1731,15 @@ static void archive_files(int argc, char **argv) {
     delete_am_namevalue_list(&all);
 }
 
+static void modify_ownership(int argc, char **argv) {
+    int rv;
+    if (argc == 4) {
+        rv = add_directory_acl(NULL, argv[3], argv[2]);
+        fprintf(stdout, "\nAdding \"%s\" to \"%s\" ACLs with status: %s.\n",
+                argv[2], argv[3], am_strerror(rv));
+    }
+}
+
 int main(int argc, char **argv) {
     int i;
     char tm[64];
@@ -1726,6 +1756,7 @@ int main(int argc, char **argv) {
         { "--g", remove_global },
         { "--e", enable_iis_mod },
         { "--d", disable_iis_mod },
+        { "--o", modify_ownership },
 #endif
         { "--v", show_version },
         { "--k", generate_key },
@@ -1734,6 +1765,24 @@ int main(int argc, char **argv) {
         { "--a", archive_files },
         { NULL }
     };
+    
+    if (!validate_os_version()) {
+#ifdef _WIN32
+        fprintf(stderr, "\nYou are running unsupported Microsoft Windows OS version.\n"
+                DESCRIPTION" supports Microsoft Windows 2008R2 or newer.\n\n");
+#endif
+        exit(1);
+    }
+
+#ifdef _WIN32
+    if (argc > 1 && strcmp(argv[1], "--v") != 0 && strcmp(argv[1], "--a") != 0
+            && strcmp(argv[1], "--k") != 0 && strcmp(argv[1], "--p") != 0
+            && strcmp(argv[1], "--d") != 0
+            && !IsUserAnAdmin()) {
+        fprintf(stderr, "\nYou need Administrator privileges to run "DESCRIPTION" agentadmin.\n\n");
+        exit(1);
+    }
+#endif
     
     if (argc > 1) {
         uid_t* uid = NULL;
@@ -1836,6 +1885,8 @@ int main(int argc, char **argv) {
             " agentadmin --e agent_1\n\n"
             "disable agent module in IIS Server site:\n"
             " agentadmin --d agent_1\n\n"
+            "modify Access Control Lists (ACLs) for files and folders:\n"
+            " agentadmin --o \"IIS APPPOOL\\AgentSite\" \"C:\\web_agents\\iis_agent\\instances\"\n\n"
 #endif
             "uninstall agent instance:\n"
             " agentadmin --r agent_1\n\n"

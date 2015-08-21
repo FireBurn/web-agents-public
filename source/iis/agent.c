@@ -41,12 +41,6 @@ static void *modctx = NULL;
 static am_status_t set_user(am_request_t *rq, const char *user);
 static am_status_t set_custom_response(am_request_t *rq, const char *text, const char *cont_type);
 
-struct process_wait {
-    HANDLE wait;
-    HANDLE proc;
-    int pid;
-};
-
 static DWORD hr_to_winerror(HRESULT hr) {
     if ((hr & 0xFFFF0000) == MAKE_HRESULT(SEVERITY_ERROR, FACILITY_WIN32, 0)) {
         return HRESULT_CODE(hr);
@@ -778,7 +772,6 @@ static void send_custom_data(IHttpResponse *res, const char *payload, int payloa
     BOOL cmpl = FALSE;
 
     if (res == NULL) return;
-    res->Clear();
     res->SetStatus(AM_HTTP_STATUS_200, "OK", 0, S_OK);
     res->SetHeader("Content-Type", cont_type,
             (USHORT) strlen(cont_type), TRUE);
@@ -837,14 +830,14 @@ class OpenAMHttpModule : public CHttpModule{
          **/
         hr = OpenAMStoredConfig::GetConfig(ctx, &conf);
         if (FAILED(hr)) {
-            WriteEventLog("%s GetConfig failed", thisfunc);
+            WriteEventLog("%s GetConfig failed for site %d", thisfunc, site->GetSiteId());
             return RQ_NOTIFICATION_CONTINUE;
         }
         if (conf->IsEnabled() == FALSE) {
-            WriteEventLog("%s GetConfig config is not enabled for %d", thisfunc, site->GetSiteId());
+            /* WriteEventLog("%s GetConfig config is not enabled for site %d", thisfunc, site->GetSiteId()); */
             return RQ_NOTIFICATION_CONTINUE;
         }
-
+        
         boot = conf->GetBootConf();
         if (boot != NULL) {
             /* register and update instance logger configuration (for already registered
@@ -1229,7 +1222,6 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
             char tls[64];
             size_t tl = strlen(text);
             snprintf(tls, sizeof (tls), "%d", tl);
-            r->GetResponse()->Clear();
             if (ISVALID(cont_type)) {
                 hr = r->GetResponse()->SetHeader("Content-Type", cont_type,
                         (USHORT) strlen(cont_type), TRUE);
@@ -1248,7 +1240,7 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
             break;
         }
     }
-    AM_LOG_INFO(rq->instance_id, "set_custom_response(): status: %s (exit: %s)",
+    AM_LOG_DEBUG(rq->instance_id, "set_custom_response(): status: %s (exit: %s)",
             am_strerror(status), am_strerror(rq->status));
     return AM_SUCCESS;
 }
@@ -1297,54 +1289,10 @@ private:
     HANDLE eventLog;
 };
 
-static VOID CALLBACK WaitProcessExitCallback(PVOID lpParameter, BOOLEAN TimerOrWaitFired) {
-    struct process_wait *cb = (struct process_wait *) lpParameter;
-    am_re_init_worker();
-    CloseHandle(cb->proc);
-    UnregisterWait(cb->wait);
-    free(cb);
-}
-
-class OpenAMAppModule : public CGlobalModule{
-    public :
-
-    virtual GLOBAL_NOTIFICATION_STATUS OnGlobalApplicationPreload(
-    IGlobalApplicationPreloadProvider * pProvider) {
-        HRESULT status = S_OK;
-        IGlobalApplicationPreloadProvider2 * prov = NULL;
-        IHttpContext *ctx = NULL;
-        status = pProvider->CreateContext(&ctx);
-        if (SUCCEEDED(status)) {
-            IHttpSite *site = ctx->GetSite();
-            status = HttpGetExtendedInterface(server, pProvider, &prov);
-            if (SUCCEEDED(status)) {
-                if (prov->IsProcessRecycled()) {
-                    struct process_wait *pw = (struct process_wait *)
-                            malloc(sizeof (struct process_wait));
-                    pw->pid = am_log_get_current_owner();
-                    pw->proc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pw->pid);
-                    RegisterWaitForSingleObject(&pw->wait, pw->proc,
-                            WaitProcessExitCallback, pw, INFINITE, WT_EXECUTEONLYONCE);
-                }
-            }
-        }
-        if (ctx != NULL) {
-            ctx->ReleaseClonedContext();
-            ctx = NULL;
-        }
-        return GL_NOTIFICATION_CONTINUE;
-    }
-
-    virtual void Terminate() {
-        delete this;
-    }
-};
-
 HRESULT __stdcall RegisterModule(DWORD dwServerVersion,
         IHttpModuleRegistrationInfo *pModuleInfo, IHttpServer *pHttpServer) {
     HRESULT status = S_OK;
     OpenAMHttpModuleFactory *modf = NULL;
-    OpenAMAppModule *app = NULL;
     UNREFERENCED_PARAMETER(dwServerVersion);
 
     do {
@@ -1374,29 +1322,12 @@ HRESULT __stdcall RegisterModule(DWORD dwServerVersion,
             break;
         }
 
-        app = new OpenAMAppModule();
-        if (app == NULL) {
-            status = HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY);
-            break;
-        }
-
-        status = pModuleInfo->SetGlobalNotifications(app, GL_APPLICATION_PRELOAD);
-        if (FAILED(status)) {
-            break;
-        }
-
         modf = NULL;
-        app = NULL;
 
     } while (FALSE);
 
     if (modf != NULL) {
         delete modf;
-        modf = NULL;
-    }
-
-    if (app != NULL) {
-        delete app;
         modf = NULL;
     }
 

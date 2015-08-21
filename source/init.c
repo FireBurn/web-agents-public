@@ -32,7 +32,18 @@ struct am_main_init init = {
 };
 
 static void am_main_create(int id) {
-    init.id = CreateMutexA(NULL, FALSE, get_global_name(AM_GLOBAL_PREFIX"am_main_init_lock", id));
+    SECURITY_DESCRIPTOR sec_descr;
+    SECURITY_ATTRIBUTES sec_attr, *sec = NULL;
+    
+    if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
+            SetSecurityDescriptorDacl(&sec_descr, TRUE, (PACL) NULL, FALSE)) {
+        sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
+        sec_attr.lpSecurityDescriptor = &sec_descr;
+        sec_attr.bInheritHandle = TRUE;
+        sec = &sec_attr;
+    }
+    
+    init.id = CreateMutexA(sec, FALSE, get_global_name(AM_GLOBAL_PREFIX"am_main_init_lock", id));
     if (init.id == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
         init.id = OpenMutexA(SYNCHRONIZE, TRUE, get_global_name(AM_GLOBAL_PREFIX"am_main_init_lock", id));
     }
@@ -45,7 +56,7 @@ static void am_main_destroy() {
 }
 
 static void am_main_init_timed_lock() {
-    DWORD status = WaitForSingleObject(init.id, 1000);
+    DWORD status = WaitForSingleObject(init.id, 100);
     switch (status) {
         case WAIT_OBJECT_0:
             init.error = AM_SUCCESS;

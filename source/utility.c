@@ -2468,7 +2468,7 @@ int copy_file(const char *from, const char *to) {
         to_tmp = (char *) to;
     }
 #ifdef _WIN32
-    if (CopyFileA(from, to_tmp, FALSE) != 0) {
+    if (CopyFileExA(from, to_tmp, NULL, NULL, FALSE, COPY_FILE_NO_BUFFERING) != 0) {
         rv = AM_SUCCESS;
     }
 #else
@@ -2783,4 +2783,56 @@ char *get_global_name(const char *name, int id) {
     static AM_THREAD_LOCAL char out[AM_PATH_SIZE];
     snprintf(out, sizeof(out), "%s_%d", name, id);
     return out;
+}
+
+am_bool_t validate_directory_access(const char *path, int mask) {
+    am_bool_t ret = AM_FALSE;
+#ifdef _WIN32
+    PRIVILEGE_SET privileges = {0};
+    DWORD length = 0, granted_access = 0, privileges_length = sizeof (privileges);
+    PSECURITY_DESCRIPTOR security = NULL;
+    HANDLE token = NULL, imp_token = NULL;
+    GENERIC_MAPPING mapping = {0xFFFFFFFF};
+    BOOL result = FALSE;
+
+    if (!GetFileSecurityA(path, OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION
+            | DACL_SECURITY_INFORMATION, NULL, 0, &length) &&
+            GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+        security = (PSECURITY_DESCRIPTOR) LocalAlloc(LPTR, length);
+    }
+
+    if (security == NULL) {
+        return AM_FALSE;
+    }
+
+    if (!GetFileSecurityA(path, OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION
+            | DACL_SECURITY_INFORMATION, security, length, &length) ||
+            !OpenProcessToken(GetCurrentProcess(), TOKEN_IMPERSONATE | TOKEN_QUERY |
+            TOKEN_DUPLICATE | STANDARD_RIGHTS_READ, &token)) {
+        LocalFree(security);
+        return AM_FALSE;
+    }
+
+    if (!DuplicateToken(token, SecurityImpersonation, &imp_token)) {
+        CloseHandle(token);
+        LocalFree(security);
+        return AM_FALSE;
+    }
+
+    mapping.GenericRead = FILE_GENERIC_READ;
+    mapping.GenericWrite = FILE_GENERIC_WRITE;
+    mapping.GenericExecute = FILE_GENERIC_EXECUTE;
+    mapping.GenericAll = FILE_ALL_ACCESS;
+    MapGenericMask(&mask, &mapping);
+
+    if (AccessCheck(security, imp_token, mask,
+            &mapping, &privileges, &privileges_length, &granted_access, &result)) {
+        ret = (result == TRUE);
+    }
+
+    CloseHandle(imp_token);
+    CloseHandle(token);
+    LocalFree(security);
+#endif
+    return ret;
 }

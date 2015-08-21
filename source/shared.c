@@ -62,10 +62,10 @@ int am_shm_lock(am_shm_t *am) {
     if (am->local_size != *(am->global_size)) {
         
         if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
-                SetSecurityDescriptorDacl(&sec_descr, TRUE, 0, FALSE)) {
+                SetSecurityDescriptorDacl(&sec_descr, TRUE, (PACL) NULL, FALSE)) {
             sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
             sec_attr.lpSecurityDescriptor = &sec_descr;
-            sec_attr.bInheritHandle = FALSE;
+            sec_attr.bInheritHandle = TRUE;
             sec = &sec_attr;
         } 
 
@@ -272,14 +272,14 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
 
 #ifdef _WIN32
     if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
-            SetSecurityDescriptorDacl(&sec_descr, TRUE, 0, FALSE)) {
+            SetSecurityDescriptorDacl(&sec_descr, TRUE, (PACL) NULL, FALSE)) {
         sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
         sec_attr.lpSecurityDescriptor = &sec_descr;
-        sec_attr.bInheritHandle = FALSE;
+        sec_attr.bInheritHandle = TRUE;
         sec = &sec_attr;
-    }
+    } 
     
-    ret->h[0] = CreateMutexA(NULL, TRUE, ret->name[0]);
+    ret->h[0] = CreateMutexA(sec, TRUE, ret->name[0]);
     error = GetLastError();
     if (ret->h[0] != NULL && error == ERROR_ALREADY_EXISTS) {
         do {
@@ -287,7 +287,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         } while (error == WAIT_ABANDONED);
     } else {
         if (error == ERROR_ACCESS_DENIED) {
-            ret->h[0] = OpenMutexA(SYNCHRONIZE, FALSE, ret->name[0]);
+            ret->h[0] = OpenMutexA(SYNCHRONIZE, TRUE, ret->name[0]);
         }
         if (ret->h[0] == NULL) {
             ret->error = error;
@@ -321,7 +321,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         ret->h[2] = CreateFileMappingA(ret->h[1], sec, PAGE_READWRITE, 0, (DWORD) size, ret->name[1]);
         error = GetLastError();
     } else {
-        ret->h[2] = OpenFileMappingA(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, ret->name[1]);
+        ret->h[2] = OpenFileMappingA(FILE_MAP_READ | FILE_MAP_WRITE, TRUE, ret->name[1]);
         error = GetLastError();
         if (ret->h[2] == NULL && error == ERROR_FILE_NOT_FOUND) {
             ret->h[2] = CreateFileMappingA(ret->h[1], sec, PAGE_READWRITE, 0, (DWORD) size, ret->name[1]);
@@ -329,7 +329,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         }
     }
 
-    if (ret->h[2] == NULL || error != 0) {
+    if (ret->h[2] == NULL || (error != 0 && error != ERROR_ALREADY_EXISTS)) {
         CloseHandle(ret->h[0]);
         CloseHandle(ret->h[1]);
         ret->error = error;
@@ -534,10 +534,10 @@ static int am_shm_extend(am_shm_t *am, size_t usize) {
 #ifdef _WIN32
 
     if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
-            SetSecurityDescriptorDacl(&sec_descr, TRUE, 0, FALSE)) {
+            SetSecurityDescriptorDacl(&sec_descr, TRUE, (PACL) NULL, FALSE)) {
         sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
         sec_attr.lpSecurityDescriptor = &sec_descr;
-        sec_attr.bInheritHandle = FALSE;
+        sec_attr.bInheritHandle = TRUE;
         sec = &sec_attr;
     }
 
