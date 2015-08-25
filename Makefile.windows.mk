@@ -61,8 +61,8 @@ apache: $(OUT_OBJS) $(APACHE_OUT_OBJS)
 	$(RC)  /l 0x0409 /nologo /fo $(OBJDIR)$(PS)version.res $(OBJDIR)$(PS)version.rc
 	${LINK} $(SHARED) $(LDFLAGS) $(OUT_OBJS) $(APACHE_OUT_OBJS) $(OBJDIR)$(PS)version.res /OUT:build\mod_openam.dll \
 	    /PDB:build\mod_openam.pdb $(LIBS) \
-	    extlib/Windows/apache24/lib/libapr-1.lib extlib/Windows/apache24/lib/libaprutil-1.lib \
-	    extlib/Windows/apache24/lib/libhttpd.lib
+	    extlib/WINNT/apache24/lib/libapr-1.lib extlib/WINNT/apache24/lib/libaprutil-1.lib \
+	    extlib/WINNT/apache24/lib/libhttpd.lib
 
 apache22: apache22_pre $(OUT_OBJS) $(APACHE22_OUT_OBJS) apache22_post
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
@@ -72,8 +72,8 @@ apache22: apache22_pre $(OUT_OBJS) $(APACHE22_OUT_OBJS) apache22_post
 	$(RC)  /l 0x0409 /nologo /fo $(OBJDIR)$(PS)version.res $(OBJDIR)$(PS)version.rc
 	${LINK} $(SHARED) $(LDFLAGS) $(OUT_OBJS) $(APACHE22_OUT_OBJS) $(OBJDIR)$(PS)version.res /OUT:build\mod_openam.dll \
 	    /PDB:build\mod_openam.pdb $(LIBS) \
-	    extlib/Windows/apache22/lib/libapr-1.lib extlib/Windows/apache22/lib/libaprutil-1.lib \
-	    extlib/Windows/apache22/lib/libhttpd.lib
+	    extlib/WINNT/apache22/lib/libapr-1.lib extlib/WINNT/apache22/lib/libaprutil-1.lib \
+	    extlib/WINNT/apache22/lib/libhttpd.lib
 	
 iis: $(OUT_OBJS) $(IIS_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
