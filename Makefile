@@ -24,7 +24,7 @@
 VERSION := 4.0.0-SNAPSHOT
 
 ifneq ("$(PROGRAMFILES)$(ProgramFiles)","")
- OS_ARCH := Windows
+ OS_ARCH := WINNT
  RMALL := cmd /c del /F /Q
  RMDIR := cmd /c rmdir /S /Q
  SED := cmd /c sed.exe
@@ -127,7 +127,7 @@ ifeq ($(OS_ARCH), Darwin)
  include Makefile.macos.mk
  SED_ROPT := E
 endif
-ifeq ($(OS_ARCH), Windows)
+ifeq ($(OS_ARCH), WINNT)
  include Makefile.windows.mk
 endif
 
