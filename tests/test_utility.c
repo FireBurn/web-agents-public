@@ -563,6 +563,24 @@ void test_url_encode_decode(void** state) {
     free(decoded);
 }
 
+void test_url_encode_decode_agent3(void** state) {
+    char agent3_input1[] = "~a!a@a#a$a%a^a&";
+    char agent3_output1[] = "%7Ea%21a%40a%23a%24a%25a%5Ea%26";
+    
+    char agent3_input2[] = "!@#$%^&*()_+{}:\".,/\\";
+    char agent3_output2[] = "%21%40%23%24%25%5E%26*%28%29_%2B%7B%7D%3A%22.%2C%2F%5C";
+
+    char* agent4_decoded = url_decode(agent3_output1);
+    assert_non_null(agent4_decoded);
+    assert_string_equal(agent4_decoded, agent3_input1);
+    free(agent4_decoded);
+
+    agent4_decoded = url_decode(agent3_output2);
+    assert_non_null(agent4_decoded);
+    assert_string_equal(agent4_decoded, agent3_input2);
+    free(agent4_decoded);
+}
+
 void test_string_replace(void ** state) {
     char * original;
     size_t size;
