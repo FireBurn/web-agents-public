@@ -1,6 +1,6 @@
 
 com.sun.identity.agents.config.repository.location = centralized
-org.forgerock.agents.config.postdata.preserve.dir =
+org.forgerock.agents.config.postdata.preserve.dir = AM_PDP_TEMP_PATH
 com.sun.identity.agents.config.naming.url = AM_OPENAM_URL
 com.sun.identity.agents.config.organization.name = AM_AGENT_REALM
 com.sun.identity.agents.config.username = AM_AGENT_NAME

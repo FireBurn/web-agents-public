@@ -48,6 +48,7 @@
 #define AM_INSTALL_AUDITPATH "AM_AUDIT_FILE_PATH"
 #define AM_INSTALL_AGENT_FQDN "AM_AGENT_FQDN"
 #define AM_INSTALL_CONF_PATH "AM_AGENT_CONF_PATH"
+#define AM_INSTALL_PDP_PATH "AM_PDP_TEMP_PATH"
 
 #define RESET_INPUT_STRING(s) do { am_free(s); s = NULL; } while (0)
 
@@ -492,6 +493,13 @@ static int create_agent_instance(int status,
             if (rv != AM_SUCCESS) {
                 install_log("failed to update agent configuration template file %s (%s)",
                         config_template, am_strerror(rv));
+                break;
+            }
+            
+            install_log("updating %s with %s", AM_INSTALL_PDP_PATH, log_path_dir);
+            rv = string_replace(&agent_conf_template, AM_INSTALL_PDP_PATH, log_path_dir, &agent_conf_template_sz);
+            if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_PDP_PATH, am_strerror(rv));
                 break;
             }
 

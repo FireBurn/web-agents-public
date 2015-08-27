@@ -2448,6 +2448,7 @@ int string_replace(char **original, const char *pattern, const char *replace, si
 
 int copy_file(const char *from, const char *to) {
     int rv = AM_FILE_ERROR, source, dest;
+    am_bool_t local_alloc = AM_FALSE;
     char *to_tmp = NULL;
 
     if (!ISVALID(from)) {
@@ -2464,6 +2465,7 @@ int copy_file(const char *from, const char *to) {
         if (to_tmp == NULL) {
             return AM_ENOMEM;
         }
+        local_alloc = AM_TRUE;
     } else {
         to_tmp = (char *) to;
     }
@@ -2475,12 +2477,18 @@ int copy_file(const char *from, const char *to) {
     struct stat st;
     source = open(from, O_RDONLY);
     if (source == -1) {
+        if (local_alloc) {
+            free(to_tmp);
+        }
         return rv;
     }
 
     dest = open(to_tmp, O_CREAT | O_WRONLY | O_TRUNC, 0644);
     if (dest == -1) {
         close(source);
+        if (local_alloc) {
+            free(to_tmp);
+        }
         return rv;
     }
 
@@ -2520,6 +2528,9 @@ int copy_file(const char *from, const char *to) {
     close(source);
     close(dest);
 #endif
+    if (local_alloc) {
+        free(to_tmp);
+    }
     return rv;
 }
 
