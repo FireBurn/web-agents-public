@@ -2785,6 +2785,42 @@ char *get_global_name(const char *name, int id) {
     return out;
 }
 
+static uint32_t sdbm_hash(const void *s) {
+    uint64_t hash = 0;
+    int c;
+    const unsigned char *str = (const unsigned char *) s;
+    while ((c = *str++)) {
+        hash = c + (hash << 6) + (hash << 16) - hash;
+    }
+    return (uint32_t) hash;
+}
+
+uint32_t am_hash(const void *k) {
+    uint32_t i = sdbm_hash(k);
+    i += ~(i << 9);
+    i ^= ((i >> 14) | (i << 18));
+    i += (i << 4);
+    i ^= ((i >> 10) | (i << 22));
+    return i;
+}
+
+uint32_t am_hash_buffer(const void *k, size_t sz) {
+    void *tmp;
+    uint32_t hash;
+    if (k == NULL || sz == 0) {
+        return 0;
+    }
+    tmp = calloc(1, sz + 1);
+    if (tmp == NULL) {
+        return 0;
+    }
+    memcpy(tmp, k, sz);
+    hash = am_hash(tmp);
+    free(tmp);
+    return hash;
+}
+
+
 am_bool_t validate_directory_access(const char *path, int mask) {
     am_bool_t ret = AM_FALSE;
 #ifdef _WIN32

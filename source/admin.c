@@ -49,6 +49,8 @@
 #define AM_INSTALL_AGENT_FQDN "AM_AGENT_FQDN"
 #define AM_INSTALL_CONF_PATH "AM_AGENT_CONF_PATH"
 
+#define RESET_INPUT_STRING(s) do { am_free(s); s = NULL; } while (0)
+
 typedef void (*param_handler)(int, char **);
 
 struct command_line {
@@ -97,6 +99,27 @@ static char instance_path[AM_URI_SIZE];
 static char instance_config[AM_URI_SIZE];
 static char config_template[AM_URI_SIZE];
 static char instance_config_template[AM_URI_SIZE];
+
+static const char* agent_4x_obsolete_properties [] =
+{
+    "com.forgerock.agents.nss.shutdown",
+    
+    "com.sun.identity.agents.config.debug.file",
+    "com.sun.identity.agents.config.sslcert.dir",
+    "com.sun.identity.agents.config.certdb.prefix",
+    "com.sun.identity.agents.config.certdb.password",
+    "com.sun.identity.agents.config.certificate.alias",
+    
+    "com.sun.identity.agents.config.receive.timeout",
+    "com.sun.identity.agents.config.tcp.nodelay.enable",
+    
+    "com.sun.identity.agents.config.forward.proxy.host",
+    "com.sun.identity.agents.config.forward.proxy.port",
+    "com.sun.identity.agents.config.forward.proxy.user",
+    "com.sun.identity.agents.config.forward.proxy.password",
+    "com.sun.irdentity.agents.config.profilename",
+    0
+};
 
 static void install_log(const char *format, ...) {
     char ts[64];
@@ -306,6 +329,14 @@ static int am_cleanup_instance(const char *pth, const char *name) {
     return ret;
 }
 
+static void remove_obsolete_properties(property_map_t* property_map) {
+    const char** p;
+    for (p = agent_4x_obsolete_properties; *p; p++) {
+        if (property_map_remove_key(property_map, *p)) {
+            install_log("removing obsolete property %s", *p);
+        }
+    }
+}
 
 /**
  * @param status For IIS
@@ -326,14 +357,19 @@ static int create_agent_instance(int status,
                                  const char* agent_user,
                                  const char* agent_password,
                                  uid_t* uid,
-                                 gid_t* gid) {
+                                 gid_t* gid,
+                                 property_map_t* property_map) {
 
     FILE* f = NULL;
     int rv = AM_ERROR;
     char* created_name_path = NULL;
     char* created_name_simple = NULL;
+    
     char* agent_conf_template = NULL;
     size_t agent_conf_template_sz = 0;
+    
+    char* agent_conf_content = NULL;
+    size_t agent_conf_sz = 0;
     
     if (am_create_agent_dir(FILE_PATH_SEP, instance_path,
                             &created_name_path, &created_name_simple,
@@ -459,9 +495,23 @@ static int create_agent_instance(int status,
                 break;
             }
 
+            /* remove obsolete properties */
+            remove_obsolete_properties(property_map);
+            
+            /* add updated template to the property map */
+            property_map_parse(property_map, "agent 4.0 config", AM_FALSE, install_log, agent_conf_template, agent_conf_template_sz);
+
+            /* generate file content from resulting map */
+            agent_conf_content = property_map_write_to_buffer(property_map, &agent_conf_sz);
+            if (!ISVALID(agent_conf_content)) {
+                install_log("failed to build agent configuration file content %s (%s)");
+                rv = AM_ENOMEM;
+                break;
+            }
+            
             /* write an updated template to the agent configuration file */
             install_log("writing configuration to %s", conf_file_path);
-            if (write_file(conf_file_path, agent_conf_template, agent_conf_template_sz) > 0) {
+            if (write_file(conf_file_path, agent_conf_content, agent_conf_sz) > 0) {
 #ifndef _WIN32
                 if (instance_type == AM_I_APACHE && uid != NULL && gid != NULL) {
                     if (chown(conf_file_path, *uid, *gid) != 0) {
@@ -475,10 +525,11 @@ static int create_agent_instance(int status,
                 install_log("failed to write agent configuration to %s", conf_file_path);
                 rv = AM_FILE_ERROR;
             }
+            am_free(agent_conf_content);
 
         } while (0);
 
-        AM_FREE(agent_conf_template, conf_file_path, log_path, audit_log_path);
+        AM_FREE(conf_file_path, log_path, audit_log_path, agent_conf_template);
     } else {
         install_log("failed to open agent configuration template file %s", config_template);
         rv = AM_ENOMEM;
@@ -660,6 +711,38 @@ static void check_if_quit_wanted(char* input) {
 }
 
 /**
+ * Get confirmation of a property setting
+ */
+static am_bool_t get_confirmation(const char *fmt, ...) {
+    char *input;
+    enum { YES, NO, UNSET } response = UNSET;
+    
+    while (response == UNSET) {
+        va_list va;
+        va_start(va, fmt);
+        vprintf(fmt, va);
+        va_end(va);
+        
+        input = prompt_and_read("Confirm this setting (Yes/No) [Yes]:");
+        check_if_quit_wanted(input);
+        
+        if (! ISVALID(input)) {
+            response = YES;
+        } else if (strcasecmp(input, "yes") == 0) {
+            response = YES;
+        } else if (strcasecmp(input, "no") == 0) {
+            response = NO;
+        } else {
+            printf("Please answer yes or no\n");
+        }
+        
+        am_free(input);
+    }
+    return response == YES;
+}
+
+
+/**
  * Find the word after the specified text in the httpd conf file, read it into
  * buff and null terminate it.
  *
@@ -824,11 +907,17 @@ static void install_interactive(int argc, char **argv) {
     char* agent_token = NULL;
     char lic_file_path[AM_URI_SIZE];
     char server_conf[AM_URI_SIZE];
-    char openam_url[AM_URI_SIZE];
-    char agent_realm[AM_URI_SIZE];
-    char agent_url[AM_URI_SIZE];
-    char agent_user[AM_URI_SIZE];
-    char agent_password[AM_URI_SIZE];
+    
+    char* openam_url = NULL;
+    char* agent_realm = NULL;
+    char* agent_url = NULL;
+    char* agent_user = NULL;
+    char* agent_password = NULL;
+    
+    char* agent_password_source = NULL;
+
+    property_map_t * property_map;
+    
     uid_t* uid = NULL;
     gid_t* gid = NULL;
 
@@ -860,11 +949,6 @@ static void install_interactive(int argc, char **argv) {
 #endif
 
     memset(&server_conf[0], 0, sizeof(server_conf));
-    memset(&openam_url[0], 0, sizeof(openam_url));
-    memset(&agent_url[0], 0, sizeof(agent_url));
-    memset(&agent_user[0], 0, sizeof(agent_user));
-    memset(&agent_realm[0], 0, sizeof(agent_realm));
-    memset(&agent_password[0], 0, sizeof(agent_password));
 
     snprintf(lic_file_path, sizeof(lic_file_path), "%s%s", app_path, LICENSE_FILE);
 
@@ -1049,122 +1133,258 @@ static void install_interactive(int argc, char **argv) {
     } while (error == AM_TRUE);
 
     am_bool_t outer_loop = AM_TRUE;
-    
+
     am_net_init();
     
     do {
-        
+        property_map = property_map_create();
+        if (property_map == NULL) {
+            install_log("unable to allocate property map");
+            break;
+        }
+        /*
+         * Get values parameters from existing configuration
+         */
+        do {
+            size_t data_sz = 0;
+            char *data;
+            
+            input = prompt_and_read("\nTo set properties from an existing configuration enter path to file\n"
+                                    "[ q or 'ctrl+c' to exit, return to ignore ]\n"
+                                    "Existing agent.conf file:");
+            if (! ISVALID(input)) {
+                break;
+            }
+            check_if_quit_wanted(input);
+            data = load_file(input, &data_sz);
+            am_free(input);
+            
+            if (data) {
+                char* v;
+                /*
+                 * get installer parameters from exiting configuration
+                 */
+                property_map_parse(property_map, "existing config", AM_TRUE, install_log, data, data_sz);
+                free(data);
+                
+                /* update naming service URLs */
+                if ( (v = property_map_get_value(property_map, "com.sun.identity.agents.config.naming.url")) ) {
+                    /* we are going to tokenise the property value v in situ, then replace it with dst */
+                    char** addr, * dst = malloc(strlen(v) + 1);
+                    size_t ofs = 0;
+                    
+                    const char* s, * e;
+                    char* brkt;
+                    
+                    int c = 0;
+                    
+                    if (!ISVALID(dst)) {
+                        install_log("unable to allocate memory for OpenAM URL");
+                        break;
+                    }
+                    /* reset any user input */
+                    RESET_INPUT_STRING(openam_url);
+                    
+                    for (s = strtok_r(v, " ", &brkt); s; s = strtok_r(0, " ", &brkt)) {
+                        if (c) {
+                            dst [ofs++] = ' ';                  /* add separator to dst */
+                        }
+                        e = strstr(s, "/namingservice");        /* strip the namingservice component if there is one */
+                        if (e == NULL) {
+                            e = s + strlen(s);
+                        }
+                        memcpy(dst + ofs, s, e - s);
+                        ofs += e - s;
+                        
+                        if (c++ == 0) {
+                            openam_url = strndup(s, e - s);     /* this first one is OpenAM URL */
+                        }
+                    }
+                    dst [ofs++] = '\0';
+                    
+                    /* replace the tokenized value with the modified result */
+                    addr = property_map_get_value_addr(property_map, "com.sun.identity.agents.config.naming.url");
+                    if (*addr) {
+                        free(*addr);
+                        *addr = dst;
+                    }
+                }
+                
+                /* agent url */
+                if ( (v = property_map_get_value(property_map, "com.sun.identity.agents.config.agenturi.prefix")) ) {
+                    char* e;
+                    RESET_INPUT_STRING(agent_url);
+                    if ( (e = strstr(v, "/amagent")) ) {
+                        agent_url = strndup(v, e - v);
+                    } else {
+                        agent_url = strdup(v);
+                    }
+                }
+                
+                /* realm */
+                if ( (v = property_map_get_value(property_map, "com.sun.identity.agents.config.organization.name")) ) {
+                    am_free(agent_realm);
+                    agent_realm = strdup(v);
+                }
+                
+                /* user */
+                if ( (v = property_map_get_value(property_map, "com.sun.identity.agents.config.username")) ) {
+                    am_free(agent_user);
+                    agent_user = strdup(v);
+                }
+                
+                /* password */
+                if ( (v = property_map_get_value(property_map, "com.sun.identity.agents.config.password")) ) {
+                    AM_FREE(agent_password, agent_password_source);
+                    agent_password_source = strdup("configuration");
+                    agent_password = strdup(v);
+                }
+                break;
+            }
+            fprintf(stdout, "Error: unable to open the configuration file\nPlease try again.\n");
+
+        } while (1);
+
         /**
          * Get the URL of OpenAM and try to verify it.
          */
-        am_bool_t inner_loop = AM_TRUE;
         do {
             int httpcode = 0;
             struct url parsed_url;
             
-            input = prompt_and_read("\nEnter the URL where the OpenAM server is running. Please include the\n"
-                    "deployment URI also as shown below:\n"
-                    "(http://openam.sample.com:58080/openam)\n"
-                    "[ q or 'ctrl+c' to exit ]\n"
-                    "OpenAM server URL:");
-            check_if_quit_wanted(input);
-            if (ISVALID(input)) {
-                strncpy(openam_url, input, sizeof(openam_url) - 1);
-                install_log("OpenAM URL %s", openam_url);
-                if (parse_url(openam_url, &parsed_url) == AM_ERROR) {
-                    fprintf(stdout, "That OpenAM URL (%s) doesn't appear to be valid\n", openam_url);
-                    install_log("parse_url fails the OpenAM URL \"%s\"", openam_url);
-                } else {
-                    if (am_url_validate(0, openam_url, NULL, &httpcode, install_log) == AM_SUCCESS) {
-                        inner_loop = AM_FALSE;
-                    } else {
-                        fprintf(stdout, "Cannot connect to OpenAM at URI %s, please make sure OpenAM is started\n", openam_url);
-                        install_log("OpenAM at %s cannot be contacted (invalid, or not running)", openam_url);
-                    }
+            if (ISVALID(openam_url)) {
+                if (!get_confirmation("\nOpenAM server URL: %s\n", openam_url)) {
+                    RESET_INPUT_STRING(openam_url);
                 }
             }
-            am_free(input);
+            while (!ISVALID(openam_url)) {
+                input = prompt_and_read("\nEnter the URL where the OpenAM server is running. Please include the\n"
+                        "deployment URI also as shown below:\n"
+                        "(http://openam.sample.com:58080/openam)\n"
+                        "[ q or 'ctrl+c' to exit ]\n"
+                        "OpenAM server URL:");
+                check_if_quit_wanted(input);
+            
+                if (ISVALID(input)) {
+                    openam_url = strdup(input);
+                    install_log("OpenAM URL %s", openam_url);
+                }
+                am_free(input);
+            }
+            /* ensure that the OpenAM URL is syntacically valid */
+            if (parse_url(openam_url, &parsed_url) == AM_ERROR) {
+                fprintf(stdout, "That OpenAM URL (%s) doesn't appear to be valid\n", openam_url);
+                install_log("parse_url fails the OpenAM URL \"%s\"", openam_url);
+                continue;
+            }
+            /* must be able to connect to OpenAM server during installation */
+            if (am_url_validate(0, openam_url, NULL, &httpcode, install_log) == AM_SUCCESS) {
+                break;
+            }
+            fprintf(stdout, "Cannot connect to OpenAM at URI %s, please make sure OpenAM is started\n", openam_url);
+            install_log("OpenAM at %s cannot be contacted (invalid, or not running)", openam_url);
 
-        } while (inner_loop == AM_TRUE);
-
+        } while (1);
+        
         /**
          * Get the URL of the Agent and try to verify it is not running (if it is an Apache agent).
          */
-        inner_loop = AM_TRUE;
         do {
-            int httpcode = 0;
             struct url parsed_url;
-            
-            input = prompt_and_read("\nEnter the Agent URL as shown below:\n"
-                    "(http://agent.sample.com:1234)\n"
-                    "[ q or 'ctrl+c' to exit ]\n"
-                    "Agent URL:");
-            check_if_quit_wanted(input);
-            if (ISVALID(input)) {
-                strncpy(agent_url, input, sizeof(agent_url) - 1);
-                install_log("Agent URL %s", agent_url);
-
-                if (parse_url(agent_url, &parsed_url) == AM_ERROR) {
-                    fprintf(stdout, "That Agent URL (%s) doesn't appear to be valid\n", agent_url);
-                    install_log("parse_url fails the Agent URL \"%s\"", agent_url);
-                } else {
-                    
-                    if (instance_type == AM_I_APACHE) {
-                        /* only Apache server needs to be shut down prior agent installation */
-                        if (am_url_validate(0, agent_url, NULL, &httpcode, install_log) != AM_SUCCESS) {
-                            /* hopefully we cannot contact because the agent is not running,
-                             * rather than because the URL looks reasonable but isn't
-                             */
-                            inner_loop = AM_FALSE;
-                        } else {
-                            fprintf(stdout, "The Agent at URI %s should be stopped before installation", agent_url);
-                            install_log("Agent URI %s rejected because (Apache) agent is running", agent_url);
-                        }
-                    } else {
-                        inner_loop = AM_FALSE;
-                    }
+            int httpcode = 0;
+            if (ISVALID(agent_url)) {
+                if (! get_confirmation("\nAgent URL: %s\n", agent_url)) {
+                    RESET_INPUT_STRING(agent_url);
                 }
             }
-            am_free(input);
+            while (!ISVALID(agent_url)) {
+                input = prompt_and_read("\nEnter the Agent URL as shown below:\n"
+                        "(http://agent.sample.com:1234)\n"
+                        "[ q or 'ctrl+c' to exit ]\n"
+                        "Agent URL:");
+                check_if_quit_wanted(input);
+                if (ISVALID(input)) {
+                    agent_url = strdup(input);
+                    install_log("Agent URL %s", agent_url);
+                }
+                am_free(input);
+            }
+            /* ensure the URL is syntactically valid */
+            if (parse_url(agent_url, &parsed_url) == AM_ERROR) {
+                fprintf(stdout, "That Agent URL (%s) doesn't appear to be valid\n", agent_url);
+                install_log("parse_url fails the Agent URL \"%s\"", agent_url);
+                continue;
+            }
+            /* only Apache server needs to be shut down prior agent installation */
+            if (instance_type != AM_I_APACHE) {
+                break;
+            }
+            if (am_url_validate(0, input, NULL, &httpcode, install_log) != AM_SUCCESS) {
+                /* hopefully we cannot contact because the agent is not running,
+                 * rather than because the URI is complete rubbish
+                 */
+                break;
+            }
+            fprintf(stdout, "The Agent at URI %s should be stopped before installation", input);
+            install_log("Agent URI %s rejected because agent is running", input);
+            
+        } while (1);
 
-        } while (inner_loop == AM_TRUE);
-        
         /**
          * The agent profile name.  There is no way to verify this, unless we can contact OpenAM,
          * and we haven't connected in a meaningful way yet.
          */
-        input = prompt_and_read("\nEnter the Agent profile name\n"
-                "[ q or 'ctrl+c' to exit ]\n"
-                "Agent Profile name:");
-        check_if_quit_wanted(input);
-        if (ISVALID(input)) {
-            strncpy(agent_user, input, sizeof(agent_user) - 1);
-            install_log("Agent Profile name %s", agent_user);
+        if (ISVALID(agent_user)) {
+            if (! get_confirmation("\nAgent profile name: %s\n", agent_user)) {
+                RESET_INPUT_STRING(agent_user);
+            }
         }
-        am_free(input);
-
+        if (!ISVALID(agent_user)) {
+            input = prompt_and_read("\nEnter the Agent profile name\n"
+                    "[ q or 'ctrl+c' to exit ]\n"
+                    "Agent Profile name:");
+            check_if_quit_wanted(input);
+            if (ISVALID(input)) {
+                agent_user = strdup(input);
+                install_log("Agent Profile name %s", agent_user);
+            }
+            am_free(input);
+        }
+        
         /**
          * The realm.  Again no way to verify without connecting to OpenAM.
          */
-        input = prompt_and_read("\nEnter the Agent realm/organization\n"
-                "[ q or 'ctrl+c' to exit ]\n"
-                "Agent realm/organization name: [/]:");
-        check_if_quit_wanted(input);
-        if (ISVALID(input)) {
-            strncpy(agent_realm, input, sizeof(agent_realm) - 1);
-            install_log("Agent realm/organization name %s", agent_realm);
-        } else {
-            strncpy(agent_realm, "/", sizeof(agent_realm) - 1);
-            install_log("Agent realm/organization name %s", "/");
+        if (ISVALID(agent_realm)) {
+            if (! get_confirmation("\nAgent realm: %s\n", agent_realm)) {
+                RESET_INPUT_STRING(agent_realm);
+            }
         }
-        am_free(input);
-
+        if (!ISVALID(agent_realm)) {
+            input = prompt_and_read("\nEnter the Agent realm/organization\n"
+                    "[ q or 'ctrl+c' to exit ]\n"
+                    "Agent realm/organization name: [/]:");
+            check_if_quit_wanted(input);
+            if (ISVALID(input)) {
+                agent_realm = strdup(input);
+                install_log("Agent realm/organization name %s", agent_realm);
+            } else {
+                agent_realm = strdup("/");
+                install_log("Agent realm/organization name %s", "/");
+            }
+            am_free(input);
+        }
+        
         /**
          * Prompt for the file containing the agent password.  This we can verify -
          * the file must exist, and be readable.
          */
-        inner_loop = AM_TRUE;
-        do {
+        if (ISVALID(agent_password_source)) {
+            if (! get_confirmation("\nAgent password is taken from %s\n", agent_password_source)) {
+                RESET_INPUT_STRING(agent_password_source);
+                RESET_INPUT_STRING(agent_password);
+            }
+        }
+        while (!ISVALID(agent_password_source)) {
             input = prompt_and_read("\nEnter the path to a file that contains the password to be used\n"
                     "for identifying the Agent\n"
                     "[ q or 'ctrl+c' to exit ]\n"
@@ -1176,31 +1396,32 @@ static void install_interactive(int argc, char **argv) {
                 if (password_data != NULL) {
                     trim(password_data, '\0');
                     install_log("agent password file %s opened successfully", input);
-                    strncpy(agent_password, password_data, sizeof(agent_password) - 1);
+                    agent_password = strdup(password_data);
+                    agent_password_source = strdup(input);
                     free(password_data);
-                    inner_loop = AM_FALSE;
                 } else {
                     install_log("unable to open password file %s", input);
                 }
             }
-            // do not "free(input)" here, "input" is used in the fprintf below
-        } while (inner_loop == AM_TRUE);
-        
+            am_free(input);
+        }
         fprintf(stdout, "\nInstallation parameters:\n\n"
                 "   OpenAM URL: %s\n"
                 "   Agent URL: %s\n"
                 "   Agent Profile name: %s\n"
                 "   Agent realm/organization name: %s\n"
-                "   Agent Profile password file: %s\n\n",
-                openam_url, agent_url, agent_user, agent_realm, NOTNULL(input));
+                "   Agent Profile password source: %s\n\n",
+                openam_url, agent_url, agent_user, agent_realm, agent_password_source);
 
-        am_free(input);
+        
         input = prompt_and_read("Confirm configuration (yes/no): [no]:");
         if (ISVALID(input) && strcasecmp(input, "yes") == 0) {
             outer_loop = AM_FALSE;
         } else {
             fprintf(stdout, "\nRestarting the configuration...\n");
             install_log("installation restarted");
+            
+            property_map_delete(property_map);
         }
         am_free(input);
         
@@ -1212,7 +1433,7 @@ static void install_interactive(int argc, char **argv) {
     rv = am_agent_login(0, openam_url, NULL,
             agent_user, agent_password, agent_realm, AM_TRUE, 0, NULL,
             &agent_token, NULL, NULL, NULL, install_log);
-
+    
     if (rv != AM_SUCCESS) {
         fprintf(stdout, "\nError validating OpenAM - Agent configuration.\n"
                 "See installation log %s file for more details. Exiting.\n", log_path);
@@ -1237,21 +1458,21 @@ static void install_interactive(int argc, char **argv) {
         switch (instance_type) {
             case AM_I_APACHE:
                 if (create_agent_instance(0, server_conf, openam_url, agent_realm,
-                        agent_url, agent_user, agent_password, uid, gid) == AM_SUCCESS) {
+                        agent_url, agent_user, agent_password, uid, gid, property_map) == AM_SUCCESS) {
                     fprintf(stdout, "\nInstallation complete.\n");
                     install_log("installation complete");
                 }
                 break;
             case AM_I_IIS:
                 if (create_agent_instance(iis_status, server_conf/* site id */, openam_url, agent_realm,
-                        agent_url, agent_user, agent_password, uid, gid) == AM_SUCCESS) {
+                        agent_url, agent_user, agent_password, uid, gid, property_map) == AM_SUCCESS) {
                     fprintf(stdout, "\nInstallation complete.\n");
                     install_log("installation complete");
                 }
                 break;
             case AM_I_VARNISH:
                 if (create_agent_instance(0, server_conf, openam_url, agent_realm,
-                        agent_url, agent_user, agent_password, uid, gid) == AM_SUCCESS) {
+                        agent_url, agent_user, agent_password, uid, gid, property_map) == AM_SUCCESS) {
                     fprintf(stdout, "\nInstallation complete.\n");
                     install_log("installation complete");
                 }
@@ -1262,6 +1483,12 @@ static void install_interactive(int argc, char **argv) {
         }
     }
 
+    AM_FREE(openam_url, agent_url, agent_realm, agent_user, agent_password);
+    
+    if (property_map) {
+        property_map_delete(property_map);
+    }
+    
 #ifdef _WIN32
     SetConsoleMode(cons_handle, old_mode);
     SetConsoleCtrlHandler((PHANDLER_ROUTINE) exit_handler, FALSE);
@@ -1400,16 +1627,17 @@ static void install_silent(int argc, char** argv) {
 
         if (validated) {
             fprintf(stdout, "\nCreating configuration...\n");
-
+            property_map_t * property_map = property_map_create();
+            
             if (instance_type == AM_I_APACHE) {
                 rv = create_agent_instance(0, argv[2], argv[3], argv[5],
-                        argv[4], argv[6], agent_password, uid, gid);
+                        argv[4], argv[6], agent_password, uid, gid, property_map);
             } else if (instance_type == AM_I_IIS) {
                 rv = create_agent_instance(0, argv[2], argv[3], argv[5],
-                        argv[4], argv[6], agent_password, uid, gid);
+                        argv[4], argv[6], agent_password, uid, gid, property_map);
             } else if (instance_type == AM_I_VARNISH) {
                 rv = create_agent_instance(0, argv[2], argv[3], argv[5],
-                        argv[4], argv[6], agent_password, uid, gid);
+                        argv[4], argv[6], agent_password, uid, gid, property_map);
             }
 
             if (rv == AM_SUCCESS) {

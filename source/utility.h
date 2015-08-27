@@ -332,4 +332,17 @@ void update_agent_configuration_audit(am_config_t *c);
 char *get_global_name(const char *name, int id);
 am_bool_t validate_directory_access(const char *path, int mask);
 
+typedef struct map_entry * property_map_t;
+property_map_t * property_map_create();
+void property_map_parse(property_map_t * map, char * source, am_bool_t override, void (* logf)(const char * format, ...), char * data, size_t data_sz);
+char * property_map_get_value(property_map_t * map, const char * key);
+void property_map_visit(property_map_t * map, am_bool_t (* callback)(char * key, char * value, void * data), void * data);
+void property_map_delete(property_map_t * map);
+am_bool_t property_map_remove_key(property_map_t * map, const char * key);
+char ** property_map_get_value_addr(property_map_t * map, const char * key);
+char * property_map_write_to_buffer(property_map_t * map, size_t * data_sz);
+
+uint32_t am_hash_buffer(const void *buf, size_t len);
+uint32_t am_hash(const void *buf);
+
 #endif

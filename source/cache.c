@@ -157,25 +157,6 @@ static unsigned int index_for(unsigned int tablelength, unsigned int hashvalue) 
     return (hashvalue % tablelength);
 }
 
-static unsigned int sdbm_hash(const void *s) {
-    unsigned long hash = 0;
-    int c;
-    const unsigned char *str = (const unsigned char *) s;
-    while ((c = *str++)) {
-        hash = c + (hash << 6) + (hash << 16) - hash;
-    }
-    return (unsigned int) hash;
-}
-
-static unsigned int hash(const void *k) {
-    unsigned int i = sdbm_hash(k);
-    i += ~(i << 9);
-    i ^= ((i >> 14) | (i << 18));
-    i += (i << 4);
-    i ^= ((i >> 10) | (i << 22));
-    return i;
-}
-
 /**
  * Get cache entry. The function must be called while holding the mutex (am_shm_lock).
  */
@@ -189,7 +170,7 @@ static struct am_cache_entry *get_cache_entry(const char *key, int *index) {
         return NULL;
     }
 
-    key_hash = hash(key);
+    key_hash = am_hash(key);
     entry_index = index_for(AM_HASH_TABLE_SIZE, key_hash);
     head = (struct am_cache_entry *) AM_GET_POINTER(cache->pool, cache_data->table[entry_index].prev);
 
@@ -455,7 +436,7 @@ int am_add_pdp_cache_entry(am_request_t *request, const char *key, const char *u
     file_length = strlen(file);
     content_type_length = strlen(content_type);
 
-    key_hash = hash(key);
+    key_hash = am_hash(key);
     entry_index = index_for(AM_HASH_TABLE_SIZE, key_hash);
 
     lock_status = am_shm_lock(cache);
@@ -944,7 +925,7 @@ int am_add_session_policy_cache_entry(am_request_t *request, const char *key,
         return AM_E2BIG;
     }
 
-    key_hash = hash(key);
+    key_hash = am_hash(key);
     entry_index = index_for(AM_HASH_TABLE_SIZE, key_hash);
 
     lock_status = am_shm_lock(cache);
@@ -1131,7 +1112,7 @@ int am_add_policy_cache_entry(am_request_t *r, const char *key, int valid) {
         return AM_E2BIG;
     }
 
-    key_hash = hash(key);
+    key_hash = am_hash(key);
     entry_index = index_for(AM_HASH_TABLE_SIZE, key_hash);
 
     lock_status = am_shm_lock(cache);

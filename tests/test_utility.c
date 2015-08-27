@@ -641,4 +641,158 @@ void test_string_replace(void ** state) {
     
 }
 
+static void test_logf(const char * format, ...) {
+    va_list ap;
+    va_start(ap, format);
+    vprintf(format, ap);
+    va_end(ap);
+}
+
+void test_property_map_load() {
+    const char * wpa3boot = "/Users/nick/Downloads/OpenSSOAgentBootstrap.template.txt";
+    const char * wpa3config = "/Users/nick/Downloads/OpenSSOAgentConfiguration.template.txt";
+    const char * wpa4boot = "/Users/nick/Documents/Code/AM/review/agents-update/commit/policy-agents/config/agent.conf.template";
+    
+    struct map_entry ** map = property_map_create();
+    
+    size_t data_sz;
+    char * data;
+    
+    data_sz = 0;
+    data = load_file(wpa3boot, &data_sz);
+    property_map_parse(map, "agent 3 bootstrap", AM_TRUE, test_logf, data, data_sz);
+    free(data);
+    
+    data_sz = 0;
+    data = load_file(wpa3config, &data_sz);
+    property_map_parse(map, "agent 3 config", AM_TRUE, test_logf, data, data_sz);
+    free(data);
+    
+    data_sz = 0;
+    data = load_file(wpa4boot, &data_sz);
+    property_map_parse(map, "agent 4 bootstrap", AM_FALSE, test_logf, data, data_sz);
+    free(data);
+    
+    data = property_map_write_to_buffer(map, &data_sz);
+    printf("written %zu\n", data_sz);
+    free(data);
+    
+    property_map_delete(map);
+}
+
+void test_property_map_overrides(void ** state) {
+    struct map_entry ** map = property_map_create();
+    
+    size_t data_sz;
+    char * data;
+    
+    data = "a.b.0 = 0\r\na.b.1 = 1\r\n";
+    data_sz = strlen(data);
+    property_map_parse(map, "phase 1", AM_TRUE, test_logf, data, data_sz);
+    
+    assert_string_equal(property_map_get_value(map, "a.b.0"), "0");
+    assert_string_equal(property_map_get_value(map, "a.b.1"), "1");
+    
+    // new value ok, change doesn't override
+    data = "a.b.2 = 2\r\na.b.1 = override\r\n";
+    data_sz = strlen(data);
+    property_map_parse(map, "phase 2", AM_FALSE, test_logf, data, data_sz);
+    
+    assert_string_equal(property_map_get_value(map, "a.b.0"), "0");
+    assert_string_equal(property_map_get_value(map, "a.b.1"), "1");
+    assert_string_equal(property_map_get_value(map, "a.b.2"), "2");
+    
+    // override to a.b.1, different space round existing values
+    data = "a.b.0=\t\t\t0   \n\r\t  a.b.2       =       2\r\na.b.1 = override 1\r\n";
+    data_sz = strlen(data);
+    property_map_parse(map, "phase 3", AM_TRUE, test_logf, data, data_sz);
+    
+    assert_string_equal(property_map_get_value(map, "a.b.0"), "0");
+    assert_string_equal(property_map_get_value(map, "a.b.1"), "override 1");
+    assert_string_equal(property_map_get_value(map, "a.b.2"), "2");
+    
+    // no override to a.b.1, set after comment
+    data = "a.b.1 = override 2\r\n#comment\na.b.3=3";
+    data_sz = strlen(data);
+    property_map_parse(map, "phase 4", AM_FALSE, test_logf, data, data_sz);
+    
+    assert_string_equal(property_map_get_value(map, "a.b.0"), "0");
+    assert_string_equal(property_map_get_value(map, "a.b.1"), "override 1");
+    assert_string_equal(property_map_get_value(map, "a.b.2"), "2");
+    assert_string_equal(property_map_get_value(map, "a.b.3"), "3");
+    
+    property_map_delete(map);
+}
+
+static am_bool_t test_property_counter(char * key, char * value, void * data) {
+    int * counter = data;
+    (* counter)++;
+    return AM_TRUE;
+}
+
+void test_property_map_basics(void ** state) {
+    struct map_entry ** map = property_map_create();
+    
+    size_t data_sz;
+    char * data;
+    
+    // no final line ending
+    data = "a.b.0 = 0\r\na.b.1 = 1";
+    data_sz = strlen(data);
+    property_map_parse(map, "phase 1", AM_TRUE, test_logf, data, data_sz);
+    
+    assert_string_equal(property_map_get_value(map, "a.b.0"), "0");
+    assert_string_equal(property_map_get_value(map, "a.b.1"), "1");
+    
+    // no change with non-property formats, empty property name
+    data = "abc\r\ndef\n\t\t=ghi";
+    data_sz = strlen(data);
+    property_map_parse(map, "phase 2", AM_TRUE, test_logf, data, data_sz);
+    
+    int counter = 0;
+    property_map_visit(map, test_property_counter, &counter);
+    assert_int_equal(counter, 3);
+    
+    property_map_delete(map);
+}
+
+static int compare_keys(const void *a, const void *b) {
+    return strcmp((char *)a, (char *)b);
+}
+
+void test_property_map_key_remove(void **state) {
+#define KEY_REMOVE_TEST_ITERATIONS 10000
+#define KEY_REMOVE_BUFFER_SIZE 5
+    
+    struct map_entry **map = property_map_create();
+    
+    void create_random_cache_key(char *buffer, size_t size);
+    
+    char keys[KEY_REMOVE_TEST_ITERATIONS][KEY_REMOVE_BUFFER_SIZE];
+    
+    int dups = 0, counter = 0, i;
+    
+    for (i = 0; i < KEY_REMOVE_TEST_ITERATIONS; i++) {
+        create_random_cache_key(keys [i], KEY_REMOVE_BUFFER_SIZE);
+        char **addr = property_map_get_value_addr(map, keys[i]);
+        if (*addr)
+            dups++;
+        else
+            *addr = malloc(0);
+    }
+    
+    // reorder
+    qsort(keys, KEY_REMOVE_TEST_ITERATIONS, KEY_REMOVE_BUFFER_SIZE, compare_keys);
+    
+    for (i = 0; i < KEY_REMOVE_TEST_ITERATIONS; i++) {
+        if (! property_map_remove_key(map, keys[i]))
+            dups--;
+    }
+    assert_int_equal(dups, 0);
+    
+    property_map_visit(map, test_property_counter, &counter);
+    assert_int_equal(counter, 0);
+    
+    property_map_delete(map);
+}
 
