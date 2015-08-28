@@ -579,5 +579,7 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
     decrypt_agent_passwords(r);
     update_agent_configuration_ttl(r);
     update_agent_configuration_audit(r);
+    update_agent_configuration_normalise_map_urls(r);
+    
     return r;
 }

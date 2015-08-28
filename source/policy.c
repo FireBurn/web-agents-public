@@ -233,7 +233,7 @@ static char compare_pattern_resource(am_request_t *r, const char *ptn, const cha
  * The returned offsets are as follows:
  * 0 <- offset of '://' end of scheme
  * 1 <- the ':' before a port number if it exists
- * 2 <- the '/' at the start of the path section
+ * 2 <- the '/' at the start of the path section, or if there is no path, a '?' or '\0'
  */
 static am_bool_t policy_get_url_offsets(const char *url, int *offsets) {
     am_bool_t got_protocol = AM_FALSE;
@@ -256,15 +256,55 @@ static am_bool_t policy_get_url_offsets(const char *url, int *offsets) {
                 break;
                 
             case '/':
+            case '?':
                 if (got_protocol) {
-                    start_of_path(offsets) = i; // start of path
+                    start_of_path(offsets) = i; // start of path (or query, as in a.b.c?query)
                     return AM_TRUE;
                 }
                 break;
         }
     }
-    // should have finished with the start of path
+    if (got_protocol) {
+        start_of_path(offsets) = i; // no path, set to offset of '\0'
+        return AM_TRUE;
+    }
     return AM_FALSE;
+}
+
+/*
+ * Normalise the resource pattern by adding the default port for the protocol if it is unspecified.
+ *
+ * @param an input resource pattern
+ * @return if the port can be derived, an allocated string with the noralised pattern, else NULL
+ */
+char *am_normalize_pattern(const char *url) {
+    unsigned port = 0;
+    char *protocol;
+    int offsets [] = { 0, 0, 0 };
+    
+    policy_get_url_offsets(url, offsets);
+    if (end_of_protocol(offsets) && !port_marker(offsets)) {
+        // do we have a wildcard intended to include the port?
+        if (url [start_of_path(offsets) - 1] == '*')
+            return NULL;
+        
+        // determine default port for the protocol
+        protocol = strndup(url, end_of_protocol(offsets));
+        if (strcasecmp(protocol, "http") == 0) {
+            port = 80;
+        } else if (strcasecmp(protocol, "https") == 0) {
+            port = 443;
+        }
+        free(protocol);
+        
+        if (port) {
+            // reconstruct URL with the default port
+            char * buffer = NULL;
+            am_asprintf(&buffer, "%.*s:%u%s", start_of_path(offsets), url, port, url + start_of_path(offsets));
+            return buffer;
+        }
+    }
+    return NULL;
 }
 
 /*

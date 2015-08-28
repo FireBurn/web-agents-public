@@ -330,5 +330,6 @@ void am_free(void *ptr);
 int am_asprintf(char **buffer, const char *fmt, ...);
 char *am_json_escape(const char *str, size_t *escaped_sz);
 
+char *am_normalize_pattern(const char *url);
 
 #endif

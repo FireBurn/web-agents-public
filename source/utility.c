@@ -2790,6 +2790,89 @@ void update_agent_configuration_audit(am_config_t *conf) {
     }
 }
 
+/*
+ * change the value in a configuration mapping.
+ * NOTE: the name and value are allocated in the same block, and only the name should be
+ * freed.
+ */
+am_status_t remap_config_value(am_config_map_t * mapping, char *newvalue) {
+    char *buffer = NULL;
+    size_t name_sz;
+    
+    if (!ISVALID(mapping->name)) {
+        return AM_EINVAL;
+    }
+    name_sz = strlen(mapping->name);
+    buffer = realloc(mapping->name, name_sz + 1 + strlen(newvalue) + 1);
+    if (!ISVALID(buffer)) {
+        return AM_ENOMEM;
+    }
+    strcpy(buffer + name_sz + 1, newvalue);
+    
+    mapping->name = buffer;
+    mapping->value = buffer + name_sz + 1;
+    return AM_SUCCESS;
+}
+
+void update_agent_configuration_normalise_map_urls(am_config_t *conf) {
+    static const char *thisfunc = "update_agent_configuration_normalise_map_urls()";
+    
+    int i;
+    char *value, *newvalue;
+    am_status_t remap_status;
+    
+    /* normalise not enforced map values if they are not regular expressions */
+    if (!conf->not_enforced_regex_enable) {
+        for (i = 0; i < conf->not_enforced_map_sz; i++) {
+            if ( (value = conf->not_enforced_map[i].value) ) {
+                if ( (newvalue = am_normalize_pattern(value)) ) {
+                    remap_status = remap_config_value(conf->not_enforced_map + i, newvalue);
+                    am_free(newvalue);
+                    if (remap_status != AM_SUCCESS)
+                        AM_LOG_WARNING(conf->instance_id, "%s error normalising not enforced URL %s (%s)", thisfunc, value, am_strerror(remap_status));
+                }
+            }
+        }
+    }
+    /* normalise not enforced extended map values if they are not regular expressions */
+    if (!conf->not_enforced_ext_regex_enable) {
+        for (i = 0; i < conf->not_enforced_ext_map_sz; i++) {
+            if ( (value = conf->not_enforced_ext_map[i].value) ) {
+                if ( (newvalue = am_normalize_pattern(value)) ) {
+                    remap_status = remap_config_value(conf->not_enforced_ext_map + i, newvalue);
+                    am_free(newvalue);
+                    if (remap_status != AM_SUCCESS)
+                        AM_LOG_WARNING(conf->instance_id, "%s error normalising extended not enforced URL %s (%s)", thisfunc, value, am_strerror(remap_status));
+                }
+            }
+        }
+    }
+    /* normalise logout map values if they are not regular expressions */
+    if (!conf->logout_regex_enable) {
+        for (i = 0; i < conf->logout_map_sz; i++) {
+            if ( (value = conf->logout_map[i].value) ) {
+                if ( (newvalue = am_normalize_pattern(value)) ) {
+                    remap_status = remap_config_value(conf->logout_map + i, newvalue);
+                    am_free(newvalue);
+                    if (remap_status != AM_SUCCESS)
+                        AM_LOG_WARNING(conf->instance_id, "%s error normalising logout URL %s (%s)", thisfunc, value, am_strerror(remap_status));
+                }
+            }
+        }
+    }
+    /* normalise json URL map values */
+    for (i = 0; i < conf->json_url_map_sz; i++) {
+        if ( (value = conf->json_url_map[i].value) ) {
+            if ( (newvalue = am_normalize_pattern(value)) ) {
+                remap_status = remap_config_value(conf->json_url_map + i, newvalue);
+                am_free(newvalue);
+                if (remap_status != AM_SUCCESS)
+                    AM_LOG_WARNING(conf->instance_id, "%s error normalising JSON URL %s (%s)", thisfunc, value, am_strerror(remap_status));
+            }
+        }
+    }
+}
+
 char *get_global_name(const char *name, int id) {
     static AM_THREAD_LOCAL char out[AM_PATH_SIZE];
     snprintf(out, sizeof(out), "%s_%d", name, id);
