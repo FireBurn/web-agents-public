@@ -212,11 +212,24 @@ static int am_status_value(am_status_t v) {
     }
 }
 
-static am_status_t get_request_url(am_request_t *rq) {
-    request_rec *r = (request_rec *) (rq != NULL ? rq->ctx : NULL);
-    if (r == NULL) return AM_EINVAL;
-    rq->orig_url = ap_construct_url(r->pool, r->unparsed_uri, r);
-    if (rq->orig_url == NULL) return AM_EINVAL;
+static am_status_t get_request_url(am_request_t *req) {
+    request_rec *rec;
+    
+    if (req == NULL) {
+        return AM_EINVAL;
+    }
+    
+    rec = (request_rec *) req->ctx;
+    if (rec == NULL) {
+        return AM_EINVAL;
+    }
+    
+    req->orig_url = ap_construct_url(rec->pool, rec->unparsed_uri, rec);
+    if (req->orig_url == NULL) {
+        return AM_EINVAL;
+    }
+    
+    req->path_info = rec->path_info;
     return AM_SUCCESS;
 }
 

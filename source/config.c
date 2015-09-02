@@ -139,7 +139,9 @@ enum {
     AM_CONF_AUDIT_REMOTE_INTERVAL,
     AM_CONF_AUDIT_FILE_DISPOSITION,
     AM_CONF_ANON_USER_ENABLE,
-    AM_CONF_ANON_USER_ID
+    AM_CONF_ANON_USER_ID,
+    AM_CONF_PATHINFO_IGNORE,
+    AM_CONF_PATHINFO_IGNORE_NOTENFORCED
 };
 
 struct am_instance {
@@ -746,6 +748,12 @@ static int am_create_instance_entry_data(int h, am_config_t *c, char all) {
         if (ISVALID(c->unauthenticated_user)) {
             SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_ANON_USER_ID, 0), c->unauthenticated_user);
         }
+        if (c->path_info_ignore > 0) {
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_PATHINFO_IGNORE, 0), c->path_info_ignore);
+        }
+        if (c->path_info_ignore_not_enforced > 0) {
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_PATHINFO_IGNORE_NOTENFORCED, 0), c->path_info_ignore_not_enforced);
+        }
     }
     return AM_SUCCESS;
 }
@@ -1232,6 +1240,12 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 break;
             case AM_CONF_ANON_USER_ID:
                 r->unauthenticated_user = strndup(i->value, i->size[0]);
+                break;
+            case AM_CONF_PATHINFO_IGNORE:
+                r->path_info_ignore = i->num_value;
+                break;
+            case AM_CONF_PATHINFO_IGNORE_NOTENFORCED:
+                r->path_info_ignore_not_enforced = i->num_value;
                 break;
         }
     }

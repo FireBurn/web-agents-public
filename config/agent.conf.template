@@ -106,3 +106,5 @@ org.forgerock.agents.config.notenforced.ext.regex.enable =
 org.forgerock.agents.config.json.url =
 com.sun.identity.agents.config.anonymous.user.enable = 0
 com.sun.identity.agents.config.anonymous.user.id = anonymous
+com.sun.identity.agents.config.ignore.path.info.for.not.enforced.list = false
+com.sun.identity.agents.config.ignore.path.info = false

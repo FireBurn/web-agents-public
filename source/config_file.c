@@ -571,6 +571,9 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
         
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ANONYMOUS_USER_ENABLE, CONF_NUMBER, NULL, &conf->anon_remote_user_enable, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_ANONYMOUS_USER_ID, CONF_STRING, NULL, &conf->unauthenticated_user, NULL);
+        
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_IGNORE_PATHINFO, CONF_NUMBER, NULL, &conf->path_info_ignore, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_IGNORE_PATHINFO_NOT_ENFORCED, CONF_NUMBER, NULL, &conf->path_info_ignore_not_enforced, NULL);
         }
     }
 

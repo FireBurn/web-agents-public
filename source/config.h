@@ -231,6 +231,9 @@ typedef struct {
     
     int anon_remote_user_enable;
     char *unauthenticated_user;
+    
+    int path_info_ignore;
+    int path_info_ignore_not_enforced;
 
 } am_config_t;
 
@@ -384,5 +387,8 @@ typedef struct {
 
 #define AM_AGENTS_CONFIG_ANONYMOUS_USER_ENABLE "com.sun.identity.agents.config.anonymous.user.enable"
 #define AM_AGENTS_CONFIG_ANONYMOUS_USER_ID "com.sun.identity.agents.config.anonymous.user.id"
+
+#define AM_AGENTS_CONFIG_IGNORE_PATHINFO_NOT_ENFORCED "com.sun.identity.agents.config.ignore.path.info.for.not.enforced.list"
+#define AM_AGENTS_CONFIG_IGNORE_PATHINFO "com.sun.identity.agents.config.ignore.path.info"
 
 #endif

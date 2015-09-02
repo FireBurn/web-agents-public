@@ -456,25 +456,59 @@ static const char *get_server_variable(IHttpContext *ctx,
     return val;
 }
 
-static am_status_t get_request_url(am_request_t *rq) {
-    IHttpContext *r = (IHttpContext *) (rq != NULL ? rq->ctx : NULL);
+static am_status_t get_request_url(am_request_t *req) {
+    static const char *thisfunc = "get_request_url():";
+    IHttpContext *ctx;
     HTTP_COOKED_URL url;
     am_status_t status = AM_EINVAL;
-    if (r == NULL) return status;
-    url = r->GetRequest()->GetRawHttpRequest()->CookedUrl;
+    
+    if (req == NULL) {
+        return status;
+    }
+
+    ctx = (IHttpContext *) req->ctx;
+    if (ctx == NULL) {
+        return status;
+    }
+
+    url = ctx->GetRequest()->GetRawHttpRequest()->CookedUrl;
     if (url.FullUrlLength > 0 && url.pFullUrl != NULL) {
-        char *purl = NULL;
         size_t urlsz = 0;
-        purl = utf8_encode(r, url.pFullUrl, &urlsz);
-        if (purl != NULL) {
-            char *urlc = (char *) alloc_request(r, urlsz + 1);
-            if (urlc != NULL) {
-                memcpy(urlc, purl, urlsz);
-                rq->orig_url = urlc;
-                status = AM_SUCCESS;
+        char *url_encoded = utf8_encode(ctx, url.pFullUrl, &urlsz);
+        if (url_encoded == NULL) {
+            return AM_ENOMEM;
+        }
+
+        char *urlc = (char *) alloc_request(ctx, urlsz + 1);
+        if (urlc != NULL) {
+            memcpy(urlc, url_encoded, urlsz);
+            req->orig_url = urlc;
+            status = AM_SUCCESS;
+        }
+
+    }
+
+    if (status == AM_SUCCESS) {
+        char *path_info = (char *) get_server_variable(ctx, req->instance_id, "PATH_INFO");
+        char *script_name = (char *) get_server_variable(ctx, req->instance_id, "SCRIPT_NAME");
+
+        if (ISVALID(path_info) && ISVALID(script_name)) {
+            /* remove the script name from path_info to get the real path info */
+            const char *pos = strstr(path_info, script_name);
+            size_t path_info_sz = strlen(path_info);
+            if (pos == NULL) {
+                AM_LOG_WARNING(req->instance_id, "%s script name %s not found in path info (%s). "
+                        "Could not get the path info.", thisfunc, script_name, path_info);
+                return status;
             }
-        } else {
-            status = AM_ENOMEM;
+
+            char *path_info_tmp = (char *) alloc_request(ctx, path_info_sz + 1);
+            if (path_info_tmp != NULL) {
+                strncpy(path_info_tmp, pos + strlen(script_name), path_info_sz);
+                req->path_info = path_info_tmp;
+                AM_LOG_DEBUG(req->instance_id, "%s reconstructed path info: %s", thisfunc,
+                        path_info_tmp);
+            }
         }
     }
     return status;

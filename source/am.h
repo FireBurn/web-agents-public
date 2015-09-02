@@ -233,9 +233,12 @@ typedef struct am_request {
     am_bool_t is_json_url;
 
     const char *orig_url;
-    struct url url; /* parsed/normalized request url (split in values)*/
-    char *normalized_url; /*normalized request url*/
-    char *overridden_url; /*normalized/overridden request url*/
+    const char *path_info;
+    struct url url; /* parsed/normalized request url (split in values) */
+    char *normalized_url; /* normalized request url */
+    char *overridden_url; /* normalized/overridden request url */
+    char *normalized_url_pathinfo;
+    char *overridden_url_pathinfo;
     const char *cookies;
     const char *content_type;
     char method;

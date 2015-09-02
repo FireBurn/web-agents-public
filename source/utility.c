@@ -1902,7 +1902,8 @@ void decrypt_agent_passwords(am_config_t *r) {
 
 void am_request_free(am_request_t *r) {
     if (r != NULL) {
-        AM_FREE(r->normalized_url, r->overridden_url, r->token,
+        AM_FREE(r->normalized_url, r->overridden_url, r->normalized_url_pathinfo,
+                r->overridden_url_pathinfo, r->token,
                 r->client_ip, r->client_host, r->post_data,
                 r->session_info.s1, r->session_info.si, r->session_info.sk);
         delete_am_policy_result_list(&r->pattr);

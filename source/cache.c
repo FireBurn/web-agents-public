@@ -1022,7 +1022,7 @@ int am_add_session_policy_cache_entry(am_request_t *request, const char *key,
 }
 
 /**
- * Fetch global policy-resource cache entry (key: ResourceResult name).
+ * Fetch global policy-resource cache entry (key: AM_POLICY_CHANGE_KEY).
  * 
  * @return AM_SUCCESS if found, AM_NOT_FOUND if not found, AM_ETIMEDOUT if
  * not valid (either obsolete or newer than a reference time)
@@ -1077,7 +1077,7 @@ int am_get_policy_cache_entry(am_request_t *request, const char *key, time_t ref
         }
     }
 
-    if (reference > 0 && difftime(cache_entry->ts, reference) > 0) {
+    if (reference > 0 && difftime(cache_entry->ts, reference) >= 0) {
         localtime_r(&cache_entry->ts, &created);
         localtime_r(&reference, &until);
         strftime(tsc, sizeof(tsc), AM_CACHE_TIMEFORMAT, &created);
@@ -1093,7 +1093,7 @@ int am_get_policy_cache_entry(am_request_t *request, const char *key, time_t ref
 }
 
 /**
- * Add global policy-resource cache entry (key: ResourceResult name).
+ * Add global policy-resource cache entry (key: AM_POLICY_CHANGE_KEY).
  * 
  * @return AM_SUCCESS if operation was successful
  */
@@ -1149,7 +1149,7 @@ int am_add_policy_cache_entry(am_request_t *r, const char *key, int valid) {
     cache_entry->valid = 0;
     cache_entry->instance_id = r->instance_id;
     strncpy(cache_entry->key, key, sizeof(cache_entry->key) - 1);
-
+    
     cache_entry->data.next = cache_entry->data.prev = 0;
     cache_entry->lh.next = cache_entry->lh.prev = 0;
     

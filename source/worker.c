@@ -57,9 +57,12 @@ void notification_worker(
         /* PolicyChangeNotification - ResourceName */
         if (!policy_change_run && strcmp(e->n, "ResourceName") == 0) {
             am_request_t req;
+            int rv;
             memset(&req, 0, sizeof (am_request_t));
             req.instance_id = r->instance_id;
-            am_add_policy_cache_entry(&req, AM_POLICY_CHANGE_KEY, 0);
+            rv = am_add_policy_cache_entry(&req, AM_POLICY_CHANGE_KEY, 0);
+            AM_LOG_DEBUG(r->instance_id, "%s policy change cache update status: %s",
+                    thisfunc, am_strerror(rv));
             policy_change_run = AM_TRUE; /* one AM_POLICY_CHANGE_KEY update per PolicyChangeNotification is enough */
         }
     }

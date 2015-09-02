@@ -205,6 +205,25 @@ static am_return_t setup_request_data(am_request_t *r) {
         r->status = AM_ENOMEM;
         return AM_FAIL;
     }
+    
+    if (ISVALID(r->path_info) && (r->conf->path_info_ignore_not_enforced || r->conf->path_info_ignore)) {
+        char *pos;
+
+        r->normalized_url_pathinfo = strdup(r->normalized_url);
+        if (r->normalized_url_pathinfo == NULL) {
+            AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
+            r->status = AM_ENOMEM;
+            return AM_FAIL;
+        }
+
+        pos = strstr(r->normalized_url_pathinfo, r->path_info);
+        if (pos == NULL) {
+            AM_LOG_ERROR(r->instance_id, "%s path_info %s is not part of the normalized request url %s",
+                    thisfunc, r->path_info, r->normalized_url);
+            return AM_FAIL;
+        }
+        *pos = '\0';
+    }
 
     /* re-format normalized request url depending on override parameter values */
     memcpy(&u, &r->url, sizeof (struct url));
@@ -229,6 +248,25 @@ static am_return_t setup_request_data(am_request_t *r) {
         r->status = AM_ENOMEM;
         return AM_FAIL;
     }
+    
+    if (ISVALID(r->path_info) && r->conf->path_info_ignore) {
+        char *pos;
+
+        r->overridden_url_pathinfo = strdup(r->overridden_url);
+        if (r->overridden_url_pathinfo == NULL) {
+            AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
+            r->status = AM_ENOMEM;
+            return AM_FAIL;
+        }
+
+        pos = strstr(r->overridden_url_pathinfo, r->path_info);
+        if (pos == NULL) {
+            AM_LOG_ERROR(r->instance_id, "%s path_info %s is not part of the overridden request url %s",
+                    thisfunc, r->path_info, r->overridden_url);
+            return AM_FAIL;
+        }
+        *pos = '\0';
+    }
 
     /* check if this request url (normalized) matches any of 
      * org.forgerock.agents.config.json.url[] configuration parameter values
@@ -247,11 +285,14 @@ static am_return_t setup_request_data(am_request_t *r) {
         AM_LOG_DEBUG(r->instance_id, "%s no token in query parameters", thisfunc);
     }
 
-    AM_LOG_DEBUG(r->instance_id, "%s method: %s, original url: %s, normalized:\n"
-            "proto: %s\nhost: %s\nport: %d\npath: %s\nquery: %s\ncomplete: %s\noverridden: %s", thisfunc,
+    AM_LOG_DEBUG(r->instance_id, "%s \nmethod: %s \noriginal url: %s"
+            "\nproto: %s\nhost: %s\nport: %d\npath: %s\nquery: %s\ncomplete: %s\noverridden: %s"
+            "\npathinfo: %s"
+            "\nnormalized (pathinfo removed): %s\noverridden (pathinfo removed): %s", thisfunc,
             am_method_num_to_str(r->method), r->orig_url,
             r->url.proto, r->url.host, r->url.port, r->url.path, r->url.query, r->normalized_url,
-            r->overridden_url);
+            r->overridden_url, LOGEMPTY(r->path_info),
+            LOGEMPTY(r->normalized_url_pathinfo), LOGEMPTY(r->overridden_url_pathinfo));
 
     if (r->method == AM_REQUEST_POST && !ISVALID(r->content_type)) {
         AM_LOG_ERROR(r->instance_id, "%s HTTP POST requires a valid Content-Type header value", thisfunc);
@@ -555,10 +596,25 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                 char *p = strstr(m->name, AM_COMMA_CHAR);
                 AM_LOG_DEBUG(r->instance_id, "%s trying not enforced pattern %s", thisfunc, m->value);
                 if (p == NULL) {
+                    
                     /* regular [0]=not-enforced-url option */
-                    compare_status += url_matches_pattern(r, m->value, url, r->conf->not_enforced_regex_enable);
+
+                    if (ISVALID(r->normalized_url_pathinfo) &&
+                            (r->conf->path_info_ignore_not_enforced || r->conf->path_info_ignore) &&
+                            !r->conf->not_enforced_regex_enable) {
+
+                        AM_LOG_DEBUG(r->instance_id, "%s validating %s ignoring path_info",
+                                thisfunc, r->normalized_url_pathinfo);
+
+                        compare_status += url_matches_pattern(r, m->value, r->normalized_url_pathinfo, AM_FALSE);
+                    } else {
+                        compare_status += url_matches_pattern(r, m->value, url, r->conf->not_enforced_regex_enable);
+                    }
+                    
                 } else {
+                    
                     /* method-extended [GET,0]=not-enforced-url option */
+                    
                     char *pv = strndup(m->name, p - m->name);
                     if (pv != NULL) {
                         char mtn = am_method_str_to_num(pv);
@@ -810,10 +866,12 @@ static am_return_t validate_policy(am_request_t *r) {
     time_t cache_ts = 0;
 
     char *pattrs = NULL;
-    const char *url = r->overridden_url;
+    const char *url = ISVALID(r->overridden_url_pathinfo) && r->conf->path_info_ignore ?
+            r->overridden_url_pathinfo : r->overridden_url;
     int scope = r->conf->policy_scope_subtree;
 
-    AM_LOG_DEBUG(r->instance_id, "%s (entry status: %s)", thisfunc, am_strerror(r->status));
+    AM_LOG_DEBUG(r->instance_id, "%s for %s (ignoring pathinfo: %s), entry status: %s", thisfunc,
+            url, (url == r->overridden_url_pathinfo ? "yes" : "no"), am_strerror(r->status));
 
     if (r->not_enforced && (r->conf->not_enforced_fetch_attr || r->is_dummypost_url)) {
         if (!ISVALID(r->token)) {

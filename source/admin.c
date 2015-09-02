@@ -23,6 +23,7 @@
 #include "zip.h"
 
 #ifdef _WIN32
+#include <shlobj.h>
 #define LIB_FILE_EXT "dll"
 #define APACHE_DEFAULT_CONF_FILE "c:\\Apache\\conf\\httpd.conf"
 #else
