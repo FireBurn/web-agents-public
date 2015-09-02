@@ -2473,7 +2473,25 @@ int copy_file(const char *from, const char *to) {
     if (CopyFileExA(from, to_tmp, NULL, NULL, FALSE, COPY_FILE_NO_BUFFERING) != 0) {
         rv = AM_SUCCESS;
     }
-#else
+#elif defined(LINUX)
+    {
+        size_t content_sz = 0;
+        char *content = load_file(from, &content_sz);
+        if (content == NULL) {
+            rv = AM_FILE_ERROR;
+        } else {
+            ssize_t wr_status = write_file(to_tmp, content, content_sz);
+            am_free(content);
+            
+            if (wr_status == content_sz)
+                rv = AM_SUCCESS;
+            else if (wr_status < 0)
+                rv = wr_status;
+            else
+                rv = AM_FILE_ERROR;
+        }
+    }
+#else   /* not Windows or Linux */
     struct stat st;
     source = open(from, O_RDONLY);
     if (source == -1) {
@@ -2519,6 +2537,10 @@ int copy_file(const char *from, const char *to) {
             }
         }
 #else
+        /*
+         *
+         * The folowing only works on linux kernel after 2.6.33, so is disabled for linux in general
+         */
         off_t offset = 0;
         if (sendfile(dest, source, &offset, st.st_size) != -1) {
             rv = AM_SUCCESS;
@@ -2527,7 +2549,7 @@ int copy_file(const char *from, const char *to) {
     }
     close(source);
     close(dest);
-#endif
+#endif  /* not Windows or Linux */
     if (local_alloc) {
         free(to_tmp);
     }

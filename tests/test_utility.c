@@ -796,3 +796,28 @@ void test_property_map_key_remove(void **state) {
     property_map_delete(map);
 }
 
+void test_copy_file(void **state) {
+    void create_random_cache_key(char *buffer, size_t size);
+    
+    char content [1024];
+    char source_buffer [] = "test_copy_file_src-XXXXXXX";
+    char *source = mktemp(source_buffer);
+    
+    char dest_buffer [] = "test_copy_file_dst-XXXXXXX";
+    char *dest = mktemp(dest_buffer);
+    
+    char *loaded;
+    size_t loaded_sz;
+    
+    create_random_cache_key(content, sizeof(content));
+    
+    assert_int_equal(write_file(source, content, strlen(content)), strlen(content));
+    assert_int_equal(copy_file(source, dest), AM_SUCCESS);
+    unlink(source);
+    
+    loaded = load_file(dest, &loaded_sz);
+    unlink(dest);
+    
+    assert_int_equal(loaded_sz, strlen(content));
+    assert_string_equal(content, loaded);
+}
