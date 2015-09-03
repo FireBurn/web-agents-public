@@ -1632,17 +1632,31 @@ static char *find_active_login_server(am_request_t *r, char add_goto_value) {
         am_config_map_t *m = (valid_idx >= map_sz) ? &map[0] : &map[valid_idx];
         if (add_goto_value) {
             char *goto_encoded = url_encode(r->overridden_url);
-            am_asprintf(&login_url, "%s%s%s=%s",
-                    m->value,
-                    strchr(m->value, '?') == NULL ? "?" : "&",
-                    ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
-                    NOTNULL(goto_encoded));
+            
+            if (r->conf->cdsso_enable &&
+                    ISVALID(r->conf->url_redirect_param) &&
+                    strstr(m->value, "goto=") != NULL &&
+                    strcmp(r->conf->url_redirect_param, "goto") != 0) {
+                am_asprintf(&login_url, "%s%s%s=%s",
+                        m->value,
+                        "?",
+                        r->conf->url_redirect_param,
+                        NOTNULL(goto_encoded));
+            } else {
+                am_asprintf(&login_url, "%s%s%s=%s",
+                        m->value,
+                        strchr(m->value, '?') == NULL ? "?" : "&",
+                        ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
+                        NOTNULL(goto_encoded));
+            }
 
             if (ISVALID(cdsso_elements)) {
                 am_asprintf(&login_url, "%s&%s", login_url, cdsso_elements);
             }
             am_free(goto_encoded);
+            
         } else {
+            
             if (ISVALID(cdsso_elements)) {
                 am_asprintf(&login_url, "%s%s%s",
                         m->value,
@@ -2066,11 +2080,23 @@ static am_return_t handle_exit(am_request_t *r) {
 
                         /* create a redirect url value */
                         url = find_active_login_server(r, AM_FALSE);
-                        am_asprintf(&url, "%s%s%s=%s",
-                                url,
-                                strchr(url, '?') != NULL ? "&" : "?",
-                                ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
-                                NOTNULL(goto_encoded));
+                        
+                        if (r->conf->cdsso_enable &&
+                                ISVALID(r->conf->url_redirect_param) &&
+                                strstr(url, "goto=") != NULL &&
+                                strcmp(r->conf->url_redirect_param, "goto") != 0) {
+                            am_asprintf(&url, "%s%s%s=%s",
+                                    url,
+                                    "?",
+                                    r->conf->url_redirect_param,
+                                    NOTNULL(goto_encoded));
+                        } else {
+                            am_asprintf(&url, "%s%s%s=%s",
+                                    url,
+                                    strchr(url, '?') != NULL ? "&" : "?",
+                                    ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
+                                    NOTNULL(goto_encoded));
+                        }
 
                         if (pdp_sess_mode_cookie) {
                             /* create pdp sticky-session load-balancer cookie */
