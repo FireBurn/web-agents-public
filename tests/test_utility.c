@@ -821,3 +821,31 @@ void test_copy_file(void **state) {
     assert_int_equal(loaded_sz, strlen(content));
     assert_string_equal(content, loaded);
 }
+
+void test_url_encoding(void **state) {
+    char agent3_input1[] = "~a!a@a#a$a%a^a&";
+    char agent3_output1[] = "%7Ea%21a%40a%23a%24a%25a%5Ea%26";
+    
+    char agent3_input2[] = "!@#$%^&*()_+{}:\".,/\\";
+    char agent3_output2[] = "%21%40%23%24%25%5E%26*%28%29_%2B%7B%7D%3A%22.%2C%2F%5C";
+    
+    char *agent4_decoded, *agent4_encoded;
+    
+    agent4_decoded = url_decode(agent3_output1);
+    assert_string_equal(agent4_decoded, agent3_input1);
+    free(agent4_decoded);
+    
+    agent4_decoded = url_decode(agent3_output2);
+    assert_string_equal(agent4_decoded, agent3_input2);
+    free(agent4_decoded);
+    
+    /* producing the same url encoding as prior versions of the agents */
+    
+    agent4_encoded = url_encode(agent3_input1);
+    assert_string_equal(agent3_output1, agent4_encoded);
+    free(agent4_encoded);
+    
+    agent4_encoded = url_encode(agent3_input2);
+    assert_string_equal(agent3_output2, agent4_encoded);
+    free(agent4_encoded);
+}

@@ -119,7 +119,7 @@ static const char* agent_4x_obsolete_properties [] =
     "com.sun.identity.agents.config.forward.proxy.port",
     "com.sun.identity.agents.config.forward.proxy.user",
     "com.sun.identity.agents.config.forward.proxy.password",
-    "com.sun.irdentity.agents.config.profilename",
+    "com.sun.identity.agents.config.profilename",
     0
 };
 

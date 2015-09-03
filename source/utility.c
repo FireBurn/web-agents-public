@@ -530,7 +530,13 @@ char *url_encode(const char *str) {
             return NULL;
         }
         while (*pstr) {
+#ifdef AM_URL_ENCODE_RFC3986
+            /* This is the correct URL encoding according to RFC 3986 */
             if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~') {
+#else
+            /* This is the the encoding in prior versions of the agents */
+            if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '*') {
+#endif
                 *pbuf++ = *pstr;
             } else if (*pstr == ' ') {
                 *pbuf++ = '%';
