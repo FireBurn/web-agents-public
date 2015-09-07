@@ -822,6 +822,29 @@ void test_copy_file(void **state) {
     assert_string_equal(content, loaded);
 }
 
+void test_copy_empty_file(void **state) {
+    void create_random_cache_key(char *buffer, size_t size);
+    
+    char source_buffer [] = "test_copy_file_src-XXXXXXX";
+    char *source = mktemp(source_buffer);
+    
+    char dest_buffer [] = "test_copy_file_dst-XXXXXXX";
+    char *dest = mktemp(dest_buffer);
+    
+    char *loaded;
+    size_t loaded_sz;
+    
+    assert_int_equal(write_file(source, "", 0), 0);
+    assert_int_equal(copy_file(source, dest), AM_SUCCESS);
+    unlink(source);
+    
+    loaded = load_file(dest, &loaded_sz);
+    unlink(dest);
+    
+    assert_true(loaded != NULL && * loaded == '\0');
+    assert_int_equal(loaded_sz, 0);
+}
+
 void test_url_encoding(void **state) {
     char agent3_input1[] = "~a!a@a#a$a%a^a&";
     char agent3_output1[] = "%7Ea%21a%40a%23a%24a%25a%5Ea%26";

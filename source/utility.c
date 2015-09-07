@@ -1137,7 +1137,7 @@ char *load_file(const char *filepath, size_t *data_sz) {
 ssize_t write_file(const char *filepath, const void *data, size_t data_sz) {
     int fd;
     ssize_t wr = 0;
-    if (data == NULL || data_sz == 0) return AM_EINVAL;
+    if (data == NULL) return AM_EINVAL;
 #ifdef _WIN32
     fd = _open(filepath, _O_CREAT | _O_WRONLY | _O_TRUNC | _O_BINARY, _S_IWRITE);
 #else
