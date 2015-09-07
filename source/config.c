@@ -1330,6 +1330,12 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
                         thisfunc);
                 ret = AM_XML_ERROR;
             } else {
+                /* remote mode overrides logging and audit level bootstrap configuration */
+                bc->debug_level = cf->debug_level;
+                bc->debug = cf->debug;
+                bc->audit_level = cf->audit_level;
+                bc->audit = cf->audit;
+                
                 ret = am_create_instance_entry_data(hdr_offset, bc, AM_CONF_BOOT); /* store bootstrap properties */
                 ret = am_create_instance_entry_data(hdr_offset, cf, AM_CONF_REMOTE);
                 am_config_free(&cf);
@@ -1460,6 +1466,13 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
                 AM_LOG_DEBUG(instance_id, "%s agent configuration read from a cache",
                         thisfunc);
                 am_shm_unlock(conf);
+                
+                if (!(*cnf)->local) {
+                    /* update instance logger registration data */
+                    am_log_register_instance(instance_id, (*cnf)->debug_file, (*cnf)->debug_level, (*cnf)->debug,
+                            (*cnf)->audit_file, (*cnf)->audit_level, (*cnf)->audit);
+                }
+                
                 if (AM_BITMASK_CHECK((*cnf)->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE)) {
                     /* register or update remote audit logging configuration */
                     rv = am_audit_register_instance(*cnf);
