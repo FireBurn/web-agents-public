@@ -33,7 +33,7 @@
 #endif
 
 #ifdef AM_BINARY_LICENSE
-#define LICENSE_FILE ".."FILE_PATH_SEP"legal"FILE_PATH_SEP"license.txt"
+#define LICENSE_FILE ".."FILE_PATH_SEP"legal"FILE_PATH_SEP"Forgerock_License.txt"
 #else
 #define LICENSE_FILE ".."FILE_PATH_SEP"legal"FILE_PATH_SEP"CDDLv1.0.txt"
 #endif
@@ -1160,7 +1160,7 @@ static void install_interactive(int argc, char **argv) {
             
             input = prompt_and_read("\nTo set properties from an existing configuration enter path to file\n"
                                     "[ q or 'ctrl+c' to exit, return to ignore ]\n"
-                                    "Existing agent.conf file:");
+                                    "Existing OpenSSOAgentBootstrap.properties file:");
             if (! ISVALID(input)) {
                 break;
             }
@@ -1518,7 +1518,8 @@ static void install_interactive(int argc, char **argv) {
  * argv[5] = Realm
  * argv[6] = Agent name
  * argv[7] = File containing the agent password
- * argv[8] = OPTIONAL "y/n" argument saying whether to chown.
+ * argv[8] = OPTIONAL "--changeOwner" argument saying whether to change instance directory/file ownership data
+ * argv[9] = OPTIONAL "--acceptLicence" argument.
  */
 static void install_silent(int argc, char** argv) {
     char lic_file_path[AM_URI_SIZE];
@@ -1530,6 +1531,13 @@ static void install_silent(int argc, char** argv) {
             am_container_str(instance_type));
 
     snprintf(lic_file_path, sizeof(lic_file_path), "%s%s", app_path, LICENSE_FILE);
+    
+    if ((argc > 8 && strcasecmp(argv[8], "--acceptLicence") == 0) ||
+            (argc > 9 && strcasecmp(argv[9], "--acceptLicence") == 0)) {
+        install_log("license accepted with --acceptLicence option");
+        am_make_path(instance_path, NULL, NULL, install_log);
+        write_file(license_tracker_path, AM_SPACE_CHAR, 1);
+    }
 
     if (!file_exists(license_tracker_path)) {
         /* display a license */
@@ -1589,7 +1597,8 @@ static void install_silent(int argc, char** argv) {
                 gid = NULL;
             }
 #endif
-            if (argc > 8 && strcasecmp(argv[8], "n") == 0) {
+            if ((argc > 8 && strcasecmp(argv[8], "--changeOwner") != 0) ||
+                    (argc > 9 && strcasecmp(argv[9], "--changeOwner") != 0)) {
                 am_free(uid);
                 am_free(gid);
                 uid = NULL;
@@ -2105,33 +2114,33 @@ int main(int argc, char **argv) {
     fprintf(stdout, "\n%s\n"
             "Usage: agentadmin <option> [<arguments>]\n\n"
             "The available options are:\n\n"
-            "install agent instance:\n"
+            "Install agent instance:\n"
             " agentadmin --i\n\n"
-            "install agent instance (silent):\n"
+            "Install agent instance (silent):\n"
             " agentadmin --s \"web-server configuration file, directory or site parameter\" \\\n"
             "                \"OpenAM URL\" \"Agent URL\" \"realm\" \"agent user id\" \\\n"
-            "                \"path to the agent password file\"\n\n"
-            "list configured agent instances:\n"
+            "                \"path to the agent password file\" [--changeOwner] [--acceptLicence]\n\n"
+            "List configured agent instances:\n"
             " agentadmin --l\n\n"
 #ifdef _WIN32
-            "list IIS Server Sites:\n"
+            "List IIS Server Sites:\n"
             " agentadmin --n\n\n"
-            "remove agent module from IIS Server:\n"
+            "Remove agent module from IIS Server:\n"
             " agentadmin --g\n\n"
-            "enable agent module in IIS Server site:\n"
+            "Enable agent module in IIS Server site:\n"
             " agentadmin --e agent_1\n\n"
-            "disable agent module in IIS Server site:\n"
+            "Disable agent module in IIS Server site:\n"
             " agentadmin --d agent_1\n\n"
-            "modify Access Control Lists (ACLs) for files and folders:\n"
+            "Modify Access Control Lists (ACLs) for files and folders:\n"
             " agentadmin --o \"IIS APPPOOL\\AgentSite\" \"C:\\web_agents\\iis_agent\\instances\"\n\n"
 #endif
-            "uninstall agent instance:\n"
+            "Uninstall agent instance:\n"
             " agentadmin --r agent_1\n\n"
-            "generate encryption key:\n"
+            "Generate encryption key:\n"
             " agentadmin --k\n\n"
-            "encrypt password:\n"
+            "Encrypt password:\n"
             " agentadmin --p \"key\" \"password\"\n\n"
-            "build and version information:\n"
+            "Build and version information:\n"
             " agentadmin --v\n\n", DESCRIPTION);
 
     return 0;
