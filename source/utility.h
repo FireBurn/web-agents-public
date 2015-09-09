@@ -334,7 +334,7 @@ void update_agent_configuration_normalise_map_urls(am_config_t *c);
 char *get_global_name(const char *name, int id);
 am_bool_t validate_directory_access(const char *path, int mask);
 
-typedef struct map_entry * property_map_t;
+typedef struct property_map property_map_t;
 property_map_t * property_map_create();
 void property_map_parse(property_map_t * map, char * source, am_bool_t override, void (* logf)(const char * format, ...), char * data, size_t data_sz);
 char * property_map_get_value(property_map_t * map, const char * key);

@@ -719,35 +719,45 @@ static void check_if_quit_wanted(char* input) {
     }
 }
 
+static am_bool_t get_yes_or_no(char * prompt, am_bool_t *response) {
+    am_bool_t valid_response = AM_TRUE;
+    char * input = prompt_and_read(prompt);
+    check_if_quit_wanted(input);
+    
+    if (! ISVALID(input)) {
+        *response = AM_TRUE;
+    } else if (strcasecmp(input, "yes") == 0) {
+        *response = AM_TRUE;
+    } else if (strcasecmp(input, "no") == 0) {
+        *response = AM_FALSE;
+    } else {
+        valid_response = AM_FALSE;
+    }
+    
+    am_free(input);
+    return valid_response;
+}
+
 /**
  * Get confirmation of a property setting
  */
 static am_bool_t get_confirmation(const char *fmt, ...) {
-    char *input;
-    enum { YES, NO, UNSET } response = UNSET;
+    am_bool_t response = AM_TRUE, valid_response = AM_FALSE;
     
-    while (response == UNSET) {
+    do {
         va_list va;
         va_start(va, fmt);
         vprintf(fmt, va);
         va_end(va);
         
-        input = prompt_and_read("Confirm this setting (Yes/No) [Yes]:");
-        check_if_quit_wanted(input);
-        
-        if (! ISVALID(input)) {
-            response = YES;
-        } else if (strcasecmp(input, "yes") == 0) {
-            response = YES;
-        } else if (strcasecmp(input, "no") == 0) {
-            response = NO;
-        } else {
+        valid_response = get_yes_or_no("Confirm this setting (Yes/No, q to quit) [Yes]:", &response);
+        if (! valid_response) {
             printf("Please answer yes or no\n");
         }
         
-        am_free(input);
-    }
-    return response == YES;
+    } while (! valid_response);
+    
+    return response;
 }
 
 
@@ -1146,6 +1156,8 @@ static void install_interactive(int argc, char **argv) {
     am_net_init();
     
     do {
+        am_bool_t upgrade = AM_FALSE;
+        
         property_map = property_map_create();
         if (property_map == NULL) {
             install_log("unable to allocate property map");
@@ -1166,10 +1178,15 @@ static void install_interactive(int argc, char **argv) {
             }
             check_if_quit_wanted(input);
             data = load_file(input, &data_sz);
+            if (data) {
+                install_log("loaded configuration from file ", input);
+            }
             am_free(input);
             
             if (data) {
                 char* v;
+                upgrade = AM_TRUE;
+                
                 /*
                  * get installer parameters from exiting configuration
                  */
@@ -1188,7 +1205,7 @@ static void install_interactive(int argc, char **argv) {
                     int c = 0;
                     
                     if (!ISVALID(dst)) {
-                        install_log("unable to allocate memory for OpenAM URL");
+                        install_log("unable to allocate memory for naming URL list");
                         break;
                     }
                     /* reset any user input */
@@ -1196,7 +1213,7 @@ static void install_interactive(int argc, char **argv) {
                     
                     for (s = strtok_r(v, " ", &brkt); s; s = strtok_r(0, " ", &brkt)) {
                         if (c) {
-                            dst [ofs++] = ' ';                  /* add separator to dst */
+                            dst[ofs++] = ' ';                  /* add separator to dst */
                         }
                         e = strstr(s, "/namingservice");        /* strip the namingservice component if there is one */
                         if (e == NULL) {
@@ -1209,8 +1226,10 @@ static void install_interactive(int argc, char **argv) {
                             openam_url = strndup(s, e - s);     /* this first one is OpenAM URL */
                         }
                     }
-                    dst [ofs++] = '\0';
+                    dst[ofs++] = '\0';
                     
+                    install_log("setting the naming URL list to %s", dst);
+
                     /* replace the tokenized value with the modified result */
                     addr = property_map_get_value_addr(property_map, "com.sun.identity.agents.config.naming.url");
                     if (*addr) {
@@ -1242,12 +1261,8 @@ static void install_interactive(int argc, char **argv) {
                     agent_user = strdup(v);
                 }
                 
-                /* password */
-                if ( (v = property_map_get_value(property_map, "com.sun.identity.agents.config.password")) ) {
-                    AM_FREE(agent_password, agent_password_source);
-                    agent_password_source = strdup("configuration");
-                    agent_password = strdup(v);
-                }
+                /* password cannot be preserved because the cypher is not compatible */
+                property_map_remove_key(property_map, "com.sun.identity.agents.config.password");
                 break;
             }
             fprintf(stdout, "Error: unable to open the configuration file\nPlease try again.\n");
@@ -1261,7 +1276,7 @@ static void install_interactive(int argc, char **argv) {
             int httpcode = 0;
             struct url parsed_url;
             
-            if (ISVALID(openam_url)) {
+            if (!upgrade && ISVALID(openam_url)) {
                 if (!get_confirmation("\nOpenAM server URL: %s\n", openam_url)) {
                     RESET_INPUT_STRING(openam_url);
                 }
@@ -1284,14 +1299,27 @@ static void install_interactive(int argc, char **argv) {
             if (parse_url(openam_url, &parsed_url) == AM_ERROR) {
                 fprintf(stdout, "That OpenAM URL (%s) doesn't appear to be valid\n", openam_url);
                 install_log("parse_url fails the OpenAM URL \"%s\"", openam_url);
-                continue;
-            }
-            /* must be able to connect to OpenAM server during installation */
-            if (am_url_validate(0, openam_url, NULL, &httpcode, install_log) == AM_SUCCESS) {
+            } else if (am_url_validate(0, openam_url, NULL, &httpcode, install_log) == AM_SUCCESS) {
                 break;
+            } else {
+                fprintf(stdout, "Cannot connect to OpenAM at URI %s, please make sure OpenAM is started\n", openam_url);
+                install_log("OpenAM at %s cannot be contacted (invalid, or not running)", openam_url);
             }
-            fprintf(stdout, "Cannot connect to OpenAM at URI %s, please make sure OpenAM is started\n", openam_url);
-            install_log("OpenAM at %s cannot be contacted (invalid, or not running)", openam_url);
+            
+            /* must be able to connect to OpenAM server during installation */
+            if (upgrade) {
+                am_bool_t continue_upgrade = AM_FALSE;
+                /* we must suspend the installation until the agent is shut down */
+                while (!get_yes_or_no("\nPlease make sure OpenAM is started and the OpenAM URL is correct.\n"
+                                      "Continue upgrade (Yes/No, q to quit) [Yes]: ", &continue_upgrade)) {
+                    printf("Please answer yes or no\n");
+                }
+                if (! continue_upgrade) {
+                    install_log("installation exit because OpenAM is not running");
+                    fprintf(stdout, "Exiting installation\n.");
+                    exit(1);
+                }
+            }
 
         } while (1);
         
@@ -1301,7 +1329,7 @@ static void install_interactive(int argc, char **argv) {
         do {
             struct url parsed_url;
             int httpcode = 0;
-            if (ISVALID(agent_url)) {
+            if (!upgrade && ISVALID(agent_url)) {
                 if (! get_confirmation("\nAgent URL: %s\n", agent_url)) {
                     RESET_INPUT_STRING(agent_url);
                 }
@@ -1322,12 +1350,14 @@ static void install_interactive(int argc, char **argv) {
             if (parse_url(agent_url, &parsed_url) == AM_ERROR) {
                 fprintf(stdout, "That Agent URL (%s) doesn't appear to be valid\n", agent_url);
                 install_log("parse_url fails the Agent URL \"%s\"", agent_url);
+                RESET_INPUT_STRING(agent_url);
                 continue;
             }
-            /* only Apache server needs to be shut down prior agent installation */
+            /* only apache needs to be shut down before installation */
             if (instance_type != AM_I_APACHE) {
                 break;
             }
+
             if (am_url_validate(0, input, NULL, &httpcode, install_log) != AM_SUCCESS) {
                 /* hopefully we cannot contact because the agent is not running,
                  * rather than because the URI is complete rubbish
@@ -1337,13 +1367,27 @@ static void install_interactive(int argc, char **argv) {
             fprintf(stdout, "The Agent at URI %s should be stopped before installation", input);
             install_log("Agent URI %s rejected because agent is running", input);
             
+            if (upgrade) {
+                /* we must suspend the installation until the agent is shut down */
+                am_bool_t continue_upgrade = AM_FALSE;
+                while (!get_yes_or_no("\nPlease shut down the apache server to continue upgrade.\n"
+                                      "Continue upgrade (Yes/No, q to quit) [Yes]: ", &continue_upgrade)) {
+                    printf("Please answer yes or no\n");
+                }
+                if (! continue_upgrade) {
+                    install_log("installation exit because apache is running");
+                    fprintf(stdout, "Exiting installation.\n");
+                    exit(1);
+                }
+            }
+            
         } while (1);
 
         /**
          * The agent profile name.  There is no way to verify this, unless we can contact OpenAM,
          * and we haven't connected in a meaningful way yet.
          */
-        if (ISVALID(agent_user)) {
+        if (!upgrade && ISVALID(agent_user)) {
             if (! get_confirmation("\nAgent profile name: %s\n", agent_user)) {
                 RESET_INPUT_STRING(agent_user);
             }
@@ -1363,7 +1407,7 @@ static void install_interactive(int argc, char **argv) {
         /**
          * The realm.  Again no way to verify without connecting to OpenAM.
          */
-        if (ISVALID(agent_realm)) {
+        if (!upgrade && ISVALID(agent_realm)) {
             if (! get_confirmation("\nAgent realm: %s\n", agent_realm)) {
                 RESET_INPUT_STRING(agent_realm);
             }
@@ -1442,7 +1486,7 @@ static void install_interactive(int argc, char **argv) {
     rv = am_agent_login(0, openam_url, NULL,
             agent_user, agent_password, agent_realm, AM_TRUE, 0, NULL,
             &agent_token, NULL, NULL, NULL, install_log);
-    
+
     if (rv != AM_SUCCESS) {
         fprintf(stdout, "\nError validating OpenAM - Agent configuration.\n"
                 "See installation log %s file for more details. Exiting.\n", log_path);

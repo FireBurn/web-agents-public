@@ -648,12 +648,16 @@ static void test_logf(const char * format, ...) {
     va_end(ap);
 }
 
+/*
+ * this test is disabled by not using the required parameter
+ *
+ */
 void test_property_map_load() {
-    const char * wpa3boot = "/Users/nick/Downloads/OpenSSOAgentBootstrap.template.txt";
-    const char * wpa3config = "/Users/nick/Downloads/OpenSSOAgentConfiguration.template.txt";
-    const char * wpa4boot = "/Users/nick/Documents/Code/AM/review/agents-update/commit/policy-agents/config/agent.conf.template";
+    const char * wpa3boot = "OpenSSOAgentBootstrap.properties";
+    const char * wpa3config = "OpenSSOAgentConfiguration.properties";
+    const char * wpa4boot = "agent.conf";
     
-    struct map_entry ** map = property_map_create();
+    property_map_t *map = property_map_create();
     
     size_t data_sz;
     char * data;
@@ -675,13 +679,14 @@ void test_property_map_load() {
     
     data = property_map_write_to_buffer(map, &data_sz);
     printf("written %zu\n", data_sz);
+    printf("%s\n", data);
     free(data);
     
     property_map_delete(map);
 }
 
 void test_property_map_overrides(void ** state) {
-    struct map_entry ** map = property_map_create();
+    property_map_t *map = property_map_create();
     
     size_t data_sz;
     char * data;
@@ -731,7 +736,7 @@ static am_bool_t test_property_counter(char * key, char * value, void * data) {
 }
 
 void test_property_map_basics(void ** state) {
-    struct map_entry ** map = property_map_create();
+    property_map_t *map = property_map_create();
     
     size_t data_sz;
     char * data;
@@ -764,7 +769,7 @@ void test_property_map_key_remove(void **state) {
 #define KEY_REMOVE_TEST_ITERATIONS 10000
 #define KEY_REMOVE_BUFFER_SIZE 5
     
-    struct map_entry **map = property_map_create();
+    property_map_t *map = property_map_create();
     
     void create_random_cache_key(char *buffer, size_t size);
     
