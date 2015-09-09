@@ -28,6 +28,12 @@
 #endif
 
 #ifdef _WIN32
+#ifndef LOAD_LIBRARY_SEARCH_USER_DIRS
+#define LOAD_LIBRARY_SEARCH_USER_DIRS 0x00000400
+#endif
+typedef DLL_DIRECTORY_COOKIE(WINAPI *ADD_DLL_PROC)(PCWSTR);
+typedef BOOL(WINAPI *REMOVE_DLL_PROC)(DLL_DIRECTORY_COOKIE);
+static DLL_DIRECTORY_COOKIE dll_directory_cookie = 0;
 static INIT_ONCE ssl_lib_initialized = INIT_ONCE_STATIC_INIT;
 static CRITICAL_SECTION *ssl_mutexes = NULL;
 #else
@@ -76,6 +82,7 @@ static struct ssl_func ssl_sw[] = {
     {"SSL_state_string", NULL},
     {"SSL_state_string_long", NULL},
     {"SSL_state", NULL},
+    {"SSL_load_error_strings", NULL},
 #ifndef _WIN32
     {"BIO_s_mem", NULL},
     {"BIO_new", NULL},
@@ -134,6 +141,8 @@ static struct ssl_func crypto_sw[] = {
 #define SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER 0x2
 #define BIO_C_SET_BUF_MEM_EOF_RETURN 130
 #define BIO_CTRL_PENDING 10
+#define SSL_SESS_CACHE_OFF 0x0000
+#define SSL_CTRL_SET_SESS_CACHE_MODE 44
 
 typedef struct ssl_st SSL;
 typedef struct ssl_ctx_st SSL_CTX;
@@ -180,12 +189,13 @@ typedef struct bio_method_st BIO_METHOD;
 #define SSL_state_string (* (const char * (*)(const SSL *)) ssl_sw[30].ptr)
 #define SSL_state_string_long (* (const char * (*)(const SSL *)) ssl_sw[31].ptr)
 #define SSL_state (* (int (*)(const SSL *)) ssl_sw[32].ptr)
+#define SSL_load_error_strings (* (void (*)(void)) ssl_sw[33].ptr)
 #ifndef _WIN32
-#define BIO_s_mem (* (BIO_METHOD * (*)(void)) ssl_sw[33].ptr)
-#define BIO_new (* (BIO * (*)(BIO_METHOD *)) ssl_sw[34].ptr)
-#define BIO_write (* (int (*)(BIO *, const void *, int)) ssl_sw[35].ptr)
-#define BIO_read (* (int (*)(BIO *, void *, int)) ssl_sw[36].ptr)
-#define BIO_ctrl (* (long (*)(BIO *, int, long, void *)) ssl_sw[37].ptr)
+#define BIO_s_mem (* (BIO_METHOD * (*)(void)) ssl_sw[34].ptr)
+#define BIO_new (* (BIO * (*)(BIO_METHOD *)) ssl_sw[35].ptr)
+#define BIO_write (* (int (*)(BIO *, const void *, int)) ssl_sw[36].ptr)
+#define BIO_read (* (int (*)(BIO *, void *, int)) ssl_sw[37].ptr)
+#define BIO_ctrl (* (long (*)(BIO *, int, long, void *)) ssl_sw[38].ptr)
 #endif
 
 #define CRYPTO_num_locks (* (int (*)(void)) crypto_sw[0].ptr)
@@ -249,7 +259,8 @@ static void *load_library(const char *lib, struct ssl_func *sw) {
             , NOTNULL(lib));
 
 #ifdef _WIN32
-    if ((lib_handle = (void *) LoadLibrary(name)) == NULL) {
+    if ((lib_handle = (void *) LoadLibraryExA(name, NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)) == NULL) {
+        fprintf(stderr, "init_ssl(): %s is not available (error: %d)\n", name, GetLastError());
         return NULL;
     }
 #else
@@ -270,6 +281,7 @@ static void *load_library(const char *lib, struct ssl_func *sw) {
     }
 #endif
     if (lib_handle == NULL) {
+        fprintf(stderr, "init_ssl(): %s is not available\n", name);
         return NULL;
     }
 #endif
@@ -278,6 +290,7 @@ static void *load_library(const char *lib, struct ssl_func *sw) {
     for (fp = sw; fp->name != NULL; fp++) {
         u.p = get_function(lib_handle, fp->name);
         if (u.fp == NULL) {
+            fprintf(stderr, "init_ssl(): failed to load %s\n", fp->name);
             for (; fpd->name != NULL; fpd++) {
                 fpd->ptr = NULL;
             }
@@ -289,18 +302,25 @@ static void *load_library(const char *lib, struct ssl_func *sw) {
     return lib_handle;
 }
 
-static void show_server_cert(am_net_t *n) {
+static void show_server_cert(am_net_t *net) {
+    static const char *thisfunc = "show_server_cert():";
     X509 *cert;
     char *line;
-    cert = SSL_get_peer_certificate(n->ssl.ssl_handle);
+    cert = SSL_get_peer_certificate(net->ssl.ssl_handle);
     if (cert != NULL) {
         line = X509_NAME_oneline(X509_get_subject_name(cert), 0, 0);
-        AM_LOG_DEBUG(n->instance_id,
-                "show_server_cert(): server certificate subject: %s", LOGEMPTY(line));
+        AM_LOG_DEBUG(net->instance_id,
+                "%s server certificate subject: %s", LOGEMPTY(line));
+        if (net->log != NULL) {
+            net->log("%s server certificate subject: %s", thisfunc, LOGEMPTY(line));
+        }
         am_free(line);
         line = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0);
-        AM_LOG_DEBUG(n->instance_id,
-                "show_server_cert(): server certificate issuer: %s", LOGEMPTY(line));
+        AM_LOG_DEBUG(net->instance_id,
+                "%s server certificate issuer: %s", LOGEMPTY(line));
+        if (net->log != NULL) {
+            net->log("%s server certificate issuer: %s", thisfunc, LOGEMPTY(line));
+        }
         am_free(line);
         X509_free(cert);
     }
@@ -313,17 +333,25 @@ static int password_callback(char *buf, int size, int rwflag, void *passwd) {
 }
 
 static const char *read_ssl_error() {
+    static AM_THREAD_LOCAL char err_buff[121];
     unsigned long err = ERR_get_error();
-    return err == 0 ? "" : LOGEMPTY(ERR_error_string(err, NULL));
+    return err == 0 ? am_strerror(AM_SUCCESS) : LOGEMPTY(ERR_error_string(err, err_buff));
 }
 
-static char ssl_is_fatal_error(int ssl_error) {
+static char ssl_is_fatal_error(am_net_t *net, int ssl_error) {
+    static const char *thisfunc = "net_ssl_error():";
+    char *error_string;
     switch (ssl_error) {
         case SSL_ERROR_NONE:
         case SSL_ERROR_WANT_READ:
         case SSL_ERROR_WANT_WRITE:
             return 0;
     }
+    error_string = (char *) read_ssl_error();
+    if (net->log != NULL) {
+        net->log("%s %s", thisfunc, error_string);
+    }
+    AM_LOG_ERROR(net->instance_id, "%s %s", thisfunc, error_string);
     return 1;
 }
 
@@ -363,12 +391,28 @@ init_ssl(
 #endif
         ) {
     int i, size;
+
+#ifdef _WIN32
+    ADD_DLL_PROC add_directory =
+            (ADD_DLL_PROC) GetProcAddress(GetModuleHandleA("kernel32.dll"), "AddDllDirectory");
+    if (add_directory != NULL) {
+        wchar_t dll_path[AM_URI_SIZE];
+        if (GetModuleFileNameW(NULL, dll_path, sizeof (dll_path) - 1) > 0) {
+            PathRemoveFileSpecW(dll_path); /* remove exe part */
+            PathRemoveFileSpecW(dll_path); /* remove bin part */
+            wcscat(dll_path, L"\\lib");
+            dll_directory_cookie = ((ADD_DLL_PROC) add_directory)(dll_path);
+        }
+    }
+#endif
+
     ssl_lib = load_library(AM_SSL_LIB, ssl_sw);
     crypto_lib = load_library(AM_CRYPTO_LIB, crypto_sw);
     if (ssl_lib != NULL && crypto_lib != NULL &&
-            CRYPTO_set_mem_functions && SSL_library_init && CRYPTO_num_locks &&
+            CRYPTO_set_mem_functions && SSL_library_init && SSL_load_error_strings && CRYPTO_num_locks &&
             CRYPTO_set_id_callback && CRYPTO_set_locking_callback && OPENSSL_add_all_algorithms_noconf) {
         CRYPTO_set_mem_functions(malloc, realloc, free);
+        SSL_load_error_strings();
         SSL_library_init();
 #ifdef _WIN32
         size = sizeof (CRITICAL_SECTION) * CRYPTO_num_locks();
@@ -439,9 +483,21 @@ void net_shutdown_ssl() {
     if (crypto_lib != NULL) close_library(crypto_lib);
     ssl_lib = NULL;
     crypto_lib = NULL;
+
+#ifdef _WIN32
+    if (dll_directory_cookie) {
+        REMOVE_DLL_PROC remove_directory =
+                (REMOVE_DLL_PROC) GetProcAddress(GetModuleHandleA("kernel32.dll"), "RemoveDllDirectory");
+        if (remove_directory != NULL) {
+            ((REMOVE_DLL_PROC) remove_directory)(dll_directory_cookie);
+        }
+        dll_directory_cookie = 0;
+    }
+#endif
 }
 
 static void write_bio_to_socket(am_net_t *n) {
+    static const char *thisfunc = "write_bio_to_socket():";
     char *buf, *p;
     int len, remaining, hasread, pending;
 
@@ -464,6 +520,12 @@ static void write_bio_to_socket(am_net_t *n) {
 #else
                     n->ssl.sys_error = errno;
 #endif
+                    if (n->ssl.sys_error != 0) {
+                        if (n->log != NULL) {
+                            n->log("%s error %d", thisfunc, n->ssl.sys_error);
+                        }
+                        AM_LOG_ERROR(n->instance_id, "%s error %d", thisfunc, n->ssl.sys_error);
+                    }
                     free(buf);
                     return;
                 }
@@ -490,6 +552,21 @@ void net_close_ssl(am_net_t *n) {
     n->ssl.on = AM_FALSE;
 }
 
+static void net_ssl_msg_callback(int writep, int version, int content_type,
+        const void *buf, size_t len, SSL *ssl, void *arg) {
+    static const char *thisfunc = "net_ssl_msg_callback():";
+    am_net_t *net = (am_net_t *) arg;
+    if (net->log != NULL) {
+        net->log("%s %s (%s)", thisfunc,
+                SSL_state_string_long(ssl), SSL_state_string(ssl));
+    }
+    AM_LOG_DEBUG(net->instance_id, "%s %s (%s)",
+            thisfunc, SSL_state_string_long(ssl), SSL_state_string(ssl));
+    if (strstr(SSL_state_string_long(ssl), "read server key exchange") != NULL) {
+        show_server_cert(net);
+    }
+}
+
 void net_connect_ssl(am_net_t *n) {
     static const char *thisfunc = "net_connect_ssl():";
     int status = -1, err = 0;
@@ -498,21 +575,32 @@ void net_connect_ssl(am_net_t *n) {
         n->ssl.error = AM_SUCCESS;
 
         /*check whether we have ssl library loaded and symbols are available*/
-        if (SSL_CTX_new == NULL || SSLv23_client_method == NULL ||
+        if (SSL_CTX_new == NULL || SSLv23_client_method == NULL || SSL_CTX_set_msg_callback == NULL ||
                 SSL_CTX_ctrl == NULL || BIO_new == NULL || BIO_s_mem == NULL ||
                 SSL_set_bio == NULL || SSL_set_connect_state == NULL ||
                 SSL_do_handshake == NULL || SSL_new == NULL || SSL_get_error == NULL) {
+            AM_LOG_WARNING(n->instance_id, "%s no SSL support is available", thisfunc);
             n->ssl.error = AM_ENOSSL;
             return;
         }
 
         n->ssl.ssl_context = SSL_CTX_new(SSLv23_client_method());
+        if (n->ssl.ssl_context == NULL) {
+            AM_LOG_ERROR(n->instance_id, "%s failed to create a new SSL context, error: %s",
+                    thisfunc, read_ssl_error());
+            n->ssl.error = AM_ENOMEM;
+            return;
+        }
 
         SSL_CTX_ctrl(n->ssl.ssl_context, SSL_CTRL_OPTIONS, SSL_OP_NO_SSLv2, NULL);
         SSL_CTX_ctrl(n->ssl.ssl_context, SSL_CTRL_MODE,
                 SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER, NULL);
+        SSL_CTX_ctrl(n->ssl.ssl_context, SSL_CTRL_SET_SESS_CACHE_MODE, SSL_SESS_CACHE_OFF, NULL);
 
-        /* TODO: SSL_MODE_AUTO_RETRY, SSL_SESS_CACHE_OFF, SSL_OP_NO_TICKET */
+        /* TODO: SSL_OP_NO_TICKET */
+
+        SSL_CTX_ctrl(n->ssl.ssl_context, SSL_CTRL_SET_MSG_CALLBACK_ARG, 0, n);
+        SSL_CTX_set_msg_callback(n->ssl.ssl_context, net_ssl_msg_callback);
 
         if (ISVALID(n->ssl.info.tls_opts)) {
             char *v, *t, *c = strdup(n->ssl.info.tls_opts);
@@ -597,12 +685,15 @@ void net_connect_ssl(am_net_t *n) {
                 write_bio_to_socket(n);
                 if (status != 1) {
                     err = SSL_get_error(n->ssl.ssl_handle, status);
-                    if (!ssl_is_fatal_error(err)) {
+                    if (!ssl_is_fatal_error(n, err)) {
                         write_bio_to_socket(n);
                     }
                 }
                 n->ssl.on = AM_TRUE;
             }
+        } else {
+            AM_LOG_ERROR(n->instance_id, "%s failed to create a SSL handle for a connection, error: %s",
+                    thisfunc, read_ssl_error());
         }
     }
 }
@@ -626,7 +717,7 @@ static int read_data_after_handshake(am_net_t *n) {
         }
         if (ret < 0) {
             err = SSL_get_error(n->ssl.ssl_handle, ret);
-            if (!ssl_is_fatal_error(err)) {
+            if (!ssl_is_fatal_error(n, err)) {
                 write_bio_to_socket(n);
                 free(buf);
                 return AM_EAGAIN;
@@ -652,7 +743,7 @@ void net_write_ssl(am_net_t *n) {
         }
         if (ret < 0) {
             err = SSL_get_error(n->ssl.ssl_handle, ret);
-            if (!ssl_is_fatal_error(err)) {
+            if (!ssl_is_fatal_error(n, err)) {
                 write_bio_to_socket(n);
             }
             break;
@@ -676,7 +767,7 @@ int net_read_ssl(am_net_t *n, const char *buf, int sz) {
         write_bio_to_socket(n);
         if (ret != 1) {
             err = SSL_get_error(n->ssl.ssl_handle, ret);
-            if (!ssl_is_fatal_error(err)) {
+            if (!ssl_is_fatal_error(n, err)) {
                 write_bio_to_socket(n);
             }
         } else {
