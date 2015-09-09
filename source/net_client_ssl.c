@@ -310,14 +310,14 @@ static void show_server_cert(am_net_t *net) {
     if (cert != NULL) {
         line = X509_NAME_oneline(X509_get_subject_name(cert), 0, 0);
         AM_LOG_DEBUG(net->instance_id,
-                "%s server certificate subject: %s", LOGEMPTY(line));
+                "%s server certificate subject: %s", thisfunc, LOGEMPTY(line));
         if (net->log != NULL) {
             net->log("%s server certificate subject: %s", thisfunc, LOGEMPTY(line));
         }
         am_free(line);
         line = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0);
         AM_LOG_DEBUG(net->instance_id,
-                "%s server certificate issuer: %s", LOGEMPTY(line));
+                "%s server certificate issuer: %s", thisfunc, LOGEMPTY(line));
         if (net->log != NULL) {
             net->log("%s server certificate issuer: %s", thisfunc, LOGEMPTY(line));
         }
