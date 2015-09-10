@@ -691,12 +691,13 @@ void test_property_map_overrides(void ** state) {
     size_t data_sz;
     char * data;
     
-    data = "a.b.0 = 0\r\na.b.1 = 1\r\n";
+    data = "a.b.0 = 0\r\na.b.1 = 1\r\na.b.empty =\r\n";
     data_sz = strlen(data);
     property_map_parse(map, "phase 1", AM_TRUE, test_logf, data, data_sz);
     
     assert_string_equal(property_map_get_value(map, "a.b.0"), "0");
     assert_string_equal(property_map_get_value(map, "a.b.1"), "1");
+    assert_string_equal(property_map_get_value(map, "a.b.empty"), "");
     
     // new value ok, change doesn't override
     data = "a.b.2 = 2\r\na.b.1 = override\r\n";

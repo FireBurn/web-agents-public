@@ -229,13 +229,13 @@ static void property_map_parse_line(struct property_map *map, char *source, am_b
             if (override) {
                 p->value = strndup(value, value_ln);
                 if (strcmp(old_value, p->value)) {
-                    logf("%s property %s updates value '%s' to '%s'\n", source, p->key, old_value, p->value);
+                    logf("%s property %s updates value '%s' to '%s'\n", source, LOGEMPTY(p->key), old_value, LOGEMPTY(p->value));
                 }
                 free(old_value);
             }
         } else {
             p->value = strndup(value, value_ln);
-            logf("%s property %s set to '%s'\n", source, p->key, p->value);
+            logf("%s property %s set to '%s'\n", source, LOGEMPTY(p->key), LOGEMPTY(p->value));
         }
     } else {
         size_t text_ln;
@@ -289,7 +289,11 @@ char *property_map_write_to_buffer(struct property_map *map, size_t *data_sz) {
                 break;
                 
             case property:
-                len = (size_t) am_asprintf(&buffer, "%s%s = %s\r\n", buffer, e->key, e->value);
+                if (e->value) {
+                    len = (size_t) am_asprintf(&buffer, "%s%s = %s\r\n", buffer, e->key, e->value);
+                } else {
+                    len = (size_t) am_asprintf(&buffer, "%s%s = \r\n", buffer, e->key);
+                }
                 if (buffer == NULL) {
                     * data_sz = 0;
                     return NULL;
