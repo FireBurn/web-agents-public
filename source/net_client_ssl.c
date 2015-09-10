@@ -83,6 +83,7 @@ static struct ssl_func ssl_sw[] = {
     {"SSL_state_string_long", NULL},
     {"SSL_state", NULL},
     {"SSL_load_error_strings", NULL},
+    {"SSL_CTX_set_verify_depth", NULL},
 #ifndef _WIN32
     {"BIO_s_mem", NULL},
     {"BIO_new", NULL},
@@ -190,12 +191,13 @@ typedef struct bio_method_st BIO_METHOD;
 #define SSL_state_string_long (* (const char * (*)(const SSL *)) ssl_sw[31].ptr)
 #define SSL_state (* (int (*)(const SSL *)) ssl_sw[32].ptr)
 #define SSL_load_error_strings (* (void (*)(void)) ssl_sw[33].ptr)
+#define SSL_CTX_set_verify_depth (* (void (*)(SSL_CTX *, int)) ssl_sw[34].ptr)
 #ifndef _WIN32
-#define BIO_s_mem (* (BIO_METHOD * (*)(void)) ssl_sw[34].ptr)
-#define BIO_new (* (BIO * (*)(BIO_METHOD *)) ssl_sw[35].ptr)
-#define BIO_write (* (int (*)(BIO *, const void *, int)) ssl_sw[36].ptr)
-#define BIO_read (* (int (*)(BIO *, void *, int)) ssl_sw[37].ptr)
-#define BIO_ctrl (* (long (*)(BIO *, int, long, void *)) ssl_sw[38].ptr)
+#define BIO_s_mem (* (BIO_METHOD * (*)(void)) ssl_sw[35].ptr)
+#define BIO_new (* (BIO * (*)(BIO_METHOD *)) ssl_sw[36].ptr)
+#define BIO_write (* (int (*)(BIO *, const void *, int)) ssl_sw[37].ptr)
+#define BIO_read (* (int (*)(BIO *, void *, int)) ssl_sw[38].ptr)
+#define BIO_ctrl (* (long (*)(BIO *, int, long, void *)) ssl_sw[39].ptr)
 #endif
 
 #define CRYPTO_num_locks (* (int (*)(void)) crypto_sw[0].ptr)
@@ -669,6 +671,7 @@ void net_connect_ssl(am_net_t *n) {
             SSL_CTX_set_verify(n->ssl.ssl_context, SSL_VERIFY_NONE, NULL);
         } else {
             SSL_CTX_set_verify(n->ssl.ssl_context, SSL_VERIFY_PEER, NULL);
+            SSL_CTX_set_verify_depth(n->ssl.ssl_context, 100);
         }
 
         n->ssl.ssl_handle = SSL_new(n->ssl.ssl_context);

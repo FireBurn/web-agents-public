@@ -50,6 +50,12 @@
 #define AM_INSTALL_AGENT_FQDN "AM_AGENT_FQDN"
 #define AM_INSTALL_CONF_PATH "AM_AGENT_CONF_PATH"
 #define AM_INSTALL_PDP_PATH "AM_PDP_TEMP_PATH"
+#define AM_INSTALL_SSL_KEY "AM_SSL_KEY"
+#define AM_INSTALL_SSL_CERT "AM_SSL_CERT"
+#define AM_INSTALL_SSL_CA "AM_SSL_CA"
+#define AM_INSTALL_SSL_CIPHERS "AM_SSL_CIPHERS"
+#define AM_INSTALL_SSL_OPTIONS "AM_SSL_OPTIONS"
+#define AM_INSTALL_SSL_KEY_PASSWORD "AM_SSL_PASSWORD"
 
 #define RESET_INPUT_STRING(s) do { am_free(s); s = NULL; } while (0)
 
@@ -101,6 +107,7 @@ static char instance_path[AM_URI_SIZE];
 static char instance_config[AM_URI_SIZE];
 static char config_template[AM_URI_SIZE];
 static char instance_config_template[AM_URI_SIZE];
+static struct am_ssl_options ssl_info;
 
 static const char* agent_4x_obsolete_properties [] =
 {
@@ -121,6 +128,15 @@ static const char* agent_4x_obsolete_properties [] =
     "com.sun.identity.agents.config.forward.proxy.password",
     "com.sun.identity.agents.config.profilename",
     0
+};
+
+static const char *ssl_variables[] = {
+    AM_INSTALL_SSL_KEY,
+    AM_INSTALL_SSL_CERT,
+    AM_INSTALL_SSL_CA,
+    AM_INSTALL_SSL_CIPHERS,
+    AM_INSTALL_SSL_OPTIONS,
+    AM_INSTALL_SSL_KEY_PASSWORD
 };
 
 static void install_log(const char *format, ...) {
@@ -400,6 +416,7 @@ static int create_agent_instance(int status,
             struct url u;
             char* encoded;
             char* password;
+            char* tmp;
             char key[37];
             size_t sz = 16;
 
@@ -477,7 +494,7 @@ static int create_agent_instance(int status,
                 }
             }
             am_free(password);
-            am_free(encoded);
+            password = NULL;
             if (rv != AM_SUCCESS) {
                 break;
             }
@@ -504,6 +521,102 @@ static int create_agent_instance(int status,
                 break;
             }
 
+            if (ISVALID(ssl_info.cert_key_file)) {
+                tmp = ssl_info.cert_key_file;
+                install_log("updating %s with %s", AM_INSTALL_SSL_KEY, tmp);
+            } else {
+                tmp = AM_SPACE_CHAR;
+                install_log("cleaning up %s", AM_INSTALL_SSL_KEY);
+            }
+            rv = string_replace(&agent_conf_template, AM_INSTALL_SSL_KEY, tmp, &agent_conf_template_sz);
+            if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_SSL_KEY, am_strerror(rv));
+                break;
+            }
+
+            if (ISVALID(ssl_info.cert_file)) {
+                tmp = ssl_info.cert_file;
+                install_log("updating %s with %s", AM_INSTALL_SSL_CERT, tmp);
+            } else {
+                tmp = AM_SPACE_CHAR;
+                install_log("cleaning up %s", AM_INSTALL_SSL_CERT);
+            }
+            rv = string_replace(&agent_conf_template, AM_INSTALL_SSL_CERT, tmp, &agent_conf_template_sz);
+            if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_SSL_CERT, am_strerror(rv));
+                break;
+            }
+
+            if (ISVALID(ssl_info.cert_ca_file)) {
+                tmp = ssl_info.cert_ca_file;
+                install_log("updating %s with %s", AM_INSTALL_SSL_CA, tmp);
+            } else {
+                tmp = AM_SPACE_CHAR;
+                install_log("cleaning up %s", AM_INSTALL_SSL_CA);
+            }
+            rv = string_replace(&agent_conf_template, AM_INSTALL_SSL_CA, tmp, &agent_conf_template_sz);
+            if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_SSL_CA, am_strerror(rv));
+                break;
+            }
+
+            if (ISVALID(ssl_info.ciphers)) {
+                tmp = ssl_info.ciphers;
+                install_log("updating %s with %s", AM_INSTALL_SSL_CIPHERS, tmp);
+            } else {
+                tmp = AM_SPACE_CHAR;
+                install_log("cleaning up %s", AM_INSTALL_SSL_CIPHERS);
+            }
+            rv = string_replace(&agent_conf_template, AM_INSTALL_SSL_CIPHERS, tmp, &agent_conf_template_sz);
+            if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_SSL_CIPHERS, am_strerror(rv));
+                break;
+            }
+
+            if (ISVALID(ssl_info.tls_opts)) {
+                tmp = ssl_info.tls_opts;
+                install_log("updating %s with %s", AM_INSTALL_SSL_OPTIONS, tmp);
+            } else {
+                tmp = AM_SPACE_CHAR;
+                install_log("cleaning up %s", AM_INSTALL_SSL_OPTIONS);
+            }
+            rv = string_replace(&agent_conf_template, AM_INSTALL_SSL_OPTIONS, tmp, &agent_conf_template_sz);
+            if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_SSL_OPTIONS, am_strerror(rv));
+                break;
+            }
+
+            if (ISVALID(ssl_info.cert_key_pass)) {
+                password = strdup(ssl_info.cert_key_pass);
+                if (password == NULL) {
+                    rv = AM_ENOMEM;
+                    break;
+                }
+
+                if (encrypt_password(encoded, &password) > 0) {
+                    install_log("updating %s with %s", AM_INSTALL_SSL_KEY_PASSWORD, password);
+                    rv = string_replace(&agent_conf_template, AM_INSTALL_SSL_KEY_PASSWORD, password, &agent_conf_template_sz);
+                    if (rv != AM_SUCCESS) {
+                        install_log("failed to update %s, %s", AM_INSTALL_SSL_KEY_PASSWORD, am_strerror(rv));
+                    }
+                }
+                am_free(password);
+                am_free(encoded);
+                encoded = NULL;
+                password = NULL;
+                if (rv != AM_SUCCESS) {
+                    break;
+                }
+            } else {
+                am_free(encoded);
+                install_log("cleaning up %s", AM_INSTALL_SSL_KEY_PASSWORD);
+                rv = string_replace(&agent_conf_template, AM_INSTALL_SSL_KEY_PASSWORD, AM_SPACE_CHAR, &agent_conf_template_sz);
+                if (rv != AM_SUCCESS) {
+                    install_log("failed to update %s, %s", AM_INSTALL_SSL_KEY_PASSWORD, am_strerror(rv));
+                    break;
+                }
+            }
+  
             /* remove obsolete properties */
             remove_obsolete_properties(property_map);
             
@@ -751,11 +864,11 @@ static am_bool_t get_confirmation(const char *fmt, ...) {
         va_end(va);
         
         valid_response = get_yes_or_no("Confirm this setting (Yes/No, q to quit) [Yes]:", &response);
-        if (! valid_response) {
+        if (!valid_response) {
             printf("Please answer yes or no\n");
         }
         
-    } while (! valid_response);
+    } while (!valid_response);
     
     return response;
 }
@@ -921,7 +1034,7 @@ static void find_group(char* httpd_conf_file, gid_t** gid) {
 static void install_interactive(int argc, char **argv) {
     int rv;
     int iis_status = 0;
-    char lic_accepted = AM_FALSE, validated = AM_FALSE;
+    am_bool_t lic_accepted = AM_FALSE, validated = AM_FALSE, am_validation_skipped = AM_FALSE;
     char* input = NULL;
     char* agent_token = NULL;
     char lic_file_path[AM_URI_SIZE];
@@ -1279,12 +1392,17 @@ static void install_interactive(int argc, char **argv) {
             if (!upgrade && ISVALID(openam_url)) {
                 if (!get_confirmation("\nOpenAM server URL: %s\n", openam_url)) {
                     RESET_INPUT_STRING(openam_url);
+                } else {
+                    /* user answered "Yes" - will use openam_url value entered earlier, which might also mean
+                     * that user wants to continue despite the fact that OpenAM is not accessible */
+                    break;
                 }
             }
+            
             while (!ISVALID(openam_url)) {
                 input = prompt_and_read("\nEnter the URL where the OpenAM server is running. Please include the\n"
                         "deployment URI also as shown below:\n"
-                        "(http://openam.sample.com:58080/openam)\n"
+                        "(http://openam.example.com:58080/openam)\n"
                         "[ q or 'ctrl+c' to exit ]\n"
                         "OpenAM server URL:");
                 check_if_quit_wanted(input);
@@ -1295,26 +1413,28 @@ static void install_interactive(int argc, char **argv) {
                 }
                 am_free(input);
             }
-            /* ensure that the OpenAM URL is syntacically valid */
+            
+            /* ensure that the OpenAM URL is syntactically valid */
+            /* should be able to connect to OpenAM server during installation */
             if (parse_url(openam_url, &parsed_url) == AM_ERROR) {
                 fprintf(stdout, "That OpenAM URL (%s) doesn't appear to be valid\n", openam_url);
                 install_log("parse_url fails the OpenAM URL \"%s\"", openam_url);
-            } else if (am_url_validate(0, openam_url, NULL, &httpcode, install_log) == AM_SUCCESS) {
+            } else if (am_url_validate(0, openam_url, &ssl_info, &httpcode, install_log) == AM_SUCCESS && httpcode != 0) {
+                am_validation_skipped = AM_FALSE;
                 break;
             } else {
-                fprintf(stdout, "Cannot connect to OpenAM at URI %s, please make sure OpenAM is started\n", openam_url);
+                fprintf(stdout, "\nCannot connect to OpenAM at URI %s, please make sure OpenAM is started\n", openam_url);
                 install_log("OpenAM at %s cannot be contacted (invalid, or not running)", openam_url);
+                am_validation_skipped = AM_TRUE;
             }
             
-            /* must be able to connect to OpenAM server during installation */
             if (upgrade) {
                 am_bool_t continue_upgrade = AM_FALSE;
-                /* we must suspend the installation until the agent is shut down */
                 while (!get_yes_or_no("\nPlease make sure OpenAM is started and the OpenAM URL is correct.\n"
                                       "Continue upgrade (Yes/No, q to quit) [Yes]: ", &continue_upgrade)) {
                     printf("Please answer yes or no\n");
                 }
-                if (! continue_upgrade) {
+                if (!continue_upgrade) {
                     install_log("installation exit because OpenAM is not running");
                     fprintf(stdout, "Exiting installation\n.");
                     exit(1);
@@ -1329,14 +1449,16 @@ static void install_interactive(int argc, char **argv) {
         do {
             struct url parsed_url;
             int httpcode = 0;
+            
             if (!upgrade && ISVALID(agent_url)) {
-                if (! get_confirmation("\nAgent URL: %s\n", agent_url)) {
+                if (!get_confirmation("\nAgent URL: %s\n", agent_url)) {
                     RESET_INPUT_STRING(agent_url);
                 }
             }
+            
             while (!ISVALID(agent_url)) {
                 input = prompt_and_read("\nEnter the Agent URL as shown below:\n"
-                        "(http://agent.sample.com:1234)\n"
+                        "(http://agent.example.com:1234)\n"
                         "[ q or 'ctrl+c' to exit ]\n"
                         "Agent URL:");
                 check_if_quit_wanted(input);
@@ -1346,6 +1468,7 @@ static void install_interactive(int argc, char **argv) {
                 }
                 am_free(input);
             }
+            
             /* ensure the URL is syntactically valid */
             if (parse_url(agent_url, &parsed_url) == AM_ERROR) {
                 fprintf(stdout, "That Agent URL (%s) doesn't appear to be valid\n", agent_url);
@@ -1353,12 +1476,13 @@ static void install_interactive(int argc, char **argv) {
                 RESET_INPUT_STRING(agent_url);
                 continue;
             }
-            /* only apache needs to be shut down before installation */
+            
+            /* only Apache needs to be shut down before installation */
             if (instance_type != AM_I_APACHE) {
                 break;
             }
 
-            if (am_url_validate(0, input, NULL, &httpcode, install_log) != AM_SUCCESS) {
+            if (am_url_validate(0, input, &ssl_info, &httpcode, install_log) != AM_SUCCESS) {
                 /* hopefully we cannot contact because the agent is not running,
                  * rather than because the URI is complete rubbish
                  */
@@ -1370,11 +1494,11 @@ static void install_interactive(int argc, char **argv) {
             if (upgrade) {
                 /* we must suspend the installation until the agent is shut down */
                 am_bool_t continue_upgrade = AM_FALSE;
-                while (!get_yes_or_no("\nPlease shut down the apache server to continue upgrade.\n"
+                while (!get_yes_or_no("\nPlease shut down the Apache HTTPD server to continue upgrade.\n"
                                       "Continue upgrade (Yes/No, q to quit) [Yes]: ", &continue_upgrade)) {
                     printf("Please answer yes or no\n");
                 }
-                if (! continue_upgrade) {
+                if (!continue_upgrade) {
                     install_log("installation exit because apache is running");
                     fprintf(stdout, "Exiting installation.\n");
                     exit(1);
@@ -1388,10 +1512,11 @@ static void install_interactive(int argc, char **argv) {
          * and we haven't connected in a meaningful way yet.
          */
         if (!upgrade && ISVALID(agent_user)) {
-            if (! get_confirmation("\nAgent profile name: %s\n", agent_user)) {
+            if (!get_confirmation("\nAgent profile name: %s\n", agent_user)) {
                 RESET_INPUT_STRING(agent_user);
             }
         }
+        
         if (!ISVALID(agent_user)) {
             input = prompt_and_read("\nEnter the Agent profile name\n"
                     "[ q or 'ctrl+c' to exit ]\n"
@@ -1408,10 +1533,11 @@ static void install_interactive(int argc, char **argv) {
          * The realm.  Again no way to verify without connecting to OpenAM.
          */
         if (!upgrade && ISVALID(agent_realm)) {
-            if (! get_confirmation("\nAgent realm: %s\n", agent_realm)) {
+            if (!get_confirmation("\nAgent realm: %s\n", agent_realm)) {
                 RESET_INPUT_STRING(agent_realm);
             }
         }
+        
         if (!ISVALID(agent_realm)) {
             input = prompt_and_read("\nEnter the Agent realm/organization\n"
                     "[ q or 'ctrl+c' to exit ]\n"
@@ -1432,7 +1558,7 @@ static void install_interactive(int argc, char **argv) {
          * the file must exist, and be readable.
          */
         if (ISVALID(agent_password_source)) {
-            if (! get_confirmation("\nAgent password is taken from %s\n", agent_password_source)) {
+            if (!get_confirmation("\nAgent password is taken from %s\n", agent_password_source)) {
                 RESET_INPUT_STRING(agent_password_source);
                 RESET_INPUT_STRING(agent_password);
             }
@@ -1480,60 +1606,61 @@ static void install_interactive(int argc, char **argv) {
         
     } while (outer_loop == AM_TRUE);
     
-    install_log("validating configuration parameters...");
-    fprintf(stdout, "\nValidating...\n");
-
-    rv = am_agent_login(0, openam_url, NULL,
-            agent_user, agent_password, agent_realm, AM_TRUE, 0, NULL,
-            &agent_token, NULL, NULL, NULL, install_log);
-
-    if (rv != AM_SUCCESS) {
-        fprintf(stdout, "\nError validating OpenAM - Agent configuration.\n"
-                "See installation log %s file for more details. Exiting.\n", log_path);
-        install_log("error validating OpenAM agent configuration");
-    } else {
-        fprintf(stdout, "\nValidating... Success.\n");
-        install_log("validating configuration parameters... success");
+    if (am_validation_skipped) {
+        install_log("configuration parameter validation skipped");
+        fprintf(stdout, "\nValidating... Skipped.\n");
         validated = AM_TRUE;
-    }
+    } else {
+        install_log("validating configuration parameters...");
+        fprintf(stdout, "\nValidating...\n");
 
-    if (agent_token != NULL) {
-        fprintf(stdout, "\nCleaning up validation data...\n");
-        am_agent_logout(0, openam_url, agent_token, NULL, NULL, install_log);
-        free(agent_token);
-        agent_token = NULL;
+        rv = am_agent_login(0, openam_url, NULL,
+                agent_user, agent_password, agent_realm, AM_TRUE, 0, &ssl_info,
+                &agent_token, NULL, NULL, NULL, install_log);
+
+        if (rv != AM_SUCCESS) {
+            fprintf(stderr, "\nError validating OpenAM - Agent configuration.\n"
+                    "See installation log %s file for more details. Exiting.\n", log_path);
+            install_log("error validating OpenAM agent configuration");
+        } else {
+            fprintf(stdout, "\nValidating... Success.\n");
+            install_log("validating configuration parameters... success");
+            validated = AM_TRUE;
+        }
+
+        if (agent_token != NULL) {
+            fprintf(stdout, "\nCleaning up validation data...\n");
+            am_agent_logout(0, openam_url, agent_token, NULL, &ssl_info, install_log);
+            free(agent_token);
+            agent_token = NULL;
+        }
     }
 
     if (validated) {
         fprintf(stdout, "\nCreating configuration...\n");
-        /* do configure the instance and modify the server configuration */
+        /* create agent instance and modify the server configuration */
 
-        switch (instance_type) {
-            case AM_I_APACHE:
-                if (create_agent_instance(0, server_conf, openam_url, agent_realm,
-                        agent_url, agent_user, agent_password, uid, gid, property_map) == AM_SUCCESS) {
-                    fprintf(stdout, "\nInstallation complete.\n");
-                    install_log("installation complete");
-                }
-                break;
-            case AM_I_IIS:
-                if (create_agent_instance(iis_status, server_conf/* site id */, openam_url, agent_realm,
-                        agent_url, agent_user, agent_password, uid, gid, property_map) == AM_SUCCESS) {
-                    fprintf(stdout, "\nInstallation complete.\n");
-                    install_log("installation complete");
-                }
-                break;
-            case AM_I_VARNISH:
-                if (create_agent_instance(0, server_conf, openam_url, agent_realm,
-                        agent_url, agent_user, agent_password, uid, gid, property_map) == AM_SUCCESS) {
-                    fprintf(stdout, "\nInstallation complete.\n");
-                    install_log("installation complete");
-                }
-                break;
-            default:
-                install_log("unknown installation instance type");
-                break;
+        if (instance_type == AM_I_APACHE || instance_type == AM_I_IIS || instance_type == AM_I_VARNISH) {
+            rv = create_agent_instance(instance_type == AM_I_IIS ? iis_status : 0,
+                    server_conf /* site id for IIS */, openam_url, agent_realm, agent_url,
+                    agent_user, agent_password, uid, gid, property_map);
+        } else {
+            rv = AM_NOT_IMPLEMENTED;
         }
+
+        if (rv == AM_SUCCESS) {
+            fprintf(stdout, "\nInstallation complete.\n");
+            install_log("installation complete");
+        } else {
+            fprintf(stderr, "\nInstallation failed.\n"
+                    "See installation log %s file for more details. Exiting.\n", log_path);
+            install_log("installation error: %s", am_strerror(rv));
+        }
+        
+    } else {
+        fprintf(stderr, "\nInstallation failed.\n"
+                "See installation log %s file for more details. Exiting.\n", log_path);
+        install_log("installation error");
     }
 
     AM_FREE(openam_url, agent_url, agent_realm, agent_user, agent_password);
@@ -1563,11 +1690,12 @@ static void install_interactive(int argc, char **argv) {
  * argv[6] = Agent name
  * argv[7] = File containing the agent password
  * argv[8] = OPTIONAL "--changeOwner" argument saying whether to change instance directory/file ownership data
- * argv[9] = OPTIONAL "--acceptLicence" argument.
+ * argv[9] = OPTIONAL "--acceptLicence" argument
+ * argv[10] = OPTIONAL "--forceInstall" argument.
  */
 static void install_silent(int argc, char** argv) {
     char lic_file_path[AM_URI_SIZE];
-    char lic_accepted = AM_FALSE;
+    am_bool_t lic_accepted = AM_FALSE, am_validation_skipped = AM_FALSE;
 
     install_log("%s for %s server silent installation", DESCRIPTION,
             am_container_str(instance_type));
@@ -1577,10 +1705,18 @@ static void install_silent(int argc, char** argv) {
     snprintf(lic_file_path, sizeof(lic_file_path), "%s%s", app_path, LICENSE_FILE);
     
     if ((argc > 8 && strcasecmp(argv[8], "--acceptLicence") == 0) ||
-            (argc > 9 && strcasecmp(argv[9], "--acceptLicence") == 0)) {
+            (argc > 9 && strcasecmp(argv[9], "--acceptLicence") == 0) ||
+            (argc > 10 && strcasecmp(argv[10], "--acceptLicence") == 0)) {
         install_log("license accepted with --acceptLicence option");
         am_make_path(instance_path, NULL, NULL, install_log);
         write_file(license_tracker_path, AM_SPACE_CHAR, 1);
+    }
+    
+    if ((argc > 8 && strcasecmp(argv[8], "--forceInstall") == 0) ||
+            (argc > 9 && strcasecmp(argv[9], "--forceInstall") == 0) ||
+            (argc > 10 && strcasecmp(argv[10], "--forceInstall") == 0)) {
+        install_log("installer run with --forceInstall option");
+        am_validation_skipped = AM_TRUE;
     }
 
     if (!file_exists(license_tracker_path)) {
@@ -1642,7 +1778,8 @@ static void install_silent(int argc, char** argv) {
             }
 #endif
             if ((argc > 8 && strcasecmp(argv[8], "--changeOwner") != 0) ||
-                    (argc > 9 && strcasecmp(argv[9], "--changeOwner") != 0)) {
+                    (argc > 9 && strcasecmp(argv[9], "--changeOwner") != 0) ||
+                    (argc > 10 && strcasecmp(argv[10], "--changeOwner") != 0)) {
                 am_free(uid);
                 am_free(gid);
                 uid = NULL;
@@ -1662,60 +1799,66 @@ static void install_silent(int argc, char** argv) {
 
         am_net_init();
 
-        install_log("validating configuration parameters...");
-        fprintf(stdout, "\nValidating...\n");
-        
-        rv = am_agent_login(0, argv[3], NULL,
-                argv[6], agent_password, argv[5], AM_TRUE, 0, NULL,
-                &agent_token, NULL, NULL, NULL, install_log);
-        if (rv != AM_SUCCESS) {
-            fprintf(stdout, "\nError validating OpenAM - Agent configuration.\n"
-                    "See installation log %s file for more details. Exiting.\n", log_path);
-            install_log("error validating OpenAM agent configuration");
-            am_free(agent_token);
-            exit(1);
-        } else {
-            fprintf(stdout, "\nValidating... Success.\n");
-            install_log("validating configuration parameters... success");
+        if (am_validation_skipped) {
+            install_log("configuration parameter validation skipped");
+            fprintf(stdout, "\nValidating... Skipped.\n");
             validated = AM_TRUE;
-        }
+        } else {
+            install_log("validating configuration parameters...");
+            fprintf(stdout, "\nValidating...\n");
 
-        if (agent_token != NULL) {
-            fprintf(stdout, "\nCleaning up validation data...\n");
-            am_agent_logout(0, argv[3], agent_token, NULL, NULL, install_log);
-            free(agent_token);
-            agent_token = NULL;
+            rv = am_agent_login(0, argv[3], NULL,
+                    argv[6], agent_password, argv[5], AM_TRUE, 0, &ssl_info,
+                    &agent_token, NULL, NULL, NULL, install_log);
+            if (rv != AM_SUCCESS) {
+                fprintf(stderr, "\nError validating OpenAM - Agent configuration.\n");
+                install_log("error validating OpenAM agent configuration");
+                am_free(agent_token);
+            } else {
+                fprintf(stdout, "\nValidating... Success.\n");
+                install_log("validating configuration parameters... success");
+                validated = AM_TRUE;
+            }
+
+            if (agent_token != NULL) {
+                fprintf(stdout, "\nCleaning up validation data...\n");
+                am_agent_logout(0, argv[3], agent_token, NULL, &ssl_info, install_log);
+                free(agent_token);
+                agent_token = NULL;
+            }
         }
 
         if (validated) {
             fprintf(stdout, "\nCreating configuration...\n");
             property_map_t * property_map = property_map_create();
             
-            if (instance_type == AM_I_APACHE) {
+            if (instance_type == AM_I_APACHE || instance_type == AM_I_IIS || instance_type == AM_I_VARNISH) {
                 rv = create_agent_instance(0, argv[2], argv[3], argv[5],
                         argv[4], argv[6], agent_password, uid, gid, property_map);
-            } else if (instance_type == AM_I_IIS) {
-                rv = create_agent_instance(0, argv[2], argv[3], argv[5],
-                        argv[4], argv[6], agent_password, uid, gid, property_map);
-            } else if (instance_type == AM_I_VARNISH) {
-                rv = create_agent_instance(0, argv[2], argv[3], argv[5],
-                        argv[4], argv[6], agent_password, uid, gid, property_map);
+            } else {
+                rv = AM_NOT_IMPLEMENTED;
             }
 
             if (rv == AM_SUCCESS) {
                 fprintf(stdout, "\nInstallation complete.\n");
                 install_log("installation complete");
             } else {
-                fprintf(stdout, "\nInstallation error.\n");
+                fprintf(stderr, "\nInstallation failed.\n"
+                        "See installation log %s file for more details. Exiting.\n", log_path);
                 install_log("installation error: %s", am_strerror(rv));
             }
+            
+        } else {
+            fprintf(stderr, "\nInstallation failed.\n"
+                    "See installation log %s file for more details. Exiting.\n", log_path);
+            install_log("installation error");
         }
 
         am_free(agent_password);
 
         am_net_shutdown();
     } else {
-        fprintf(stdout, "\nInvalid arguments. Installation exit.\n");
+        fprintf(stderr, "\nInvalid arguments. Installation exit.\n");
     }
     install_log("installation exit");
 }
@@ -1783,6 +1926,8 @@ static void remove_instance(int argc, char **argv) {
                     rv = am_cleanup_instance(e->web, "AmAgent ");
                     /* remove AmAgentConf line */
                     rv = am_cleanup_instance(e->web, "AmAgentConf ");
+                    /* remove AmAgentId line */
+                    rv = am_cleanup_instance(e->web, "AmAgentId ");
                     /* delete agent instance configuration directory */
                     am_delete_directory(e->path);
                     /* remove agent instance configuration */
@@ -2146,6 +2291,32 @@ int main(int argc, char **argv) {
             }
         }
 
+        /* read environment variables and create struct am_ssl_options */
+        memset(&ssl_info, 0, sizeof (struct am_ssl_options));
+        for (i = 0; i < ARRAY_SIZE(ssl_variables); i++) {
+            char *env = getenv(ssl_variables[i]);
+            if (ISVALID(env)) {
+                if (strcmp(ssl_variables[i], AM_INSTALL_SSL_KEY) == 0) {
+                    strncpy(ssl_info.cert_key_file, env, sizeof (ssl_info.cert_key_file) - 1);
+                }
+                if (strcmp(ssl_variables[i], AM_INSTALL_SSL_CERT) == 0) {
+                    strncpy(ssl_info.cert_file, env, sizeof (ssl_info.cert_file) - 1);
+                }
+                if (strcmp(ssl_variables[i], AM_INSTALL_SSL_CA) == 0) {
+                    strncpy(ssl_info.cert_ca_file, env, sizeof (ssl_info.cert_ca_file) - 1);
+                }
+                if (strcmp(ssl_variables[i], AM_INSTALL_SSL_CIPHERS) == 0) {
+                    strncpy(ssl_info.ciphers, env, sizeof (ssl_info.ciphers) - 1);
+                }
+                if (strcmp(ssl_variables[i], AM_INSTALL_SSL_OPTIONS) == 0) {
+                    strncpy(ssl_info.tls_opts, env, sizeof (ssl_info.tls_opts) - 1);
+                }
+                if (strcmp(ssl_variables[i], AM_INSTALL_SSL_KEY_PASSWORD) == 0) {
+                    strncpy(ssl_info.cert_key_pass, env, sizeof (ssl_info.cert_key_pass) - 1);
+                }
+            }
+        }
+
         /* run through the cli options */
         for (i = 0; params[i].option; ++i) {
             if (!strcasecmp(argv[1], params[i].option)) {
@@ -2158,12 +2329,12 @@ int main(int argc, char **argv) {
     fprintf(stdout, "\n%s\n"
             "Usage: agentadmin <option> [<arguments>]\n\n"
             "The available options are:\n\n"
-            "Install agent instance:\n"
+            "Install agent instance (interactive):\n"
             " agentadmin --i\n\n"
             "Install agent instance (silent):\n"
             " agentadmin --s \"web-server configuration file, directory or site parameter\" \\\n"
             "                \"OpenAM URL\" \"Agent URL\" \"realm\" \"agent user id\" \\\n"
-            "                \"path to the agent password file\" [--changeOwner] [--acceptLicence]\n\n"
+            "                \"path to the agent password file\" [--changeOwner] [--acceptLicence] [--forceInstall]\n\n"
             "List configured agent instances:\n"
             " agentadmin --l\n\n"
 #ifdef _WIN32
