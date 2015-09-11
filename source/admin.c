@@ -636,9 +636,15 @@ static int create_agent_instance(int status,
             if (write_file(conf_file_path, agent_conf_content, agent_conf_sz) > 0) {
 #ifndef _WIN32
                 if (instance_type == AM_I_APACHE && uid != NULL && gid != NULL) {
+                    /* update agent instance configuration file owner */
                     if (chown(conf_file_path, *uid, *gid) != 0) {
                         install_log("failed to change file %s owner to %d:%d (error: %d)",
                                 conf_file_path, *uid, *gid, errno);
+                    }
+                    /* update global log folder owner */
+                    if (chown(log_path_dir, *uid, *gid) != 0) {
+                        install_log("failed to change directory %s owner to %d:%d (error: %d)",
+                                log_path_dir, *uid, *gid, errno);
                     }
                 }
 #endif
