@@ -238,27 +238,27 @@ static void *am_log_worker(void *arg) {
                 break;
             }
         }
-        
+
         if (f != NULL) {
-            
+
             if (ISINVALID(f->name_debug)) {
                 fprintf(stderr, "am_log_worker(): the debug file name is invalid (i.e. empty or null)\n");
                 f->fd_debug = -1;
                 f->fd_audit = -1;
                 return NULL;
             }
-            
+
             if (ISINVALID(f->name_audit)) {
                 fprintf(stderr, "am_log_worker(): the audit file name is invalid (i.e. empty or null)\n");
                 f->fd_debug = -1;
                 f->fd_audit = -1;
                 return NULL;
             }
-            
+
             /* log files are not opened yet, do it now */
             if (f->fd_audit == -1 && f->fd_debug == -1) {
 #ifdef _WIN32
-                
+
                 f->fd_debug = _open(f->name_debug, _O_CREAT | _O_WRONLY | _O_APPEND | _O_BINARY,
                         _S_IREAD | _S_IWRITE);
                 f->fd_audit = _open(f->name_audit, _O_CREAT | _O_WRONLY | _O_APPEND | _O_BINARY,
@@ -271,7 +271,7 @@ static void *am_log_worker(void *arg) {
                     f->created_audit = st.st_ctime;
                     f->owner = getpid();
                 }
-                
+
 #else
                 f->fd_debug = open(f->name_debug, O_CREAT | O_WRONLY | O_APPEND, S_IWUSR | S_IRUSR);
                 f->fd_audit = open(f->name_audit, O_CREAT | O_WRONLY | O_APPEND, S_IWUSR | S_IRUSR);
@@ -315,12 +315,12 @@ static void *am_log_worker(void *arg) {
                     HANDLE fh = (HANDLE) _get_osfhandle(file_handle);
                     unsigned int idx = 1;
                     static char tmp[AM_PATH_SIZE];
-                    
+
                     do {
                         snprintf(tmp, sizeof (tmp), "%s.%d", file_name, idx);
                         idx++;
                     } while (_access(tmp, 0) == 0);
-                    
+
                     if (CopyFileExA(file_name, tmp, NULL, NULL, FALSE, COPY_FILE_NO_BUFFERING)) {
                         SetFilePointer(fh, 0, NULL, FILE_BEGIN);
                         SetEndOfFile(fh);
@@ -347,12 +347,12 @@ static void *am_log_worker(void *arg) {
                     if ((fsz + 1024) > max_size) {
                         unsigned int idx = 1;
                         static char tmp[AM_PATH_SIZE];
-                        
+
                         do {
                             snprintf(tmp, sizeof (tmp), "%s.%d", file_name, idx);
                             idx++;
                         } while (_access(tmp, 0) == 0);
-                        
+
                         if (CopyFileExA(file_name, tmp, NULL, NULL, FALSE, COPY_FILE_NO_BUFFERING)) {
                             SetFilePointer(fh, 0, NULL, FILE_BEGIN);
                             SetEndOfFile(fh);
@@ -367,7 +367,7 @@ static void *am_log_worker(void *arg) {
                         }
                     }
                 }
-                
+
                 _close(file_handle);
                 if (is_audit) {
                     f->fd_audit = -1;
@@ -452,7 +452,9 @@ void am_log_init(int id, int status) {
     SECURITY_ATTRIBUTES sec_attr, *sec = NULL;
 #endif
 
-    am_agent_instance_init_init(id);
+    if (am_agent_instance_init_init(id) != AM_SUCCESS) {
+        return;
+    }
 
     if (am_log_handle == NULL) {
         am_log_handle = (struct am_shared_log *) malloc(sizeof (struct am_shared_log));
@@ -467,7 +469,7 @@ void am_log_init(int id, int status) {
 
     am_log_handle->reader_pid = getpid();
 #endif
-    
+
     snprintf(am_log_handle->area_file_name, sizeof (am_log_handle->area_file_name),
 #ifdef __sun
             "/am_log_%d"
@@ -492,7 +494,7 @@ void am_log_init(int id, int status) {
     if (am_log_handle->area_file_id == NULL) {
         return;
     }
-    
+
     if (am_log_handle->area_file_id != NULL && GetLastError() == ERROR_ALREADY_EXISTS) {
         opened = 1;
     }
@@ -501,7 +503,7 @@ void am_log_init(int id, int status) {
         am_log_handle->area = MapViewOfFile(am_log_handle->area_file_id, FILE_MAP_ALL_ACCESS,
                 0, 0, am_log_handle->area_size);
     }
-        
+
     if (am_log_handle->area != NULL) {
 
         am_log_lck.exit = CreateEventA(sec, FALSE, FALSE,
@@ -822,7 +824,7 @@ void am_log_shutdown(int id) {
     if (log == NULL) {
         return;
     }
-    
+
     /* notify the logger exit */
     for (i = 0; i < AM_MAX_INSTANCES; i++) {
         struct log_files *f = &log->files[i];
@@ -1075,7 +1077,7 @@ int am_agent_instance_init_init(int id) {
 #if defined(_WIN32)
     SECURITY_DESCRIPTOR sec_descr;
     SECURITY_ATTRIBUTES sec_attr, *sec = NULL;
-    
+
     if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
             SetSecurityDescriptorDacl(&sec_descr, TRUE, (PACL) NULL, FALSE)) {
         sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
@@ -1083,7 +1085,7 @@ int am_agent_instance_init_init(int id) {
         sec_attr.bInheritHandle = TRUE;
         sec = &sec_attr;
     }
-    
+
     ic_sem = CreateSemaphoreA(sec, 1, 1, get_global_name("Global\\"AM_CONFIG_INIT_NAME, id));
     if (ic_sem != NULL) {
         status = AM_SUCCESS;
@@ -1094,7 +1096,13 @@ int am_agent_instance_init_init(int id) {
         status = AM_SUCCESS;
     }
 #else
-    ic_sem = sem_open(get_global_name(AM_CONFIG_INIT_NAME, id), O_CREAT, 0600, 1);
+    ic_sem = sem_open(get_global_name(
+#ifdef __sun
+            "/"AM_CONFIG_INIT_NAME
+#else
+            AM_CONFIG_INIT_NAME
+#endif
+            , id), O_CREAT, 0600, 1);
     if (ic_sem != SEM_FAILED) {
         status = AM_SUCCESS;
     }
@@ -1130,7 +1138,13 @@ void am_agent_instance_init_release(int id, char unlink) {
 #else
     sem_close(ic_sem);
     if (unlink) {
-        sem_unlink(get_global_name(AM_CONFIG_INIT_NAME, id));
+        sem_unlink(get_global_name(
+#ifdef __sun
+                "/"AM_CONFIG_INIT_NAME
+#else
+                AM_CONFIG_INIT_NAME
+#endif
+                , id));
     }
 #endif
 }

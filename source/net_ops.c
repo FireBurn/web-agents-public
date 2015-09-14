@@ -328,7 +328,7 @@ static int send_attribute_request(am_net_t *conn, char **token, char **pxml, siz
             "%s"
             "Connection: Keep-Alive\r\n\r\n",
             conn->uv.path,
-            user_enc, realm_enc, token_enc,
+            NOTNULL(user_enc), NOTNULL(realm_enc), NOTNULL(token_enc),
             conn->uv.host, conn->uv.port, NOTNULL(conn->req_headers));
     if (post == NULL) {
         AM_FREE(realm_enc, user_enc, token_enc);
@@ -420,7 +420,7 @@ static int send_session_request(am_net_t *conn, char **token, const char *notify
             "</SessionRequest>]]>"
             "</Request>"
             "</RequestSet>",
-            NOTNULL(token_b64), *token, NOTNULL(token_b64), notifyurl, *token);
+            NOTNULL(token_b64), *token, NOTNULL(token_b64), NOTNULL(notifyurl), *token);
     if (post_data == NULL) {
         AM_FREE(token_b64, token_in);
         return AM_ENOMEM;

@@ -1600,12 +1600,12 @@ static void install_interactive(int argc, char **argv) {
 
         
         input = prompt_and_read("Confirm configuration (yes/no): [no]:");
-        if (ISVALID(input) && strcasecmp(input, "yes") == 0) {
+        if (ISVALID(input) && strncasecmp(input, "y", 1) == 0) {
             outer_loop = AM_FALSE;
         } else {
             fprintf(stdout, "\nRestarting the configuration...\n");
             install_log("installation restarted");
-            
+
             property_map_delete(property_map);
         }
         am_free(input);
