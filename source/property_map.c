@@ -17,10 +17,16 @@
 #include "platform.h"
 #include "am.h"
 #include "utility.h"
+
+#ifdef _WIN32
+#define LINE_ENDING "\r\n"
+#else
+#define LINE_ENDING "\n"
+#endif
+
 #define MAP_EXTENSION_SIZE 64
 
 /* property flags */
-
 enum entry_type { plaintext, property, property_removed };
 
 struct map_entry
@@ -273,29 +279,34 @@ void property_map_parse(struct property_map *map, char *source, am_bool_t overri
  * write property map to a string
  */
 char *property_map_write_to_buffer(struct property_map *map, size_t *data_sz) {
-    size_t len = 0;
-    char * buffer = malloc(0);
-    
     int i;
+    size_t len = 0;
+    char *buffer = malloc(1);
+    if (buffer == NULL) {
+        *data_sz = 0;
+        return NULL;
+    }
+    *buffer = '\0';
+    
     for (i = 0; i < map->size; i++) {
-        struct map_entry * e = map->entries + i;
+        struct map_entry *e = map->entries + i;
         switch (e->type) {
             case plaintext:
-                len = (size_t) am_asprintf(&buffer, "%s%s\r\n", buffer, e->key);
+                len = (size_t) am_asprintf(&buffer, "%s%s%s", buffer, NOTNULL(e->key), LINE_ENDING);
                 if (buffer == NULL) {
-                    * data_sz = 0;
+                    *data_sz = 0;
                     return NULL;
                 }
                 break;
                 
             case property:
                 if (e->value) {
-                    len = (size_t) am_asprintf(&buffer, "%s%s = %s\r\n", buffer, e->key, e->value);
+                    len = (size_t) am_asprintf(&buffer, "%s%s = %s%s", buffer, NOTNULL(e->key), e->value, LINE_ENDING);
                 } else {
-                    len = (size_t) am_asprintf(&buffer, "%s%s = \r\n", buffer, e->key);
+                    len = (size_t) am_asprintf(&buffer, "%s%s = %s", buffer, NOTNULL(e->key), LINE_ENDING);
                 }
                 if (buffer == NULL) {
-                    * data_sz = 0;
+                    *data_sz = 0;
                     return NULL;
                 }
                 break;

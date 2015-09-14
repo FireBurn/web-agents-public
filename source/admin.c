@@ -2288,7 +2288,9 @@ int main(int argc, char **argv) {
             instance_type = AM_I_VARNISH;
         }
        
-        if (instance_type == AM_I_APACHE) {
+#ifndef _WIN32
+        /* find user and group for non-windows installation */
+        if (instance_type == AM_I_APACHE && argc > 2) {
             conf = load_file(argv[2], NULL);
             if (conf != NULL) {
                 find_user(conf, &uid, &gid);
@@ -2296,6 +2298,7 @@ int main(int argc, char **argv) {
                 free(conf);
             }
         }
+#endif
 
         /* read environment variables and create struct am_ssl_options */
         memset(&ssl_info, 0, sizeof (struct am_ssl_options));
