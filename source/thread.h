@@ -20,6 +20,7 @@
 #ifdef _WIN32
 typedef CRITICAL_SECTION am_mutex_t;
 typedef HANDLE am_thread_t;
+#define AM_MUTEX_INIT(m)        InitializeCriticalSection(m)
 #define AM_MUTEX_LOCK           EnterCriticalSection
 #define AM_MUTEX_UNLOCK         LeaveCriticalSection
 #define AM_MUTEX_DESTROY        DeleteCriticalSection
@@ -29,6 +30,7 @@ typedef HANDLE am_thread_t;
 #else
 typedef pthread_mutex_t am_mutex_t;
 typedef pthread_t am_thread_t;
+#define AM_MUTEX_INIT(m)        pthread_mutex_init((m), NULL)
 #define AM_MUTEX_LOCK           pthread_mutex_lock
 #define AM_MUTEX_UNLOCK         pthread_mutex_unlock
 #define AM_MUTEX_DESTROY        pthread_mutex_destroy

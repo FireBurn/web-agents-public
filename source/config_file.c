@@ -461,6 +461,7 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NOTIF_URL, CONF_STRING, NULL, &conf->notif_url, NULL);
 
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LB_ENABLE, CONF_NUMBER, NULL, &conf->lb_enable, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_KEEPALIVE_DISABLE, CONF_NUMBER, NULL, &conf->keepalive_disable, NULL);
 
         if (conf->local) { /* do read other options in case configuration is local */
 

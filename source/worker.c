@@ -91,12 +91,12 @@ void session_logout_worker(
 #endif
         inst, void *arg) {
     struct logout_worker_data *r = (struct logout_worker_data *) arg;
-    int status = am_agent_logout(r->instance_id, r->openam, r->token,
-            r->server_id, &r->info, NULL);
+    int status = am_agent_logout(r->instance_id, r->openam, r->token, r->options);
     if (status == AM_SUCCESS) {
         am_remove_cache_entry(r->instance_id, r->token);
     }
-    AM_FREE(r->openam, r->token, r->server_id, r);
+    am_net_options_delete(r->options);
+    AM_FREE(r->openam, r->token, r->options, r);
 }
 
 void remote_audit_worker(
@@ -107,6 +107,7 @@ void remote_audit_worker(
 #endif
         inst, void *arg) {
     struct audit_worker_data *r = (struct audit_worker_data *) arg;
-    am_agent_audit_request(r->instance_id, r->openam, r->logdata, r->server_id, &r->info);
-    AM_FREE(r->openam, r->logdata, r->server_id, r);
+    am_agent_audit_request(r->instance_id, r->openam, r->logdata, r->options);
+    am_net_options_delete(r->options);
+    AM_FREE(r->openam, r->logdata, r->options, r);
 }

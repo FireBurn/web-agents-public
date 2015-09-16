@@ -284,16 +284,6 @@ typedef struct am_request {
 
 } am_request_t;
 
-struct am_ssl_options {
-    char cert_key_file[AM_PATH_SIZE];
-    char cert_key_pass[AM_PATH_SIZE];
-    char cert_file[AM_PATH_SIZE];
-    char cert_ca_file[AM_PATH_SIZE];
-    char ciphers[AM_PATH_SIZE];
-    char tls_opts[AM_PATH_SIZE];
-    int verifypeer;
-};
-
 unsigned long am_instance_id(const char *);
 
 void am_process_request(am_request_t *r);

@@ -62,8 +62,8 @@ struct am_audit {
         unsigned long instance_id;
         int interval;
         int last;
-        struct am_ssl_options ssl;
         struct offset_list_hdr list_hdr;
+        char config_file[AM_PATH_SIZE];
         char openam[AM_URI_SIZE];
     } config[AM_MAX_INSTANCES];
 };
@@ -79,6 +79,7 @@ struct am_audit_transfer {
     unsigned long instance_id;
     char *message;
     char *server_id;
+    char *config_file;
 };
 
 static am_timer_event_t *audit_timer = NULL;
@@ -214,7 +215,7 @@ int am_add_remote_audit_entry(unsigned long instance_id, const char *agent_token
 }
 
 static am_status_t extract_audit_entries(unsigned long instance_id,
-        am_status_t(*callback)(const char *openam, struct am_ssl_options *ssl, int count, struct am_audit_transfer *batch)) {
+        am_status_t(*callback)(const char *openam, int count, struct am_audit_transfer *batch)) {
     static const char *thisfunc = "extract_audit_entries():";
     am_status_t status;
     struct am_audit_entry *e;
@@ -242,14 +243,15 @@ static am_status_t extract_audit_entries(unsigned long instance_id,
         batch[c].message = strdup(e->value);
         batch[c].instance_id = e->instance_id;
         batch[c].server_id = strdup(e->server_id);
+        batch[c].config_file = strdup(config->config_file);
 
         c++;
 
         if (c == BATCH_SIZE) {
             AM_LOG_DEBUG(instance_id, "%s sending %d audit log messages to %s", thisfunc, c, config->openam);
-            callback(config->openam, &config->ssl, c, batch);
+            callback(config->openam, c, batch);
             for (i = 0; i < c; i++) {
-                AM_FREE(batch[i].message, batch[i].server_id);
+                AM_FREE(batch[i].message, batch[i].server_id, batch[i].config_file);
             }
             c = 0;
         }
@@ -260,9 +262,9 @@ static am_status_t extract_audit_entries(unsigned long instance_id,
 
     if (c) {
         AM_LOG_DEBUG(instance_id, "%s sending %d audit log messages to %s", thisfunc, c, config->openam);
-        callback(config->openam, &config->ssl, c, batch);
+        callback(config->openam, c, batch);
         for (i = 0; i < c; i++) {
-            AM_FREE(batch[i].message, batch[i].server_id);
+            AM_FREE(batch[i].message, batch[i].server_id, batch[i].config_file);
         }
     }
 
@@ -272,12 +274,11 @@ static am_status_t extract_audit_entries(unsigned long instance_id,
     return status;
 }
 
-static am_status_t write_entries_to_server(const char *openam, struct am_ssl_options *ssl,
-        int count, struct am_audit_transfer *batch) {
+static am_status_t write_entries_to_server(const char *openam, int count, struct am_audit_transfer *batch) {
     static const char *thisfunc = "write_entries_to_server():";
     int i;
     struct audit_worker_data *wd;
-    char *server_id = NULL, *msg = NULL;
+    char *server_id = NULL, *msg = NULL, *config_file = NULL;
     unsigned long instance_id;
 
     if (count == 0 || batch == NULL || ISINVALID(openam)) {
@@ -293,6 +294,7 @@ static am_status_t write_entries_to_server(const char *openam, struct am_ssl_opt
         if (msg == NULL) {
             server_id = batch[i].server_id;
             instance_id = batch[i].instance_id;
+            config_file = batch[i].config_file;
             am_asprintf(&msg, batch[i].message, i + 1, "");
         } else {
             am_asprintf(&msg, batch[i].message, i + 1, msg);
@@ -306,15 +308,19 @@ static am_status_t write_entries_to_server(const char *openam, struct am_ssl_opt
     wd->instance_id = instance_id;
     wd->openam = strdup(openam);
     wd->logdata = msg;
-    wd->server_id = strdup(server_id);
-    if (ssl != NULL) {
-        memcpy(&wd->info, ssl, sizeof (struct am_ssl_options));
-    } else {
-        memset(&wd->info, 0, sizeof (struct am_ssl_options));
+    wd->options = malloc(sizeof (am_net_options_t));
+    if (wd->options != NULL) {
+        am_config_t *conf = NULL;
+        if (am_get_agent_config(instance_id, config_file, &conf) == AM_SUCCESS) {
+            am_net_options_create(conf, wd->options, NULL);
+        }
+        wd->options->server_id = strdup(server_id);
     }
+
     if (am_worker_dispatch(remote_audit_worker, wd) != 0) {
         AM_LOG_WARNING(instance_id, "%s failed to dispatch remote audit_shm log worker", thisfunc);
-        AM_FREE(wd->openam, wd->logdata, wd->server_id, wd);
+        am_net_options_delete(wd->options);
+        AM_FREE(wd->openam, wd->logdata, wd->options, wd);
         return AM_ERROR;
     }
     return AM_SUCCESS;
@@ -403,7 +409,7 @@ int am_audit_register_instance(am_config_t *conf) {
         if (audit_data->config[i].instance_id == conf->instance_id) {
             audit_data->config[i].interval = conf->audit_remote_interval <= 0 ?
                     DEFAULT_RUN_INTERVAL : conf->audit_remote_interval;
-            am_net_set_ssl_options(conf, &audit_data->config[i].ssl);
+            strncpy(audit_data->config[i].config_file, conf->config, sizeof (audit_data->config[i].config_file) - 1);
             strncpy(audit_data->config[i].openam, openam, sizeof (audit_data->config[i].openam) - 1);
             am_shm_unlock(audit_shm);
             return AM_SUCCESS;
@@ -416,7 +422,7 @@ int am_audit_register_instance(am_config_t *conf) {
             audit_data->config[i].interval = conf->audit_remote_interval <= 0 ?
                     DEFAULT_RUN_INTERVAL : conf->audit_remote_interval;
             audit_data->config[i].last = 0;
-            am_net_set_ssl_options(conf, &audit_data->config[i].ssl);
+            strncpy(audit_data->config[i].config_file, conf->config, sizeof (audit_data->config[i].config_file) - 1);
             strncpy(audit_data->config[i].openam, openam, sizeof (audit_data->config[i].openam) - 1);
             break;
         }

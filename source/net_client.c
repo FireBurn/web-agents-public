@@ -21,10 +21,20 @@
 #include "am.h"
 #include "utility.h"
 #include "net_client.h"
+#include "list.h"
 
 #ifndef INVALID_SOCKET
 #define INVALID_SOCKET -1
 #endif
+
+#define AM_NET_CONNECT_TIMEOUT 8 /* in sec */
+
+enum {
+    HEADER_NONE = 0,
+    HEADER_FIELD,
+    HEADER_VALUE,
+    HEADER_ERROR
+};
 
 #ifdef _WIN32
 static short connect_ev = POLLWRNORM;
@@ -328,21 +338,41 @@ static void *net_async_connect(void *arg) {
     static const char *thisfunc = "net_async_connect():";
     struct in6_addr serveraddr;
     struct addrinfo *rp, hints;
-    int err = 0, on = 1;
+    int i, err = 0, on = 1;
     char port[7];
     am_timer_t tmr;
+    int timeout = AM_NET_CONNECT_TIMEOUT;
+    char *ip_address = n->uv.host;
+
+    if (n->options != NULL) {
+        timeout = n->options->net_timeout;
+
+        /* try to use com.forgerock.agents.config.hostmap property values to 
+         * shortcut any host name resolution.
+         */
+        for (i = 0; i < n->options->hostmap_sz; i++) {
+            char *sep = strchr(n->options->hostmap[i], '|');
+            if (sep != NULL &&
+                    strncasecmp(n->options->hostmap[i], n->uv.host, sep - n->options->hostmap[i]) == 0) {
+                ip_address = sep++;
+                AM_LOG_DEBUG(n->instance_id, "%s found host '%s' (%s) entry in "AM_AGENTS_CONFIG_HOST_MAP,
+                        thisfunc, n->uv.host, ip_address);
+                break;
+            }
+        }
+    }
 
     memset(&hints, 0, sizeof (struct addrinfo));
     hints.ai_flags = AI_NUMERICSERV;
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
-    err = INETPTON(AF_INET, n->uv.host, &serveraddr);
+    err = INETPTON(AF_INET, ip_address, &serveraddr);
     if (err == 1) {
         hints.ai_family = AF_INET;
         hints.ai_flags |= AI_NUMERICHOST;
     } else {
-        err = INETPTON(AF_INET6, n->uv.host, &serveraddr);
+        err = INETPTON(AF_INET6, ip_address, &serveraddr);
         if (err == 1) {
             hints.ai_family = AF_INET6;
             hints.ai_flags |= AI_NUMERICHOST;
@@ -352,7 +382,7 @@ static void *net_async_connect(void *arg) {
     snprintf(port, sizeof (port), "%d", n->uv.port);
 
     am_timer_start(&tmr);
-    if ((err = getaddrinfo(n->uv.host, port, &hints, &n->ra)) != 0) {
+    if ((err = getaddrinfo(ip_address, port, &hints, &n->ra)) != 0) {
         n->error = AM_EHOSTUNREACH;
         am_timer_stop(&tmr);
         am_timer_report(n->instance_id, &tmr, "getaddrinfo");
@@ -372,7 +402,7 @@ static void *net_async_connect(void *arg) {
 
         if ((n->sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol)) == INVALID_SOCKET) {
             AM_LOG_ERROR(n->instance_id,
-                    "%s: cannot create socket while connecting to %s:%d",
+                    "%s cannot create socket while connecting to %s:%d",
                     thisfunc, n->uv.host, n->uv.port);
             net_log_error(n->instance_id, net_error());
             continue;
@@ -396,7 +426,7 @@ static void *net_async_connect(void *arg) {
 
         err = connect(n->sock, rp->ai_addr, (SOCKLEN_T) rp->ai_addrlen);
         if (err == 0) {
-            AM_LOG_DEBUG(n->instance_id, "%s: connected to %s:%d (%s)",
+            AM_LOG_DEBUG(n->instance_id, "%s connected to %s:%d (%s)",
                     thisfunc, n->uv.host, n->uv.port,
                     rp->ai_family == AF_INET ? "IPv4" : "IPv6");
             n->error = 0;
@@ -404,7 +434,7 @@ static void *net_async_connect(void *arg) {
                 net_connect_ssl(n);
                 if (n->ssl.error != AM_SUCCESS) {
                     AM_LOG_ERROR(n->instance_id,
-                            "%s: SSL/TLS connection to %s:%d (%s) failed (%s)",
+                            "%s SSL/TLS connection to %s:%d (%s) failed (%s)",
                             thisfunc, n->uv.host, n->uv.port,
                             rp->ai_family == AF_INET ? "IPv4" : "IPv6",
                             am_strerror(n->ssl.error));
@@ -429,13 +459,13 @@ static void *net_async_connect(void *arg) {
             fds[0].events = connect_ev;
             fds[0].revents = 0;
 
-            err = sockpoll(fds, 1, n->timeout > 0 ? n->timeout * 1000 : -1);
+            err = sockpoll(fds, 1, timeout > 0 ? timeout * 1000 : -1);
             if (err > 0 && fds[0].revents & connected_ev) {
                 int pe = 0;
                 SOCKLEN_T pe_sz = sizeof (pe);
                 err = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (char *) &pe, &pe_sz);
                 if (err == 0 && pe == 0) {
-                    AM_LOG_DEBUG(n->instance_id, "%s: connected to %s:%d (%s)",
+                    AM_LOG_DEBUG(n->instance_id, "%s connected to %s:%d (%s)",
                             thisfunc, n->uv.host, n->uv.port,
                             rp->ai_family == AF_INET ? "IPv4" : "IPv6");
 
@@ -444,7 +474,7 @@ static void *net_async_connect(void *arg) {
                         net_connect_ssl(n);
                         if (n->ssl.error != AM_SUCCESS) {
                             AM_LOG_ERROR(n->instance_id,
-                                    "%s: SSL/TLS connection to %s:%d (%s) failed (%s)",
+                                    "%s SSL/TLS connection to %s:%d (%s) failed (%s)",
                                     thisfunc, n->uv.host, n->uv.port,
                                     rp->ai_family == AF_INET ? "IPv4" : "IPv6",
                                     am_strerror(n->ssl.error));
@@ -461,7 +491,7 @@ static void *net_async_connect(void *arg) {
                 n->error = AM_ECONNREFUSED;
             } else if (err == 0) {
                 AM_LOG_WARNING(n->instance_id,
-                        "%s: timeout connecting to %s:%d (%s)",
+                        "%s timeout connecting to %s:%d (%s)",
                         thisfunc, n->uv.host, n->uv.port,
                         rp->ai_family == AF_INET ? "IPv4" : "IPv6");
                 n->error = AM_ETIMEDOUT;
@@ -490,9 +520,77 @@ static int on_body_cb(http_parser *parser, const char *at, size_t length) {
     return 0;
 }
 
+static int on_header_field_cb(http_parser *parser, const char *at, size_t length) {
+    am_net_t *n = (am_net_t *) parser->data;
+    if (n->header_state == HEADER_ERROR) return 0;
+    if (n->header_state != HEADER_FIELD) {
+        n->num_headers++;
+        n->header_fields = realloc(n->header_fields, n->num_headers * sizeof (char *));
+        if (n->header_fields != NULL) {
+            n->header_fields[n->num_headers - 1] = strndup(at, length);
+        } else {
+            n->header_state = HEADER_ERROR;
+            n->num_headers--;
+        }
+    } else {
+        n->header_fields[n->num_headers - 1] = realloc(n->header_fields[n->num_headers - 1],
+                strlen(n->header_fields[n->num_headers - 1]) + length + 1);
+        if (n->header_fields[n->num_headers - 1] != NULL) {
+            strncat(n->header_fields[n->num_headers - 1], at, length);
+        } else {
+            n->header_state = HEADER_ERROR;
+        }
+    }
+    n->header_state = HEADER_FIELD;
+    return 0;
+}
+
+static int on_header_value_cb(http_parser *parser, const char *at, size_t length) {
+    am_net_t *n = (am_net_t *) parser->data;
+    if (n->header_state == HEADER_ERROR) return 0;
+    if (n->header_state != HEADER_VALUE) {
+        n->num_header_values++;
+        n->header_values = realloc(n->header_values, n->num_headers * sizeof (char *));
+        if (n->header_values != NULL) {
+            n->header_values[n->num_headers - 1] = strndup(at, length);
+        } else {
+            n->header_state = HEADER_ERROR;
+            n->num_header_values--;
+        }
+    } else {
+        n->header_values[n->num_headers - 1] = realloc(n->header_values[n->num_headers - 1],
+                strlen(n->header_values[n->num_headers - 1]) + length + 1);
+        if (n->header_values[n->num_headers - 1] != NULL) {
+            strncat(n->header_values[n->num_headers - 1], at, length);
+        } else {
+            n->header_state = HEADER_ERROR;
+        }
+    }
+    n->header_state = HEADER_VALUE;
+    return 0;
+}
+
 static int on_headers_complete_cb(http_parser *parser) {
+    int i;
     am_net_t *n = (am_net_t *) parser->data;
     n->http_status = parser->status_code;
+    if (n->num_headers != n->num_header_values || n->header_state == HEADER_ERROR) {
+        AM_LOG_WARNING(n->instance_id,
+                "on_headers_complete_cb(): response header fields and their values do not match (%d/%d)",
+                n->num_headers, n->num_header_values);
+        for (i = 0; i < n->num_headers; i++) {
+            char *field = n->header_fields[i];
+            am_free(field);
+        }
+        for (i = 0; i < n->num_header_values; i++) {
+            char *value = n->header_values[i];
+            am_free(value);
+        }
+        n->header_fields = NULL;
+        n->header_values = NULL;
+        n->num_headers = n->num_header_values = 0;
+    }
+    n->header_state = HEADER_NONE;
     return 0;
 }
 
@@ -521,7 +619,7 @@ int am_net_connect(am_net_t *n) {
     if (n->ce == NULL) {
         return AM_ENOMEM;
     }
-    
+
     /* create "disconnect" event */
     n->de = create_exit_event();
     if (n->de == NULL) {
@@ -537,12 +635,14 @@ int am_net_connect(am_net_t *n) {
     if (n->hs == NULL) {
         return AM_ENOMEM;
     }
-    
+
     n->hp = calloc(1, sizeof (http_parser));
     if (n->hp == NULL) {
         return AM_ENOMEM;
     }
 
+    n->hs->on_header_field = on_header_field_cb;
+    n->hs->on_header_value = on_header_value_cb;
     n->hs->on_headers_complete = on_headers_complete_cb;
     n->hs->on_body = on_body_cb;
     n->hs->on_message_complete = on_message_complete_cb;
@@ -576,6 +676,7 @@ void am_net_diconnect(am_net_t *n) {
 }
 
 int am_net_close(am_net_t *n) {
+    int i;
     if (n == NULL) {
         return AM_EINVAL;
     }
@@ -611,5 +712,78 @@ int am_net_close(am_net_t *n) {
     n->hs = NULL;
     n->hp = NULL;
     n->req_headers = NULL;
+
+    for (i = 0; i < n->num_headers; i++) {
+        char *field = n->header_fields[i];
+        char *value = n->header_values[i];
+        AM_FREE(field, value);
+    }
+    n->header_fields = NULL;
+    n->header_values = NULL;
+    n->num_headers = n->num_header_values = 0;
     return AM_SUCCESS;
+}
+
+void am_net_options_create(am_config_t *conf, am_net_options_t *options, void (*log)(const char *, ...)) {
+    int i;
+    if (conf == NULL || options == NULL) return;
+
+    options->local = conf->local;
+    options->lb_enable = conf->lb_enable;
+    options->net_timeout = conf->net_timeout;
+    options->cert_trust = conf->cert_trust;
+    options->keepalive = !conf->keepalive_disable;
+    options->cert_key_pass_sz = conf->cert_key_pass_sz;
+    options->server_id = NULL; /* server_id is set on request */
+    options->notif_url = ISVALID(conf->notif_url) ? strdup(conf->notif_url) : NULL;
+    options->ciphers = ISVALID(conf->ciphers) ? strdup(conf->ciphers) : NULL;
+    options->cert_ca_file = ISVALID(conf->cert_ca_file) ? strdup(conf->cert_ca_file) : NULL;
+    options->cert_file = ISVALID(conf->cert_file) ? strdup(conf->cert_file) : NULL;
+    options->cert_key_file = ISVALID(conf->cert_key_file) ? strdup(conf->cert_key_file) : NULL;
+    options->cert_key_pass = ISVALID(conf->cert_key_pass) ? strndup(conf->cert_key_pass, conf->cert_key_pass_sz) : NULL;
+    options->tls_opts = ISVALID(conf->tls_opts) ? strdup(conf->tls_opts) : NULL;
+    options->log = log;
+    options->hostmap = NULL;
+    options->hostmap_sz = 0;
+
+    if (conf->hostmap_sz > 0 && conf->hostmap != NULL) {
+        options->hostmap = malloc(conf->hostmap_sz * sizeof (char *));
+        if (options->hostmap != NULL) {
+            for (i = 0; i < conf->hostmap_sz; i++) {
+                options->hostmap[i] = strdup(conf->hostmap[i]);
+            }
+            options->hostmap_sz = conf->hostmap_sz;
+        }
+    }
+}
+
+void am_net_options_delete(am_net_options_t *options) {
+    int i;
+    if (options == NULL) return;
+
+    AM_FREE(options->ciphers, options->cert_ca_file, options->server_id, options->notif_url,
+            options->cert_file, options->cert_key_file, options->tls_opts);
+    if (options->cert_key_pass != NULL) {
+        am_secure_zero_memory(options->cert_key_pass, options->cert_key_pass_sz);
+        free(options->cert_key_pass);
+    }
+    options->notif_url = NULL;
+    options->ciphers = NULL;
+    options->server_id = NULL;
+    options->cert_ca_file = NULL;
+    options->cert_file = NULL;
+    options->cert_key_file = NULL;
+    options->tls_opts = NULL;
+    options->cert_key_pass = NULL;
+    options->cert_key_pass_sz = 0;
+    options->log = NULL;
+
+    if (options->hostmap != NULL) {
+        for (i = 0; i < options->hostmap_sz; i++) {
+            am_free(options->hostmap[i]);
+        }
+        free(options->hostmap);
+        options->hostmap = NULL;
+    }
+    options->hostmap_sz = 0;
 }

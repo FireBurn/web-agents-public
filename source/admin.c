@@ -94,7 +94,7 @@ static const char *am_container_str(int v) {
         case AM_I_APACHE: return "Apache";
         case AM_I_IIS: return "IIS";
         case AM_I_VARNISH: return "Varnish";
-        default: return "unknown";
+        default: return "Unknown";
     }
 }
 
@@ -107,7 +107,7 @@ static char instance_path[AM_URI_SIZE];
 static char instance_config[AM_URI_SIZE];
 static char config_template[AM_URI_SIZE];
 static char instance_config_template[AM_URI_SIZE];
-static struct am_ssl_options ssl_info;
+static am_net_options_t net_options;
 
 static const char* agent_4x_obsolete_properties [] =
 {
@@ -199,6 +199,7 @@ static char *prompt_and_read(const char *p) {
 #define USER_INPUT_BUFFER_SIZE 256 
     if ((r = malloc(USER_INPUT_BUFFER_SIZE + 1)) == NULL) {
         fprintf(stderr, "error: out of memory\n");
+        am_net_options_delete(&net_options);
         exit(1);
     }
     if (fgets(r, USER_INPUT_BUFFER_SIZE, stdin) == NULL) {
@@ -521,8 +522,8 @@ static int create_agent_instance(int status,
                 break;
             }
 
-            if (ISVALID(ssl_info.cert_key_file)) {
-                tmp = ssl_info.cert_key_file;
+            if (ISVALID(net_options.cert_key_file)) {
+                tmp = net_options.cert_key_file;
                 install_log("updating %s with %s", AM_INSTALL_SSL_KEY, tmp);
             } else {
                 tmp = AM_SPACE_CHAR;
@@ -534,8 +535,8 @@ static int create_agent_instance(int status,
                 break;
             }
 
-            if (ISVALID(ssl_info.cert_file)) {
-                tmp = ssl_info.cert_file;
+            if (ISVALID(net_options.cert_file)) {
+                tmp = net_options.cert_file;
                 install_log("updating %s with %s", AM_INSTALL_SSL_CERT, tmp);
             } else {
                 tmp = AM_SPACE_CHAR;
@@ -547,8 +548,8 @@ static int create_agent_instance(int status,
                 break;
             }
 
-            if (ISVALID(ssl_info.cert_ca_file)) {
-                tmp = ssl_info.cert_ca_file;
+            if (ISVALID(net_options.cert_ca_file)) {
+                tmp = net_options.cert_ca_file;
                 install_log("updating %s with %s", AM_INSTALL_SSL_CA, tmp);
             } else {
                 tmp = AM_SPACE_CHAR;
@@ -560,8 +561,8 @@ static int create_agent_instance(int status,
                 break;
             }
 
-            if (ISVALID(ssl_info.ciphers)) {
-                tmp = ssl_info.ciphers;
+            if (ISVALID(net_options.ciphers)) {
+                tmp = net_options.ciphers;
                 install_log("updating %s with %s", AM_INSTALL_SSL_CIPHERS, tmp);
             } else {
                 tmp = AM_SPACE_CHAR;
@@ -573,8 +574,8 @@ static int create_agent_instance(int status,
                 break;
             }
 
-            if (ISVALID(ssl_info.tls_opts)) {
-                tmp = ssl_info.tls_opts;
+            if (ISVALID(net_options.tls_opts)) {
+                tmp = net_options.tls_opts;
                 install_log("updating %s with %s", AM_INSTALL_SSL_OPTIONS, tmp);
             } else {
                 tmp = AM_SPACE_CHAR;
@@ -586,8 +587,8 @@ static int create_agent_instance(int status,
                 break;
             }
 
-            if (ISVALID(ssl_info.cert_key_pass)) {
-                password = strdup(ssl_info.cert_key_pass);
+            if (ISVALID(net_options.cert_key_pass)) {
+                password = strdup(net_options.cert_key_pass);
                 if (password == NULL) {
                     rv = AM_ENOMEM;
                     break;
@@ -834,6 +835,7 @@ static void check_if_quit_wanted(char* input) {
     if (ISVALID(input) && strcasecmp(input, "q") == 0) {
         free(input);
         install_log("installation exit because user typed \"q\" for input");
+        am_net_options_delete(&net_options);
         exit(1);
     }
 }
@@ -1117,6 +1119,7 @@ static void install_interactive(int argc, char **argv) {
     if (!lic_accepted) {
         install_log("license was not accepted");
         fprintf(stdout, "\nYou need to accept the License terms and conditions to continue.\n");
+        am_net_options_delete(&net_options);
         exit(1);
     }
 
@@ -1141,6 +1144,7 @@ static void install_interactive(int argc, char **argv) {
                     input = strdup(APACHE_DEFAULT_CONF_FILE);
                     if (input == NULL) {
                         install_log("installation exit (memory allocation error)");
+                        am_net_options_delete(&net_options);
                         exit(1);
                     }
                 }
@@ -1217,6 +1221,7 @@ static void install_interactive(int argc, char **argv) {
                 check_if_quit_wanted(input);
                 if (input == NULL) {
                     install_log("installation exit");
+                    am_net_options_delete(&net_options);
                     exit(1);
                 }
 
@@ -1246,6 +1251,7 @@ static void install_interactive(int argc, char **argv) {
                     input = strdup(VARNISH_DEFAULT_VMODS_DIR);
                     if (input == NULL) {
                         install_log("installation exit (memory allocation error)");
+                        am_net_options_delete(&net_options);
                         exit(1);
                     }
                 }
@@ -1265,6 +1271,7 @@ static void install_interactive(int argc, char **argv) {
             default: {
                 fprintf(stdout, "Error: unknown installation type. Exiting.\n");
                 install_log("unknown installation type");
+                am_net_options_delete(&net_options);
                 exit(1);
             }
         }
@@ -1425,7 +1432,7 @@ static void install_interactive(int argc, char **argv) {
             if (parse_url(openam_url, &parsed_url) == AM_ERROR) {
                 fprintf(stdout, "That OpenAM URL (%s) doesn't appear to be valid\n", openam_url);
                 install_log("parse_url fails the OpenAM URL \"%s\"", openam_url);
-            } else if (am_url_validate(0, openam_url, &ssl_info, &httpcode, install_log) == AM_SUCCESS && httpcode != 0) {
+            } else if (am_url_validate(0, openam_url, &net_options, &httpcode) == AM_SUCCESS && httpcode != 0) {
                 am_validation_skipped = AM_FALSE;
                 break;
             } else {
@@ -1443,6 +1450,7 @@ static void install_interactive(int argc, char **argv) {
                 if (!continue_upgrade) {
                     install_log("installation exit because OpenAM is not running");
                     fprintf(stdout, "Exiting installation\n.");
+                    am_net_options_delete(&net_options);
                     exit(1);
                 }
             }
@@ -1488,7 +1496,7 @@ static void install_interactive(int argc, char **argv) {
                 break;
             }
 
-            if (am_url_validate(0, input, &ssl_info, &httpcode, install_log) != AM_SUCCESS) {
+            if (am_url_validate(0, input, &net_options, &httpcode) != AM_SUCCESS) {
                 /* hopefully we cannot contact because the agent is not running,
                  * rather than because the URI is complete rubbish
                  */
@@ -1507,6 +1515,7 @@ static void install_interactive(int argc, char **argv) {
                 if (!continue_upgrade) {
                     install_log("installation exit because apache is running");
                     fprintf(stdout, "Exiting installation.\n");
+                    am_net_options_delete(&net_options);
                     exit(1);
                 }
             }
@@ -1620,9 +1629,8 @@ static void install_interactive(int argc, char **argv) {
         install_log("validating configuration parameters...");
         fprintf(stdout, "\nValidating...\n");
 
-        rv = am_agent_login(0, openam_url, NULL,
-                agent_user, agent_password, agent_realm, AM_TRUE, 0, &ssl_info,
-                &agent_token, NULL, NULL, NULL, install_log);
+        rv = am_agent_login(0, openam_url, agent_user, agent_password, agent_realm, &net_options,
+                &agent_token, NULL, NULL, NULL);
 
         if (rv != AM_SUCCESS) {
             fprintf(stderr, "\nError validating OpenAM - Agent configuration.\n"
@@ -1636,7 +1644,7 @@ static void install_interactive(int argc, char **argv) {
 
         if (agent_token != NULL) {
             fprintf(stdout, "\nCleaning up validation data...\n");
-            am_agent_logout(0, openam_url, agent_token, NULL, &ssl_info, install_log);
+            am_agent_logout(0, openam_url, agent_token, &net_options);
             free(agent_token);
             agent_token = NULL;
         }
@@ -1749,6 +1757,7 @@ static void install_silent(int argc, char** argv) {
     if (!lic_accepted) {
         install_log("license was not accepted");
         fprintf(stdout, "\nYou need to accept the License terms and conditions to continue.\n");
+        am_net_options_delete(&net_options);
         exit(1);
     }
 
@@ -1770,6 +1779,7 @@ static void install_silent(int argc, char** argv) {
             } else {
                 fprintf(stderr, "\nError reading config file %s. Exiting.\n", argv[2]);
                 install_log("exiting install because config file %s is not readable", argv[2]);
+                am_net_options_delete(&net_options);
                 exit(1);
             }
 #if !defined(_WIN32)
@@ -1797,6 +1807,7 @@ static void install_silent(int argc, char** argv) {
         if (agent_password == NULL) {
             fprintf(stdout, "\nError reading password file %s. Exiting.\n", argv[7]);
             install_log("installation exit");
+            am_net_options_delete(&net_options);
             exit(1);
         }
 
@@ -1813,9 +1824,8 @@ static void install_silent(int argc, char** argv) {
             install_log("validating configuration parameters...");
             fprintf(stdout, "\nValidating...\n");
 
-            rv = am_agent_login(0, argv[3], NULL,
-                    argv[6], agent_password, argv[5], AM_TRUE, 0, &ssl_info,
-                    &agent_token, NULL, NULL, NULL, install_log);
+            rv = am_agent_login(0, argv[3], argv[6], agent_password, argv[5], &net_options,
+                    &agent_token, NULL, NULL, NULL);
             if (rv != AM_SUCCESS) {
                 fprintf(stderr, "\nError validating OpenAM - Agent configuration.\n");
                 install_log("error validating OpenAM agent configuration");
@@ -1828,7 +1838,7 @@ static void install_silent(int argc, char** argv) {
 
             if (agent_token != NULL) {
                 fprintf(stdout, "\nCleaning up validation data...\n");
-                am_agent_logout(0, argv[3], agent_token, NULL, &ssl_info, install_log);
+                am_agent_logout(0, argv[3], agent_token, &net_options);
                 free(agent_token);
                 agent_token = NULL;
             }
@@ -2287,7 +2297,7 @@ int main(int argc, char **argv) {
                     app_path);
             instance_type = AM_I_VARNISH;
         }
-       
+        
 #ifndef _WIN32
         /* find user and group for non-windows installation */
         if (instance_type == AM_I_APACHE && argc > 2) {
@@ -2300,36 +2310,42 @@ int main(int argc, char **argv) {
         }
 #endif
 
-        /* read environment variables and create struct am_ssl_options */
-        memset(&ssl_info, 0, sizeof (struct am_ssl_options));
+        /* read environment variables and create am_net_options */
+        memset(&net_options, 0, sizeof (am_net_options_t));
         for (i = 0; i < ARRAY_SIZE(ssl_variables); i++) {
             char *env = getenv(ssl_variables[i]);
             if (ISVALID(env)) {
                 if (strcmp(ssl_variables[i], AM_INSTALL_SSL_KEY) == 0) {
-                    strncpy(ssl_info.cert_key_file, env, sizeof (ssl_info.cert_key_file) - 1);
+                    net_options.cert_key_file = strdup(env);
                 }
                 if (strcmp(ssl_variables[i], AM_INSTALL_SSL_CERT) == 0) {
-                    strncpy(ssl_info.cert_file, env, sizeof (ssl_info.cert_file) - 1);
+                    net_options.cert_file = strdup(env);
                 }
                 if (strcmp(ssl_variables[i], AM_INSTALL_SSL_CA) == 0) {
-                    strncpy(ssl_info.cert_ca_file, env, sizeof (ssl_info.cert_ca_file) - 1);
+                    net_options.cert_ca_file = strdup(env);
                 }
                 if (strcmp(ssl_variables[i], AM_INSTALL_SSL_CIPHERS) == 0) {
-                    strncpy(ssl_info.ciphers, env, sizeof (ssl_info.ciphers) - 1);
+                    net_options.ciphers = strdup(env);
                 }
                 if (strcmp(ssl_variables[i], AM_INSTALL_SSL_OPTIONS) == 0) {
-                    strncpy(ssl_info.tls_opts, env, sizeof (ssl_info.tls_opts) - 1);
+                    net_options.tls_opts = strdup(env);
                 }
                 if (strcmp(ssl_variables[i], AM_INSTALL_SSL_KEY_PASSWORD) == 0) {
-                    strncpy(ssl_info.cert_key_pass, env, sizeof (ssl_info.cert_key_pass) - 1);
+                    net_options.cert_key_pass = strdup(env);
+                    if (net_options.cert_key_pass != NULL) {
+                        net_options.cert_key_pass_sz = strlen(net_options.cert_key_pass);
+                    }
                 }
             }
         }
+        net_options.keepalive = net_options.local = net_options.cert_trust = AM_TRUE;
+        net_options.log = install_log;
 
         /* run through the cli options */
         for (i = 0; params[i].option; ++i) {
             if (!strcasecmp(argv[1], params[i].option)) {
                 params[i].handler(argc, argv);
+                am_net_options_delete(&net_options);
                 return 0;
             }
         }
@@ -2367,5 +2383,6 @@ int main(int argc, char **argv) {
             "Build and version information:\n"
             " agentadmin --v\n\n", DESCRIPTION);
 
+    am_net_options_delete(&net_options);
     return 0;
 }

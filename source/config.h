@@ -234,6 +234,7 @@ typedef struct {
     
     int path_info_ignore;
     int path_info_ignore_not_enforced;
+    int keepalive_disable;
 
 } am_config_t;
 
@@ -274,6 +275,8 @@ typedef struct {
 
 #define AM_AGENTS_CONFIG_RETRY_MAX "com.forgerock.agents.init.retry.max"
 #define AM_AGENTS_CONFIG_RETRY_WAIT "com.forgerock.agents.init.retry.wait"
+
+#define AM_AGENTS_CONFIG_KEEPALIVE_DISABLE "org.forgerock.agents.config.keepalive.disable"
 
 /* other options */
 

@@ -57,13 +57,20 @@ void test_single_request(void **state) {
     int rv;
     const char *openam_url = "https://am.example.com:443/am";
     int httpcode = 0;
+    am_net_options_t net_options;
+
+    memset(&net_options, 0, sizeof (am_net_options_t));
+    net_options.keepalive = net_options.local = net_options.cert_trust = AM_TRUE;
+    net_options.log = install_log;
 
     am_net_init();
 
-    rv = am_url_validate(0, openam_url, NULL, &httpcode, install_log);
+    rv = am_url_validate(0, openam_url, &net_options, &httpcode);
+
+    am_net_options_delete(&net_options);
 
     assert_int_equal(rv, AM_SUCCESS);
-    
+
     am_net_shutdown();
     am_net_init_ssl_reset();
 
@@ -78,23 +85,27 @@ void test_multiple_requests(void **state) {
     const char *agent_password = "password";
     const char *agent_realm = "/";
     char *agent_token = NULL;
+    am_net_options_t net_options;
+
+    memset(&net_options, 0, sizeof (am_net_options_t));
+    net_options.keepalive = net_options.local = net_options.cert_trust = AM_TRUE;
+    net_options.log = install_log;
 
     am_net_init();
 
-    rv = am_agent_login(0, openam_url, NULL,
-            agent_user, agent_password, agent_realm, AM_TRUE, 0, NULL,
-            &agent_token, NULL, NULL, NULL, install_log);
+    rv = am_agent_login(0, openam_url, agent_user, agent_password, agent_realm, &net_options,
+            &agent_token, NULL, NULL, NULL);
 
     fprintf(stderr, "LOGIN STATUS: %s\n", am_strerror(rv));
     assert_int_equal(rv, AM_SUCCESS);
 
     if (agent_token != NULL) {
-        rv = am_agent_logout(0, openam_url, agent_token,
-                NULL, NULL, install_log);
+        rv = am_agent_logout(0, openam_url, agent_token, &net_options);
 
         fprintf(stderr, "LOGOUT STATUS: %s\n", am_strerror(rv));
         assert_int_equal(rv, AM_SUCCESS);
     }
+    am_net_options_delete(&net_options);
 
     am_net_shutdown();
     am_net_init_ssl_reset();

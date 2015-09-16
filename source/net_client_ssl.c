@@ -313,15 +313,15 @@ static void show_server_cert(am_net_t *net) {
         line = X509_NAME_oneline(X509_get_subject_name(cert), 0, 0);
         AM_LOG_DEBUG(net->instance_id,
                 "%s server certificate subject: %s", thisfunc, LOGEMPTY(line));
-        if (net->log != NULL) {
-            net->log("%s server certificate subject: %s", thisfunc, LOGEMPTY(line));
+        if (net->options != NULL && net->options->log != NULL) {
+            net->options->log("%s server certificate subject: %s", thisfunc, LOGEMPTY(line));
         }
         am_free(line);
         line = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0);
         AM_LOG_DEBUG(net->instance_id,
                 "%s server certificate issuer: %s", thisfunc, LOGEMPTY(line));
-        if (net->log != NULL) {
-            net->log("%s server certificate issuer: %s", thisfunc, LOGEMPTY(line));
+        if (net->options != NULL && net->options->log != NULL) {
+            net->options->log("%s server certificate issuer: %s", thisfunc, LOGEMPTY(line));
         }
         am_free(line);
         X509_free(cert);
@@ -350,8 +350,8 @@ static char ssl_is_fatal_error(am_net_t *net, int ssl_error) {
             return 0;
     }
     error_string = (char *) read_ssl_error();
-    if (net->log != NULL) {
-        net->log("%s %s", thisfunc, error_string);
+    if (net->options != NULL && net->options->log != NULL) {
+        net->options->log("%s %s", thisfunc, error_string);
     }
     AM_LOG_ERROR(net->instance_id, "%s %s", thisfunc, error_string);
     return 1;
@@ -523,8 +523,8 @@ static void write_bio_to_socket(am_net_t *n) {
                     n->ssl.sys_error = errno;
 #endif
                     if (n->ssl.sys_error != 0) {
-                        if (n->log != NULL) {
-                            n->log("%s error %d", thisfunc, n->ssl.sys_error);
+                        if (n->options != NULL && n->options->log != NULL) {
+                            n->options->log("%s error %d", thisfunc, n->ssl.sys_error);
                         }
                         AM_LOG_ERROR(n->instance_id, "%s error %d", thisfunc, n->ssl.sys_error);
                     }
@@ -558,8 +558,8 @@ static void net_ssl_msg_callback(int writep, int version, int content_type,
         const void *buf, size_t len, SSL *ssl, void *arg) {
     static const char *thisfunc = "net_ssl_msg_callback():";
     am_net_t *net = (am_net_t *) arg;
-    if (net->log != NULL) {
-        net->log("%s %s (%s)", thisfunc,
+    if (net->options != NULL && net->options->log != NULL) {
+        net->options->log("%s %s (%s)", thisfunc,
                 SSL_state_string_long(ssl), SSL_state_string(ssl));
     }
     AM_LOG_DEBUG(net->instance_id, "%s %s (%s)",
@@ -572,6 +572,7 @@ static void net_ssl_msg_callback(int writep, int version, int content_type,
 void net_connect_ssl(am_net_t *n) {
     static const char *thisfunc = "net_connect_ssl():";
     int status = -1, err = 0;
+    am_bool_t cert_ca_file_loaded = AM_FALSE;
     if (n != NULL) {
         n->ssl.on = AM_FALSE;
         n->ssl.error = AM_SUCCESS;
@@ -604,8 +605,8 @@ void net_connect_ssl(am_net_t *n) {
         SSL_CTX_ctrl(n->ssl.ssl_context, SSL_CTRL_SET_MSG_CALLBACK_ARG, 0, n);
         SSL_CTX_set_msg_callback(n->ssl.ssl_context, net_ssl_msg_callback);
 
-        if (ISVALID(n->ssl.info.tls_opts)) {
-            char *v, *t, *c = strdup(n->ssl.info.tls_opts);
+        if (n->options != NULL && ISVALID(n->options->tls_opts)) {
+            char *v, *t, *c = strdup(n->options->tls_opts);
             if (c != NULL) {
                 for ((v = strtok_r(c, AM_SPACE_CHAR, &t)); v; (v = strtok_r(NULL, AM_SPACE_CHAR, &t))) {
                     if (strcasecmp(v, "-SSLv3") == 0) {
@@ -628,37 +629,39 @@ void net_connect_ssl(am_net_t *n) {
             }
         }
 
-        if (ISVALID(n->ssl.info.ciphers)) {
-            if (!SSL_CTX_set_cipher_list(n->ssl.ssl_context, n->ssl.info.ciphers)) {
+        if (n->options != NULL && ISVALID(n->options->ciphers)) {
+            if (!SSL_CTX_set_cipher_list(n->ssl.ssl_context, n->options->ciphers)) {
                 AM_LOG_WARNING(n->instance_id,
                         "%s failed to set cipher list \"%s\"",
-                        thisfunc, n->ssl.info.ciphers);
+                        thisfunc, n->options->ciphers);
             }
         }
-        if (ISVALID(n->ssl.info.cert_ca_file)) {
-            if (!SSL_CTX_load_verify_locations(n->ssl.ssl_context, n->ssl.info.cert_ca_file, NULL)) {
+        if (n->options != NULL && ISVALID(n->options->cert_ca_file)) {
+            if (!SSL_CTX_load_verify_locations(n->ssl.ssl_context, n->options->cert_ca_file, NULL)) {
                 AM_LOG_WARNING(n->instance_id,
                         "%s failed to load trusted CA certificates file \"%s\"",
-                        thisfunc, n->ssl.info.cert_ca_file);
+                        thisfunc, n->options->cert_ca_file);
+            } else {
+                cert_ca_file_loaded = AM_TRUE;
             }
         }
-        if (ISVALID(n->ssl.info.cert_file)) {
-            if (!SSL_CTX_use_certificate_file(n->ssl.ssl_context, n->ssl.info.cert_file, SSL_FILETYPE_PEM)) {
+        if (n->options != NULL && ISVALID(n->options->cert_file)) {
+            if (!SSL_CTX_use_certificate_file(n->ssl.ssl_context, n->options->cert_file, SSL_FILETYPE_PEM)) {
                 AM_LOG_WARNING(n->instance_id,
                         "%s failed to load client certificate file \"%s\"",
-                        thisfunc, n->ssl.info.cert_file);
+                        thisfunc, n->options->cert_file);
             }
         }
 
-        if (ISVALID(n->ssl.info.cert_key_file)) {
-            if (ISVALID(n->ssl.info.cert_key_pass)) {
-                SSL_CTX_set_default_passwd_cb_userdata(n->ssl.ssl_context, (void *) n->ssl.info.cert_key_pass);
+        if (n->options != NULL && ISVALID(n->options->cert_key_file)) {
+            if (ISVALID(n->options->cert_key_pass)) {
+                SSL_CTX_set_default_passwd_cb_userdata(n->ssl.ssl_context, (void *) n->options->cert_key_pass);
                 SSL_CTX_set_default_passwd_cb(n->ssl.ssl_context, password_callback);
             }
-            if (!SSL_CTX_use_PrivateKey_file(n->ssl.ssl_context, n->ssl.info.cert_key_file, SSL_FILETYPE_PEM)) {
+            if (!SSL_CTX_use_PrivateKey_file(n->ssl.ssl_context, n->options->cert_key_file, SSL_FILETYPE_PEM)) {
                 AM_LOG_WARNING(n->instance_id,
                         "%s failed to load private key file \"%s\"",
-                        thisfunc, n->ssl.info.cert_key_file);
+                        thisfunc, n->options->cert_key_file);
             }
             if (!SSL_CTX_check_private_key(n->ssl.ssl_context)) {
                 AM_LOG_WARNING(n->instance_id,
@@ -667,11 +670,19 @@ void net_connect_ssl(am_net_t *n) {
             }
         }
 
-        if (n->ssl.info.verifypeer == 0) {
+        if (n->options == NULL || n->options->cert_trust) {
             SSL_CTX_set_verify(n->ssl.ssl_context, SSL_VERIFY_NONE, NULL);
-        } else {
+        } else if (cert_ca_file_loaded) {
             SSL_CTX_set_verify(n->ssl.ssl_context, SSL_VERIFY_PEER, NULL);
             SSL_CTX_set_verify_depth(n->ssl.ssl_context, 100);
+        } else {
+            /* if we are going to verify the server cert, trusted ca certs file must be present */
+            AM_LOG_ERROR(n->instance_id,
+                    "%s unable to verify peer: trusted CA certificates file \"%s\" not loaded",
+                    thisfunc, LOGEMPTY(n->options->cert_ca_file));
+
+            n->ssl.error = AM_EINVAL;
+            return;
         }
 
         n->ssl.ssl_handle = SSL_new(n->ssl.ssl_context);
@@ -781,28 +792,4 @@ int net_read_ssl(am_net_t *n, const char *buf, int sz) {
     }
 
     return status;
-}
-
-void am_net_set_ssl_options(am_config_t *ac, struct am_ssl_options *info) {
-    if (ac == NULL || info == NULL) return;
-    memset(info, 0, sizeof (struct am_ssl_options));
-    if (ISVALID(ac->ciphers)) {
-        snprintf(info->ciphers, sizeof (info->ciphers), "%s", ac->ciphers);
-    }
-    if (ISVALID(ac->cert_ca_file)) {
-        snprintf(info->cert_ca_file, sizeof (info->cert_ca_file), "%s", ac->cert_ca_file);
-    }
-    if (ISVALID(ac->cert_file)) {
-        snprintf(info->cert_file, sizeof (info->cert_file), "%s", ac->cert_file);
-    }
-    if (ISVALID(ac->cert_key_file)) {
-        snprintf(info->cert_key_file, sizeof (info->cert_key_file), "%s", ac->cert_key_file);
-    }
-    if (ISVALID(ac->cert_key_pass)) {
-        snprintf(info->cert_key_pass, sizeof (info->cert_key_pass), "%s", ac->cert_key_pass);
-    }
-    if (ISVALID(ac->tls_opts)) {
-        snprintf(info->tls_opts, sizeof (info->tls_opts), "%s", ac->tls_opts);
-    }
-    info->verifypeer = !ac->cert_trust;
 }

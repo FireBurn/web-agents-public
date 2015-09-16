@@ -169,7 +169,7 @@ static void *url_validator(void *arg) {
     int validate_status, httpcode = 0;
     naming_validator_int_t *v = (naming_validator_int_t *) arg;
     if (!keep_going) return 0;
-    validate_status = am_url_validate(v->instance_id, v->url, NULL, &httpcode, NULL);
+    validate_status = am_url_validate(v->instance_id, v->url, NULL, &httpcode);
 #ifdef _WIN32
     EnterCriticalSection(&mutex);
 #else

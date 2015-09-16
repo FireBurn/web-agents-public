@@ -205,7 +205,7 @@ static am_return_t setup_request_data(am_request_t *r) {
         r->status = AM_ENOMEM;
         return AM_FAIL;
     }
-    
+
     if (ISVALID(r->path_info) && (r->conf->path_info_ignore_not_enforced || r->conf->path_info_ignore)) {
         char *pos;
 
@@ -248,7 +248,7 @@ static am_return_t setup_request_data(am_request_t *r) {
         r->status = AM_ENOMEM;
         return AM_FAIL;
     }
-    
+
     if (ISVALID(r->path_info) && r->conf->path_info_ignore) {
         char *pos;
 
@@ -596,7 +596,7 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                 char *p = strstr(m->name, AM_COMMA_CHAR);
                 AM_LOG_DEBUG(r->instance_id, "%s trying not enforced pattern %s", thisfunc, m->value);
                 if (p == NULL) {
-                    
+
                     /* regular [0]=not-enforced-url option */
 
                     if (ISVALID(r->normalized_url_pathinfo) &&
@@ -610,11 +610,11 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                     } else {
                         compare_status += url_matches_pattern(r, m->value, url, r->conf->not_enforced_regex_enable);
                     }
-                    
+
                 } else {
-                    
+
                     /* method-extended [GET,0]=not-enforced-url option */
-                    
+
                     char *pv = strndup(m->name, p - m->name);
                     if (pv != NULL) {
                         char mtn = am_method_str_to_num(pv);
@@ -924,12 +924,13 @@ static am_return_t validate_policy(am_request_t *r) {
     if ((status == AM_SUCCESS && cache_ts > 0) || status != AM_SUCCESS) {
         struct am_policy_result *policy_cache_new = NULL;
         struct am_namevalue *session_cache_new = NULL;
-        struct am_ssl_options info;
+        am_net_options_t net_options;
         const char *service_url = get_valid_openam_url(r);
         int max_retry = 3;
         unsigned int retry = 3, retry_wait = 2;
 
-        am_net_set_ssl_options(r->conf, &info);
+        am_net_options_create(r->conf, &net_options, NULL);
+        net_options.server_id = r->conf->lb_enable && ISVALID(r->session_info.si) ? strdup(r->session_info.si) : NULL;
 
         /* entry is found, but was not valid, or nothing was found,
          * do a policy+session call in either way
@@ -939,13 +940,9 @@ static am_return_t validate_policy(am_request_t *r) {
         do {
             policy_cache_new = NULL;
             session_cache_new = NULL;
-            status = am_agent_policy_request(r->instance_id, service_url,
-                    r->conf->token, r->token,
-                    url,
-                    r->conf->notif_url, am_scope_to_str(scope), r->client_ip, pattrs,
-                    r->conf->lb_enable && ISVALID(r->session_info.si) ? r->session_info.si : NULL, &info,
-                    &session_cache_new,
-                    &policy_cache_new);
+            status = am_agent_policy_request(r->instance_id, service_url, r->conf->token, r->token,
+                    url, am_scope_to_str(scope), r->client_ip, pattrs,
+                    &net_options, &session_cache_new, &policy_cache_new);
             if (status == AM_SUCCESS && session_cache_new != NULL && policy_cache_new != NULL) {
                 remote = AM_TRUE;
                 break;
@@ -966,6 +963,8 @@ static am_return_t validate_policy(am_request_t *r) {
 
             sleep(retry_wait);
         } while (--max_retry > 0);
+
+        am_net_options_delete(&net_options);
 
         if (max_retry == 0) {
             AM_LOG_ERROR(r->instance_id,
@@ -1632,7 +1631,7 @@ static char *find_active_login_server(am_request_t *r, char add_goto_value) {
         am_config_map_t *m = (valid_idx >= map_sz) ? &map[0] : &map[valid_idx];
         if (add_goto_value) {
             char *goto_encoded = url_encode(r->overridden_url);
-            
+
             if (r->conf->cdsso_enable &&
                     ISVALID(r->conf->url_redirect_param) &&
                     strstr(m->value, "goto=") != NULL &&
@@ -1654,9 +1653,9 @@ static char *find_active_login_server(am_request_t *r, char add_goto_value) {
                 am_asprintf(&login_url, "%s&%s", login_url, cdsso_elements);
             }
             am_free(goto_encoded);
-            
+
         } else {
-            
+
             if (ISVALID(cdsso_elements)) {
                 am_asprintf(&login_url, "%s%s%s",
                         m->value,
@@ -1738,13 +1737,15 @@ static am_return_t handle_exit(am_request_t *r) {
                         if (oam != NULL) {
                             wd->token = strdup(r->token);
                             wd->openam = strdup(oam);
-                            wd->server_id = r->conf->lb_enable && ISVALID(r->session_info.si) ? strdup(r->session_info.si) : NULL;
-
-                            am_net_set_ssl_options(r->conf, &wd->info);
+                            wd->options = malloc(sizeof (am_net_options_t));
+                            am_net_options_create(r->conf, wd->options, NULL);
+                            if (wd->options != NULL) {
+                                wd->options->server_id = r->conf->lb_enable && ISVALID(r->session_info.si) ? strdup(r->session_info.si) : NULL;
+                            }
 
                             if (am_worker_dispatch(session_logout_worker, wd) != 0) {
-                                AM_FREE(wd->token, wd->openam, wd->server_id);
-                                free(wd);
+                                am_net_options_delete(wd->options);
+                                AM_FREE(wd->token, wd->openam, wd->options, wd);
                                 r->status = AM_ERROR;
                                 AM_LOG_WARNING(r->instance_id, "%s failed to dispatch logout worker", thisfunc);
                                 break;
@@ -1793,13 +1794,13 @@ static am_return_t handle_exit(am_request_t *r) {
                 free(url);
                 break;
             }
-            
+
             if (ISINVALID(r->user) && r->conf->anon_remote_user_enable
                     && ISVALID(r->conf->unauthenticated_user)) {
                 r->user = r->conf->unauthenticated_user;
                 AM_LOG_DEBUG(r->instance_id, "%s remote user set to unauthenticated user %s",
                         thisfunc, r->user);
-            } 
+            }
 
             /* set user */
             if (r->am_set_user_f != NULL && ISVALID(r->user)) {
@@ -2080,7 +2081,7 @@ static am_return_t handle_exit(am_request_t *r) {
 
                         /* create a redirect url value */
                         url = find_active_login_server(r, AM_FALSE);
-                        
+
                         if (r->conf->cdsso_enable &&
                                 ISVALID(r->conf->url_redirect_param) &&
                                 strstr(url, "goto=") != NULL &&

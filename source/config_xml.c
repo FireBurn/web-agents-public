@@ -428,6 +428,7 @@ static void end_element(void * userData, const char * name) {
     parse_config_value(ctx, AM_AGENTS_CONFIG_RETRY_WAIT, CONF_NUMBER, NULL, &ctx->conf->retry_wait, val, len);
     
     parse_config_value(ctx, AM_AGENTS_CONFIG_LB_ENABLE, CONF_NUMBER, NULL, &ctx->conf->lb_enable, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_KEEPALIVE_DISABLE, CONF_NUMBER, NULL, &ctx->conf->keepalive_disable, val, len);
 
     /* other options */
 
