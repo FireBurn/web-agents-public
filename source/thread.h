@@ -91,8 +91,8 @@ int wait_for_exit_event(am_exit_event_t *e);
 void set_event(am_event_t *e);
 void set_exit_event(am_exit_event_t *e);
 
-void close_event(am_event_t *e);
-void close_exit_event(am_exit_event_t *e);
+void close_event(am_event_t **e);
+void close_exit_event(am_exit_event_t **e);
 
 am_timer_event_t *am_create_timer_event(int type, unsigned int interval, void *args, void (*callback)(void *));
 void am_start_timer_event(am_timer_event_t *e);

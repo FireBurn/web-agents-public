@@ -437,7 +437,7 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CERT_FILE, CONF_STRING, NULL, &conf->cert_file, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CA_FILE, CONF_STRING, NULL, &conf->cert_ca_file, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CIPHERS, CONF_STRING, NULL, &conf->ciphers, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_TRUST_CERT, CONF_STRING, NULL, &conf->cert_trust, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_TRUST_CERT, CONF_NUMBER, NULL, &conf->cert_trust, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_TLS_OPT, CONF_STRING, NULL, &conf->tls_opts, NULL);
 
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_NET_TIMEOUT, CONF_NUMBER, NULL, &conf->net_timeout, NULL);

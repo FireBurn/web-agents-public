@@ -696,8 +696,8 @@ int am_net_close(am_net_t *n) {
     am_net_diconnect(n);
 
     /* shut down connected/disconnected events */
-    close_event(n->ce);
-    close_exit_event(n->de);
+    close_event(&n->ce);
+    close_exit_event(&n->de);
 
     /* shut down response timeout handler */
     am_close_timer_event(n->tm);

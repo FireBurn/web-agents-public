@@ -1132,9 +1132,9 @@ static void install_interactive(int argc, char **argv) {
             case AM_I_APACHE: {
                 char *conf = NULL;
 
-                /* Apache HTTPD specific */
+                /* Apache HTTP Server specific */
 
-                input = prompt_and_read("\nEnter the complete path to the httpd.conf file which is used by Apache HTTPD\n"
+                input = prompt_and_read("\nEnter the complete path to the httpd.conf file which is used by Apache HTTP\n"
                         "Server to store its configuration.\n"
                         "[ q or 'ctrl+c' to exit ]\n"
                         "Configuration file ["APACHE_DEFAULT_CONF_FILE"]:");
@@ -1508,7 +1508,7 @@ static void install_interactive(int argc, char **argv) {
             if (upgrade) {
                 /* we must suspend the installation until the agent is shut down */
                 am_bool_t continue_upgrade = AM_FALSE;
-                while (!get_yes_or_no("\nPlease shut down the Apache HTTPD server to continue upgrade.\n"
+                while (!get_yes_or_no("\nPlease shut down the Apache HTTP Server to continue upgrade.\n"
                                       "Continue upgrade (Yes/No, q to quit) [Yes]: ", &continue_upgrade)) {
                     printf("Please answer yes or no\n");
                 }

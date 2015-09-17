@@ -545,29 +545,31 @@ int wait_for_exit_event(am_exit_event_t *e) {
 #endif
 }
 
-void close_event(am_event_t *e) {
-    if (e != NULL) {
-        set_event(e);
+void close_event(am_event_t **e) {
+    am_event_t *event = e != NULL ? *e : NULL;
+    if (event != NULL) {
+        set_event(event);
 #ifdef _WIN32
-        CloseHandle(e->e);
+        CloseHandle(event->e);
 #else
-        pthread_mutex_destroy(&e->m);
-        pthread_cond_destroy(&e->c);
+        pthread_mutex_destroy(&event->m);
+        pthread_cond_destroy(&event->c);
 #endif
-        free(e);
-        e = NULL;
+        free(event);
+        *e = NULL;
     }
 }
 
-void close_exit_event(am_exit_event_t *e) {
-    if (e != NULL) {
+void close_exit_event(am_exit_event_t **e) {
+    am_exit_event_t *event = e != NULL ? *e : NULL;
+    if (event != NULL) {
 #ifdef _WIN32
-        CloseHandle(e->e);
+        CloseHandle(event->e);
 #else
-        pthread_mutex_destroy(&e->m);
+        pthread_mutex_destroy(&event->m);
 #endif
-        free(e);
-        e = NULL;
+        free(event);
+        *e = NULL;
     }
 }
 
@@ -793,7 +795,7 @@ void am_close_timer_event(am_timer_event_t *e) {
 #else
     timer_delete(e->tick);
 #endif
-    close_exit_event(e->exit_ev);
+    close_exit_event(&e->exit_ev);
     am_free(e->args);
     free(e);
 }

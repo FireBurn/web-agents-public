@@ -470,7 +470,8 @@ static int send_attribute_request(am_net_t *conn, char **token, char **pxml, siz
     return status;
 }
 
-static int send_session_request(am_net_t *conn, char **token, struct am_namevalue **session_list) {
+static int send_session_request(am_net_t *conn, char **token, const char *user_token,
+        struct am_namevalue **session_list) {
     static const char *thisfunc = "send_session_request():";
     size_t post_sz, post_data_sz, token_sz;
     char *post = NULL, *post_data = NULL, *token_in = NULL, *token_b64;
@@ -509,7 +510,7 @@ static int send_session_request(am_net_t *conn, char **token, struct am_namevalu
             "</SessionRequest>]]>"
             "</Request>"
             "</RequestSet>",
-            NOTNULL(token_b64), *token, NOTNULL(token_b64),
+            NOTNULL(token_b64), ISVALID(user_token) ? user_token : *token, NOTNULL(token_b64),
             (conn->options != NULL && ISVALID(conn->options->notif_url) ? conn->options->notif_url : ""),
             *token);
     if (post_data == NULL) {
@@ -841,7 +842,7 @@ int am_agent_login(unsigned long instance_id, const char *openam,
                 }
                 if (!keepalive) {
                     am_net_close(&conn);
-                    close_event(req_data.event);
+                    close_event(&req_data.event);
                     am_free(req_data.data);
                     state = login_request;
                     break;
@@ -855,7 +856,7 @@ int am_agent_login(unsigned long instance_id, const char *openam,
                 }
                 if (!keepalive) {
                     am_net_close(&conn);
-                    close_event(req_data.event);
+                    close_event(&req_data.event);
                     am_free(req_data.data);
                     state = login_attributes;
                     break;
@@ -872,7 +873,7 @@ int am_agent_login(unsigned long instance_id, const char *openam,
                     }
                     if (!keepalive) {
                         am_net_close(&conn);
-                        close_event(req_data.event);
+                        close_event(&req_data.event);
                         am_free(req_data.data);
                         state = login_session;
                         break;
@@ -884,14 +885,14 @@ int am_agent_login(unsigned long instance_id, const char *openam,
                 }
             case login_session:
                 /* send session request (PLL endpoint) */
-                status = send_session_request(&conn, agent_token, session_list);
+                status = send_session_request(&conn, agent_token, NULL, session_list);
                 if (status != AM_SUCCESS) {
                     state = login_done;
                     break;
                 }
                 if (!keepalive) {
                     am_net_close(&conn);
-                    close_event(req_data.event);
+                    close_event(&req_data.event);
                     am_free(req_data.data);
                     state = login_policychange;
                     break;
@@ -914,7 +915,7 @@ int am_agent_login(unsigned long instance_id, const char *openam,
     }
 
     am_net_close(&conn);
-    close_event(req_data.event);
+    close_event(&req_data.event);
     am_free(req_data.data);
 
     return status;
@@ -1003,7 +1004,7 @@ int am_agent_logout(unsigned long instance_id, const char *openam, const char *t
     }
 
     am_net_close(&conn);
-    close_event(req_data.event);
+    close_event(&req_data.event);
 
     am_free(req_data.data);
     return status;
@@ -1041,7 +1042,7 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
         switch (state) {
             case policy_session:
                 /* send session request (PLL endpoint)  */
-                status = send_session_request(&conn, &token_ptr, session_list);
+                status = send_session_request(&conn, &token_ptr, user_token, session_list);
                 if (status != AM_SUCCESS) {
                     state = policy_done;
                     break;
@@ -1051,7 +1052,7 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
 
                 if (!keepalive) {
                     am_net_close(&conn);
-                    close_event(req_data.event);
+                    close_event(&req_data.event);
                     am_free(req_data.data);
                     state = policy_request;
                     break;
@@ -1075,7 +1076,7 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
     }
 
     am_net_close(&conn);
-    close_event(req_data.event);
+    close_event(&req_data.event);
     am_free(req_data.data);
 
     return status;
@@ -1097,7 +1098,7 @@ int am_url_validate(unsigned long instance_id, const char* url, am_net_options_t
     if (!ISVALID(url)) {
         return AM_EINVAL;
     }
-    
+
     memset(&request_data, 0, sizeof (struct request_data));
     memset(&conn, 0, sizeof (am_net_t));
     conn.options = options;
@@ -1161,7 +1162,7 @@ int am_url_validate(unsigned long instance_id, const char* url, am_net_options_t
     }
 
     am_net_close(&conn);
-    close_event(request_data.event);
+    close_event(&request_data.event);
 
     am_free(request_data.data);
     return status;
@@ -1233,7 +1234,7 @@ int am_agent_audit_request(unsigned long instance_id, const char *openam, const 
     AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, conn.http_status);
 
     am_net_close(&conn);
-    close_event(req_data.event);
+    close_event(&req_data.event);
 
     am_free(req_data.data);
     return status;
