@@ -512,7 +512,7 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
             "</RequestSet>",
             NOTNULL(token_b64), ISVALID(user_token) ? user_token : *token, NOTNULL(token_b64),
             (conn->options != NULL && ISVALID(conn->options->notif_url) ? conn->options->notif_url : ""),
-            *token);
+            ISVALID(user_token) ? user_token : *token);
     if (post_data == NULL) {
         AM_FREE(token_b64, token_in);
         return AM_ENOMEM;
