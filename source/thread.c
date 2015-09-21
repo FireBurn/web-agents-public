@@ -620,7 +620,8 @@ am_timer_event_t *am_create_timer_event(int type, unsigned int interval, void *a
         }
         ((struct timer_callback_args *) e->args)->args = args;
         ((struct timer_callback_args *) e->args)->callback = callback;
-        e->exit_ev = create_exit_event();
+
+        e->exit_ev = create_event();
         if (e->exit_ev == NULL) {
             e->error = AM_ENOMEM;
             return e;
@@ -679,18 +680,18 @@ static void *timer_event_loop(void *args) {
     port_event_t ev;
     struct timer_callback_args *cba;
     struct itimerspec ts;
-    if (e->error == 0) {
+    if (e->error == 0 && e->tick > 0) {
         ts.it_value.tv_sec = e->interval;
         ts.it_value.tv_nsec = 0;
         ts.it_interval.tv_sec = e->type == AM_TIMER_EVENT_ONCE ? 0 : e->interval;
         ts.it_interval.tv_nsec = 0;
         e->error = timer_settime(e->tick, 0, &ts, 0);
     } else {
+        if (e->error == 0) {
+            e->error = AM_EINVAL;
+        }
         return NULL;
     }
-
-    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
-    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 
     while (1) {
         if (port_get(e->port, &ev, NULL) < 0) {
@@ -719,9 +720,6 @@ static void *timer_event_loop(void *args) {
         flags |= EV_ONESHOT;
     }
 
-    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
-    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-
     /* set event */
     EV_SET(&ch, 1, EVFILT_TIMER, flags, NOTE_SECONDS, e->interval, NULL);
     kevent(e->tick, &ch, 1, NULL, 0, NULL);
@@ -735,29 +733,29 @@ static void *timer_event_loop(void *args) {
     }
 
 #else
+
 #ifndef _WIN32
 
     struct itimerspec ts;
-    if (e->error == 0) {
+    if (e->error == 0 && e->tick > 0) {
         ts.it_value.tv_sec = e->interval;
         ts.it_value.tv_nsec = 0;
         ts.it_interval.tv_sec = e->type == AM_TIMER_EVENT_ONCE ? 0 : e->interval;
         ts.it_interval.tv_nsec = 0;
         e->error = timer_settime(e->tick, 0, &ts, 0);
     } else {
+        if (e->error == 0) {
+            e->error = AM_EINVAL;
+        }
         return NULL;
     }
-
-    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
-    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 
 #endif
 
     while (1) {
-        if (wait_for_exit_event(e->exit_ev) != 0) {
+        if (wait_for_event(e->exit_ev, 1) != AM_ETIMEDOUT) {
             break;
         }
-        sleep(1);
     }
 
 #endif
@@ -767,23 +765,24 @@ static void *timer_event_loop(void *args) {
 void am_start_timer_event(am_timer_event_t *e) {
     if (e == NULL || e->error != 0) return;
     AM_THREAD_CREATE(e->tick_thr, timer_event_loop, e);
-#ifndef _WIN32
-    pthread_detach(e->tick_thr);
-#endif
 }
 
 void am_close_timer_event(am_timer_event_t *e) {
     if (e == NULL) return;
-    set_exit_event(e->exit_ev);
-#ifndef _WIN32
-    pthread_cancel(e->tick_thr);
-#endif
+
+    set_event(e->exit_ev);
+
 #if defined(__sun)
+
     close(e->port);
     timer_delete(e->tick);
+
 #elif defined(__APPLE__)
+
     close(e->tick);
+
 #elif defined(_WIN32)
+
     WaitForSingleObject(e->tick_thr, INFINITE);
     if (e->tick_q != NULL) {
         if (e->tick != NULL) {
@@ -792,10 +791,18 @@ void am_close_timer_event(am_timer_event_t *e) {
         DeleteTimerQueue(e->tick_q);
     }
     CloseHandle(e->tick_thr);
+
 #else
+
     timer_delete(e->tick);
+
 #endif
-    close_exit_event(&e->exit_ev);
+
+#ifndef _WIN32
+    pthread_join(e->tick_thr, NULL);
+#endif
+
+    close_event(&e->exit_ev);
     am_free(e->args);
     free(e);
 }

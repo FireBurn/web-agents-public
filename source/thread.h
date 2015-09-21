@@ -79,7 +79,7 @@ typedef struct {
     timer_t tick;
 #endif
     am_thread_t tick_thr;
-    am_exit_event_t *exit_ev;
+    am_event_t *exit_ev;
 } am_timer_event_t;
 
 am_event_t *create_event();

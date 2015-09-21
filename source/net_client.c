@@ -186,14 +186,6 @@ static void net_async_poll(am_net_t *n) {
     struct pollfd fds[1];
 #endif
 
-    n->tm = am_create_timer_event(AM_TIMER_EVENT_ONCE, AM_NET_POOL_TIMEOUT, n,
-            net_async_poll_timeout);
-    if (n->tm == NULL) {
-        AM_LOG_ERROR(n->instance_id,
-                "%s failed to create response timeout control", thisfunc);
-        n->error = AM_ENOMEM;
-        return;
-    }
     if (n->tm->error != 0) {
         AM_LOG_ERROR(n->instance_id,
                 "%s error %d creating response timeout control", thisfunc, n->tm->error);
@@ -445,6 +437,11 @@ static void *net_async_connect(void *arg) {
                 }
             }
             net_async_poll(n);
+            /* check for net_async_poll early-return errors (like event-loop timeout control) */
+            if (n->error != AM_SUCCESS) {
+                net_close_socket(n->sock);
+                n->sock = INVALID_SOCKET;
+            }
             break;
         }
 
@@ -485,6 +482,10 @@ static void *net_async_connect(void *arg) {
                         }
                     }
                     net_async_poll(n);
+                    if (n->error != AM_SUCCESS) {
+                        net_close_socket(n->sock);
+                        n->sock = INVALID_SOCKET;
+                    }
                     break;
                 }
                 net_log_error(n->instance_id, pe);
@@ -601,6 +602,7 @@ static int on_message_complete_cb(http_parser *parser) {
 }
 
 int am_net_connect(am_net_t *n) {
+    static const char *thisfunc = "am_net_connect():";
     int status = 0;
     if (n == NULL) {
         /* fatal - must not happen */
@@ -617,27 +619,43 @@ int am_net_connect(am_net_t *n) {
     /* create "connected" event */
     n->ce = create_event();
     if (n->ce == NULL) {
+        AM_LOG_ERROR(n->instance_id,
+                "%s failed to create connected event", thisfunc);
         return AM_ENOMEM;
     }
 
     /* create "disconnect" event */
     n->de = create_exit_event();
     if (n->de == NULL) {
+        AM_LOG_ERROR(n->instance_id,
+                "%s failed to create disconnect event", thisfunc);
+        return AM_ENOMEM;
+    }
+
+    n->tm = am_create_timer_event(AM_TIMER_EVENT_ONCE, AM_NET_POOL_TIMEOUT,
+            n, net_async_poll_timeout);
+    if (n->tm == NULL) {
+        AM_LOG_ERROR(n->instance_id,
+                "%s failed to create response timeout control", thisfunc);
         return AM_ENOMEM;
     }
 
     if (parse_url(n->url, &n->uv) != 0) {
+        AM_LOG_ERROR(n->instance_id,
+                "%s failed to parser url %s", LOGEMPTY(n->url));
         return n->uv.error;
     }
 
     /* allocate memory for http_parser and initialize it */
     n->hs = calloc(1, sizeof (http_parser_settings));
     if (n->hs == NULL) {
+        AM_LOG_ERROR(n->instance_id, "%s memory allocation error", thisfunc);
         return AM_ENOMEM;
     }
 
     n->hp = calloc(1, sizeof (http_parser));
     if (n->hp == NULL) {
+        AM_LOG_ERROR(n->instance_id, "%s memory allocation error", thisfunc);
         return AM_ENOMEM;
     }
 
@@ -654,11 +672,13 @@ int am_net_connect(am_net_t *n) {
     n->pw = CreateThread(NULL, 0,
             (LPTHREAD_START_ROUTINE) net_async_connect, n, 0, NULL);
     if (n->pw == NULL) {
+        AM_LOG_WARNING(n->instance_id, "%s unable to create a new async_connect worker", thisfunc);
         status = AM_EAGAIN;
     }
 #else
     pthread_mutex_init(&n->lk, NULL);
     if (pthread_create(&n->pw, NULL, net_async_connect, n) != 0) {
+        AM_LOG_WARNING(n->instance_id, "%s unable to create a new async_connect worker", thisfunc);
         status = AM_EAGAIN;
     }
 #endif
