@@ -173,7 +173,7 @@ static void net_async_poll_timeout(void *arg) {
             "%s timeout waiting for a response from a server", thisfunc);
     n->error = AM_ETIMEDOUT;
     if (n->on_close) n->on_close(n->data, 0);
-    am_net_diconnect(n);
+    am_net_disconnect(n);
 }
 
 static void net_async_poll(am_net_t *n) {
@@ -208,7 +208,7 @@ static void net_async_poll(am_net_t *n) {
             first_run = 0;
         }
 
-        if (wait_for_exit_event(n->de) != 0) {
+        if (wait_for_event(n->de, 5) != AM_ETIMEDOUT) {
             break;
         }
 
@@ -625,7 +625,7 @@ int am_net_connect(am_net_t *n) {
     }
 
     /* create "disconnect" event */
-    n->de = create_exit_event();
+    n->de = create_event();
     if (n->de == NULL) {
         AM_LOG_ERROR(n->instance_id,
                 "%s failed to create disconnect event", thisfunc);
@@ -686,9 +686,9 @@ int am_net_connect(am_net_t *n) {
     return status;
 }
 
-void am_net_diconnect(am_net_t *n) {
+void am_net_disconnect(am_net_t *n) {
     if (n != NULL) {
-        set_exit_event(n->de);
+        set_event(n->de);
         net_close_ssl(n);
         net_close_socket(n->sock);
         n->sock = INVALID_SOCKET;
@@ -713,11 +713,11 @@ int am_net_close(am_net_t *n) {
     }
 
     /* close ssl/socket */
-    am_net_diconnect(n);
+    am_net_disconnect(n);
 
     /* shut down connected/disconnected events */
     close_event(&n->ce);
-    close_exit_event(&n->de);
+    close_event(&n->de);
 
     /* shut down response timeout handler */
     am_close_timer_event(n->tm);

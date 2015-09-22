@@ -49,14 +49,6 @@ typedef struct {
 #endif
 } am_event_t;
 
-typedef struct {
-#ifdef _WIN32
-    HANDLE e;
-#else
-    pthread_mutex_t m;
-#endif
-} am_exit_event_t;
-
 enum {
     AM_TIMER_EVENT_ONCE = 0,
     AM_TIMER_EVENT_RECURRING
@@ -67,6 +59,7 @@ typedef struct {
     unsigned int interval;
     void *args;
     int error;
+    int init_status;
 #ifdef _WIN32
     HANDLE tick;
     HANDLE tick_q;
@@ -83,16 +76,9 @@ typedef struct {
 } am_timer_event_t;
 
 am_event_t *create_event();
-am_exit_event_t *create_exit_event();
-
 int wait_for_event(am_event_t *e, int timeout);
-int wait_for_exit_event(am_exit_event_t *e);
-
 void set_event(am_event_t *e);
-void set_exit_event(am_exit_event_t *e);
-
 void close_event(am_event_t **e);
-void close_exit_event(am_exit_event_t **e);
 
 am_timer_event_t *am_create_timer_event(int type, unsigned int interval, void *args, void (*callback)(void *));
 void am_start_timer_event(am_timer_event_t *e);

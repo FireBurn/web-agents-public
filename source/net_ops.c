@@ -911,7 +911,7 @@ int am_agent_login(unsigned long instance_id, const char *openam,
         if (options != NULL && options->log != NULL) {
             options->log("%s disconnecting", thisfunc);
         }
-        am_net_diconnect(&conn);
+        am_net_disconnect(&conn);
     }
 
     am_net_close(&conn);
@@ -995,7 +995,7 @@ int am_agent_logout(unsigned long instance_id, const char *openam, const char *t
         if (options != NULL && options->log != NULL) {
             options->log("%s disconnecting", thisfunc);
         }
-        am_net_diconnect(&conn);
+        am_net_disconnect(&conn);
     }
 
     AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, conn.http_status);
@@ -1072,7 +1072,7 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
         if (options != NULL && options->log != NULL) {
             options->log("%s disconnecting", thisfunc);
         }
-        am_net_diconnect(&conn);
+        am_net_disconnect(&conn);
     }
 
     am_net_close(&conn);
@@ -1138,9 +1138,9 @@ int am_url_validate(unsigned long instance_id, const char* url, am_net_options_t
         }
     }
 
-    AM_LOG_DEBUG(instance_id, "%s status is set to %d", thisfunc, status);
+    AM_LOG_DEBUG(instance_id, "%s status is set to %d (%s)", thisfunc, status, am_strerror(status));
     if (options != NULL && options->log != NULL) {
-        options->log("%s status is set to %d", thisfunc, status);
+        options->log("%s status is set to %d (%s)", thisfunc, status, am_strerror(status));
     }
 
     if (status == AM_SUCCESS) {
@@ -1150,7 +1150,7 @@ int am_url_validate(unsigned long instance_id, const char* url, am_net_options_t
         if (options != NULL && options->log != NULL) {
             options->log("%s disconnecting", thisfunc);
         }
-        am_net_diconnect(&conn);
+        am_net_disconnect(&conn);
     }
 
     AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, conn.http_status);
@@ -1228,7 +1228,7 @@ int am_agent_audit_request(unsigned long instance_id, const char *openam, const 
         wait_for_event(req_data.event, 0);
     } else {
         AM_LOG_DEBUG(instance_id, "%s disconnecting", thisfunc);
-        am_net_diconnect(&conn);
+        am_net_disconnect(&conn);
     }
 
     AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, conn.http_status);

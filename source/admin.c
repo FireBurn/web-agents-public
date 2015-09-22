@@ -2338,7 +2338,8 @@ int main(int argc, char **argv) {
                 }
             }
         }
-        net_options.keepalive = net_options.local = net_options.cert_trust = AM_TRUE;
+        net_options.local = net_options.cert_trust = AM_TRUE;
+        net_options.keepalive = AM_FALSE;
         net_options.log = install_log;
 
         /* run through the cli options */

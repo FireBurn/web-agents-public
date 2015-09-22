@@ -84,7 +84,7 @@ typedef struct {
 
     struct addrinfo *ra;
     am_event_t *ce; /* connected event */
-    am_exit_event_t *de; /* disconnect event */
+    am_event_t *de; /* disconnect event */
     am_timer_event_t *tm; /* response timeout control */
 
     void *data;
@@ -98,7 +98,7 @@ typedef struct {
 int am_net_connect(am_net_t *n);
 int am_net_write(am_net_t *n, const char *data, size_t data_sz);
 
-void am_net_diconnect(am_net_t *n); /* disconnect socket (client side) */
+void am_net_disconnect(am_net_t *n); /* disconnect socket (client side) */
 int am_net_close(am_net_t *n);
 
 void am_net_options_create(am_config_t *ac, am_net_options_t *options, void (*log)(const char *, ...));

@@ -441,23 +441,6 @@ am_event_t *create_event() {
     return e;
 }
 
-am_exit_event_t *create_exit_event() {
-    am_exit_event_t *e = malloc(sizeof (am_exit_event_t));
-    if (e != NULL) {
-#ifdef _WIN32
-        e->e = CreateEventA(NULL, FALSE, FALSE, NULL);
-#else
-        pthread_mutexattr_t a;
-        pthread_mutexattr_init(&a);
-        pthread_mutexattr_settype(&a, PTHREAD_MUTEX_RECURSIVE);
-        pthread_mutex_init(&e->m, &a);
-        pthread_mutexattr_destroy(&a);
-        pthread_mutex_lock(&e->m);
-#endif
-    }
-    return e;
-}
-
 void set_event(am_event_t *e) {
     if (e != NULL) {
 #ifdef _WIN32
@@ -484,21 +467,11 @@ void reset_event(am_event_t *e) {/*optional*/
     }
 }
 
-void set_exit_event(am_exit_event_t *e) {
-    if (e != NULL) {
-#ifdef _WIN32
-        SetEvent(e->e);
-#else
-        pthread_mutex_unlock(&e->m);
-#endif
-    }
-}
-
 int wait_for_event(am_event_t *e, int timeout) {
     int r = 0;
     if (e != NULL) {
 #ifdef _WIN32
-        DWORD rv = WaitForSingleObject(e->e, timeout > 0 ? timeout * 1000 : INFINITE);
+        DWORD rv = WaitForSingleObject(e->e, timeout > 0 ? timeout : INFINITE);
         if (rv != WAIT_OBJECT_0) {
             r = AM_ETIMEDOUT;
         }
@@ -510,9 +483,14 @@ int wait_for_event(am_event_t *e, int timeout) {
             } else {
                 struct timeval now = {0, 0};
                 struct timespec ts = {0, 0};
+                long tv_sec_from_nsec;
                 gettimeofday(&now, NULL);
-                ts.tv_sec = now.tv_sec + timeout;
+                ts.tv_sec = now.tv_sec;
                 ts.tv_nsec = now.tv_usec * 1000;
+                ts.tv_nsec += timeout * 1000000;
+                tv_sec_from_nsec = ts.tv_nsec / 1000000000L;
+                ts.tv_sec += tv_sec_from_nsec;
+                ts.tv_nsec -= (tv_sec_from_nsec * 1000000000L);
                 if (pthread_cond_timedwait(&e->c, &e->m, &ts) == ETIMEDOUT) {
                     r = AM_ETIMEDOUT;
                     break;
@@ -520,29 +498,13 @@ int wait_for_event(am_event_t *e, int timeout) {
             }
         }
         if (r == 0) {
-            /*resets the event state to nonsignaled after a single waiting thread has been released*/
+            /* resets the event state to nonsignaled after a single waiting thread has been released */
             e->e = 0;
         }
         pthread_mutex_unlock(&e->m);
 #endif
     }
     return r;
-}
-
-int wait_for_exit_event(am_exit_event_t *e) {
-    if (e == NULL) return 1;
-#ifdef _WIN32
-    return WaitForSingleObject(e->e, 0) == WAIT_TIMEOUT ? 0 : 1;
-#else
-    switch (pthread_mutex_trylock(&e->m)) {
-        case 0:
-            pthread_mutex_unlock(&e->m);
-            return 1;
-        case EBUSY:
-            return 0;
-    }
-    return 1;
-#endif
 }
 
 void close_event(am_event_t **e) {
@@ -554,19 +516,6 @@ void close_event(am_event_t **e) {
 #else
         pthread_mutex_destroy(&event->m);
         pthread_cond_destroy(&event->c);
-#endif
-        free(event);
-        *e = NULL;
-    }
-}
-
-void close_exit_event(am_exit_event_t **e) {
-    am_exit_event_t *event = e != NULL ? *e : NULL;
-    if (event != NULL) {
-#ifdef _WIN32
-        CloseHandle(event->e);
-#else
-        pthread_mutex_destroy(&event->m);
 #endif
         free(event);
         *e = NULL;
@@ -611,6 +560,7 @@ am_timer_event_t *am_create_timer_event(int type, unsigned int interval, void *a
             e->error = AM_EINVAL;
             return e;
         }
+        e->init_status = AM_ENOTSTARTED;
         e->type = type;
         e->interval = interval;
         e->args = malloc(sizeof (struct timer_callback_args));
@@ -753,7 +703,7 @@ static void *timer_event_loop(void *args) {
 #endif
 
     while (1) {
-        if (wait_for_event(e->exit_ev, 1) != AM_ETIMEDOUT) {
+        if (wait_for_event(e->exit_ev, 1000) != AM_ETIMEDOUT) {
             break;
         }
     }
@@ -764,7 +714,15 @@ static void *timer_event_loop(void *args) {
 
 void am_start_timer_event(am_timer_event_t *e) {
     if (e == NULL || e->error != 0) return;
-    AM_THREAD_CREATE(e->tick_thr, timer_event_loop, e);
+#ifdef _WIN32
+    if ((e->tick_thr = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) timer_event_loop, e, 0, NULL)) != NULL) {
+        e->init_status = AM_SUCCESS;
+    }
+#else
+    if (pthread_create(&e->tick_thr, NULL, timer_event_loop, e) == 0) {
+        e->init_status = AM_SUCCESS;
+    }
+#endif
 }
 
 void am_close_timer_event(am_timer_event_t *e) {
@@ -783,14 +741,18 @@ void am_close_timer_event(am_timer_event_t *e) {
 
 #elif defined(_WIN32)
 
-    WaitForSingleObject(e->tick_thr, INFINITE);
+    if (e->init_status == AM_SUCCESS) {
+        WaitForSingleObject(e->tick_thr, INFINITE);
+    }
     if (e->tick_q != NULL) {
         if (e->tick != NULL) {
             DeleteTimerQueueTimer(e->tick_q, e->tick, NULL);
         }
         DeleteTimerQueue(e->tick_q);
     }
-    CloseHandle(e->tick_thr);
+    if (e->init_status == AM_SUCCESS) {
+        CloseHandle(e->tick_thr);
+    }
 
 #else
 
@@ -799,7 +761,9 @@ void am_close_timer_event(am_timer_event_t *e) {
 #endif
 
 #ifndef _WIN32
-    pthread_join(e->tick_thr, NULL);
+    if (e->init_status == AM_SUCCESS) {
+        pthread_join(e->tick_thr, NULL);
+    }
 #endif
 
     close_event(&e->exit_ev);
