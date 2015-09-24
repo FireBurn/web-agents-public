@@ -124,7 +124,7 @@ void vmod_init(struct sess *ctx, struct vmod_priv *priv, const char *conf) {
         }
 
         am_log_register_instance(settings->instance_id, boot->debug_file, boot->debug_level, boot->debug,
-                boot->audit_file, boot->audit_level, boot->audit);
+                boot->audit_file, boot->audit_level, boot->audit, conf);
 
         am_config_free(&boot);
 

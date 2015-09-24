@@ -446,7 +446,7 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_URL_VALIDATE_PING_INTERVAL, CONF_NUMBER, NULL, &conf->valid_ping, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_URL_VALIDATE_PING_MISS, CONF_NUMBER, NULL, &conf->valid_ping_miss, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_URL_VALIDATE_PING_OK, CONF_NUMBER, NULL, &conf->valid_ping_ok, NULL);
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_URL_VALIDATE_DEFAULT_SET, CONF_NUMBER_LIST, &conf->valid_default_url_sz, &conf->valid_default_url, AM_SPACE_CHAR);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_URL_VALIDATE_DEFAULT_SET, CONF_NUMBER_LIST, &conf->valid_default_url_sz, &conf->valid_default_url, AM_COMMA_CHAR);
 
         /*
          * com.forgerock.agents.config.hostmap format:

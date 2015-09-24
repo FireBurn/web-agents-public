@@ -618,7 +618,7 @@ static int amagent_auth_handler(request_rec *req) {
      * instances - update logging level only 
      */
     am_log_register_instance(config->config_id, config->debug_file, config->debug_level, config->debug_size,
-            config->audit_file, config->audit_level, config->audit_size);
+            config->audit_file, config->audit_level, config->audit_size, config->config);
 
     AM_LOG_DEBUG(config->config_id, "%s begin", thisfunc);
 

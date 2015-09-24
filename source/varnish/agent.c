@@ -118,7 +118,7 @@ void vmod_init(const struct vrt_ctx *ctx, struct vmod_priv *priv, const char *co
         }
 
         am_log_register_instance(settings->instance_id, boot->debug_file, boot->debug_level, boot->debug,
-                boot->audit_file, boot->audit_level, boot->audit);
+                boot->audit_file, boot->audit_level, boot->audit, conf);
 
         am_config_free(&boot);
 

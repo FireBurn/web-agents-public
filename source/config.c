@@ -1484,7 +1484,7 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
                 if (!(*cnf)->local) {
                     /* update instance logger registration data */
                     am_log_register_instance(instance_id, (*cnf)->debug_file, (*cnf)->debug_level, (*cnf)->debug,
-                            (*cnf)->audit_file, (*cnf)->audit_level, (*cnf)->audit);
+                            (*cnf)->audit_file, (*cnf)->audit_level, (*cnf)->audit, (*cnf)->config);
                 }
 
                 if (AM_BITMASK_CHECK((*cnf)->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE)) {

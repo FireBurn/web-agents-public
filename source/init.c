@@ -97,6 +97,7 @@ int am_init(int id) {
     am_configuration_init(id);
     am_audit_init(id);
     am_audit_processor_init();
+    am_url_validator_init();
     rv = am_cache_init(id);
     am_worker_pool_init();
 #endif
@@ -113,6 +114,7 @@ int am_init_worker(int id) {
     am_audit_init(id);
     if (init.error == AM_SUCCESS || init.error == AM_EAGAIN) {
         am_audit_processor_init();
+        am_url_validator_init();
     }
     am_cache_init(id);
 #endif
@@ -121,6 +123,7 @@ int am_init_worker(int id) {
 }
 
 int am_shutdown(int id) {
+    am_url_validator_shutdown();
     am_audit_processor_shutdown();
     am_audit_shutdown();
     am_cache_shutdown();
@@ -141,6 +144,7 @@ int am_re_init_worker() {
     if (init.error == AM_SUCCESS || init.error == AM_EAGAIN) {
         am_log_re_init(AM_RETRY_ERROR);
         am_audit_processor_init();
+        am_url_validator_init();
     }
 #endif
     return 0;

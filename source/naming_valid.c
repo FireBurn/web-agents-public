@@ -19,417 +19,354 @@
 #include "thread.h"
 #include "utility.h"
 #include "log.h"
+#include "list.h"
 
-#if defined(__sun) && defined(__SunOS_5_10)
-#include <port.h>
-static int port;
-typedef void (timer_callback) (void *);
-#else
-typedef void (timer_callback) (union sigval);
-#endif
+#define MIN_URL_VALIDATOR_TICK 5 /* sec */
 
-typedef struct {
-    unsigned long instance_id;
-    int ping_interval;
-    int ping_ok_count;
-    int ping_fail_count;
-    int default_set_size;
-    int url_size;
-    int *default_set;
-    char **url_list;
-    void *data;
-} naming_validator_t;
-
-typedef struct {
+struct url_valid_table {
     unsigned long instance_id;
     int ok;
     int fail;
-    int run;
-    int ping_ok_count;
-    int ping_fail_count;
-    char *url;
-} naming_url_t;
+    int index;
+    struct url_valid_table *next;
+};
 
-typedef struct {
-    int size;
-    naming_url_t *list;
-} naming_status_t;
+static am_timer_event_t *validator_timer = NULL;
+static struct url_valid_table *table = NULL;
+static am_mutex_t table_mutex;
 
-typedef struct {
-    unsigned long instance_id;
-    int idx;
-    char *url;
-} naming_validator_int_t;
+int get_valid_url_all(struct url_validator_worker_data *list);
+void set_valid_url_instance_running(unsigned long instance_id, int value);
+void set_valid_url_index(unsigned long instance_id, int value);
 
-#ifdef _WIN32
-static CRITICAL_SECTION mutex;
-static HANDLE wthr;
-#else
-static pthread_mutex_t mutex;
-static pthread_t wthr;
-#endif
-static volatile int keep_going = 1;
-static naming_status_t *naming_status_lists = NULL;
-
-static void store_index_value(int ix, int *map, unsigned long instance_id) {
-    int i = map[ix];
-    set_valid_url_index(instance_id, i);
+static void delete_url_validation_table(struct url_valid_table **list) {
+    struct url_valid_table *t = list != NULL ? *list : NULL;
+    if (t != NULL) {
+        delete_url_validation_table(&t->next);
+        free(t);
+        t = NULL;
+    }
 }
 
-static void *url_watchdog(void *arg) {
-    int i, current_ok, default_ok, current_fail, next_ok, first_run = 1;
-    naming_validator_t *v = (naming_validator_t *) arg;
-    while (keep_going) {
-        int current_index = 0;
-        /* for the initial run persisted index might not yet be available */
-        if (!first_run) {
-            sleep(v->ping_interval);
+static void get_validation_table_entry(unsigned long instance_id, int index, int *ok, int *fail) {
+    struct url_valid_table *e, *t;
+
+    AM_MUTEX_LOCK(&table_mutex);
+
+    AM_LIST_FOR_EACH(table, e, t) {
+        if (e->instance_id == instance_id && e->index == index) {
+            if (ok) *ok = e->ok;
+            if (fail) *fail = e->fail;
+            break;
         }
-        first_run = 0;
-        /* fetch current index value */
-        current_index = get_valid_url_index(v->instance_id);
-        if (current_index < 0 || current_index > naming_status_lists->size) {
-            AM_LOG_WARNING(v->instance_id, "naming_validator(): invalid current index value, defaulting to %s", v->url_list[0]);
-            store_index_value(0, v->default_set, v->instance_id);
-            current_index = 0;
+    }
+
+    AM_MUTEX_UNLOCK(&table_mutex);
+}
+
+static void set_validation_table_entry(unsigned long instance_id, int index, int ok, int fail) {
+    am_bool_t found = AM_FALSE;
+    struct url_valid_table *e, *t;
+
+    AM_MUTEX_LOCK(&table_mutex);
+
+    AM_LIST_FOR_EACH(table, e, t) {
+        if (e->instance_id == instance_id && e->index == index) {
+            e->ok = ok;
+            e->fail = fail;
+            found = AM_TRUE;
+            break;
+        }
+    }
+
+    if (!found) {
+        e = (struct url_valid_table *) malloc(sizeof (struct url_valid_table));
+        if (e != NULL) {
+            e->instance_id = instance_id;
+            e->index = index;
+            e->ok = ok;
+            e->fail = fail;
+            e->next = NULL;
+            AM_LIST_INSERT(table, e);
+        }
+    }
+
+    AM_MUTEX_UNLOCK(&table_mutex);
+}
+
+void url_validator_worker(
+#ifdef _WIN32
+        PTP_CALLBACK_INSTANCE
+#else
+        void *
+#endif
+        inst, void *arg) {
+    static const char *thisfunc = "url_validator_worker():";
+    struct url_validator_worker_data *w = (struct url_validator_worker_data *) arg;
+    am_net_options_t net_options;
+    int i, validate_status;
+    am_config_t *conf = NULL;
+    time_t current_ts;
+    struct url_valid_table *e, *t;
+    int current_index, current_ok, current_fail, default_ok, next_ok;
+    char **url_list;
+    int url_list_sz = 0;
+    int ping_diff;
+
+    set_valid_url_instance_running(w->instance_id, AM_TRUE);
+
+    conf = am_get_config_file(w->instance_id, w->config_path);
+    if (conf == NULL) {
+        AM_LOG_WARNING(w->instance_id, "%s failed to get agent configuration (%s)",
+                thisfunc, LOGEMPTY(w->config_path));
+        set_valid_url_instance_running(w->instance_id, AM_FALSE);
+        AM_FREE(w->config_path, w);
+        return;
+    }
+
+    ping_diff = MAX(MIN_URL_VALIDATOR_TICK, conf->valid_ping);
+    current_ts = time(NULL);
+    /* this index corresponds to the naming.url multi-value index */
+    current_index = w->url_index;
+
+    if (conf->valid_level > 1 || conf->naming_url_sz < 2 || conf->naming_url_sz != conf->valid_default_url_sz ||
+            (current_ts - w->last) < ping_diff) {
+        /* a) validation is disabled; b) there is nothing to validate;
+         * c) naming.url list and default.url list sizes do not match or
+         * d) its not time yet to do any validation
+         */
+        am_config_free(&conf);
+        set_valid_url_instance_running(w->instance_id, AM_FALSE);
+        AM_FREE(w->config_path, w);
+        return;
+    }
+
+    if (current_index < 0 || current_index >= conf->naming_url_sz) {
+        AM_LOG_WARNING(w->instance_id,
+                "%s invalid current index value, defaulting to %s", thisfunc, conf->naming_url[0]);
+        set_valid_url_index(w->instance_id, 0);
+        am_config_free(&conf);
+        set_valid_url_instance_running(w->instance_id, AM_FALSE);
+        AM_FREE(w->config_path, w);
+        return;
+    }
+
+#define URL_LIST_FREE(l, s) do { \
+        int k; \
+        if (l == NULL) break; \
+        for (k = 0; k < s; k++) { \
+            am_free(l[k]); \
+        }\
+        free(l); \
+    } while (0)
+
+    url_list = (char **) calloc(1, conf->naming_url_sz * sizeof (char *));
+    if (url_list == NULL) {
+        AM_LOG_ERROR(w->instance_id, "%s memory allocation error", thisfunc);
+        am_config_free(&conf);
+        set_valid_url_instance_running(w->instance_id, AM_FALSE);
+        AM_FREE(w->config_path, w);
+        return;
+    }
+    url_list_sz = conf->naming_url_sz;
+
+    for (i = 0; i < url_list_sz; i++) {
+        /* default.url.set contains fail-over order;
+         * will keep internal value list index-ordered 
+         **/
+        int j = conf->valid_default_url[i];
+        url_list[i] = strdup(conf->naming_url[j]);
+        if (url_list[i] == NULL) {
+            URL_LIST_FREE(url_list, url_list_sz);
+            am_config_free(&conf);
+            set_valid_url_instance_running(w->instance_id, AM_FALSE);
+            AM_FREE(w->config_path, w);
+            return;
+        }
+    }
+
+    am_net_options_create(conf, &net_options, NULL);
+    net_options.keepalive = AM_FALSE;
+    net_options.local = net_options.cert_trust = AM_TRUE;
+    net_options.net_timeout = 2; /* fixed for url validator; in sec */
+
+    /* do the actual url validation */
+
+    for (i = 0; i < url_list_sz; i++) {
+        const char *url = url_list[i];
+        int ok = 0, fail = 0, httpcode = 0;
+
+        get_validation_table_entry(w->instance_id, i, &ok, &fail);
+
+        AM_LOG_DEBUG(w->instance_id, "%s validating %s", thisfunc, url);
+
+        if (conf->valid_level == 1) {
+            /* simple HEAD request */
+            validate_status = am_url_validate(w->instance_id, url, &net_options, &httpcode);
         } else {
-            /* map stored index to our ordered list index */
-            for (i = 0; i < v->default_set_size; i++) {
-                if (current_index == v->default_set[i]) {
-                    current_index = i;
-                    break;
-                }
+            /* full scale agent login-logout request */
+            char *agent_token = NULL;
+            validate_status = am_agent_login(w->instance_id, url, conf->user, conf->pass, conf->realm,
+                    &net_options, &agent_token, NULL, NULL, NULL);
+            if (agent_token != NULL) {
+                am_agent_logout(0, url, agent_token, &net_options);
+                free(agent_token);
+                httpcode = 200;
             }
         }
-        /* check if current index value is valid; double check whether default has 
-         * become valid again (ping.ok.count) and fail-back to it if so */
-#ifdef _WIN32
-        EnterCriticalSection(&mutex);
-#else
-        pthread_mutex_lock(&mutex);
-#endif
-        current_ok = naming_status_lists->list[current_index].ok;
-        current_fail = naming_status_lists->list[current_index].fail;
-        default_ok = naming_status_lists->list[0].ok;
-#ifdef _WIN32
-        LeaveCriticalSection(&mutex);
-#else
-        pthread_mutex_unlock(&mutex);
-#endif
+
+        if (validate_status == AM_SUCCESS && httpcode != 0) {
+            if (ok++ > conf->valid_ping_ok) {
+                ok = conf->valid_ping_ok;
+            }
+            fail = 0;
+        } else {
+            if (fail++ > conf->valid_ping_miss) {
+                fail = conf->valid_ping_miss;
+            }
+            ok = 0;
+        }
+
+        set_validation_table_entry(w->instance_id, i, ok, fail);
+    }
+
+    /* map stored index value to our ordered list index */
+    for (i = 0; i < conf->valid_default_url_sz; i++) {
+        if (current_index == conf->valid_default_url[i]) {
+            current_index = i;
+            break;
+        }
+    }
+
+    current_ok = current_fail = 0;
+    /* fetch validation table entry for the current_index 
+     * (which now corresponds to the default.url.set value/index) */
+    get_validation_table_entry(w->instance_id, current_index, &current_ok, &current_fail);
+    default_ok = conf->valid_ping_ok;
+
+    /* do the fail-over logic */
+    do {
         if (current_ok > 0) {
-            if (current_index > 0 && default_ok >= v->ping_ok_count) {
-                store_index_value(0, v->default_set, v->instance_id);
-                AM_LOG_DEBUG(v->instance_id, "naming_validator(): fail-back to %s", v->url_list[0]);
+            if (current_index > 0 && default_ok >= conf->valid_ping_ok) {
+                set_valid_url_index(w->instance_id, conf->valid_default_url[0]);
+                AM_LOG_INFO(w->instance_id, "%s fail-back to %s", thisfunc, url_list[0]);
             } else {
-                AM_LOG_DEBUG(v->instance_id, "naming_validator(): continue with %s", v->url_list[current_index]);
+                set_valid_url_index(w->instance_id, conf->valid_default_url[current_index]);
+                AM_LOG_INFO(w->instance_id, "%s continue with %s", thisfunc, url_list[current_index]);
             }
-            continue;
+            break;
         }
-        /* current index is not valid; check its ping.miss.count */
-        if (current_ok == 0 && current_fail <= v->ping_fail_count) {
-            AM_LOG_DEBUG(v->instance_id, "naming_validator(): still staying with %s", v->url_list[current_index]);
-            continue;
+
+        /* current index is not valid; check ping.miss.count */
+        if (current_ok == 0 && current_fail <= conf->valid_ping_miss) {
+            set_valid_url_index(w->instance_id, conf->valid_default_url[current_index]);
+            AM_LOG_INFO(w->instance_id, "%s still staying with %s", thisfunc, url_list[current_index]);
+            break;
         }
+
         /* find next valid index value to fail-over to */
         next_ok = 0;
-#ifdef _WIN32
-        EnterCriticalSection(&mutex);
-#else
-        pthread_mutex_lock(&mutex);
-#endif
-        for (i = 0; i < naming_status_lists->size; i++) {
-            if (naming_status_lists->list[i].ok > 0) {
-                next_ok = naming_status_lists->list[i].ok;
+        AM_MUTEX_LOCK(&table_mutex);
+
+        AM_LIST_FOR_EACH(table, e, t) {
+            if (e->instance_id == w->instance_id && e->index == 0) {
+                default_ok = e->ok;
+            }
+            if (e->instance_id == w->instance_id && e->ok > 0) {
+                next_ok = e->ok;
+                i = e->index;
                 break;
             }
         }
-        default_ok = naming_status_lists->list[0].ok;
-#ifdef _WIN32
-        LeaveCriticalSection(&mutex);
-#else
-        pthread_mutex_unlock(&mutex);
-#endif
+
+        AM_MUTEX_UNLOCK(&table_mutex);
+
         if (next_ok == 0) {
-            AM_LOG_WARNING(v->instance_id, "naming_validator(): none of the values are valid, defaulting to %s", v->url_list[0]);
-            store_index_value(0, v->default_set, v->instance_id);
-            continue;
-        }
-        if (current_index > 0 && default_ok >= v->ping_ok_count) {
-            AM_LOG_DEBUG(v->instance_id, "naming_validator(): fail-back to %s", v->url_list[0]);
-            store_index_value(0, v->default_set, v->instance_id);
-        } else {
-            AM_LOG_DEBUG(v->instance_id, "naming_validator(): fail-over to %s", v->url_list[i]);
-            store_index_value(i, v->default_set, v->instance_id);
-        }
-    }
-    return 0;
-}
-
-static void *url_validator(void *arg) {
-    int validate_status, httpcode = 0;
-    naming_validator_int_t *v = (naming_validator_int_t *) arg;
-    if (!keep_going) return 0;
-    validate_status = am_url_validate(v->instance_id, v->url, NULL, &httpcode);
-#ifdef _WIN32
-    EnterCriticalSection(&mutex);
-#else
-    pthread_mutex_lock(&mutex);
-#endif
-    if (validate_status == AM_SUCCESS) {
-        AM_LOG_DEBUG(v->instance_id, "url_validator(%d): %s validation succeeded", v->idx, v->url);
-        if ((naming_status_lists->list[v->idx].ok)++ > naming_status_lists->list[v->idx].ping_ok_count)
-            naming_status_lists->list[v->idx].ok = naming_status_lists->list[v->idx].ping_ok_count;
-        naming_status_lists->list[v->idx].fail = 0;
-    } else {
-        AM_LOG_WARNING(v->instance_id, "url_validator(%d): %s validation failed with %s, http status %d", v->idx,
-                v->url, am_strerror(validate_status), httpcode);
-        if ((naming_status_lists->list[v->idx].fail)++ > naming_status_lists->list[v->idx].ping_fail_count)
-            naming_status_lists->list[v->idx].fail = naming_status_lists->list[v->idx].ping_fail_count;
-        naming_status_lists->list[v->idx].ok = 0;
-    }
-    naming_status_lists->list[v->idx].run = 0;
-#ifdef _WIN32
-    LeaveCriticalSection(&mutex);
-#else
-    pthread_mutex_unlock(&mutex);
-#endif
-    free(v);
-    return 0;
-}
-
-#ifdef _WIN32
-
-static VOID CALLBACK callback(PVOID lpParam, BOOLEAN TimerOrWaitFired) {
-    int i, j;
-    naming_validator_t *v = (naming_validator_t *) lpParam;
-#else 
-
-#if (defined(__sun) && defined(__SunOS_5_10)) || defined(__APPLE__)
-
-static void callback(void *ta) {
-    int i, j;
-    naming_validator_t *v = (naming_validator_t *) ta;
-#else
-
-static void callback(union sigval si) {
-    int i, j;
-    naming_validator_t *v = (naming_validator_t *) si.sival_ptr;
-#endif
-
-#endif
-    for (i = 0; i < v->url_size; i++) {
-#ifdef _WIN32
-        HANDLE vthr;
-#else
-        pthread_t vthr;
-#endif
-        naming_validator_int_t *arg = NULL;
-        if (!keep_going) return;
-#ifdef _WIN32
-        EnterCriticalSection(&mutex);
-#else
-        pthread_mutex_lock(&mutex);
-#endif
-        j = naming_status_lists->list[i].run;
-#ifdef _WIN32
-        LeaveCriticalSection(&mutex);
-#else
-        pthread_mutex_unlock(&mutex);
-#endif
-        if (j == 1) {
-            AM_LOG_DEBUG(v->instance_id, "naming_validator(): validate is already running for %s", v->url_list[i]);
-            continue;
-        }
-        arg = (naming_validator_int_t *) malloc(sizeof (naming_validator_int_t));
-        if (arg == NULL) {
-            AM_LOG_ERROR(v->instance_id, "naming_validator(): timer callback memory allocation error");
-            return;
-        }
-        arg->instance_id = v->instance_id;
-        arg->url = v->url_list[i];
-        arg->idx = i;
-        if (!keep_going) return;
-#ifdef _WIN32
-        vthr = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) url_validator, arg, 0, NULL);
-        EnterCriticalSection(&mutex);
-#else
-        pthread_create(&vthr, NULL, url_validator, arg);
-        pthread_mutex_lock(&mutex);
-#endif
-        naming_status_lists->list[i].run = 1;
-#ifdef _WIN32
-        LeaveCriticalSection(&mutex);
-#else
-        pthread_mutex_unlock(&mutex);
-#endif
-    }
-}
-
-#if !defined(_WIN32) && !defined(__APPLE__)
-
-#if defined(__sun) && defined(__SunOS_5_10)
-
-static void *evtimer_listener(void *arg) {
-    port_event_t ev;
-    while (keep_going) {
-        if (port_get(port, &ev, NULL) < 0) {
+            AM_LOG_WARNING(w->instance_id,
+                    "%s none of the values are valid, defaulting to %s", thisfunc, url_list[0]);
+            set_valid_url_index(w->instance_id, conf->valid_default_url[0]);
             break;
         }
-        if (ev.portev_source == PORT_SOURCE_TIMER) {
-            naming_validator_t *ptr = (naming_validator_t *) ev.portev_user;
-            callback(ptr);
-        } else
+
+        if (current_index > 0 && default_ok >= conf->valid_ping_ok) {
+            AM_LOG_INFO(w->instance_id, "%s fail-back to %s", thisfunc, url_list[0]);
+            set_valid_url_index(w->instance_id, conf->valid_default_url[0]);
             break;
-    }
-    pthread_exit(NULL);
+        }
+
+        AM_LOG_INFO(w->instance_id, "%s fail-over to %s", thisfunc, url_list[i]);
+        set_valid_url_index(w->instance_id, conf->valid_default_url[i]);
+
+    } while (0);
+
+    am_net_options_delete(&net_options);
+    am_config_free(&conf);
+    set_valid_url_instance_running(w->instance_id, AM_FALSE);
+    AM_FREE(w->config_path, w);
+    URL_LIST_FREE(url_list, url_list_sz);
 }
 
-#endif
-
-static int set_timer(timer_t * timer_id, float delay, float interval, timer_callback *func, void *data) {
-    int status = 0;
-    struct itimerspec ts;
-    struct sigevent se;
-#if defined(__sun) && defined(__SunOS_5_10)
-    pthread_t pthr;
-    port_notify_t pnotif;
-    pnotif.portnfy_port = port;
-    pnotif.portnfy_user = data;
-    se.sigev_notify = SIGEV_PORT;
-    se.sigev_value.sival_ptr = &pnotif;
-#else
-    se.sigev_notify = SIGEV_THREAD;
-    se.sigev_value.sival_ptr = data;
-    se.sigev_notify_function = func;
-    se.sigev_notify_attributes = NULL;
-#endif
-    status = timer_create(CLOCK_REALTIME, &se, timer_id);
-    ts.it_value.tv_sec = abs(delay);
-    ts.it_value.tv_nsec = (delay - abs(delay)) * 1e09;
-    ts.it_interval.tv_sec = abs(interval);
-    ts.it_interval.tv_nsec = (interval - abs(interval)) * 1e09;
-    status = timer_settime(*timer_id, 0, &ts, 0);
-#if defined(__sun) && defined(__SunOS_5_10)    
-    pthread_create(&pthr, NULL, evtimer_listener, NULL);
-#endif
-    return status;
-}
-
-#endif
-
-#ifdef __APPLE__
-
-static void *evtimer_listener(void *arg) {
-    int n, kq = -1;
-    struct kevent ch, ev;
-    naming_validator_t *v = (naming_validator_t *) arg;
-    if (v == NULL || v->data == NULL) return NULL;
-
-    kq = *((int *) v->data);
-    EV_SET(&ch, 1, EVFILT_TIMER, EV_ADD | EV_ENABLE, NOTE_SECONDS, v->ping_interval, NULL);
-    while (keep_going) {
-        n = kevent(kq, &ch, 1, &ev, 1, NULL);
-        if (n <= 0 || ev.flags & EV_ERROR) break;
-        callback(v);
-    }
-    pthread_exit(NULL);
-}
-
-#endif
-
-void stop_naming_validator() {
-    keep_going = 0;
-}
-
-int naming_validator(void *arg) {
+static void am_url_validator_tick(void *arg) {
+    static const char *thisfunc = "am_url_validator_tick():";
     int i;
-#ifdef _WIN32
-    HANDLE tick_q = NULL;
-    HANDLE tick = NULL;
-#elif defined(__APPLE__)    
-    int tick_q = -1;
-    pthread_t tick_thr;
-#else
-    timer_t tick;
-#endif
-    naming_validator_t *v = (naming_validator_t *) arg;
-    if (v->ping_interval == 0) return 0;
+    struct url_validator_worker_data *list;
 
-    naming_status_lists = (naming_status_t *) malloc(sizeof (naming_status_t));
-    if (naming_status_lists == NULL) {
-        AM_LOG_ERROR(v->instance_id, "naming_validator(): memory allocation error");
+    list = (struct url_validator_worker_data *) calloc(1,
+            sizeof (struct url_validator_worker_data) * AM_MAX_INSTANCES);
+    if (list == NULL || get_valid_url_all(list) != AM_SUCCESS) {
+        am_free(list);
+        return;
+    }
+
+    for (i = 0; i < AM_MAX_INSTANCES; i++) {
+        /* schedule a new url_validator_worker only when instance is registered and validator is not running already */
+        if (list[i].instance_id > 0 && !list[i].running) {
+            struct url_validator_worker_data *worker_data =
+                    (struct url_validator_worker_data *) malloc(sizeof (struct url_validator_worker_data));
+            if (worker_data != NULL) {
+                worker_data->instance_id = list[i].instance_id;
+                worker_data->url_index = list[i].url_index;
+                worker_data->last = list[i].last;
+                worker_data->config_path = strdup(list[i].config_path);
+                if (am_worker_dispatch(url_validator_worker, worker_data) != AM_SUCCESS) {
+                    AM_LOG_WARNING(list[i].instance_id, "%s failed to dispatch url validator worker", thisfunc);
+                    AM_FREE(worker_data->config_path, worker_data);
+                }
+            } else {
+                AM_LOG_ERROR(list[i].instance_id, "%s memory allocation error", thisfunc);
+            }
+        }
+        am_free(list[i].config_path);
+    }
+    free(list);
+}
+
+int am_url_validator_init() {
+    if (validator_timer != NULL) {
+        return AM_SUCCESS;
+    }
+
+    AM_MUTEX_INIT(&table_mutex);
+
+    validator_timer = am_create_timer_event(AM_TIMER_EVENT_RECURRING,
+            MIN_URL_VALIDATOR_TICK, NULL, am_url_validator_tick);
+    if (validator_timer == NULL) {
         return AM_ENOMEM;
     }
 
-    naming_status_lists->list = (naming_url_t *) calloc(v->url_size, sizeof (naming_status_lists->list[0]));
-    if (naming_status_lists->list == NULL) {
-        free(naming_status_lists);
-        AM_LOG_ERROR(v->instance_id, "naming_validator(): memory allocation error");
-        return AM_ENOMEM;
+    if (validator_timer->error != 0) {
+        return AM_ERROR;
     }
 
-#ifdef _WIN32
-    InitializeCriticalSection(&mutex);
-#else
-    pthread_mutex_init(&mutex, NULL);
-#endif
-    naming_status_lists->size = v->url_size;
-    for (i = 0; i < v->url_size; i++) {
-        naming_status_lists->list[i].instance_id = v->instance_id;
-        naming_status_lists->list[i].ok = 0;
-        naming_status_lists->list[i].fail = 0;
-        naming_status_lists->list[i].ping_ok_count = v->ping_ok_count;
-        naming_status_lists->list[i].ping_fail_count = v->ping_fail_count;
-        naming_status_lists->list[i].run = 0;
-        naming_status_lists->list[i].url = v->url_list[i];
-    }
-#ifdef _WIN32
-    tick_q = CreateTimerQueue();
-    CreateTimerQueueTimer(&tick, tick_q,
-            (WAITORTIMERCALLBACK) callback, arg, 1000,
-            (v->ping_interval * 1000), WT_EXECUTELONGFUNCTION);
-    wthr = CreateThread(NULL, 0,
-            (LPTHREAD_START_ROUTINE) url_watchdog, arg, 0, NULL);
-#else
-#if defined(__sun) && defined(__SunOS_5_10) 
-    if ((port = port_create()) == -1) {
-        AM_LOG_ERROR(v->instance_id, "naming_validator(): port_create failed");
-    }
-#endif
-#ifdef __APPLE__    
-    if ((tick_q = kqueue()) == -1) {
-        AM_LOG_ERROR(v->instance_id, "naming_validator(): kqueue failed");
-    }
-    v->data = &tick_q;
-    pthread_create(&tick_thr, NULL, evtimer_listener, arg);
-#else
-    set_timer(&tick, 1, v->ping_interval, callback, arg);
-#endif
-    pthread_create(&wthr, NULL, url_watchdog, arg);
-#endif
+    am_start_timer_event(validator_timer);
 
-    while (keep_going) {
-        sleep(1);
-    }
-
-#ifdef _WIN32
-    WaitForSingleObject(wthr, INFINITE);
-    DeleteTimerQueue(tick_q);
-    DeleteCriticalSection(&mutex);
-#else
-    pthread_join(wthr, NULL);
-    pthread_mutex_destroy(&mutex);
-#ifdef __APPLE__
-    pthread_join(tick_thr, NULL);
-    close(tick_q);
-#else
-    timer_delete(tick);
-#endif
-#if defined(__sun) && defined(__SunOS_5_10)
-    close(port);
-#endif
-#endif
-    free(naming_status_lists->list);
-    free(naming_status_lists);
     return AM_SUCCESS;
+}
+
+void am_url_validator_shutdown() {
+    am_close_timer_event(validator_timer);
+    AM_MUTEX_DESTROY(&table_mutex);
+    delete_url_validation_table(&table);
+    table = NULL;
+    validator_timer = NULL;
 }

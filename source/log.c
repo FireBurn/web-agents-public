@@ -36,7 +36,6 @@ static sem_t *ic_sem = NULL;
  */
 static am_bool_t zero_instance_logging_is_wanted = AM_FALSE;
 
-
 struct am_shared_log {
     void *area;
     size_t area_size;
@@ -115,7 +114,10 @@ struct am_log {
 
     struct valid_url {
         unsigned long instance_id;
+        time_t last;
         int url_index;
+        int running;
+        char config_path[AM_PATH_SIZE];
     } valid[AM_MAX_INSTANCES];
 
     struct instance_init {
@@ -936,7 +938,7 @@ int am_log_get_current_owner() {
 /***************************************************************************/
 
 void am_log_register_instance(unsigned long instance_id, const char *debug_log, int log_level, int log_size,
-        const char *audit_log, int audit_level, int audit_size) {
+        const char *audit_log, int audit_level, int audit_size, const char *config_file) {
     int i, exist = AM_NOT_FOUND;
     struct am_log *log = AM_LOG();
     struct log_files *f = NULL;
@@ -965,8 +967,8 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
             f = &log->files[i];
             if (!f->used) {
                 f->instance_id = instance_id;
-                snprintf(f->name_debug, sizeof (f->name_debug), "%s", debug_log);
-                snprintf(f->name_audit, sizeof (f->name_audit), "%s", audit_log);
+                strncpy(f->name_debug, debug_log, sizeof (f->name_debug) - 1);
+                strncpy(f->name_audit, audit_log, sizeof (f->name_audit) - 1);
                 f->used = AM_TRUE;
 
 #define DEFAULT_LOG_SIZE (1024 * 1024 * 5) /* 5MB */
@@ -979,6 +981,20 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
                 f->owner = 0;
                 exist = AM_DONE;
                 break;
+            }
+        }
+
+        /* register instance in valid-url-index table */
+        if (ISVALID(config_file)) {
+            for (i = 0; i < AM_MAX_INSTANCES; i++) {
+                struct valid_url *vf = &log->valid[i];
+                if (vf->instance_id == 0) {
+                    vf->instance_id = instance_id;
+                    vf->url_index = 0;
+                    vf->last = time(NULL);
+                    strncpy(vf->config_path, config_file, sizeof (vf->config_path) - 1);
+                    break;
+                }
             }
         }
     } else {
@@ -1021,7 +1037,6 @@ int get_valid_url_index(unsigned long instance_id) {
     for (i = 0; i < AM_MAX_INSTANCES; i++) {
         if (log->valid[i].instance_id == instance_id) {
             value = log->valid[i].url_index;
-
             break;
         }
     }
@@ -1033,10 +1048,41 @@ int get_valid_url_index(unsigned long instance_id) {
     return value;
 }
 
+int get_valid_url_all(struct url_validator_worker_data *list) {
+    int i, j = 0;
+    struct am_log *log = AM_LOG();
+
+    if (log == NULL || list == NULL) {
+        return AM_EINVAL;
+    }
+
+#ifdef _WIN32
+    WaitForSingleObject(am_log_lck.lock, INFINITE);
+#else
+    pthread_mutex_lock(&log->lock);
+#endif
+    for (i = 0; i < AM_MAX_INSTANCES; i++) {
+        if (log->valid[i].instance_id > 0 && ISVALID(log->valid[i].config_path)) {
+            list[j].instance_id = log->valid[i].instance_id;
+            list[j].url_index = log->valid[i].url_index;
+            list[j].last = log->valid[i].last;
+            list[j].running = log->valid[i].running;
+            list[j].config_path = strdup(log->valid[i].config_path);
+            j++;
+        }
+    }
+#ifdef _WIN32
+    ReleaseMutex(am_log_lck.lock);
+#else
+    pthread_mutex_unlock(&log->lock);
+#endif
+    return j > 0 ? AM_SUCCESS : AM_NOT_FOUND;
+}
+
 /***************************************************************************/
 
 void set_valid_url_index(unsigned long instance_id, int value) {
-    int i, set = AM_FALSE;
+    int i;
     struct am_log *log = AM_LOG();
 
     if (log == NULL) {
@@ -1051,18 +1097,34 @@ void set_valid_url_index(unsigned long instance_id, int value) {
     for (i = 0; i < AM_MAX_INSTANCES; i++) {
         if (log->valid[i].instance_id == instance_id) {
             log->valid[i].url_index = value;
-            set = AM_TRUE;
+            log->valid[i].last = time(NULL);
             break;
         }
     }
-    if (!set) {
-        for (i = 0; i < AM_MAX_INSTANCES; i++) {
-            /* find first empty slot */
-            if (log->valid[i].instance_id == 0) {
-                log->valid[i].url_index = value;
-                log->valid[i].instance_id = instance_id;
-                break;
-            }
+#ifdef _WIN32
+    ReleaseMutex(am_log_lck.lock);
+#else
+    pthread_mutex_unlock(&log->lock);
+#endif
+}
+
+void set_valid_url_instance_running(unsigned long instance_id, int value) {
+    int i;
+    struct am_log *log = AM_LOG();
+
+    if (log == NULL) {
+        return;
+    }
+
+#ifdef _WIN32
+    WaitForSingleObject(am_log_lck.lock, INFINITE);
+#else
+    pthread_mutex_lock(&log->lock);
+#endif
+    for (i = 0; i < AM_MAX_INSTANCES; i++) {
+        if (log->valid[i].instance_id == instance_id) {
+            log->valid[i].running = value;
+            break;
         }
     }
 #ifdef _WIN32

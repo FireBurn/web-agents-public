@@ -141,6 +141,14 @@ struct audit_worker_data {
     am_net_options_t *options;
 };
 
+struct url_validator_worker_data {
+    unsigned long instance_id;
+    time_t last;
+    int url_index;
+    int running;
+    char *config_path;
+};
+
 typedef struct {
     uint64_t start;
     uint64_t stop;
@@ -243,7 +251,6 @@ int am_delete_file(const char *fn);
 int am_delete_directory(const char *path);
 
 int get_valid_url_index(unsigned long instance_id);
-void set_valid_url_index(unsigned long instance_id, int value);
 
 int get_ttl_value(struct am_namevalue *session, const char *name, int def, int value_in_minutes);
 
@@ -264,6 +271,9 @@ int am_audit_register_instance(am_config_t *conf);
 int am_add_remote_audit_entry(unsigned long instance_id, const char *agent_token,
         const char *agent_token_server_id, const char *file_name,
         const char *user_token, const char *format, ...);
+
+int am_url_validator_init();
+void am_url_validator_shutdown();
 
 int am_scope_to_num(const char *scope);
 const char *am_scope_to_str(int scope);

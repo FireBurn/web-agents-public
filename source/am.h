@@ -60,10 +60,6 @@ typedef enum {
 #define AM_SHARED_MAX_RESIZE        2
 #endif
 
-#ifndef AM_LOG_QUEUE_DEPTH
-#define AM_LOG_QUEUE_DEPTH          1024 /* must not be less than max number of simultaneus log requests */
-#endif
-
 #ifndef AM_MAX_INSTANCES
 #define AM_MAX_INSTANCES            32 /* max number of agent configuration instances */
 #endif
@@ -150,7 +146,6 @@ typedef enum {
 } am_return_t;
 
 #define RETURN_TYPE_TO_BOOL(x)   (((x) == AM_OK) ? AM_TRUE : AM_FALSE)
-
 
 enum {
     AM_REQUEST_UNKNOWN = 0,
@@ -311,7 +306,7 @@ void am_log_init(int id, int s);
 void am_log_init_worker(int id, int s);
 void am_log_shutdown(int id);
 void am_log_register_instance(unsigned long instance_id, const char *debug_log, int log_level, int log_size,
-        const char *audit_log, int audit_level, int audit_size);
+        const char *audit_log, int audit_level, int audit_size, const char *config_file);
 
 void am_config_free(am_config_t **c);
 am_config_t *am_get_config_file(unsigned long instance_id, const char *filename);

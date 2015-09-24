@@ -315,6 +315,7 @@ static am_status_t write_entries_to_server(const char *openam, int count, struct
             am_net_options_create(conf, wd->options, NULL);
         }
         wd->options->server_id = strdup(server_id);
+        am_config_free(&conf);
     }
 
     if (am_worker_dispatch(remote_audit_worker, wd) != 0) {
