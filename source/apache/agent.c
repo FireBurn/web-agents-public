@@ -118,6 +118,15 @@ static apr_status_t amagent_cleanup(void *arg) {
     return APR_SUCCESS;
 }
 
+static void recovery_callback(void *cb_arg, char * name, int error) {
+    server_rec *s = cb_arg;
+    if (error) {
+        LOG_S(APLOG_ERR, s, "unable to clear shared resource: %s, error %d", name, error);
+    } else {
+        LOG_S(APLOG_WARNING, s, "agent cleared shared resource: %s", name);
+    }
+}
+
 static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
         server_rec *s) {
     /* main process init */
@@ -139,6 +148,12 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
     LOG_S(APLOG_DEBUG, s, "amagent_init() %d", getpid());
 
 #ifndef _WIN32
+    /* find and clear down shared memory resources after abnormal termination */
+    if (am_remove_shm_and_locks(config->agent_id, recovery_callback, s) != AM_SUCCESS) {
+        LOG_S(APLOG_ERR, s, "amagent_init() failed to recover after abnormal termination");
+        return APR_EINIT;
+    }
+
     status = am_init(config->agent_id);
     if (status != AM_SUCCESS) {
         rv = APR_EINIT;

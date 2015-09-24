@@ -21,7 +21,6 @@
 
 #define AM_LOG_BUFFER_MASK(index, size) ((index) & ((size) - 1))
 
-#define AM_CONFIG_INIT_NAME "am_instance_config_init"
 #if defined(_WIN32)
 static HANDLE ic_sem = NULL;
 #elif defined(__APPLE__)

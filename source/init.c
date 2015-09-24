@@ -160,3 +160,116 @@ int am_shutdown_worker() {
 #endif
     return 0;
 }
+
+#ifndef _WIN32
+/*
+ * get shared memory name, as opened by am_shm_create
+ */
+static am_bool_t get_shm_name(const char *root, int id, char *buffer, size_t buffer_sz) {
+    char *global_name = get_global_name(root, id);
+    int sz;
+    
+    if (global_name == NULL)
+        return AM_FALSE;
+    
+    sz = snprintf(buffer, buffer_sz,
+#ifdef __sun
+             "/%s_s"
+#else
+             "%s_s"
+#endif
+             , global_name);
+
+    return 0 <= sz && sz < buffer_sz;
+}
+
+/*
+ * get shared memory name, as opened by am_log_init
+ */
+static am_bool_t get_log_shm_name(int id, char *buffer, size_t buffer_sz) {
+    int sz = snprintf(buffer, buffer_sz,
+#ifdef __sun
+             "/am_log_%d"
+#else
+             AM_GLOBAL_PREFIX"am_log_%d"
+#endif
+             , id);
+    
+    return 0 <= sz && sz < buffer_sz;
+}
+
+static am_bool_t unlink_shm(char *shm_name, void (*log_cb)(void *arg, char *name, int error), void *cb_arg) {
+    if (shm_unlink(shm_name) == 0) {
+        // warn: shared memory was present but successfully cleared
+        log_cb(cb_arg, shm_name, 0);
+    } else if (errno != ENOENT) {
+        // failure: shared memory was not cleared
+        log_cb(cb_arg, shm_name, errno);
+        return AM_FALSE;
+    }
+    return AM_TRUE;
+}
+
+/*
+ * get semaphore name as opened by am_instance_init_init
+ */
+static am_bool_t get_config_sem_name(int id, char *buffer, size_t buffer_sz) {
+   char *global_name = get_global_name(
+#ifdef __sun
+                   "/"AM_CONFIG_INIT_NAME
+#else
+                   AM_CONFIG_INIT_NAME
+#endif
+                   , id);
+
+    if (global_name == NULL)
+        return AM_FALSE;
+
+    int sz = snprintf(buffer, buffer_sz, "%s", global_name);
+    return 0 <= sz && sz < buffer_sz;
+}
+
+static am_bool_t unlink_sem(char *sem_name, void (*log_cb)(void *arg, char *name, int error), void *cb_arg) {
+    if (sem_unlink(sem_name) == 0) {
+        // warn: semaphore was present but successfully cleared
+        log_cb(cb_arg, sem_name, 0);
+    } else if (errno != ENOENT) {
+        // failure: semaphore was not cleared
+        log_cb(cb_arg, sem_name, errno);
+        return AM_FALSE;
+    }
+    return AM_TRUE;
+}
+#endif
+
+/*
+ * Remove all shared memory and semaphore resources that might be left open if the agent terminates
+ * abnormally
+ */
+am_status_t am_remove_shm_and_locks(int id, void (*log_cb)(void *arg, char *name, int error), void *cb_arg) {
+#ifdef _WIN32
+    return AM_SUCCESS;
+#else
+    am_status_t status = AM_SUCCESS;
+    char name [AM_PATH_SIZE];
+    
+    if (! (get_shm_name(AM_AUDIT_SHM_NAME, id, name, sizeof(name)) && unlink_shm(name, log_cb, cb_arg)))
+        status = AM_ERROR;
+    
+    if (! (get_shm_name(AM_CACHE_SHM_NAME, id, name, sizeof(name)) && unlink_shm(name, log_cb, cb_arg)))
+        status = AM_ERROR;
+
+    if (! (get_shm_name(AM_CONFIG_SHM_NAME, id, name, sizeof(name)) && unlink_shm(name, log_cb, cb_arg)))
+        status = AM_ERROR;
+    
+    if (! (get_log_shm_name(id, name, sizeof(name)) && unlink_shm(name, log_cb, cb_arg)))
+        status = AM_ERROR;
+    
+#ifndef __APPLE__
+    /* with OS X we are using mach semaphores for the log initialisation lock, and this does not apply */
+    if (! (get_config_sem_name(id, name, sizeof(name)) && unlink_sem(name, log_cb, cb_arg)))
+        status = AM_ERROR;
+#endif
+    return status;
+#endif
+}

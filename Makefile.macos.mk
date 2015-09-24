@@ -14,6 +14,8 @@
 # Copyright 2014 ForgeRock AS.
 #
 
+DEBUG := true
+
 ifndef	MACOS_MK_INCLUDED
 MACOS_MK_INCLUDED := true
 	

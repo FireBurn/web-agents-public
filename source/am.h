@@ -141,6 +141,15 @@ typedef enum {
         " }"\
         "}"
 
+/*
+ * shared memory and semaphore naming strings
+ */
+#define AM_CONFIG_INIT_NAME     "am_instance_config_init"
+#define AM_AUDIT_SHM_NAME       "am_shared_audit"
+#define AM_CACHE_SHM_NAME       "am_shared_cache"
+#define AM_CONFIG_SHM_NAME      "am_shared_conf"
+
+
 typedef enum {
     AM_OK = 0, AM_FAIL, AM_RETRY, AM_QUIT
 } am_return_t;
@@ -291,6 +300,7 @@ int am_init(int id);
 int am_init_worker(int id);
 int am_shutdown(int id);
 int am_shutdown_worker();
+am_status_t am_remove_shm_and_locks(int id, void (*log_cb)(void *arg, char *name, int error), void *cb_arg);
 
 int am_configuration_init(int id);
 int am_configuration_shutdown();
