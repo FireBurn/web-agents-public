@@ -1912,6 +1912,7 @@ static void list_instances(int argc, char **argv) {
 static void remove_instance(int argc, char **argv) {
     struct am_conf_entry *list = NULL, *e, *t;
     int rv;
+    char prompt[AM_PATH_SIZE];
     if (argc != 3) {
         fprintf(stdout, "\nNo agent configuration specified.\n");
         return;
@@ -1919,31 +1920,35 @@ static void remove_instance(int argc, char **argv) {
 
     rv = am_read_instances(instance_config, &list);
     if (rv <= 0) {
+        fprintf(stderr, "\nError reading agent configuration.\n");
         delete_conf_entry_list(&list);
         return;
     }
 
+    rv = AM_NOT_FOUND;
+
     AM_LIST_FOR_EACH(list, e, t) {
         if (strcmp(e->name, argv[2]) == 0) {
             switch (instance_type) {
-                case AM_I_APACHE: {
-                    char *input = prompt_and_read("\nWarning! This procedure will remove all "DESCRIPTION" references from \na Web server configuration."
+                case AM_I_APACHE:
+                {
+                    char *input = prompt_and_read("\nWarning! This procedure will remove all "DESCRIPTION" references from \nWeb server configuration."
                             " In case you are running "DESCRIPTION" in a\nmulti-virtualhost mode, an uninstallation must be carried out manually.\n\nContinue (yes/no): [no]:");
-                    if (!ISVALID(input) || strcasecmp(input, "yes") != 0) {
+                    rv = AM_SUCCESS;
+                    if (!ISVALID(input) || strncasecmp(input, "y", 1) != 0) {
                         am_free(input);
                         break;
                     }
                     am_free(input);
-
                     fprintf(stdout, "\nRemoving %s configuration...\n", e->name);
                     /* remove LoadModule line */
-                    rv = am_cleanup_instance(e->web, "LoadModule amagent_module");
+                    am_cleanup_instance(e->web, "LoadModule amagent_module");
                     /* remove AmAgent On/Off line */
-                    rv = am_cleanup_instance(e->web, "AmAgent ");
+                    am_cleanup_instance(e->web, "AmAgent ");
                     /* remove AmAgentConf line */
-                    rv = am_cleanup_instance(e->web, "AmAgentConf ");
+                    am_cleanup_instance(e->web, "AmAgentConf ");
                     /* remove AmAgentId line */
-                    rv = am_cleanup_instance(e->web, "AmAgentId ");
+                    am_cleanup_instance(e->web, "AmAgentId ");
                     /* delete agent instance configuration directory */
                     am_delete_directory(e->path);
                     /* remove agent instance configuration */
@@ -1951,9 +1956,20 @@ static void remove_instance(int argc, char **argv) {
                     fprintf(stdout, "\nRemoving %s configuration... Done.\n", e->name);
                     break;
                 }
-                case AM_I_IIS: {
+                case AM_I_IIS:
+                {
+                    char *input = NULL;
                     char iis_instc_file[AM_URI_SIZE];
-                    snprintf(iis_instc_file, sizeof(iis_instc_file),
+                    snprintf(prompt, sizeof (prompt), "\nWarning! This procedure will remove %s configuration from IIS Site %s."
+                            "\n\nContinue (yes/no): [no]:", e->name, e->web);
+                    input = prompt_and_read(prompt);
+                    rv = AM_SUCCESS;
+                    if (!ISVALID(input) || strncasecmp(input, "y", 1) != 0) {
+                        am_free(input);
+                        break;
+                    }
+                    am_free(input);
+                    snprintf(iis_instc_file, sizeof (iis_instc_file),
                             "%s"FILE_PATH_SEP"config"FILE_PATH_SEP"agent.conf",
                             e->path);
 
@@ -1967,8 +1983,17 @@ static void remove_instance(int argc, char **argv) {
                     fprintf(stdout, "\nRemoving %s configuration... Done.\n", e->name);
                     break;
                 }
-                case AM_I_VARNISH: {
+                case AM_I_VARNISH:
+                {
                     char vmod_path[AM_URI_SIZE];
+                    char *input = prompt_and_read("\nWarning! This procedure will remove all "DESCRIPTION" references from \nWeb server configuration."
+                            "\n\nContinue (yes/no): [no]:");
+                    rv = AM_SUCCESS;
+                    if (!ISVALID(input) || strncasecmp(input, "y", 1) != 0) {
+                        am_free(input);
+                        break;
+                    }
+                    am_free(input);
                     snprintf(vmod_path, sizeof (vmod_path),
                             "%s"FILE_PATH_SEP"libvmod_am."LIB_FILE_EXT, e->web);
                     fprintf(stdout, "\nRemoving %s configuration...\n", e->name);
@@ -1983,7 +2008,12 @@ static void remove_instance(int argc, char **argv) {
             }
         }
     }
+
     delete_conf_entry_list(&list);
+
+    if (rv == AM_NOT_FOUND) {
+        fprintf(stderr, "\nUnknown \"%s\" instance configuration.\n", LOGEMPTY(argv[2]));
+    }
 }
 
 static void remove_global(int argc, char **argv) {
