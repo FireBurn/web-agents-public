@@ -254,6 +254,7 @@ typedef struct am_request {
     char *client_host;
 
     const char *user;
+    const char *user_temp;
     const char *user_password;
 
     struct am_namevalue *sattr; /*session attributes (cache or direct)*/

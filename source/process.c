@@ -1058,6 +1058,15 @@ static am_return_t validate_policy(am_request_t *r) {
                 return AM_OK;
             }
         }
+        
+        /* pre-fetch user parameter value */
+        if (ISVALID(r->conf->userid_param) && ISVALID(r->conf->userid_param_type)) {
+            if (strcasecmp(r->conf->userid_param_type, "SESSION") == 0) {
+                r->user_temp = get_attr_value(r, r->conf->userid_param, AM_SESSION_ATTRIBUTE);
+            } else {
+                r->user_temp = get_attr_value(r, r->conf->userid_param, AM_POLICY_ATTRIBUTE);
+            }
+        }
 
         AM_LIST_FOR_EACH(r->pattr, e, t) {//TODO: work on loop in 2 threads (split loop in 2; search&match in each thread)
 
@@ -1130,13 +1139,9 @@ static am_return_t validate_policy(am_request_t *r) {
                         r->response_decisions = e->response_decisions;
                         r->status = AM_SUCCESS;
 
-                        /* fetch user parameter value */
+                        /* set user parameter value */
                         if (ISVALID(r->conf->userid_param) && ISVALID(r->conf->userid_param_type)) {
-                            if (strcasecmp(r->conf->userid_param_type, "SESSION") == 0) {
-                                r->user = get_attr_value(r, r->conf->userid_param, AM_SESSION_ATTRIBUTE);
-                            } else {
-                                r->user = get_attr_value(r, r->conf->userid_param, AM_POLICY_ATTRIBUTE);
-                            }
+                            r->user = r->user_temp;
                             r->user_password = get_attr_value(r, "sunIdentityUserPassword", AM_SESSION_ATTRIBUTE);
                         }
                         return AM_OK;
@@ -1167,13 +1172,9 @@ static am_return_t validate_policy(am_request_t *r) {
                                 r->response_decisions = e->response_decisions;
                                 r->status = AM_SUCCESS;
 
-                                /* fetch user parameter value */
+                                /* set user parameter value */
                                 if (ISVALID(r->conf->userid_param) && ISVALID(r->conf->userid_param_type)) {
-                                    if (strcasecmp(r->conf->userid_param_type, "SESSION") == 0) {
-                                        r->user = get_attr_value(r, r->conf->userid_param, AM_SESSION_ATTRIBUTE);
-                                    } else {
-                                        r->user = get_attr_value(r, r->conf->userid_param, AM_POLICY_ATTRIBUTE);
-                                    }
+                                    r->user = r->user_temp;
                                     r->user_password = get_attr_value(r, "sunIdentityUserPassword", AM_SESSION_ATTRIBUTE);
                                 }
 
@@ -1978,13 +1979,16 @@ static am_return_t handle_exit(am_request_t *r) {
 
             if (status == AM_ACCESS_DENIED &&
                     AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_DENY)) {
+                const char *user_name_log = ISVALID(r->user) ? r->user : r->user_temp;
+
                 AM_LOG_AUDIT(r->instance_id, AUDIT_DENY_USER_MESSAGE,
-                        LOGEMPTY(r->user), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
+                        LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
+
                 if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE)) {
                     int audit_status = am_add_remote_audit_entry(r->instance_id, r->conf->token,
                             r->session_info.si, r->conf->audit_file_remote,
                             r->token, AUDIT_DENY_USER_MESSAGE,
-                            LOGEMPTY(r->user), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
+                            LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
                     if (audit_status != AM_SUCCESS) {
                         AM_LOG_ERROR(r->instance_id, "%s failed to store remote audit log message (%s)",
                                 thisfunc, am_strerror(audit_status));
