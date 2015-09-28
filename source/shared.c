@@ -19,6 +19,8 @@
 #include "utility.h"
 #include "list.h"
 
+#define AM_ALIGNMENT 8
+#define AM_ALIGN(size) (((size) + (AM_ALIGNMENT-1)) & ~(AM_ALIGNMENT-1))
 
 struct mem_chunk {
     size_t size;
@@ -26,7 +28,7 @@ struct mem_chunk {
     char used;
     struct offset_list lh;
 };
-#define SIZEOF_mem_chunk (sizeof(struct mem_chunk))
+#define CHUNK_HEADER_SIZE AM_ALIGN(sizeof(struct mem_chunk))
 
 struct mem_pool {
     size_t size;
@@ -36,9 +38,6 @@ struct mem_pool {
     struct offset_list lh; /* first, last */
 };
 #define SIZEOF_mem_pool (sizeof(struct mem_pool))
-
-#define AM_ALIGNMENT 8
-#define AM_ALIGN(size) (((size) + (AM_ALIGNMENT-1)) & ~(AM_ALIGNMENT-1))
 
 int am_shm_lock(am_shm_t *am) {
     int rv = AM_SUCCESS;
@@ -625,7 +624,7 @@ void *am_shm_alloc_and_purge(am_shm_t *am, size_t usize, int (* purge_f)()) {
     }
 
     pool = (struct mem_pool *) am->pool;
-    size = AM_ALIGN(usize + SIZEOF_mem_chunk);
+    size = AM_ALIGN(usize + CHUNK_HEADER_SIZE);
     head = (struct mem_chunk *) AM_GET_POINTER(pool, pool->lh.prev);
 
     /* find the first-fitting chunk */
@@ -647,13 +646,13 @@ void *am_shm_alloc_and_purge(am_shm_t *am, size_t usize, int (* purge_f)()) {
     }
 
     if (cmin != NULL) {
-        if (cmin->size > (size + MIN(2 * size, SIZEOF_mem_chunk))) {
+        if (cmin->size > (size + MIN(2 * size, CHUNK_HEADER_SIZE))) {
             /* split chunk */
             s = cmin->size - size;
             cmin->size = size;
             cmin->usize = usize;
             cmin->used = 1;
-            ret = (void *) ((char *) cmin + SIZEOF_mem_chunk);
+            ret = (void *) ((char *) cmin + CHUNK_HEADER_SIZE);
 
             /* add remaining part as a free chunk */
             n = (struct mem_chunk *) ((char *) cmin + size);
@@ -675,7 +674,7 @@ void *am_shm_alloc_and_purge(am_shm_t *am, size_t usize, int (* purge_f)()) {
             /* can't split anything out - use all of it */
             cmin->used = 1;
             cmin->usize = usize;
-            ret = (void *) ((char *) cmin + SIZEOF_mem_chunk);
+            ret = (void *) ((char *) cmin + CHUNK_HEADER_SIZE);
         }
     }
 
@@ -727,7 +726,7 @@ void am_shm_free(am_shm_t *am, void *ptr) {
     }
 
     pool = (struct mem_pool *) am->pool;
-    e = (struct mem_chunk *) ((char *) ptr - SIZEOF_mem_chunk);
+    e = (struct mem_chunk *) ((char *) ptr - CHUNK_HEADER_SIZE);
     if (e->used == 0) {
         am_shm_unlock(am);
         return;
@@ -780,12 +779,12 @@ void *am_shm_realloc(am_shm_t *am, void *ptr, size_t usize) {
     if (ptr == NULL) {
         return am_shm_alloc(am, usize); /* POSIX.1 semantics */
     }
-    e = (struct mem_chunk *) ((char *) ptr - SIZEOF_mem_chunk);
+    e = (struct mem_chunk *) ((char *) ptr - CHUNK_HEADER_SIZE);
     if (usize <= e->size) {
         e->usize = usize;
         return ptr;
     }
-    size = AM_ALIGN(usize + SIZEOF_mem_chunk);
+    size = AM_ALIGN(usize + CHUNK_HEADER_SIZE);
     if (size <= e->size) {
         e->usize = usize;
         return ptr;
