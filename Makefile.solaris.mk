@@ -20,7 +20,7 @@ SOLARIS_MK_INCLUDED := true
 CC := suncc
 SHARED := -G
 
-CFLAGS  += -xc99=all -g -mt -D_REENTRANT -DSOLARIS -D_POSIX_PTHREAD_SEMANTICS -xmemalign=8i
+CFLAGS  += -xc99=all -g -mt -D_REENTRANT -DSOLARIS -D_POSIX_PTHREAD_SEMANTICS
 
 ifdef DEBUG
  CFLAGS += -xO0 -DDEBUG
@@ -31,7 +31,7 @@ endif
 ifeq ($(OS_MARCH), i86pc)
  CFLAGS += -KPIC
 else
- CFLAGS += -xcode=pic32
+ CFLAGS += -xcode=pic32 -xmemalign=8i
 endif
 
 ifdef 64
