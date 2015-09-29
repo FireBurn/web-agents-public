@@ -340,28 +340,38 @@ void create_random_cache_key(char * buffer, size_t size)
     buffer[count] = 0;
 }
 
-static void test_cache_with_seed(int seed, int test_size, am_request_t * request, struct am_policy_result * result)
+static int test_cache_with_seed(int seed, int test_size, am_request_t * request, struct am_policy_result * result)
 {
     int i;
-    char key[64];
+    char key[4093*5];
+    int capacity = test_size;
     
     /* create initial entries */
     srand(seed);
     for(i = 0; i < test_size; i++) {
         create_random_cache_key(key, sizeof(key));
-        assert_int_equal(am_add_session_policy_cache_entry(request, key, result, NULL), AM_SUCCESS);
+        if (am_add_session_policy_cache_entry(request, key, result, NULL) != AM_SUCCESS) {
+            printf("test_cache_with_seed: capacity is %d\n", i);
+            capacity = i;
+            break;
+        }
+        if (i % 1000 == 0)
+            printf("loaded %d..\n", i);
     }
     
     /* should refresh the whole lot */
     srand(seed);
-    for(i = 0; i < test_size; i++) {
+    for(i = 0; i < capacity; i++) {
         create_random_cache_key(key, sizeof(key));
         assert_int_equal(am_add_session_policy_cache_entry(request, key, result, NULL), AM_SUCCESS);
+
+        if (i % 1000 == 0)
+            printf("reloaded %d..\n", i);
     }
     
     /* read them all back */
     srand(seed);
-    for(i = 0; i < test_size; i++) {
+    for(i = 0; i < capacity; i++) {
         time_t ets;
         struct am_policy_result * r = NULL;
         struct am_namevalue * session = NULL;
@@ -369,11 +379,15 @@ static void test_cache_with_seed(int seed, int test_size, am_request_t * request
         create_random_cache_key(key, sizeof(key));
         assert_int_equal(am_get_session_policy_cache_entry(request, key, &r, &session, &ets), AM_SUCCESS);
         test_policy_structure(r);
+
+        if (i % 1000 == 0)
+            printf("read %d..\n", i);
     }
+    return capacity;
 }
 
-static void test_cache(int test_size, am_request_t * request, struct am_policy_result * result) {
-    test_cache_with_seed(543542, test_size, request, result);
+static int test_cache(int test_size, am_request_t * request, struct am_policy_result * result) {
+    return test_cache_with_seed(543542, test_size, request, result);
 }
 
 
@@ -439,15 +453,20 @@ void test_policy_cache_many_entries(void **state) {
 
 void test_policy_cache_purge_many_entries(void **state) {
     
-    const int test_size = 198;
+    const int test_size = 1024;
+    const int cache_valid_secs = 100;
+    
     char* buffer = NULL;
     struct am_policy_result * result;
+    int capacity;
     
     am_config_t config;
     am_request_t request;
     
     memset(&config, 0, sizeof(am_config_t));
     memset(&request, 0, sizeof(am_request_t));
+    
+    config.token_cache_valid = cache_valid_secs;
     request.conf = &config;
     
     am_asprintf(&buffer, pll, policy_xml);
@@ -460,9 +479,8 @@ void test_policy_cache_purge_many_entries(void **state) {
     assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
     am_init_worker(AM_DEFAULT_AGENT_ID);
     
-    test_cache(test_size, &request, result);
- 
-    assert_int_equal(am_purge_caches(time(NULL) + 10), test_size);
+    capacity = test_cache(test_size, &request, result);
+    assert_int_equal(am_purge_caches(time(NULL) + cache_valid_secs + 1), capacity);
 
     delete_am_policy_result_list(&result);
     
@@ -473,39 +491,53 @@ void test_policy_cache_purge_many_entries(void **state) {
 }
 
 void test_policy_cache_purge_during_insert(void **state) {
+    const int test_size = 4096 * 10; // must be beyond the capacity
+    const int cache_valid = 6000;    // must be large enough to not time out during inster phases
     
-    const int test_size = 192;
     char* buffer = NULL;
     struct am_policy_result * result;
-    
+    int loaded;
+    time_t t0;
+    long elapsed;
+
     am_config_t config;
     am_request_t request;
     
     memset(&config, 0, sizeof(am_config_t));
+    config.token_cache_valid = cache_valid;
     memset(&request, 0, sizeof(am_request_t));
     request.conf = &config;
     
     am_asprintf(&buffer, pll, policy_xml);
     result = am_parse_policy_xml(0l, buffer, strlen(buffer), 0);
-    
     free(buffer);
     
     // destroy the cache, if it exists
     am_cache_destroy();
     assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
     am_init_worker(AM_DEFAULT_AGENT_ID);
-    
-    test_cache(test_size, &request, result);
-    
-    // wait 2 seconds for the TTL to expire
-    sleep(2);
 
-    // another 10 is too many without the purge functionality
+    // time load to capacity
+    printf("starting timing phase..\n");
+    t0 = time(NULL);
+    loaded = test_cache(test_size, &request, result);
+    elapsed = time(NULL) - t0;
+
+    assert_int_equal(am_purge_caches(time(NULL) + cache_valid + 1), loaded);
+
+    printf("loading for %ld secs..\n", elapsed);
+    config.token_cache_valid = elapsed + 2;
+    loaded = test_cache(test_size, &request, result);
+
+    // wait the TTL to expire
+    printf("waiting for %ld + 1 secs..\n", elapsed);
+    sleep( (elapsed + 4) );
+    
+    // this update should trigger purge 
+    printf("verifying expiry during load.. \n");
     test_cache_with_seed(321213, 100, &request, result);
-    
-    // check that there are only these 100 left
-    assert_int_equal(am_purge_caches(time(NULL) + 10), 100);
-    
+    assert_int_equal(am_purge_caches(time(NULL) + elapsed + 10), 100);
+
     delete_am_policy_result_list(&result);
     
     am_shutdown_worker();

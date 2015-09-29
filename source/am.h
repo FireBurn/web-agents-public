@@ -52,6 +52,10 @@ typedef enum {
 #define AM_HASH_TABLE_KEY_SIZE      128
 #endif
 
+#ifndef AM_MAX_TOKEN_LENGTH
+#define AM_MAX_TOKEN_LENGTH         4096 /* this is the maximum length of a cookie */
+#endif
+
 #ifndef AM_HASH_TABLE_SIZE
 #define AM_HASH_TABLE_SIZE          6151 /* must be a prime */
 #endif

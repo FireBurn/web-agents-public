@@ -152,7 +152,7 @@ struct am_instance {
 struct am_instance_entry {
     time_t ts;
     unsigned long instance_id;
-    char token[AM_HASH_TABLE_KEY_SIZE];
+    char token[AM_MAX_TOKEN_LENGTH];
     char name[AM_HASH_TABLE_KEY_SIZE]; /* agent id */
     char config[AM_PATH_SIZE]; /* config file name */
     struct offset_list data; /* agent configuration data */
