@@ -1206,3 +1206,7 @@ int am_add_policy_cache_entry(am_request_t *r, const char *key, int valid) {
     return AM_SUCCESS;
 }
 
+void dump_cache_memory() {
+    am_shm_info(cache);
+}
+

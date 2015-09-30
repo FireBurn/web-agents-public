@@ -30,6 +30,7 @@ void* am_parse_policy_xml(unsigned long instance_id, const char* xml, size_t xml
 void am_worker_pool_init_reset();
 void am_net_init_ssl_reset();
 int am_purge_caches(time_t expiry_time);
+void dump_cache_memory(void);
 
 char* policy_xml = "<PolicyService version='1.0' revisionNumber='60'>"
     "<PolicyResponse requestId='4' issueInstant='1424783306343' >"
@@ -343,7 +344,7 @@ void create_random_cache_key(char * buffer, size_t size)
 static int test_cache_with_seed(int seed, int test_size, am_request_t * request, struct am_policy_result * result)
 {
     int i;
-    char key[4093*5];
+    char key[128];
     int capacity = test_size;
     
     /* create initial entries */
@@ -364,7 +365,6 @@ static int test_cache_with_seed(int seed, int test_size, am_request_t * request,
     for(i = 0; i < capacity; i++) {
         create_random_cache_key(key, sizeof(key));
         assert_int_equal(am_add_session_policy_cache_entry(request, key, result, NULL), AM_SUCCESS);
-
         if (i % 1000 == 0)
             printf("reloaded %d..\n", i);
     }
@@ -453,8 +453,8 @@ void test_policy_cache_many_entries(void **state) {
 
 void test_policy_cache_purge_many_entries(void **state) {
     
-    const int test_size = 1024;
-    const int cache_valid_secs = 100;
+    const int test_size = 4096;
+    const int cache_valid_secs = 10000;
     
     char* buffer = NULL;
     struct am_policy_result * result;
@@ -481,6 +481,7 @@ void test_policy_cache_purge_many_entries(void **state) {
     
     capacity = test_cache(test_size, &request, result);
     assert_int_equal(am_purge_caches(time(NULL) + cache_valid_secs + 1), capacity);
+    dump_cache_memory();
 
     delete_am_policy_result_list(&result);
     
@@ -524,6 +525,7 @@ void test_policy_cache_purge_during_insert(void **state) {
     elapsed = time(NULL) - t0;
 
     assert_int_equal(am_purge_caches(time(NULL) + cache_valid + 1), loaded);
+    dump_cache_memory();
 
     printf("loading for %ld secs..\n", elapsed);
     config.token_cache_valid = elapsed + 2;
@@ -537,6 +539,7 @@ void test_policy_cache_purge_during_insert(void **state) {
     printf("verifying expiry during load.. \n");
     test_cache_with_seed(321213, 100, &request, result);
     assert_int_equal(am_purge_caches(time(NULL) + elapsed + 10), 100);
+    dump_cache_memory();
 
     delete_am_policy_result_list(&result);
     
