@@ -1887,10 +1887,10 @@ void decrypt_agent_passwords(am_config_t *r) {
             free(r->pass);
             r->pass = pass;
             r->pass_sz = pass_sz;
-            return;
+        } else {
+            AM_LOG_WARNING(r->instance_id, "failed to decrypt agent password");
+            am_free(pass);
         }
-        AM_LOG_WARNING(r->instance_id, "failed to decrypt agent password");
-        am_free(pass);
     }
 
     if (ISVALID(r->cert_key_pass)) {
@@ -1899,10 +1899,10 @@ void decrypt_agent_passwords(am_config_t *r) {
             free(r->cert_key_pass);
             r->cert_key_pass = pass;
             r->cert_key_pass_sz = pass_sz;
-            return;
+        } else {
+            AM_LOG_WARNING(r->instance_id, "failed to decrypt certificate key password");
+            am_free(pass);
         }
-        AM_LOG_WARNING(r->instance_id, "failed to decrypt certificate key password");
-        am_free(pass);
     }
 }
 
@@ -2480,7 +2480,7 @@ int copy_file(const char *from, const char *to) {
     if (CopyFileExA(from, to_tmp, NULL, NULL, FALSE, COPY_FILE_NO_BUFFERING) != 0) {
         rv = AM_SUCCESS;
     }
-#elif defined(LINUX)
+#elif defined(LINUX) || defined(AIX)
     {
         size_t content_sz = 0;
         char *content = load_file(from, &content_sz);
@@ -2489,7 +2489,7 @@ int copy_file(const char *from, const char *to) {
         } else {
             ssize_t wr_status = write_file(to_tmp, content, content_sz);
             am_free(content);
-            
+
             if (wr_status == content_sz)
                 rv = AM_SUCCESS;
             else if (wr_status < 0)
@@ -2498,7 +2498,7 @@ int copy_file(const char *from, const char *to) {
                 rv = AM_FILE_ERROR;
         }
     }
-#else   /* not Windows or Linux */
+#else   /* not Windows or Linux or AIX */
     struct stat st;
     source = open(from, O_RDONLY);
     if (source == -1) {
@@ -2522,30 +2522,8 @@ int copy_file(const char *from, const char *to) {
         if (fcopyfile(source, dest, NULL, COPYFILE_ALL) != -1) {
             rv = AM_SUCCESS;
         }
-#elif defined(AIX)
-        struct sf_parms handle;
-        handle.header_data = NULL;
-        handle.header_length = 0;
-        handle.trailer_data = NULL;
-        handle.trailer_length = 0;
-        handle.file_descriptor = source;
-        handle.file_offset = 0;
-        handle.file_bytes = st.st_size;
-        rv = AM_SUCCESS;
-        while (handle.file_bytes + handle.header_length) {
-            ssize_t ret;
-            do {
-                ret = send_file(&dest, &handle, 0);
-            } while (ret == 1 || (ret == -1 && errno == EINTR));
-
-            if (ret == -1) {
-                rv = AM_FILE_ERROR;
-                break;
-            }
-        }
 #else
         /*
-         *
          * The folowing only works on linux kernel after 2.6.33, so is disabled for linux in general
          */
         off_t offset = 0;

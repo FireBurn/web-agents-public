@@ -660,8 +660,9 @@ void net_connect_ssl(am_net_t *n) {
             }
             if (!SSL_CTX_use_PrivateKey_file(n->ssl.ssl_context, n->options->cert_key_file, SSL_FILETYPE_PEM)) {
                 AM_LOG_WARNING(n->instance_id,
-                        "%s failed to load private key file \"%s\"",
-                        thisfunc, n->options->cert_key_file);
+                        "%s failed to load private key file \"%s\", %s",
+                        thisfunc, n->options->cert_key_file,
+                        file_exists(n->options->cert_key_file) ? read_ssl_error() : "file is not accessible");
             }
             if (!SSL_CTX_check_private_key(n->ssl.ssl_context)) {
                 AM_LOG_WARNING(n->instance_id,

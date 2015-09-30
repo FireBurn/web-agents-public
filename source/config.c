@@ -1476,6 +1476,9 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
                 (*cnf)->ts = c->ts;
                 (*cnf)->token = strdup(c->token);
                 (*cnf)->config = strdup(c->config);
+                if (ISVALID((*cnf)->cert_key_pass)) {
+                    (*cnf)->cert_key_pass_sz = strlen((*cnf)->cert_key_pass);
+                }
                 rv = AM_SUCCESS;
                 AM_LOG_DEBUG(instance_id, "%s agent configuration read from a cache",
                         thisfunc);
