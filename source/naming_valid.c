@@ -48,15 +48,19 @@ static void delete_url_validation_table(struct url_valid_table **list) {
     }
 }
 
-static void get_validation_table_entry(unsigned long instance_id, int index, int *ok, int *fail) {
+static void get_validation_table_entry(unsigned long instance_id,
+        int index, int *ok, int *fail, int *default_ok) {
     struct url_valid_table *e, *t;
 
     AM_MUTEX_LOCK(&table_mutex);
 
     AM_LIST_FOR_EACH(table, e, t) {
+        if (e->instance_id == instance_id && e->index == 0) {
+            if (default_ok != NULL) *default_ok = e->ok;
+        }
         if (e->instance_id == instance_id && e->index == index) {
-            if (ok) *ok = e->ok;
-            if (fail) *fail = e->fail;
+            if (ok != NULL) *ok = e->ok;
+            if (fail != NULL) *fail = e->fail;
             break;
         }
     }
@@ -196,7 +200,7 @@ void url_validator_worker(
         const char *url = url_list[i];
         int ok = 0, fail = 0, httpcode = 0;
 
-        get_validation_table_entry(w->instance_id, i, &ok, &fail);
+        get_validation_table_entry(w->instance_id, i, &ok, &fail, NULL);
 
         AM_LOG_DEBUG(w->instance_id, "%s validating %s", thisfunc, url);
 
@@ -238,11 +242,10 @@ void url_validator_worker(
         }
     }
 
-    current_ok = current_fail = 0;
+    default_ok = current_ok = current_fail = 0;
     /* fetch validation table entry for the current_index 
      * (which now corresponds to the default.url.set value/index) */
-    get_validation_table_entry(w->instance_id, current_index, &current_ok, &current_fail);
-    default_ok = conf->valid_ping_ok;
+    get_validation_table_entry(w->instance_id, current_index, &current_ok, &current_fail, &default_ok);
 
     /* do the fail-over logic */
     do {
