@@ -893,7 +893,7 @@ static am_bool_t get_confirmation(const char *fmt, ...) {
  */
 static void find_conf_setting(char* httpd_conf_file, char* target, char* buff, size_t size) {
     char* user = strstr(httpd_conf_file, target);
-    int i = 0;
+    size_t i = 0;
     if (user != NULL) {
         user += strlen(target); /* skip length of string */
 

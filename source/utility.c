@@ -1361,8 +1361,7 @@ char* base64_decode(const char* src, size_t* sz) {
  * @return The encoded result, stored in dynamic memory and null terminated.
  */
 char *base64_encode(const void *in, size_t *sz) {
-
-    int i;
+    size_t i;
     char* p;
     char* out;
     const uint8_t *src = in;
@@ -1523,8 +1522,8 @@ void uuid(char *buf, size_t buflen) {
 }
 
 int am_session_decode(am_request_t *r) {
-    size_t tl;
-    int i, nv = 0;
+    size_t tl, i;
+    int nv = 0;
     char *begin, *end;
 
     enum {
@@ -1658,12 +1657,12 @@ const char *get_valid_openam_url(am_request_t *r) {
  * @param str_len The number of characters in the incoming string to convert.
  */
 void xml_entity_escape(char *temp_str, size_t str_len) {
-    int nshifts = 0;
+    int k, nshifts = 0;
     const char ec[6] = "&'\"><";
     const char * const est[] = {
         "&amp;", "&apos;", "&quot;", "&gt;", "&lt;"
     };
-    size_t i, j, k, nref = 0, ecl = strlen(ec);
+    size_t i, j, nref = 0, ecl = strlen(ec);
 
     for (i = 0; i < str_len; i++) {
         for (nref = 0; nref < ecl; nref++) {
@@ -1768,7 +1767,7 @@ static char *rc4(const char *input, size_t input_sz, const char *key, size_t key
         box[i] = box[j];
         box[j] = x;
     }
-    for (i = 0; i < input_sz; i++) {
+    for (i = 0; i < (int) input_sz; i++) {
         y = (i + 1) % 256;
         j = (box[y] + j) % 256;
         x = box[y];

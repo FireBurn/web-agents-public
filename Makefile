@@ -21,7 +21,7 @@
 64=1
 # DEBUG=1
 
-VERSION := 4.0.0-SNAPSHOT
+VERSION := 5.0.0-SNAPSHOT
 
 ifneq ("$(PROGRAMFILES)$(ProgramFiles)","")
  OS_ARCH := WINNT
@@ -105,12 +105,14 @@ endif
 TEST_SOURCES := $(wildcard cmocka/*.c) $(wildcard tests/*.c)
 TEST_OBJECTS := $(addprefix $(OBJDIR)/,$(TEST_SOURCES:.c=.$(OBJ)))
 
-$(APACHE_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache24/include \
-	$(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache24/include $(COMPILEFLAG)DAPACHE2 $(COMPILEFLAG)DAPACHE24
+$(APACHE_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache24/include \
+	$(COMPILEFLAG)Iextlib/$(OS_ARCH)$(OS_MARCH)/apache24/include \
+	$(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache24/include $(COMPILEFLAG)DAPACHE2 $(COMPILEFLAG)DAPACHE24
 $(VARNISH_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/varnish/include
 $(VARNISH3_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/varnish3/include
-$(APACHE22_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache22/include \
-	$(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache22/include $(COMPILEFLAG)DAPACHE2
+$(APACHE22_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache22/include \
+	$(COMPILEFLAG)Iextlib/$(OS_ARCH)$(OS_MARCH)/apache22/include \
+	$(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache22/include $(COMPILEFLAG)DAPACHE2
 $(TEST_OBJECTS): CFLAGS += $(COMPILEFLAG)I.$(PS)cmocka $(COMPILEFLAG)I.$(PS)tests $(COMPILEFLAG)I.$(PS)$(OBJDIR)$(PS)tests \
 	$(COMPILEFLAG)DHAVE_SIGNAL_H
 
@@ -169,6 +171,7 @@ clean:
 
 test_includes:
 	@$(ECHO) "[***** Creating tests.h *****]"
+	-$(MKDIR) $(OBJDIR)$(PS)tests
 	-$(RMALL) $(OBJDIR)$(PS)tests$(PS)tests.h
 	$(SED) -$(SED_ROPT) "/.*static.+/d" $(TEST_FILES) | $(SED) -$(SED_ROPT)n "/.*\(void[ \t]*\*\*[ \t]*state\)/p" | sed -$(SED_ROPT) "s/\{/\;/g" > $(OBJDIR)$(PS)tests$(PS)tests.h.template
 	$(CP) $(OBJDIR)$(PS)tests$(PS)tests.h.template $(OBJDIR)$(PS)tests$(PS)tests.h

@@ -28,12 +28,6 @@
 #include <accctrl.h>
 #include <aclapi.h>
 
-typedef enum {
-    MODE_UNKNOWN,
-    MODE_X86,
-    MODE_X64
-} app_mode_t;
-
 #define IIS_SCHEMA_CONF_FILE "\\System32\\inetsrv\\config\\schema\\mod_iis_openam_schema.xml"
 #define AM_IIS_APPHOST L"MACHINE/WEBROOT/APPHOST"
 #define AM_IIS_SITES L"system.applicationHost/sites"
@@ -85,17 +79,6 @@ wchar_t *utf8_decode(const char *str, size_t *outlen) {
         return tmp;
     }
     return NULL;
-}
-
-static app_mode_t get_app_mode() {
-    SYSTEM_INFO sys_info;
-    GetNativeSystemInfo(&sys_info);
-    if (sys_info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_INTEL) {
-        return MODE_X86;
-    } else if (sys_info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64) {
-        return MODE_X64;
-    }
-    return MODE_UNKNOWN;
 }
 
 static char *get_property_value_byname(IAppHostElement* ahe, VARIANT* value, BSTR* name, VARTYPE type) {
@@ -490,15 +473,17 @@ static BOOL add_to_global_modules(IAppHostWritableAdminManager* manager, BSTR im
                 break;
             }
 
-            if (get_app_mode() == MODE_X64) {
-                if (!set_property(element, L"preCondition", L"bitness64")) {
-                    fprintf(stderr, "Failed to set name property.\n");
-                    break;
-                }
-            } else if (!set_property(element, L"preCondition", L"bitness32")) {
-                fprintf(stderr, "Failed to set name property.\n");
+#ifdef ADMIN64BIT
+            if (!set_property(element, L"preCondition", L"bitness64")) {
+                fprintf(stderr, "Failed to set preCondition property.\n");
                 break;
             }
+#else
+            if (!set_property(element, L"preCondition", L"bitness32")) {
+                fprintf(stderr, "Failed to set preCondition property.\n");
+                break;
+            }
+#endif
 
             hresult = IAppHostElementCollection_AddElement(collection, element, -1);
             if (FAILED(hresult)) {
@@ -1087,15 +1072,17 @@ static BOOL add_to_modules(IAppHostWritableAdminManager* manager, BSTR config_pa
             break;
         }
 
-        if (get_app_mode() == MODE_X64) {
-            if (!set_property(element, L"preCondition", L"bitness64")) {
-                fprintf(stderr, "Failed to set preCondition property.\n");
-                break;
-            }
-        } else if (!set_property(element, L"preCondition", L"bitness32")) {
+#ifdef ADMIN64BIT
+        if (!set_property(element, L"preCondition", L"bitness64")) {
             fprintf(stderr, "Failed to set preCondition property.\n");
             break;
         }
+#else
+        if (!set_property(element, L"preCondition", L"bitness32")) {
+            fprintf(stderr, "Failed to set preCondition property.\n");
+            break;
+        }
+#endif
 
         hresult = IAppHostElementCollection_AddElement(collection, element, -1);
         switch (hresult) {

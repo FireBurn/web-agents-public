@@ -334,7 +334,7 @@ void am_worker_pool_init_reset() {
 
 int am_worker_dispatch(void (*worker_f)(void *, void *), void *arg) {
 #ifdef _WIN32
-    BOOL status = TrySubmitThreadpoolCallback(worker_f, arg, &worker_env);
+    BOOL status = TrySubmitThreadpoolCallback((PTP_SIMPLE_CALLBACK) worker_f, arg, &worker_env);
     return status == FALSE ? AM_ENOMEM : AM_SUCCESS;
 #else
     struct am_threadpool_work *cur;
@@ -448,19 +448,6 @@ void set_event(am_event_t *e) {
 #else
         pthread_mutex_lock(&e->m);
         e->e = 1;
-        pthread_cond_broadcast(&e->c);
-        pthread_mutex_unlock(&e->m);
-#endif
-    }
-}
-
-void reset_event(am_event_t *e) {/*optional*/
-    if (e != NULL) {
-#ifdef _WIN32
-        ResetEvent(e->e);
-#else
-        pthread_mutex_lock(&e->m);
-        e->e = 0;
         pthread_cond_broadcast(&e->c);
         pthread_mutex_unlock(&e->m);
 #endif

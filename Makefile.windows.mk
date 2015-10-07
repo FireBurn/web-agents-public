@@ -26,16 +26,20 @@ CFLAGS  += /O2 /Oi /GL /Gy /GT /D _CRT_SECURE_NO_WARNINGS /wd4996 /wd4101 /wd424
 	/EHa /nologo /Zi /errorReport:none /MP /Gm- /W3 /c /TC /D WIN32 /D _WIN32 /D ZLIB_WINAPI /D PCRE_STATIC
 
 LDFLAGS += /SUBSYSTEM:CONSOLE /NOLOGO /INCREMENTAL:NO /errorReport:none /MANIFEST:NO \
-	/OPT:REF /OPT:ICF /LTCG /DYNAMICBASE /NXCOMPAT /DEBUG \
-	/MACHINE:X64
+	/OPT:REF /OPT:ICF /LTCG /DYNAMICBASE /NXCOMPAT /DEBUG
 	
 LIBS = kernel32.lib user32.lib ws2_32.lib crypt32.lib advapi32.lib shlwapi.lib shell32.lib
 
 $(IIS_OUT_OBJS): COMPILEOPTS += /TP
 $(TEST_OBJECTS): CFLAGS += /D HAVE_MSVC_THREAD_LOCAL_STORAGE /D HAVE__SNPRINTF_S /D HAVE__VSNPRINTF_S /D UNIT_TESTING_DEBUG=1
 	
-ifndef 64
-$(error Only 64bit targets are supported)
+ifdef 64
+ LDFLAGS += /MACHINE:X64
+ OS_MARCH := _64
+ CFLAGS += /D ADMIN64BIT
+else
+ LDFLAGS += /MACHINE:X86
+ OS_MARCH :=
 endif
 
 ifdef DEBUG
@@ -61,8 +65,8 @@ apache: $(OUT_OBJS) $(APACHE_OUT_OBJS)
 	$(RC)  /l 0x0409 /nologo /fo $(OBJDIR)$(PS)version.res $(OBJDIR)$(PS)version.rc
 	${LINK} $(SHARED) $(LDFLAGS) $(OUT_OBJS) $(APACHE_OUT_OBJS) $(OBJDIR)$(PS)version.res /OUT:build\mod_openam.dll \
 	    /PDB:build\mod_openam.pdb $(LIBS) \
-	    extlib/WINNT/apache24/lib/libapr-1.lib extlib/WINNT/apache24/lib/libaprutil-1.lib \
-	    extlib/WINNT/apache24/lib/libhttpd.lib
+	    extlib/$(OS_ARCH)$(OS_MARCH)/apache24/lib/libapr-1.lib extlib/$(OS_ARCH)$(OS_MARCH)/apache24/lib/libaprutil-1.lib \
+	    extlib/$(OS_ARCH)$(OS_MARCH)/apache24/lib/libhttpd.lib
 
 apache22: apache22_pre $(OUT_OBJS) $(APACHE22_OUT_OBJS) apache22_post
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
@@ -72,8 +76,8 @@ apache22: apache22_pre $(OUT_OBJS) $(APACHE22_OUT_OBJS) apache22_post
 	$(RC)  /l 0x0409 /nologo /fo $(OBJDIR)$(PS)version.res $(OBJDIR)$(PS)version.rc
 	${LINK} $(SHARED) $(LDFLAGS) $(OUT_OBJS) $(APACHE22_OUT_OBJS) $(OBJDIR)$(PS)version.res /OUT:build\mod_openam.dll \
 	    /PDB:build\mod_openam.pdb $(LIBS) \
-	    extlib/WINNT/apache22/lib/libapr-1.lib extlib/WINNT/apache22/lib/libaprutil-1.lib \
-	    extlib/WINNT/apache22/lib/libhttpd.lib
+	    extlib/$(OS_ARCH)$(OS_MARCH)/apache22/lib/libapr-1.lib extlib/$(OS_ARCH)$(OS_MARCH)/apache22/lib/libaprutil-1.lib \
+	    extlib/$(OS_ARCH)$(OS_MARCH)/apache22/lib/libhttpd.lib
 	
 iis: $(OUT_OBJS) $(IIS_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
@@ -94,6 +98,7 @@ agentadmin: $(OUT_OBJS) $(ADMIN_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" binary ***]"
 	-$(RMALL) $(OBJDIR)$(PS)version.*
 	$(SED) -e "s$(SUB)_FILE_NAME_$(SUB)agentadmin.exe$(SUB)g" \
+	       -e "s$(SUB)DESCRIPTION$(SUB)\"OpenAM Web Agent Administration Utility\"$(SUB)g" \
 	       -e "s$(SUB)_FILE_TYPE_$(SUB)VFT_APP$(SUB)g" < source$(PS)version.rc.template > $(OBJDIR)$(PS)version.rc
 	$(RC)  /l 0x0409 /nologo /fo $(OBJDIR)$(PS)version.res $(OBJDIR)$(PS)version.rc
 	${LINK} $(LDFLAGS) $(OUT_OBJS) $(ADMIN_OUT_OBJS) $(OBJDIR)$(PS)version.res /OUT:build\$@.exe /PDB:build\$@.pdb \
@@ -103,6 +108,7 @@ tests: clean build version test_includes $(OUT_OBJS) $(TEST_OBJECTS)
 	@$(ECHO) "[***** Building "$@" binary *****]"
 	-$(RMALL) $(OBJDIR)$(PS)version.*
 	$(SED) -e "s$(SUB)_FILE_NAME_$(SUB)test.exe$(SUB)g" \
+	       -e "s$(SUB)DESCRIPTION$(SUB)\"OpenAM Web Agent Test Utility\"$(SUB)g" \
 	       -e "s$(SUB)_FILE_TYPE_$(SUB)VFT_APP$(SUB)g" < source$(PS)version.rc.template > $(OBJDIR)$(PS)version.rc
 	$(RC)  /l 0x0409 /nologo /fo $(OBJDIR)$(PS)version.res $(OBJDIR)$(PS)version.rc
 	${LINK} $(LDFLAGS) $(OUT_OBJS) $(TEST_OBJECTS) $(OBJDIR)$(PS)version.res /OUT:build$(PS)test.exe $(LIBS)
