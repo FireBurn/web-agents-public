@@ -178,7 +178,7 @@ typedef struct bio_method_st BIO_METHOD;
 #define SSL_read (* (int (*)(SSL *, void *, int)) ssl_sw[18].ptr)
 #define SSL_write (* (int (*)(SSL *, const void *,int)) ssl_sw[19].ptr)
 #define SSL_connect (* (int (*)(SSL *)) ssl_sw[20].ptr)
-#define SSL_shutdown (* (void (*)(SSL *)) ssl_sw[21].ptr)
+#define SSL_shutdown (* (int (*)(SSL *)) ssl_sw[21].ptr)
 #define SSL_CTX_free (* (void (*)(SSL_CTX *)) ssl_sw[22].ptr)
 #define SSL_free (* (void (*)(SSL *)) ssl_sw[23].ptr)
 #define SSL_get_peer_certificate (* (X509 * (*)(const SSL *)) ssl_sw[24].ptr)
@@ -255,10 +255,20 @@ static void *load_library(const char *lib, struct ssl_func *sw) {
             "%s.dll"
 #elif defined(__APPLE__)
             "%s.dylib"
+#elif defined(AIX)
+#ifdef __64BIT__
+            "%s.a(%s64.so.1.0.0)"
+#else
+            "%s.a(%s.so.1.0.0)"
+#endif
 #else
             "%s.so"
 #endif   
-            , NOTNULL(lib));
+            , NOTNULL(lib)
+#if defined(AIX)      
+            , NOTNULL(lib)
+#endif  
+            );
 
 #ifdef _WIN32
     if ((lib_handle = (void *) LoadLibraryExA(name, NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)) == NULL) {
@@ -266,7 +276,7 @@ static void *load_library(const char *lib, struct ssl_func *sw) {
         return NULL;
     }
 #else
-#ifdef __APPLE__
+#if defined(__APPLE__)
     lib_handle = dlopen(name, RTLD_LAZY | RTLD_GLOBAL);
 #else
     name_variants[ARRAY_SIZE(name_variants) - 1] = name;
@@ -276,7 +286,11 @@ static void *load_library(const char *lib, struct ssl_func *sw) {
         } else {
             strncpy(temp, name_variants[i], sizeof (temp) - 1);
         }
-        lib_handle = dlopen(temp, RTLD_LAZY | RTLD_GLOBAL);
+        lib_handle = dlopen(temp, RTLD_LAZY | RTLD_GLOBAL
+#if defined(AIX)      
+                | RTLD_MEMBER
+#endif 
+                );
         if (lib_handle != NULL) {
             break;
         }
@@ -353,7 +367,9 @@ static char ssl_is_fatal_error(am_net_t *net, int ssl_error) {
     if (net->options != NULL && net->options->log != NULL) {
         net->options->log("%s %s", thisfunc, error_string);
     }
-    AM_LOG_ERROR(net->instance_id, "%s %s", thisfunc, error_string);
+    if (strcmp(error_string, am_strerror(AM_SUCCESS)) != 0) {
+        AM_LOG_ERROR(net->instance_id, "%s %s", thisfunc, error_string);
+    }
     return 1;
 }
 
@@ -536,6 +552,12 @@ static void write_bio_to_socket(am_net_t *n) {
             }
         }
         free(buf);
+    }
+}
+
+void net_close_ssl_notify(am_net_t *n) {
+    if (n->ssl.ssl_handle != NULL) {
+        SSL_shutdown(n->ssl.ssl_handle);
     }
 }
 

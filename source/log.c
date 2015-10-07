@@ -990,6 +990,7 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
                 if (vf->instance_id == 0) {
                     vf->instance_id = instance_id;
                     vf->url_index = 0;
+                    vf->running = 0;
                     vf->last = time(NULL);
                     strncpy(vf->config_path, config_file, sizeof (vf->config_path) - 1);
                     break;
@@ -1094,9 +1095,10 @@ void set_valid_url_index(unsigned long instance_id, int value) {
     pthread_mutex_lock(&log->lock);
 #endif
     for (i = 0; i < AM_MAX_INSTANCES; i++) {
-        if (log->valid[i].instance_id == instance_id) {
-            log->valid[i].url_index = value;
-            log->valid[i].last = time(NULL);
+        struct valid_url *vf = &log->valid[i];
+        if (vf->instance_id == instance_id) {
+            vf->url_index = value;
+            vf->last = time(NULL);
             break;
         }
     }
@@ -1121,8 +1123,9 @@ void set_valid_url_instance_running(unsigned long instance_id, int value) {
     pthread_mutex_lock(&log->lock);
 #endif
     for (i = 0; i < AM_MAX_INSTANCES; i++) {
-        if (log->valid[i].instance_id == instance_id) {
-            log->valid[i].running = value;
+        struct valid_url *vf = &log->valid[i];
+        if (vf->instance_id == instance_id) {
+            vf->running = value;
             break;
         }
     }

@@ -90,6 +90,7 @@ void net_connect_ssl(am_net_t *n);
 void net_close_ssl(am_net_t *n);
 int net_read_ssl(am_net_t *n, const char *buf, int sz);
 void net_write_ssl(am_net_t *n);
+void net_close_ssl_notify(am_net_t *n);
 
 void am_net_init() {
 #ifdef _WIN32
@@ -177,25 +178,14 @@ static void net_async_poll_timeout(void *arg) {
 }
 
 static void net_async_poll(am_net_t *n) {
-    static const char *thisfunc = "net_async_poll():";
-    int ev = 0;
-    char first_run = 1;
+    int ev = 0, first_run = 1;
 #ifdef _WIN32
     WSAPOLLFD fds[1];
 #else
     struct pollfd fds[1];
 #endif
-
-    if (n->tm->error != 0) {
-        AM_LOG_ERROR(n->instance_id,
-                "%s error %d creating response timeout control", thisfunc, n->tm->error);
-        n->error = AM_ERROR;
-        return;
-    }
-
-    am_start_timer_event(n->tm);
-
     memset(fds, 0, sizeof (fds));
+    
     while (ev != -1) {
 
         fds[0].fd = n->sock;
@@ -287,7 +277,7 @@ int am_net_write(am_net_t *n, const char *data, size_t data_sz) {
                 flags |= MSG_NOSIGNAL;
 #endif 
                 er = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (void *) &error, &errlen);
-                while (sent < len) {
+                while (sent < (int) len) {
                     int rv = send(n->sock, buf + sent, (int) len - sent, flags);
                     if (rv < 0) {
                         if (net_in_progress(
@@ -611,6 +601,10 @@ int am_net_connect(am_net_t *n) {
 
     n->error = AM_ENOTSTARTED;
     n->sock = INVALID_SOCKET;
+    n->ssl.request_data = NULL;
+    n->ssl.ssl_handle = NULL;
+    n->ssl.ssl_context = NULL;
+    n->ssl.on = AM_FALSE;
 
     if (n->url == NULL) {
         return AM_EINVAL;
@@ -683,15 +677,23 @@ int am_net_connect(am_net_t *n) {
     }
 #endif
     n->hp->data = n;
+
+    if (n->tm == NULL || n->tm->error != 0) {
+        AM_LOG_ERROR(n->instance_id,
+                "%s error %d creating response timeout control", thisfunc,
+                n->tm != NULL ? n->tm->error : AM_ENOTSTARTED);
+        return AM_ERROR;
+    }
+
+    am_start_timer_event(n->tm);
+
     return status;
 }
 
 void am_net_disconnect(am_net_t *n) {
     if (n != NULL) {
         set_event(n->de);
-        net_close_ssl(n);
-        net_close_socket(n->sock);
-        n->sock = INVALID_SOCKET;
+        net_close_ssl_notify(n);
     }
 }
 
@@ -714,6 +716,9 @@ int am_net_close(am_net_t *n) {
 
     /* close ssl/socket */
     am_net_disconnect(n);
+    net_close_ssl(n);
+    net_close_socket(n->sock);
+    n->sock = INVALID_SOCKET;
 
     /* shut down connected/disconnected events */
     close_event(&n->ce);

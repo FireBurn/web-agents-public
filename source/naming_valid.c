@@ -338,6 +338,8 @@ static void am_url_validator_tick(void *arg) {
             } else {
                 AM_LOG_ERROR(list[i].instance_id, "%s memory allocation error", thisfunc);
             }
+        } else if (list[i].instance_id > 0 && list[i].running) {
+            AM_LOG_WARNING(list[i].instance_id, "%s url validator worker already running", thisfunc);
         }
         am_free(list[i].config_path);
     }

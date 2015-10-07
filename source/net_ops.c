@@ -786,8 +786,6 @@ static int send_policy_request(am_net_t *conn, const char *token, const char *us
 
 static int do_net_connect(am_net_t *conn, struct request_data *req_data,
         unsigned long instance_id, const char *openam, am_net_options_t *options) {
-    memset(req_data, 0, sizeof (struct request_data));
-    memset(conn, 0, sizeof (am_net_t));
     conn->options = options;
     conn->instance_id = instance_id;
     conn->url = openam;
@@ -808,9 +806,9 @@ int am_agent_login(unsigned long instance_id, const char *openam,
         const char *user, const char *pass, const char *realm, am_net_options_t *options,
         char **agent_token, char **pxml, size_t *pxsz, struct am_namevalue **session_list) {
     static const char *thisfunc = "am_agent_login():";
-    am_net_t conn;
+    am_net_t *conn = NULL;
     int status = AM_ERROR;
-    struct request_data req_data;
+    struct request_data *req_data = NULL;
     am_bool_t keepalive = options == NULL || options->keepalive;
 
     enum {
@@ -823,42 +821,76 @@ int am_agent_login(unsigned long instance_id, const char *openam,
 
     while (state != login_done) {
 
-        status = do_net_connect(&conn, &req_data, instance_id, openam, options);
+        conn = calloc(1, sizeof (am_net_t));
+        if (conn == NULL) {
+            AM_LOG_ERROR(instance_id, "%s memory allocation error while connecting to %s", thisfunc, openam);
+            if (options != NULL && options->log != NULL) {
+                options->log("%s memory allocation error while connecting to %s", thisfunc, openam);
+            }
+            break;
+        }
+
+        req_data = calloc(1, sizeof (struct request_data));
+        if (req_data == NULL) {
+            AM_LOG_ERROR(instance_id, "%s memory allocation error while connecting to %s", thisfunc, openam);
+            if (options != NULL && options->log != NULL) {
+                options->log("%s memory allocation error while connecting to %s", thisfunc, openam);
+            }
+            free(conn);
+            conn = NULL;
+            break;
+        }
+
+        status = do_net_connect(conn, req_data, instance_id, openam, options);
         if (status != AM_SUCCESS) {
             AM_LOG_ERROR(instance_id, "%s error %d (%s) connecting to %s", thisfunc, status, am_strerror(status), openam);
             if (options != NULL && options->log != NULL) {
                 options->log("%s error %d (%s) connecting to %s", thisfunc, status, am_strerror(status), openam);
             }
+            free(conn);
+            free(req_data);
+            conn = NULL;
+            req_data = NULL;
             break;
         }
 
         switch (state) {
             case login_auth_ctx:
                 /* create a new AuthContext request (PLL endpoint) */
-                status = send_authcontext_request(&conn, realm, agent_token);
+                status = send_authcontext_request(conn, realm, agent_token);
                 if (status != AM_SUCCESS) {
                     state = login_done;
                     break;
                 }
                 if (!keepalive) {
-                    am_net_close(&conn);
-                    close_event(&req_data.event);
-                    am_free(req_data.data);
+                    am_net_close(conn);
+                    close_event(&req_data->event);
                     state = login_request;
+                    if (req_data != NULL) {
+                        AM_FREE(req_data->data, req_data);
+                    }
+                    am_free(conn);
+                    conn = NULL;
+                    req_data = NULL;
                     break;
                 }
             case login_request:
                 /* send agent profile, password and module Application (PLL endpoint) */
-                status = send_login_request(&conn, agent_token, user, pass);
+                status = send_login_request(conn, agent_token, user, pass);
                 if (status != AM_SUCCESS) {
                     state = login_done;
                     break;
                 }
                 if (!keepalive) {
-                    am_net_close(&conn);
-                    close_event(&req_data.event);
-                    am_free(req_data.data);
+                    am_net_close(conn);
+                    close_event(&req_data->event);
                     state = login_attributes;
+                    if (req_data != NULL) {
+                        AM_FREE(req_data->data, req_data);
+                    }
+                    am_free(conn);
+                    conn = NULL;
+                    req_data = NULL;
                     break;
                 }
             case login_attributes:
@@ -866,16 +898,21 @@ int am_agent_login(unsigned long instance_id, const char *openam,
                  * no interest in a remote profile in case of a local-only configuration
                  */
                 if (options != NULL && !options->local) {
-                    status = send_attribute_request(&conn, agent_token, pxml, pxsz, user, realm);
+                    status = send_attribute_request(conn, agent_token, pxml, pxsz, user, realm);
                     if (status != AM_SUCCESS) {
                         state = login_done;
                         break;
                     }
                     if (!keepalive) {
-                        am_net_close(&conn);
-                        close_event(&req_data.event);
-                        am_free(req_data.data);
+                        am_net_close(conn);
+                        close_event(&req_data->event);
                         state = login_session;
+                        if (req_data != NULL) {
+                            AM_FREE(req_data->data, req_data);
+                        }
+                        am_free(conn);
+                        conn = NULL;
+                        req_data = NULL;
                         break;
                     }
                 } else {
@@ -885,21 +922,26 @@ int am_agent_login(unsigned long instance_id, const char *openam,
                 }
             case login_session:
                 /* send session request (PLL endpoint) */
-                status = send_session_request(&conn, agent_token, NULL, session_list);
+                status = send_session_request(conn, agent_token, NULL, session_list);
                 if (status != AM_SUCCESS) {
                     state = login_done;
                     break;
                 }
                 if (!keepalive) {
-                    am_net_close(&conn);
-                    close_event(&req_data.event);
-                    am_free(req_data.data);
+                    am_net_close(conn);
+                    close_event(&req_data->event);
                     state = login_policychange;
+                    if (req_data != NULL) {
+                        AM_FREE(req_data->data, req_data);
+                    }
+                    am_free(conn);
+                    conn = NULL;
+                    req_data = NULL;
                     break;
                 }
             case login_policychange:
                 /* subscribe to a policy change notification (PLL endpoint) */
-                status = send_policychange_request(&conn, agent_token);
+                status = send_policychange_request(conn, agent_token);
             default:
                 state = login_done;
                 break;
@@ -911,102 +953,118 @@ int am_agent_login(unsigned long instance_id, const char *openam,
         if (options != NULL && options->log != NULL) {
             options->log("%s disconnecting", thisfunc);
         }
-        am_net_disconnect(&conn);
+        am_net_disconnect(conn);
     }
 
-    am_net_close(&conn);
-    close_event(&req_data.event);
-    am_free(req_data.data);
-
+    am_net_close(conn);
+    close_event(&req_data->event);
+    if (req_data != NULL) {
+        AM_FREE(req_data->data, req_data);
+    }
+    am_free(conn);
     return status;
 }
 
 int am_agent_logout(unsigned long instance_id, const char *openam, const char *token, am_net_options_t *options) {
     static const char *thisfunc = "am_agent_logout():";
-    am_net_t conn;
+    am_net_t *conn = NULL;
     int status = AM_ERROR;
     size_t post_sz, post_data_sz;
     char *post = NULL, *post_data = NULL;
-    struct request_data req_data;
+    struct request_data *req_data = NULL;
 
     if (!ISVALID(token) || !ISVALID(openam)) return AM_EINVAL;
 
-    memset(&req_data, 0, sizeof (struct request_data));
-    memset(&conn, 0, sizeof (am_net_t));
-    conn.options = options;
-    conn.instance_id = instance_id;
-    conn.url = openam;
-
-    if (options != NULL && ISVALID(options->server_id)) {
-        am_asprintf(&conn.req_headers, "Cookie: amlbcookie=%s\r\n", options->server_id);
+    conn = calloc(1, sizeof (am_net_t));
+    if (conn == NULL) {
+        AM_LOG_ERROR(instance_id, "%s memory allocation error while connecting to %s", thisfunc, openam);
+        if (options != NULL && options->log != NULL) {
+            options->log("%s memory allocation error while connecting to %s", thisfunc, openam);
+        }
+        return AM_ENOMEM;
     }
 
-    req_data.event = create_event();
-    if (req_data.event == NULL) return AM_ENOMEM;
-
-    conn.data = &req_data;
-    conn.on_connected = on_connected_cb;
-    conn.on_close = on_close_cb;
-    conn.on_data = on_agent_request_data_cb;
-    conn.on_complete = on_complete_cb;
-
-    if ((status = am_net_connect(&conn)) == AM_SUCCESS) {
-        post_data_sz = am_asprintf(&post_data,
-                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-                "<RequestSet vers=\"1.0\" svcid=\"auth\" reqid=\"0\">"
-                "<Request><![CDATA["
-                "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AuthContext version=\"1.0\">"
-                "<Request authIdentifier=\"%s\">"
-                "<Logout/></Request></AuthContext>]]>"
-                "</Request></RequestSet>",
-                token);
-        if (post_data != NULL) {
-            post_sz = am_asprintf(&post, "POST %s/authservice HTTP/1.1\r\n"
-                    "Host: %s:%d\r\n"
-                    "User-Agent: "MODINFO"\r\n"
-                    "Accept: text/xml\r\n"
-                    "Connection: Close\r\n"
-                    "Content-Type: text/xml; charset=UTF-8\r\n"
-                    "%s"
-                    "Content-Length: %d\r\n\r\n"
-                    "%s", conn.uv.path, conn.uv.host, conn.uv.port,
-                    NOTNULL(conn.req_headers), post_data_sz, post_data);
-            if (post != NULL) {
-                AM_LOG_DEBUG(instance_id, "%s sending request:\n%s", thisfunc, post);
-                if (options != NULL && options->log != NULL) {
-                    options->log("%s sending request:\n%s", thisfunc, post);
-                }
-                status = am_net_write(&conn, post, post_sz);
-                free(post);
-            }
-            free(post_data);
+    req_data = calloc(1, sizeof (struct request_data));
+    if (req_data == NULL) {
+        AM_LOG_ERROR(instance_id, "%s memory allocation error while connecting to %s", thisfunc, openam);
+        if (options != NULL && options->log != NULL) {
+            options->log("%s memory allocation error while connecting to %s", thisfunc, openam);
         }
-    } else {
+        free(conn);
+        conn = NULL;
+        return AM_ENOMEM;
+    }
+
+    if (options != NULL && ISVALID(options->server_id)) {
+        am_asprintf(&conn->req_headers, "Cookie: amlbcookie=%s\r\n", options->server_id);
+    }
+
+    status = do_net_connect(conn, req_data, instance_id, openam, options);
+    if (status != AM_SUCCESS) {
         AM_LOG_ERROR(instance_id, "%s error %d (%s) connecting to %s", thisfunc, status, am_strerror(status), openam);
         if (options != NULL && options->log != NULL) {
             options->log("%s error %d (%s) connecting to %s", thisfunc, status, am_strerror(status), openam);
         }
+        free(conn);
+        free(req_data);
+        conn = NULL;
+        req_data = NULL;
+        return status;
     }
 
+    post_data_sz = am_asprintf(&post_data,
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<RequestSet vers=\"1.0\" svcid=\"auth\" reqid=\"0\">"
+            "<Request><![CDATA["
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AuthContext version=\"1.0\">"
+            "<Request authIdentifier=\"%s\">"
+            "<Logout/></Request></AuthContext>]]>"
+            "</Request></RequestSet>",
+            token);
+    if (post_data != NULL) {
+        post_sz = am_asprintf(&post, "POST %s/authservice HTTP/1.1\r\n"
+                "Host: %s:%d\r\n"
+                "User-Agent: "MODINFO"\r\n"
+                "Accept: text/xml\r\n"
+                "Connection: Close\r\n"
+                "Content-Type: text/xml; charset=UTF-8\r\n"
+                "%s"
+                "Content-Length: %d\r\n\r\n"
+                "%s", conn->uv.path, conn->uv.host, conn->uv.port,
+                NOTNULL(conn->req_headers), post_data_sz, post_data);
+        if (post != NULL) {
+            AM_LOG_DEBUG(instance_id, "%s sending request:\n%s", thisfunc, post);
+            if (options != NULL && options->log != NULL) {
+                options->log("%s sending request:\n%s", thisfunc, post);
+            }
+            status = am_net_write(conn, post, post_sz);
+            free(post);
+        }
+        free(post_data);
+    }
+
+
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data.event, 0);
+        wait_for_event(req_data->event, 0);
     } else {
         AM_LOG_DEBUG(instance_id, "%s disconnecting", thisfunc);
         if (options != NULL && options->log != NULL) {
             options->log("%s disconnecting", thisfunc);
         }
-        am_net_disconnect(&conn);
+        am_net_disconnect(conn);
     }
 
-    AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, conn.http_status);
+    AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, conn->http_status);
     if (options != NULL && options->log != NULL) {
-        options->log("%s response status code: %d", thisfunc, conn.http_status);
+        options->log("%s response status code: %d", thisfunc, conn->http_status);
     }
 
-    am_net_close(&conn);
-    close_event(&req_data.event);
-
-    am_free(req_data.data);
+    am_net_close(conn);
+    close_event(&req_data->event);
+    if (req_data != NULL) {
+        AM_FREE(req_data->data, req_data);
+    }
+    am_free(conn);
     return status;
 }
 
@@ -1015,9 +1073,9 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
         const char *scope, const char *cip, const char *pattr,
         am_net_options_t *options, struct am_namevalue **session_list, struct am_policy_result **policy_list) {
     static const char *thisfunc = "am_agent_policy_request():";
-    am_net_t conn;
+    am_net_t *conn = NULL;
     int status = AM_ERROR;
-    struct request_data req_data;
+    struct request_data *req_data = NULL;
     am_bool_t keepalive = options == NULL || options->keepalive;
     char *token_ptr = (char *) token;
 
@@ -1032,34 +1090,57 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
 
     while (state != policy_done) {
 
-        status = do_net_connect(&conn, &req_data, instance_id, openam, options);
+        conn = calloc(1, sizeof (am_net_t));
+        if (conn == NULL) {
+            AM_LOG_ERROR(instance_id, "%s memory allocation error while connecting to %s", thisfunc, openam);
+            break;
+        }
+
+        req_data = calloc(1, sizeof (struct request_data));
+        if (req_data == NULL) {
+            AM_LOG_ERROR(instance_id, "%s memory allocation error while connecting to %s", thisfunc, openam);
+            free(conn);
+            conn = NULL;
+            break;
+        }
+
+        status = do_net_connect(conn, req_data, instance_id, openam, options);
         if (status != AM_SUCCESS) {
             AM_LOG_ERROR(instance_id, "%s error %d (%s) connecting to %s", thisfunc,
                     status, am_strerror(status), openam);
+            free(conn);
+            free(req_data);
+            conn = NULL;
+            req_data = NULL;
             break;
         }
 
         switch (state) {
             case policy_session:
                 /* send session request (PLL endpoint)  */
-                status = send_session_request(&conn, &token_ptr, user_token, session_list);
+                status = send_session_request(conn, &token_ptr, user_token, session_list);
                 if (status != AM_SUCCESS) {
                     state = policy_done;
                     break;
                 }
 
-                create_cookie_header(&conn, NULL);
+                create_cookie_header(conn, NULL);
 
                 if (!keepalive) {
-                    am_net_close(&conn);
-                    close_event(&req_data.event);
-                    am_free(req_data.data);
+                    am_net_close(conn);
+                    close_event(&req_data->event);
+                    if (req_data != NULL) {
+                        AM_FREE(req_data->data, req_data);
+                    }
+                    am_free(conn);
+                    conn = NULL;
+                    req_data = NULL;
                     state = policy_request;
                     break;
                 }
             case policy_request:
                 /* send policy request (PLL endpoint)  */
-                status = send_policy_request(&conn, token, user_token, req_url, scope, cip,
+                status = send_policy_request(conn, token, user_token, req_url, scope, cip,
                         pattr, policy_list);
             default:
                 state = policy_done;
@@ -1072,13 +1153,15 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
         if (options != NULL && options->log != NULL) {
             options->log("%s disconnecting", thisfunc);
         }
-        am_net_disconnect(&conn);
+        am_net_disconnect(conn);
     }
 
-    am_net_close(&conn);
-    close_event(&req_data.event);
-    am_free(req_data.data);
-
+    am_net_close(conn);
+    close_event(&req_data->event);
+    if (req_data != NULL) {
+        AM_FREE(req_data->data, req_data);
+    }
+    am_free(conn);
     return status;
 }
 
@@ -1087,11 +1170,11 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
  */
 int am_url_validate(unsigned long instance_id, const char* url, am_net_options_t *options, int* httpcode) {
     static const char* thisfunc = "am_url_validate():";
-    char* get = NULL;
-    am_net_t conn;
+    char *get = NULL;
+    am_net_t *conn = NULL;
     size_t get_sz;
     int status = AM_ERROR;
-    struct request_data request_data;
+    struct request_data *req_data = NULL;
 
     AM_LOG_DEBUG(instance_id, "%s%s", thisfunc, LOGEMPTY(url));
 
@@ -1099,43 +1182,52 @@ int am_url_validate(unsigned long instance_id, const char* url, am_net_options_t
         return AM_EINVAL;
     }
 
-    memset(&request_data, 0, sizeof (struct request_data));
-    memset(&conn, 0, sizeof (am_net_t));
-    conn.options = options;
-    conn.instance_id = instance_id;
-    conn.url = url;
-
-    request_data.event = create_event();
-    if (request_data.event == NULL) {
+    conn = calloc(1, sizeof (am_net_t));
+    if (conn == NULL) {
+        AM_LOG_ERROR(instance_id, "%s memory allocation error while connecting to %s", thisfunc, url);
+        if (options != NULL && options->log != NULL) {
+            options->log("%s memory allocation error while connecting to %s", thisfunc, url);
+        }
         return AM_ENOMEM;
     }
 
-    conn.data = &request_data;
-    conn.on_connected = on_connected_cb;
-    conn.on_close = on_close_cb;
-    conn.on_data = on_agent_request_data_cb;
-    conn.on_complete = on_complete_cb;
-
-    if ((status = am_net_connect(&conn)) == AM_SUCCESS) {
-        get_sz = am_asprintf(&get, "HEAD %s HTTP/1.1\r\n"
-                "Host: %s:%d\r\n"
-                "User-Agent: "MODINFO"\r\n"
-                "Accept: text/plain\r\n"
-                "Connection: Close\r\n\r\n",
-                conn.uv.path, conn.uv.host, conn.uv.port);
-        if (get != NULL) {
-            AM_LOG_DEBUG(instance_id, "%s sending request:\n%s", thisfunc, get);
-            if (options != NULL && options->log != NULL) {
-                options->log("%s sending request:\n%s", thisfunc, get);
-            }
-            status = am_net_write(&conn, get, get_sz);
-            free(get);
+    req_data = calloc(1, sizeof (struct request_data));
+    if (req_data == NULL) {
+        AM_LOG_ERROR(instance_id, "%s memory allocation error while connecting to %s", thisfunc, url);
+        if (options != NULL && options->log != NULL) {
+            options->log("%s memory allocation error while connecting to %s", thisfunc, url);
         }
-    } else {
+        free(conn);
+        conn = NULL;
+        return AM_ENOMEM;
+    }
+
+    status = do_net_connect(conn, req_data, instance_id, url, options);
+    if (status != AM_SUCCESS) {
         AM_LOG_ERROR(instance_id, "%s error %d (%s) connecting to %s", thisfunc, status, am_strerror(status), url);
         if (options != NULL && options->log != NULL) {
             options->log("%s error %d (%s) connecting to %s", thisfunc, status, am_strerror(status), url);
         }
+        free(conn);
+        free(req_data);
+        conn = NULL;
+        req_data = NULL;
+        return status;
+    }
+
+    get_sz = am_asprintf(&get, "HEAD %s HTTP/1.1\r\n"
+            "Host: %s:%d\r\n"
+            "User-Agent: "MODINFO"\r\n"
+            "Accept: text/plain\r\n"
+            "Connection: Close\r\n\r\n",
+            conn->uv.path, conn->uv.host, conn->uv.port);
+    if (get != NULL) {
+        AM_LOG_DEBUG(instance_id, "%s sending request:\n%s", thisfunc, get);
+        if (options != NULL && options->log != NULL) {
+            options->log("%s sending request:\n%s", thisfunc, get);
+        }
+        status = am_net_write(conn, get, get_sz);
+        free(get);
     }
 
     AM_LOG_DEBUG(instance_id, "%s status is set to %d (%s)", thisfunc, status, am_strerror(status));
@@ -1144,98 +1236,116 @@ int am_url_validate(unsigned long instance_id, const char* url, am_net_options_t
     }
 
     if (status == AM_SUCCESS) {
-        wait_for_event(request_data.event, 0);
+        wait_for_event(req_data->event, 0);
     } else {
         AM_LOG_DEBUG(instance_id, "%s disconnecting", thisfunc);
         if (options != NULL && options->log != NULL) {
             options->log("%s disconnecting", thisfunc);
         }
-        am_net_disconnect(&conn);
+        am_net_disconnect(conn);
     }
 
-    AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, conn.http_status);
+    AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, conn->http_status);
     if (options != NULL && options->log != NULL) {
-        options->log("%s response status code: %d", thisfunc, conn.http_status);
+        options->log("%s response status code: %d", thisfunc, conn->http_status);
     }
     if (httpcode) {
-        *httpcode = conn.http_status;
+        *httpcode = conn->http_status;
     }
 
-    am_net_close(&conn);
-    close_event(&request_data.event);
-
-    am_free(request_data.data);
+    am_net_close(conn);
+    close_event(&req_data->event);
+    if (req_data != NULL) {
+        AM_FREE(req_data->data, req_data);
+    }
+    am_free(conn);
     return status;
 }
 
 int am_agent_audit_request(unsigned long instance_id, const char *openam, const char *logdata, am_net_options_t *options) {
     static const char *thisfunc = "am_agent_audit_request():";
-    am_net_t conn;
+    am_net_t *conn = NULL;
     int status = AM_ERROR;
     size_t post_sz, post_data_sz;
     char *post = NULL, *post_data = NULL;
-    struct request_data req_data;
+    struct request_data *req_data = NULL;
 
     if (!ISVALID(logdata) || !ISVALID(openam)) return AM_EINVAL;
 
-    memset(&req_data, 0, sizeof (struct request_data));
-    memset(&conn, 0, sizeof (am_net_t));
-    conn.options = options;
-    conn.instance_id = instance_id;
-    conn.url = openam;
-
-    if (options != NULL && ISVALID(options->server_id)) {
-        am_asprintf(&conn.req_headers, "Cookie: amlbcookie=%s\r\n", options->server_id);
+    conn = calloc(1, sizeof (am_net_t));
+    if (conn == NULL) {
+        AM_LOG_ERROR(instance_id, "%s memory allocation error while connecting to %s", thisfunc, openam);
+        if (options != NULL && options->log != NULL) {
+            options->log("%s memory allocation error while connecting to %s", thisfunc, openam);
+        }
+        return AM_ENOMEM;
     }
 
-    req_data.event = create_event();
-    if (req_data.event == NULL) return AM_ENOMEM;
-
-    conn.data = &req_data;
-    conn.on_connected = on_connected_cb;
-    conn.on_close = on_close_cb;
-    conn.on_data = on_agent_request_data_cb;
-    conn.on_complete = on_complete_cb;
-
-    if ((status = am_net_connect(&conn)) == AM_SUCCESS) {
-        post_data_sz = am_asprintf(&post_data,
-                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-                "<RequestSet vers=\"1.0\" svcid=\"Logging\" reqid=\"0\">%s</RequestSet>",
-                logdata);
-        if (post_data != NULL) {
-            post_sz = am_asprintf(&post, "POST %s/loggingservice HTTP/1.1\r\n"
-                    "Host: %s:%d\r\n"
-                    "User-Agent: "MODINFO"\r\n"
-                    "Accept: text/xml\r\n"
-                    "Connection: Close\r\n"
-                    "Content-Type: text/xml; charset=UTF-8\r\n"
-                    "%s"
-                    "Content-Length: %d\r\n\r\n"
-                    "%s", conn.uv.path, conn.uv.host, conn.uv.port,
-                    NOTNULL(conn.req_headers), post_data_sz, post_data);
-            if (post != NULL) {
-                AM_LOG_DEBUG(instance_id, "%s sending request:\n%s", thisfunc, post);
-                status = am_net_write(&conn, post, post_sz);
-                free(post);
-            }
-            free(post_data);
+    req_data = calloc(1, sizeof (struct request_data));
+    if (req_data == NULL) {
+        AM_LOG_ERROR(instance_id, "%s memory allocation error while connecting to %s", thisfunc, openam);
+        if (options != NULL && options->log != NULL) {
+            options->log("%s memory allocation error while connecting to %s", thisfunc, openam);
         }
-    } else {
+        free(conn);
+        conn = NULL;
+        return AM_ENOMEM;
+    }
+
+    if (options != NULL && ISVALID(options->server_id)) {
+        am_asprintf(&conn->req_headers, "Cookie: amlbcookie=%s\r\n", options->server_id);
+    }
+
+    status = do_net_connect(conn, req_data, instance_id, openam, options);
+    if (status != AM_SUCCESS) {
         AM_LOG_ERROR(instance_id, "%s error %d (%s) connecting to %s", thisfunc, status, am_strerror(status), openam);
+        if (options != NULL && options->log != NULL) {
+            options->log("%s error %d (%s) connecting to %s", thisfunc, status, am_strerror(status), openam);
+        }
+        free(conn);
+        free(req_data);
+        conn = NULL;
+        req_data = NULL;
+        return status;
+    }
+
+    post_data_sz = am_asprintf(&post_data,
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<RequestSet vers=\"1.0\" svcid=\"Logging\" reqid=\"0\">%s</RequestSet>",
+            logdata);
+    if (post_data != NULL) {
+        post_sz = am_asprintf(&post, "POST %s/loggingservice HTTP/1.1\r\n"
+                "Host: %s:%d\r\n"
+                "User-Agent: "MODINFO"\r\n"
+                "Accept: text/xml\r\n"
+                "Connection: Close\r\n"
+                "Content-Type: text/xml; charset=UTF-8\r\n"
+                "%s"
+                "Content-Length: %d\r\n\r\n"
+                "%s", conn->uv.path, conn->uv.host, conn->uv.port,
+                NOTNULL(conn->req_headers), post_data_sz, post_data);
+        if (post != NULL) {
+            AM_LOG_DEBUG(instance_id, "%s sending request:\n%s", thisfunc, post);
+            status = am_net_write(conn, post, post_sz);
+            free(post);
+        }
+        free(post_data);
     }
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data.event, 0);
+        wait_for_event(req_data->event, 0);
     } else {
         AM_LOG_DEBUG(instance_id, "%s disconnecting", thisfunc);
-        am_net_disconnect(&conn);
+        am_net_disconnect(conn);
     }
 
-    AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, conn.http_status);
+    AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, conn->http_status);
 
-    am_net_close(&conn);
-    close_event(&req_data.event);
-
-    am_free(req_data.data);
+    am_net_close(conn);
+    close_event(&req_data->event);
+    if (req_data != NULL) {
+        AM_FREE(req_data->data, req_data);
+    }
+    am_free(conn);
     return status;
 }
