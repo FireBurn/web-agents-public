@@ -239,7 +239,7 @@ static void *load_library(const char *lib, struct ssl_func *sw) {
     char name[AM_PATH_SIZE];
 #if !defined(_WIN32) && !defined(__APPLE__)
     int i;
-    const char *name_variants[] = {"%s.so.10", "%s.so.1.0.0", "%s.so.0.9.8", NULL};
+    const char *name_variants[] = {"%s.so.10", "%s.so.1.0.1", "%s.so.1.0.0", "%s.so.0.9.8", NULL};
     char temp[AM_PATH_SIZE];
 #endif
     void *lib_handle = NULL;
