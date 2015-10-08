@@ -63,7 +63,8 @@ else
 endif
 
 SED_ROPT := r
-
+OS_ARCH_EXT := 
+	
 ifdef 64
  OS_BITS := _64bit
 else
@@ -197,7 +198,7 @@ apachezip: clean build version apache agentadmin
 	-$(CP) $(OBJDIR)$(PS)mod_openam.pdb $(OBJDIR)$(PS)web_agents$(PS)apache24_agent$(PS)lib$(PS)
 	-$(CP) config$(PS)* $(OBJDIR)$(PS)web_agents$(PS)apache24_agent$(PS)config$(PS)
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)apache24_agent$(PS)legal$(PS)
-	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Apache_v24_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
+	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Apache_v24_$(OS_ARCH)$(OS_ARCH_EXT)$(OS_BITS)_$(VERSION).zip web_agents
 
 apache22_pre:
 	-$(CP) source$(PS)apache$(PS)agent.c source$(PS)apache$(PS)agent22.c
@@ -222,7 +223,7 @@ apache22zip: clean build version apache22 agentadmin
 	-$(CP) $(OBJDIR)$(PS)mod_openam.pdb $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)lib$(PS)
 	-$(CP) config$(PS)* $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)config$(PS)
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)legal$(PS)
-	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Apache_v22_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
+	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Apache_v22_$(OS_ARCH)$(OS_ARCH_EXT)$(OS_BITS)_$(VERSION).zip web_agents
 
 iiszip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"7.5, 8.x"'
 iiszip: clean build version iis agentadmin
@@ -257,7 +258,7 @@ varnishzip: clean build version varnish agentadmin
 	-$(CP) $(OBJDIR)$(PS)libvmod_am.so $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)lib$(PS)
 	-$(CP) config$(PS)* $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)config$(PS)
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)varnish_agent$(PS)legal$(PS)
-	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Varnish_v4_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
+	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Varnish_v4_$(OS_ARCH)$(OS_ARCH_EXT)$(OS_BITS)_$(VERSION).zip web_agents
 
 varnish3zip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"3.0.x"'
 varnish3zip: clean build version varnish3 agentadmin
@@ -276,5 +277,5 @@ varnish3zip: clean build version varnish3 agentadmin
 	-$(CP) $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)config$(PS)agent.vcl3.template $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)config$(PS)agent.vcl.template
 	-$(RMALL) $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)config$(PS)agent.vcl3.template
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)varnish3_agent$(PS)legal$(PS)
-	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Varnish_v3_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
+	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Varnish_v3_$(OS_ARCH)$(OS_ARCH_EXT)$(OS_BITS)_$(VERSION).zip web_agents
 	

@@ -30,8 +30,10 @@ endif
 
 ifeq ($(OS_MARCH), i86pc)
  CFLAGS += -KPIC
+ OS_ARCH_EXT := _X86
 else
  CFLAGS += -xcode=pic32 -xmemalign=8i
+ OS_ARCH_EXT := _SPARC
 endif
 
 ifdef 64
