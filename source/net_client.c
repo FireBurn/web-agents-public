@@ -571,12 +571,13 @@ static int on_headers_complete_cb(http_parser *parser) {
                 n->num_headers, n->num_header_values);
         for (i = 0; i < n->num_headers; i++) {
             char *field = n->header_fields[i];
-            am_free(field);
+            AM_FREE(field);
         }
         for (i = 0; i < n->num_header_values; i++) {
             char *value = n->header_values[i];
-            am_free(value);
+            AM_FREE(value);
         }
+        AM_FREE(n->header_fields, n->header_values);
         n->header_fields = NULL;
         n->header_values = NULL;
         n->num_headers = n->num_header_values = 0;
@@ -743,6 +744,7 @@ int am_net_close(am_net_t *n) {
         char *value = n->header_values[i];
         AM_FREE(field, value);
     }
+    AM_FREE(n->header_fields, n->header_values);
     n->header_fields = NULL;
     n->header_values = NULL;
     n->num_headers = n->num_header_values = 0;

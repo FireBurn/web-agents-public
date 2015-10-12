@@ -329,7 +329,7 @@ static am_return_t handle_notification(am_request_t *r) {
     AM_LOG_DEBUG(r->instance_id, "%s", thisfunc);
 
     /* check if notifications are enabled */
-    if (r->method == AM_REQUEST_POST && r->conf->notif_enable && ISVALID(r->conf->notif_url)) {
+    if (r->method == AM_REQUEST_POST && ISVALID(r->conf->notif_url)) {
         struct notification_worker_data *wd;
         /* is override.notification.url set? */
         const char *url = r->conf->override_notif_url ? r->overridden_url : r->normalized_url;
@@ -942,7 +942,7 @@ static am_return_t validate_policy(am_request_t *r) {
             session_cache_new = NULL;
             status = am_agent_policy_request(r->instance_id, service_url, r->conf->token, r->token,
                     url, am_scope_to_str(scope), r->client_ip, pattrs,
-                    &net_options, &session_cache_new, &policy_cache_new);
+                    &net_options, r->conf->notif_enable, &session_cache_new, &policy_cache_new);
             if (status == AM_SUCCESS && session_cache_new != NULL && policy_cache_new != NULL) {
                 remote = AM_TRUE;
                 break;

@@ -471,13 +471,14 @@ static int send_attribute_request(am_net_t *conn, char **token, char **pxml, siz
 }
 
 static int send_session_request(am_net_t *conn, char **token, const char *user_token,
-        struct am_namevalue **session_list) {
+        struct am_namevalue **session_list, int notify_enable) {
     static const char *thisfunc = "send_session_request():";
     size_t post_sz, post_data_sz, token_sz;
     char *post = NULL, *post_data = NULL, *token_in = NULL, *token_b64;
     int status = AM_ERROR;
     struct request_data *req_data;
     char *keepalive = "Keep-Alive";
+    char *lsnr_req = NULL;
 
     if (conn == NULL || conn->data == NULL ||
             token == NULL || !ISVALID(*token)) return AM_EINVAL;
@@ -491,6 +492,20 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
 
     req_data = (struct request_data *) conn->data;
 
+    if (notify_enable) {
+        /* add session listener request only if notification is enabled */
+        am_asprintf(&lsnr_req,
+                "<Request><![CDATA["
+                "<SessionRequest vers=\"1.0\" reqid=\"2\" requester=\"%s\">"
+                "<AddSessionListener>"
+                "<URL>%s</URL>"
+                "<SessionID>%s</SessionID>"
+                "</AddSessionListener>"
+                "</SessionRequest>]]>"
+                "</Request>",
+                ISVALID(user_token) ? user_token : *token);
+    }
+
     post_data_sz = am_asprintf(&post_data,
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
             "<RequestSet vers=\"1.0\" svcid=\"Session\" reqid=\"0\">"
@@ -501,20 +516,14 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
             "</GetSession>"
             "</SessionRequest>]]>"
             "</Request>"
-            "<Request><![CDATA["
-            "<SessionRequest vers=\"1.0\" reqid=\"2\" requester=\"%s\">"
-            "<AddSessionListener>"
-            "<URL>%s</URL>"
-            "<SessionID>%s</SessionID>"
-            "</AddSessionListener>"
-            "</SessionRequest>]]>"
-            "</Request>"
+            "%s"
             "</RequestSet>",
             NOTNULL(token_b64), ISVALID(user_token) ? user_token : *token, NOTNULL(token_b64),
             (conn->options != NULL && ISVALID(conn->options->notif_url) ? conn->options->notif_url : ""),
-            ISVALID(user_token) ? user_token : *token);
+            NOTNULL(lsnr_req));
+
     if (post_data == NULL) {
-        AM_FREE(token_b64, token_in);
+        AM_FREE(token_b64, token_in, lsnr_req);
         return AM_ENOMEM;
     }
 
@@ -529,7 +538,7 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
             "%s", conn->uv.path, conn->uv.host, conn->uv.port, keepalive,
             NOTNULL(conn->req_headers), post_data_sz, post_data);
     if (post == NULL) {
-        AM_FREE(post_data, token_b64, token_in);
+        AM_FREE(post_data, token_b64, token_in, lsnr_req);
         return AM_ENOMEM;
     }
 
@@ -547,7 +556,7 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
     }
 
     status = am_net_write(conn, post, post_sz);
-    AM_FREE(post, post_data, token_b64, token_in);
+    AM_FREE(post, post_data, token_b64, token_in, lsnr_req);
 
     if (status == AM_SUCCESS) {
         wait_for_event(req_data->event, 0);
@@ -922,7 +931,7 @@ int am_agent_login(unsigned long instance_id, const char *openam,
                 }
             case login_session:
                 /* send session request (PLL endpoint) */
-                status = send_session_request(conn, agent_token, NULL, session_list);
+                status = send_session_request(conn, agent_token, NULL, session_list, 1);
                 if (status != AM_SUCCESS) {
                     state = login_done;
                     break;
@@ -1071,7 +1080,7 @@ int am_agent_logout(unsigned long instance_id, const char *openam, const char *t
 int am_agent_policy_request(unsigned long instance_id, const char *openam,
         const char *token, const char *user_token, const char *req_url,
         const char *scope, const char *cip, const char *pattr,
-        am_net_options_t *options, struct am_namevalue **session_list, struct am_policy_result **policy_list) {
+        am_net_options_t *options, int notify_enable, struct am_namevalue **session_list, struct am_policy_result **policy_list) {
     static const char *thisfunc = "am_agent_policy_request():";
     am_net_t *conn = NULL;
     int status = AM_ERROR;
@@ -1118,7 +1127,7 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
         switch (state) {
             case policy_session:
                 /* send session request (PLL endpoint)  */
-                status = send_session_request(conn, &token_ptr, user_token, session_list);
+                status = send_session_request(conn, &token_ptr, user_token, session_list, notify_enable);
                 if (status != AM_SUCCESS) {
                     state = policy_done;
                     break;

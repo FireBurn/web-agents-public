@@ -112,7 +112,7 @@ int am_agent_logout(unsigned long instance_id, const char *openam,
 int am_agent_policy_request(unsigned long instance_id, const char *openam,
         const char *token, const char *user_token, const char *req_url,
         const char *scope, const char *cip, const char *pattr,
-        am_net_options_t *options, struct am_namevalue **session_list, struct am_policy_result **policy_list);
+        am_net_options_t *options, int notify_enable, struct am_namevalue **session_list, struct am_policy_result **policy_list);
 int am_url_validate(unsigned long instance_id, const char *url,
         am_net_options_t *options, int *httpcode);
 int am_agent_audit_request(unsigned long instance_id, const char *openam,
