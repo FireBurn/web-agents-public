@@ -503,6 +503,8 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
                 "</AddSessionListener>"
                 "</SessionRequest>]]>"
                 "</Request>",
+                NOTNULL(token_b64),
+                (conn->options != NULL && ISVALID(conn->options->notif_url) ? conn->options->notif_url : ""),
                 ISVALID(user_token) ? user_token : *token);
     }
 
@@ -518,8 +520,8 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
             "</Request>"
             "%s"
             "</RequestSet>",
-            NOTNULL(token_b64), ISVALID(user_token) ? user_token : *token, NOTNULL(token_b64),
-            (conn->options != NULL && ISVALID(conn->options->notif_url) ? conn->options->notif_url : ""),
+            NOTNULL(token_b64),
+            ISVALID(user_token) ? user_token : *token,
             NOTNULL(lsnr_req));
 
     if (post_data == NULL) {
