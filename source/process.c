@@ -218,9 +218,17 @@ static am_return_t setup_request_data(am_request_t *r) {
 
         pos = strstr(r->normalized_url_pathinfo, r->path_info);
         if (pos == NULL) {
-            AM_LOG_ERROR(r->instance_id, "%s path_info %s is not part of the normalized request url %s",
-                    thisfunc, r->path_info, r->normalized_url);
-            return AM_FAIL;
+            /* 2nd try - request url is url_decoded, check if url_decoded pathinfo can be found */
+            char *path_info_clear = url_decode(r->path_info);
+            if (path_info_clear != NULL) {
+                pos = strstr(r->normalized_url_pathinfo, path_info_clear);
+                free(path_info_clear);
+            }
+            if (pos == NULL) {
+                AM_LOG_ERROR(r->instance_id, "%s path_info %s is not part of the normalized request url %s",
+                        thisfunc, r->path_info, r->normalized_url);
+                return AM_FAIL;
+            }
         }
         *pos = '\0';
     }
@@ -261,9 +269,17 @@ static am_return_t setup_request_data(am_request_t *r) {
 
         pos = strstr(r->overridden_url_pathinfo, r->path_info);
         if (pos == NULL) {
-            AM_LOG_ERROR(r->instance_id, "%s path_info %s is not part of the overridden request url %s",
-                    thisfunc, r->path_info, r->overridden_url);
-            return AM_FAIL;
+            /* 2nd try - request url is url_decoded, check if url_decoded pathinfo can be found */
+            char *path_info_clear = url_decode(r->path_info);
+            if (path_info_clear != NULL) {
+                pos = strstr(r->overridden_url_pathinfo, path_info_clear);
+                free(path_info_clear);
+            }
+            if (pos == NULL) {
+                AM_LOG_ERROR(r->instance_id, "%s path_info %s is not part of the overridden request url %s",
+                        thisfunc, r->path_info, r->overridden_url);
+                return AM_FAIL;
+            }
         }
         *pos = '\0';
     }
