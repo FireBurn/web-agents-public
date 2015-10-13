@@ -78,3 +78,34 @@ void test_config_url_maps(void **state) {
     unlink(path);
 }
 
+void test_config_map_value_reorder(void **state) {
+    am_config_t conf;
+#define MAP_SIZE 3
+    am_config_map_t *map = calloc(MAP_SIZE, sizeof (am_config_map_t));
+    
+    assert_non_null(map);
+    
+    memset(&conf, 0, sizeof (am_config_t));
+    conf.login_url = map;
+    conf.login_url_sz = MAP_SIZE;
+
+    map[0].name = strdup("2");
+    map[0].value = strdup("test 2");
+    map[1].name = strdup("10");
+    map[1].value = strdup("test 10");
+    map[2].name = strdup("0");
+    map[2].value = strdup("test 0");
+
+    update_agent_configuration_reorder_map_values(&conf);
+
+    assert_string_equal(map[2].name, "10");
+    assert_string_equal(map[2].value, "test 10");
+
+    free(map[0].name);
+    free(map[0].value);
+    free(map[1].name);
+    free(map[1].value);
+    free(map[2].name);
+    free(map[2].value);
+    free(map);
+}

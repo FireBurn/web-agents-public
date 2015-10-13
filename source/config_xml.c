@@ -584,6 +584,7 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
     update_agent_configuration_ttl(r);
     update_agent_configuration_audit(r);
     update_agent_configuration_normalise_map_urls(r);
+    update_agent_configuration_reorder_map_values(r);
     
     return r;
 }

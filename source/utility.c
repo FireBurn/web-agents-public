@@ -2879,6 +2879,31 @@ void update_agent_configuration_normalise_map_urls(am_config_t *conf) {
     }
 }
 
+static int config_map_name_compare(const void *a, const void *b) {
+    int index_a = (int) strtol(((am_config_map_t *) a)->name, NULL, AM_BASE_TEN);
+    int index_b = (int) strtol(((am_config_map_t *) b)->name, NULL, AM_BASE_TEN);
+    return (index_a > index_b) - (index_a < index_b);
+}
+
+void update_agent_configuration_reorder_map_values(am_config_t *conf) {
+    if (conf->login_url_sz > 1 && conf->login_url != NULL) {
+        qsort(conf->login_url, conf->login_url_sz,
+                sizeof (am_config_map_t), config_map_name_compare);
+    }
+    if (conf->cdsso_login_map_sz > 1 && conf->cdsso_login_map != NULL) {
+        qsort(conf->cdsso_login_map, conf->cdsso_login_map_sz,
+                sizeof (am_config_map_t), config_map_name_compare);
+    }
+    if (conf->openam_logout_map_sz > 1 && conf->openam_logout_map != NULL) {
+        qsort(conf->openam_logout_map, conf->openam_logout_map_sz,
+                sizeof (am_config_map_t), config_map_name_compare);
+    }
+    if (conf->cond_login_url_sz > 1 && conf->cond_login_url != NULL) {
+        qsort(conf->cond_login_url, conf->cond_login_url_sz,
+                sizeof (am_config_map_t), config_map_name_compare);
+    }
+}
+
 char *get_global_name(const char *name, int id) {
     static AM_THREAD_LOCAL char out[AM_PATH_SIZE];
     snprintf(out, sizeof(out), "%s_%d", name, id);

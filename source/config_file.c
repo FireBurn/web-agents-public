@@ -587,6 +587,7 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
     update_agent_configuration_ttl(conf);
     update_agent_configuration_audit(conf);
     update_agent_configuration_normalise_map_urls(conf);
+    update_agent_configuration_reorder_map_values(conf);
     
     return conf;
 }
