@@ -218,7 +218,9 @@ void read_directory(const char *path, struct am_namevalue **list);
 
 #if defined(_WIN32) || defined(__sun)
 char *strndup(const char *s, size_t n);
+#if defined(__sun) || (_MSC_VER < 1900)
 size_t strnlen(const char *string, size_t maxlen);
+#endif
 #endif
 
 char *stristr(char *str1, char *str2);

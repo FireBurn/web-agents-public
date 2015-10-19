@@ -37,7 +37,7 @@
 #include <shlwapi.h>
 #include <shellapi.h>
 
-#if !defined(snprintf)
+#if (_MSC_VER < 1900)
 #define snprintf            sprintf_s
 #endif
 #define mkdir(a,b)          _mkdir(a)

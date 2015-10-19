@@ -98,16 +98,10 @@ static void set_validation_table_entry(unsigned long instance_id, int index, int
     AM_MUTEX_UNLOCK(&table_mutex);
 }
 
-void url_validator_worker(
-#ifdef _WIN32
-        PTP_CALLBACK_INSTANCE
-#else
-        void *
-#endif
-        inst, void *arg) {
+void url_validator_worker(void *arg) {
     static const char *thisfunc = "url_validator_worker():";
     struct url_validator_worker_data *w = (struct url_validator_worker_data *) arg;
-    am_net_options_t net_options;
+    am_net_options_t *net_options;
     int i, validate_status;
     am_config_t *conf = NULL;
     time_t current_ts;
@@ -164,12 +158,21 @@ void url_validator_worker(
         free(l); \
     } while (0)
 
+    net_options = calloc(1, sizeof (am_net_options_t));
+    if (net_options == NULL) {
+        AM_LOG_ERROR(w->instance_id, "%s memory allocation error", thisfunc);
+        am_config_free(&conf);
+        set_valid_url_instance_running(w->instance_id, AM_FALSE);
+        AM_FREE(w->config_path, w);
+        return;
+    }
+
     url_list = (char **) calloc(1, conf->naming_url_sz * sizeof (char *));
     if (url_list == NULL) {
         AM_LOG_ERROR(w->instance_id, "%s memory allocation error", thisfunc);
         am_config_free(&conf);
         set_valid_url_instance_running(w->instance_id, AM_FALSE);
-        AM_FREE(w->config_path, w);
+        AM_FREE(net_options, w->config_path, w);
         return;
     }
     url_list_sz = conf->naming_url_sz;
@@ -184,15 +187,15 @@ void url_validator_worker(
             URL_LIST_FREE(url_list, url_list_sz);
             am_config_free(&conf);
             set_valid_url_instance_running(w->instance_id, AM_FALSE);
-            AM_FREE(w->config_path, w);
+            AM_FREE(net_options, w->config_path, w);
             return;
         }
     }
 
-    am_net_options_create(conf, &net_options, NULL);
-    net_options.keepalive = AM_FALSE;
-    net_options.local = net_options.cert_trust = AM_TRUE;
-    net_options.net_timeout = 2; /* fixed for url validator; in sec */
+    am_net_options_create(conf, net_options, NULL);
+    net_options->keepalive = AM_FALSE;
+    net_options->local = net_options->cert_trust = AM_TRUE;
+    net_options->net_timeout = 2; /* fixed for url validator; in sec */
 
     /* do the actual url validation */
 
@@ -206,14 +209,14 @@ void url_validator_worker(
 
         if (conf->valid_level == 1) {
             /* simple HEAD request */
-            validate_status = am_url_validate(w->instance_id, url, &net_options, &httpcode);
+            validate_status = am_url_validate(w->instance_id, url, net_options, &httpcode);
         } else {
             /* full scale agent login-logout request */
             char *agent_token = NULL;
             validate_status = am_agent_login(w->instance_id, url, conf->user, conf->pass, conf->realm,
-                    &net_options, &agent_token, NULL, NULL, NULL);
+                    net_options, &agent_token, NULL, NULL, NULL);
             if (agent_token != NULL) {
-                am_agent_logout(0, url, agent_token, &net_options);
+                am_agent_logout(0, url, agent_token, net_options);
                 free(agent_token);
                 httpcode = 200;
             }
@@ -302,7 +305,8 @@ void url_validator_worker(
 
     } while (0);
 
-    am_net_options_delete(&net_options);
+    am_net_options_delete(net_options);
+    free(net_options);
     am_config_free(&conf);
     set_valid_url_instance_running(w->instance_id, AM_FALSE);
     AM_FREE(w->config_path, w);

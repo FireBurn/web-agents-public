@@ -30,6 +30,12 @@
 #define AM_MIN_THREADS_POOL 2
 #define AM_THREADS_POOL_LINGER 30 /* sec */
 
+/* helper structure to wrap various callbacks, args and platforms */
+struct am_callback_args {
+    void *args;
+    void (*callback)(void *);
+};
+
 #ifdef _WIN32
 static INIT_ONCE worker_pool_initialized = INIT_ONCE_STATIC_INIT;
 static TP_CALLBACK_ENVIRON worker_env;
@@ -45,7 +51,7 @@ enum {
 };
 
 struct am_threadpool_work {
-    void (*func) (void *, void *);
+    void (*func) (void *);
     void *arg;
     struct am_threadpool_work *next;
 };
@@ -172,7 +178,7 @@ static void *do_work(void *arg) {
     struct am_threadpool_active active;
     int timed_out;
     struct timespec ts;
-    void (*func) (void *arg_not_used, void *arg);
+    void (*func) (void *arg);
     void *func_arg;
 
     /* worker thread main loop */
@@ -230,7 +236,7 @@ static void *do_work(void *arg) {
             /* do the actual work */
             pthread_cleanup_push(work_cleanup, pool);
             free(cur);
-            func(NULL, func_arg);
+            func(func_arg);
             pthread_cleanup_pop(1);
         }
         if (timed_out && pool->num_threads > pool->min_threads) {
@@ -332,9 +338,28 @@ void am_worker_pool_init_reset() {
 #endif
 }
 
-int am_worker_dispatch(void (*worker_f)(void *, void *), void *arg) {
 #ifdef _WIN32
-    BOOL status = TrySubmitThreadpoolCallback((PTP_SIMPLE_CALLBACK) worker_f, arg, &worker_env);
+
+static void CALLBACK worker_dispatch_callback(PTP_CALLBACK_INSTANCE instance, void *arg) {
+    struct am_callback_args *cba = (struct am_callback_args *) arg;
+    if (cba != NULL && cba->callback != NULL) {
+        cba->callback(cba->args);
+    }
+    am_free(cba);
+}
+
+#endif
+
+int am_worker_dispatch(void (*worker_f)(void *), void *arg) {
+#ifdef _WIN32
+    BOOL status = FALSE;
+    struct am_callback_args *cb_arg =
+            (struct am_callback_args *) malloc(sizeof (struct am_callback_args));
+    if (cb_arg != NULL) {
+        cb_arg->args = arg;
+        cb_arg->callback = worker_f;
+        status = TrySubmitThreadpoolCallback(worker_dispatch_callback, cb_arg, &worker_env);
+    }
     return status == FALSE ? AM_ENOMEM : AM_SUCCESS;
 #else
     struct am_threadpool_work *cur;
@@ -509,15 +534,10 @@ void close_event(am_event_t **e) {
     }
 }
 
-struct timer_callback_args {
-    void *args;
-    void (*callback)(void *);
-};
-
 #ifdef _WIN32
 
-static void timer_callback(void *args, BOOLEAN tw_fired) {
-    struct timer_callback_args *cba = (struct timer_callback_args *) args;
+static void CALLBACK timer_callback(void *args, BOOLEAN tw_fired) {
+    struct am_callback_args *cba = (struct am_callback_args *) args;
     if (cba != NULL && cba->callback != NULL) {
         cba->callback(cba->args);
     }
@@ -526,7 +546,7 @@ static void timer_callback(void *args, BOOLEAN tw_fired) {
 #elif defined (LINUX) || defined(AIX)
 
 static void timer_callback(union sigval si) {
-    struct timer_callback_args *cba = (struct timer_callback_args *) si.sival_ptr;
+    struct am_callback_args *cba = (struct am_callback_args *) si.sival_ptr;
     if (cba != NULL && cba->callback != NULL) {
         cba->callback(cba->args);
     }
@@ -550,13 +570,13 @@ am_timer_event_t *am_create_timer_event(int type, unsigned int interval, void *a
         e->init_status = AM_ENOTSTARTED;
         e->type = type;
         e->interval = interval;
-        e->args = malloc(sizeof (struct timer_callback_args));
+        e->args = malloc(sizeof (struct am_callback_args));
         if (e->args == NULL) {
             e->error = AM_ENOMEM;
             return e;
         }
-        ((struct timer_callback_args *) e->args)->args = args;
-        ((struct timer_callback_args *) e->args)->callback = callback;
+        ((struct am_callback_args *) e->args)->args = args;
+        ((struct am_callback_args *) e->args)->callback = callback;
 
         e->exit_ev = create_event();
         if (e->exit_ev == NULL) {
@@ -615,7 +635,7 @@ static void *timer_event_loop(void *args) {
 #if defined(__sun)
 
     port_event_t ev;
-    struct timer_callback_args *cba;
+    struct am_callback_args *cba;
     struct itimerspec ts;
     if (e->error == 0 && e->tick > 0) {
         ts.it_value.tv_sec = e->interval;
@@ -637,7 +657,7 @@ static void *timer_event_loop(void *args) {
         if (ev.portev_source != PORT_SOURCE_TIMER) {
             break;
         }
-        cba = (struct timer_callback_args *) ev.portev_user;
+        cba = (struct am_callback_args *) ev.portev_user;
         if (cba == NULL || cba->callback == NULL) {
             break;
         }
@@ -649,7 +669,7 @@ static void *timer_event_loop(void *args) {
     int n;
     u_short flags = EV_ADD | EV_ENABLE;
     struct kevent ch, ev;
-    struct timer_callback_args *cba = (struct timer_callback_args *) e->args;
+    struct am_callback_args *cba = (struct am_callback_args *) e->args;
     if (cba == NULL || cba->callback == NULL) {
         return NULL;
     }

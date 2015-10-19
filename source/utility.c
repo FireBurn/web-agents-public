@@ -776,33 +776,34 @@ unsigned long am_instance_id(const char *instance_id) {
  * Trim the string pointed to by "a", removing either space characters (as defined by
  * the isspace macro) or the specified character.
  *
- * @param a The incoming string to be trimmed
+ * @param str The incoming string to be trimmed
  * @param w The character to trim, or if null then trim whitespace
  */
-void trim(char *a, char w) {
-    char *b = a;
-    if (w == '\0') {
-        while (isspace(*b)) {
-            ++b;
-        }
-    } else {
-        while (*b == w) {
-            ++b;
-        }
+void trim(char *str, char w) {
+    char *in = str, *out = str;
+    int i = 0;
+#define TRIM_TEST(x,y) ((x == 0 || isspace(x)) ? isspace(y) : (y == x))
+
+    if (ISINVALID(str)) return;
+
+    for (in = str; *in && TRIM_TEST(w, *in); ++in)
+        ;
+    if (*in == '\0') {
+        out[0] = 0;
+        return;
     }
-    while (*b) {
-        *a++ = *b++;
+    if (str != in) {
+        memmove(str, in, in - str);
     }
-    *a = '\0';
-    if (w == '\0') {
-        while (isspace(*--a)) {
-            *a = '\0';
-        }
-    } else {
-        while ((*--a) == w) {
-            *a = '\0';
-        }
+    while (*in) {
+        out[i++] = *in++;
     }
+    out[i] = 0;
+
+    while (--i >= 0) {
+        if (!TRIM_TEST(w, out[i])) break;
+    }
+    out[++i] = 0;
 }
 
 /**
@@ -958,7 +959,7 @@ am_status_t get_cookie_value(am_request_t *rq, const char *separator, const char
     for ((a = strtok_r(header_val, separator, &b)); a; (a = strtok_r(NULL, separator, &b))) {
         if (strcmp(separator, "=") == 0 || strcmp(separator, "~") == 0) {
             /* trim any leading/trailing whitespace */
-            trim(a, 0);
+            trim(a, ' ');
             if (found != AM_SUCCESS && strcmp(a, cookie_name) == 0) found = AM_SUCCESS;
             else if (found == AM_SUCCESS && a[0] != '\0') {
                 value_len = strlen(a);
@@ -1194,10 +1195,14 @@ char file_exists(const char *fn) {
  * The strnlen() function returns either the same result as strlen() or maxlen, whichever
  * is smaller.
  */
+#if defined(__sun) || (_MSC_VER < 1900)
+
 size_t strnlen(const char *string, size_t maxlen) {
     const char *end = memchr(string, '\0', maxlen);
     return end ? end - string : maxlen;
 }
+
+#endif
 
 /**
  * The strndup() function copies at most n characters from the string s1 always null 

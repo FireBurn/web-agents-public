@@ -150,7 +150,6 @@ build:
 	$(MKDIR) $(OBJDIR)$(PS)zlib
 	$(MKDIR) $(OBJDIR)$(PS)cmocka
 	$(MKDIR) $(OBJDIR)$(PS)tests
-	$(MKDIR) log
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)apache
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)iis
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)varnish
@@ -167,7 +166,6 @@ version:
 
 clean:
 	-$(RMDIR) $(OBJDIR)
-	-$(RMDIR) log
 	-$(RMALL) source$(PS)version.h
 
 test_includes:

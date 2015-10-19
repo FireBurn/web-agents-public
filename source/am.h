@@ -76,10 +76,6 @@ typedef enum {
 #define AM_MAX_THREADS_POOL         AM_MAX_INSTANCES
 #endif
 
-#ifndef AM_USER_GROUP_NAME_LIMIT
-#define AM_USER_GROUP_NAME_LIMIT    20
-#endif
-
 #ifndef AM_LOG_QUEUE_SIZE
 #define AM_LOG_QUEUE_SIZE           2048 /* must be a power of two */
 #endif

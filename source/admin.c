@@ -923,37 +923,34 @@ static void find_conf_setting(char* httpd_conf_file, char* target, char* buff, s
  * @param uid change where pointer points to NULL if not found, or to dynamic memory if found
  * @param gid change where pointer points to NULL if not found, or dynamic memory if found
  */
-static void find_user(char* httpd_conf_file, uid_t** uid, gid_t** gid) {
-#ifdef _WIN32
+static void find_user(char *httpd_conf_file, uid_t **uid, gid_t **gid) {
 
     *uid = NULL;
     *gid = NULL;
 
-#else /* _WIN32 */
-    char* p;
-    char buff[AM_USER_GROUP_NAME_LIMIT];
-    struct passwd* password_entry;
-    
-    *uid = NULL;
-    *gid = NULL;
-    
-    find_conf_setting(httpd_conf_file, "\nUser", buff, sizeof(buff));
-    
+#ifndef _WIN32
+
+    char *p;
+    char buff[AM_PATH_SIZE];
+    struct passwd *password_entry;
+
+    find_conf_setting(httpd_conf_file, "\nUser", buff, sizeof (buff));
+
     if (*buff == '\0') {
         return;
     }
-    
+
     /* does the buffer contain a number */
-    am_bool_t isNumeric = AM_TRUE;
+    am_bool_t is_numeric = AM_TRUE;
     for (p = buff; *p != '\0'; p++) {
         if (!isdigit(*p)) {
-            isNumeric = AM_FALSE;
+            is_numeric = AM_FALSE;
             break;
         }
     }
-    
-    if (isNumeric) {
-        password_entry = getpwuid((uid_t)atol(buff));
+
+    if (is_numeric) {
+        password_entry = getpwuid((uid_t) atol(buff));
     } else {
         password_entry = getpwnam(buff);
     }
@@ -963,22 +960,20 @@ static void find_user(char* httpd_conf_file, uid_t** uid, gid_t** gid) {
         return;
     }
 
-    *uid = malloc(sizeof(uid_t));
+    *uid = malloc(sizeof (uid_t));
     if (*uid == NULL) {
         return;
     }
     **uid = password_entry->pw_uid;
-    *gid = malloc(sizeof(gid_t));
+    *gid = malloc(sizeof (gid_t));
     if (*gid == NULL) {
         return;
     }
     **gid = password_entry->pw_gid;
-    
+
     install_log("Found user %s, uid %d, gid %d", buff, **uid, **gid);
 #endif /* _WIN32 */
 }
-
-
 
 /**
  * Find the line saying:
@@ -990,34 +985,34 @@ static void find_user(char* httpd_conf_file, uid_t** uid, gid_t** gid) {
  * @param httpd_conf_file The entirety of the conf file, copied into a null terminated buffer
  * @param pointer to gid_t pointer which will change if the user is found and valid
  */
-static void find_group(char* httpd_conf_file, gid_t** gid) {
+static void find_group(char *httpd_conf_file, gid_t **gid) {
 #ifdef _WIN32
     if (gid != NULL) {
         *gid = NULL;
     }
 #else
-    char* p;
-    char buff[AM_USER_GROUP_NAME_LIMIT];
-    struct group* group_entry;
-    
-    find_conf_setting(httpd_conf_file, "\nGroup", buff, sizeof(buff));
-    
+    char *p;
+    char buff[AM_PATH_SIZE];
+    struct group *group_entry;
+
+    find_conf_setting(httpd_conf_file, "\nGroup", buff, sizeof (buff));
+
     if (*buff == '\0') {
         install_log("Unable to find the \"Group\" entry in the httpd.conf file");
         return;
     }
-    
+
     /* does the buffer contain a number */
-    am_bool_t isNumeric = AM_TRUE;
+    am_bool_t is_numeric = AM_TRUE;
     for (p = buff; *p != '\0'; p++) {
         if (!isdigit(*p)) {
-            isNumeric = AM_FALSE;
+            is_numeric = AM_FALSE;
             break;
         }
     }
-    
-    if (!isNumeric) {
-        group_entry = getgrgid((gid_t)atol(buff));
+
+    if (!is_numeric) {
+        group_entry = getgrgid((gid_t) atol(buff));
     } else {
         group_entry = getgrnam(buff);
     }
@@ -1026,13 +1021,16 @@ static void find_group(char* httpd_conf_file, gid_t** gid) {
         return;
     }
     if (*gid == NULL) {
-        *gid = malloc(sizeof(gid_t));
+        *gid = malloc(sizeof (gid_t));
         if (*gid == NULL) {
             return;
         }
+        **gid = 0;
     }
-    **gid = group_entry->gr_gid;
-    
+    if (**gid == 0) {
+        **gid = group_entry->gr_gid;
+    }
+
     install_log("Found group %s, gid %d", buff, **gid);
 #endif /* _WIN32 */
 }
@@ -1299,7 +1297,9 @@ static void install_interactive(int argc, char **argv) {
             input = prompt_and_read("\nTo set properties from an existing configuration enter path to file\n"
                                     "[ q or 'ctrl+c' to exit, return to ignore ]\n"
                                     "Existing OpenSSOAgentBootstrap.properties file:");
-            if (! ISVALID(input)) {
+            if (!ISVALID(input)) {
+                am_free(input);
+                input = NULL;
                 break;
             }
             check_if_quit_wanted(input);
@@ -1481,6 +1481,7 @@ static void install_interactive(int argc, char **argv) {
                     install_log("Agent URL %s", agent_url);
                 }
                 am_free(input);
+                input = NULL;
             }
             
             /* ensure the URL is syntactically valid */
@@ -1585,10 +1586,10 @@ static void install_interactive(int argc, char **argv) {
                     "The path to the password file:");
             check_if_quit_wanted(input);
             if (ISVALID(input)) {
-                char* password_data = load_file(input, NULL);
+                char *password_data = load_file(input, NULL);
                 install_log("Agent password file %s", input);
                 if (password_data != NULL) {
-                    trim(password_data, '\0');
+                    trim(password_data, ' ');
                     install_log("agent password file %s opened successfully", input);
                     agent_password = strdup(password_data);
                     agent_password_source = strdup(input);
@@ -1606,6 +1607,7 @@ static void install_interactive(int argc, char **argv) {
                 "   Agent realm/organization name: %s\n"
                 "   Agent Profile password source: %s\n\n",
                 openam_url, agent_url, agent_user, agent_realm, agent_password_source);
+        RESET_INPUT_STRING(agent_password_source);
 
         
         input = prompt_and_read("Confirm configuration (yes/no): [no]:");
@@ -1763,7 +1765,7 @@ static void install_silent(int argc, char** argv) {
 
     if (argc >= 8) {
         int rv = AM_ERROR;
-        char validated = AM_FALSE;
+        am_bool_t validated = AM_FALSE;
         char *agent_token = NULL;
         char *agent_password;
         uid_t *uid = NULL;
@@ -1787,17 +1789,15 @@ static void install_silent(int argc, char** argv) {
              * If not running as root, we cannot offer to chown directories.
              */
             if (getuid() != 0) {
-                am_free(uid);
-                am_free(gid);
+                AM_FREE(uid, gid);
                 uid = NULL;
                 gid = NULL;
             }
 #endif
-            if ((argc > 8 && strcasecmp(argv[8], "--changeOwner") != 0) ||
-                    (argc > 9 && strcasecmp(argv[9], "--changeOwner") != 0) ||
-                    (argc > 10 && strcasecmp(argv[10], "--changeOwner") != 0)) {
-                am_free(uid);
-                am_free(gid);
+            if (!((argc > 8 && strcasecmp(argv[8], "--changeOwner") == 0) ||
+                    (argc > 9 && strcasecmp(argv[9], "--changeOwner") == 0) ||
+                    (argc > 10 && strcasecmp(argv[10], "--changeOwner") == 0))) {
+                AM_FREE(uid, gid);
                 uid = NULL;
                 gid = NULL;
             }
@@ -1808,6 +1808,7 @@ static void install_silent(int argc, char** argv) {
             fprintf(stdout, "\nError reading password file %s. Exiting.\n", argv[7]);
             install_log("installation exit");
             am_net_options_delete(&net_options);
+            AM_FREE(uid, gid);
             exit(1);
         }
 
@@ -1846,8 +1847,8 @@ static void install_silent(int argc, char** argv) {
 
         if (validated) {
             fprintf(stdout, "\nCreating configuration...\n");
-            property_map_t * property_map = property_map_create();
-            
+            property_map_t *property_map = property_map_create();
+
             if (instance_type == AM_I_APACHE || instance_type == AM_I_IIS || instance_type == AM_I_VARNISH) {
                 rv = create_agent_instance(0, argv[2], argv[3], argv[5],
                         argv[4], argv[6], agent_password, uid, gid, property_map);
@@ -1863,15 +1864,17 @@ static void install_silent(int argc, char** argv) {
                         "See installation log %s file for more details. Exiting.\n", log_path);
                 install_log("installation error: %s", am_strerror(rv));
             }
-            
+
+            if (property_map != NULL) {
+                property_map_delete(property_map);
+            }
         } else {
             fprintf(stderr, "\nInstallation failed.\n"
                     "See installation log %s file for more details. Exiting.\n", log_path);
             install_log("installation error");
         }
 
-        am_free(agent_password);
-
+        AM_FREE(agent_password, uid, gid);
         am_net_shutdown();
     } else {
         fprintf(stderr, "\nInvalid arguments. Installation exit.\n");
@@ -2260,66 +2263,62 @@ int main(int argc, char **argv) {
             && strcmp(argv[1], "--k") != 0 && strcmp(argv[1], "--p") != 0
             && strcmp(argv[1], "--d") != 0
             && !IsUserAnAdmin()) {
-        fprintf(stderr, "\nYou need Administrator privileges to run "DESCRIPTION" agentadmin.\n\n");
-        exit(1);
-    }
+            fprintf(stderr, "\nYou need Administrator privileges to run "DESCRIPTION" agentadmin.\n\n");
+            exit(1);
+        }
 #endif
     
     if (argc > 1) {
-        uid_t* uid = NULL;
-        gid_t* gid = NULL;
         time_t tv;
-        char* conf;
-        
         time(&tv);
         localtime_r(&tv, &now);
-        strftime(tm, sizeof(tm) - 1, "%Y%m%d%H%M%S", &now);
+        strftime(tm, sizeof (tm) - 1, "%Y%m%d%H%M%S", &now);
 
         /* get agentadmin path */
-        am_bin_path(app_path, sizeof(app_path) - 1);
+        am_bin_path(app_path, sizeof (app_path) - 1);
 
         /* create/update installer log path */
-        snprintf(log_path, sizeof(log_path),
-                "%s.."FILE_PATH_SEP"log",
-                app_path);
+        snprintf(log_path, sizeof (log_path), "%s.."FILE_PATH_SEP"log", app_path);
         strcpy(log_path_dir, log_path);
-        am_make_path(log_path, uid, gid, install_log);
+        if (strcmp(argv[1], "--a") != 0) {
+            am_make_path(log_path, NULL, NULL, install_log);
+        }
         strcat(log_path, FILE_PATH_SEP"install_");
         strcat(log_path, tm);
         strcat(log_path, ".log");
 
         /* instances directory */
-        snprintf(instance_path, sizeof(instance_path),
+        snprintf(instance_path, sizeof (instance_path),
                 "%s.."FILE_PATH_SEP"instances",
                 app_path);
 
         /* agent configuration template */
-        snprintf(config_template, sizeof(config_template),
+        snprintf(config_template, sizeof (config_template),
                 "%s.."FILE_PATH_SEP"config"FILE_PATH_SEP"agent.conf.template",
                 app_path);
 
         /* instances configuration file (internal) */
-        snprintf(instance_config, sizeof(instance_config),
+        snprintf(instance_config, sizeof (instance_config),
                 "%s.."FILE_PATH_SEP"instances"FILE_PATH_SEP".agents",
                 app_path);
 
         /* and add a license tracker path */
-        snprintf(license_tracker_path, sizeof(license_tracker_path),
+        snprintf(license_tracker_path, sizeof (license_tracker_path),
                 "%s.."FILE_PATH_SEP"instances"FILE_PATH_SEP".license",
                 app_path);
 
         /* determine installer type */
-        snprintf(instance_type_mod, sizeof(instance_type_mod),
+        snprintf(instance_type_mod, sizeof (instance_type_mod),
                 "%s.."FILE_PATH_SEP"lib"FILE_PATH_SEP"mod_openam."LIB_FILE_EXT, app_path);
         if (file_exists(instance_type_mod)) {
             instance_type = AM_I_APACHE;
         }
-        snprintf(instance_type_mod, sizeof(instance_type_mod),
+        snprintf(instance_type_mod, sizeof (instance_type_mod),
                 "%s.."FILE_PATH_SEP"lib"FILE_PATH_SEP"mod_iis_openam."LIB_FILE_EXT, app_path);
         if (file_exists(instance_type_mod)) {
             instance_type = AM_I_IIS;
         }
-        snprintf(instance_type_mod, sizeof(instance_type_mod),
+        snprintf(instance_type_mod, sizeof (instance_type_mod),
                 "%s.."FILE_PATH_SEP"lib"FILE_PATH_SEP"libvmod_am."LIB_FILE_EXT, app_path);
         if (file_exists(instance_type_mod)) {
             snprintf(instance_config_template, sizeof (instance_config_template),
@@ -2327,18 +2326,6 @@ int main(int argc, char **argv) {
                     app_path);
             instance_type = AM_I_VARNISH;
         }
-        
-#ifndef _WIN32
-        /* find user and group for non-windows installation */
-        if (instance_type == AM_I_APACHE && argc > 2) {
-            conf = load_file(argv[2], NULL);
-            if (conf != NULL) {
-                find_user(conf, &uid, &gid);
-                find_group(conf, &gid);
-                free(conf);
-            }
-        }
-#endif
 
         /* read environment variables and create am_net_options */
         memset(&net_options, 0, sizeof (am_net_options_t));
@@ -2411,6 +2398,8 @@ int main(int argc, char **argv) {
             " agentadmin --k\n\n"
             "Encrypt password:\n"
             " agentadmin --p \"key\" \"password\"\n\n"
+            "Archive directories/files:\n"
+            " agentadmin --a archive.zip directory_or_file [directory_or_file]\n\n"
             "Build and version information:\n"
             " agentadmin --v\n\n", DESCRIPTION);
 

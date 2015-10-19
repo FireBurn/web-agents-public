@@ -87,30 +87,10 @@ void am_close_timer_event(am_timer_event_t *e);
 void am_worker_pool_shutdown();
 void am_worker_pool_init();
 
-int am_worker_dispatch(void (*worker_f)(void *, void *), void *arg);
+int am_worker_dispatch(void (*worker_f)(void *), void *arg);
 
-void notification_worker(
-#ifdef _WIN32
-        PTP_CALLBACK_INSTANCE
-#else
-        void *
-#endif
-        inst, void *arg);
-
-void session_logout_worker(
-#ifdef _WIN32
-        PTP_CALLBACK_INSTANCE
-#else
-        void *
-#endif
-        inst, void *arg);
-
-void remote_audit_worker(
-#ifdef _WIN32
-        PTP_CALLBACK_INSTANCE
-#else
-        void *
-#endif
-        inst, void *arg);
+void notification_worker(void *arg);
+void session_logout_worker(void *arg);
+void remote_audit_worker(void *arg);
 
 #endif

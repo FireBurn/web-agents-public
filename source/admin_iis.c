@@ -28,7 +28,7 @@
 #include <accctrl.h>
 #include <aclapi.h>
 
-#define IIS_SCHEMA_CONF_FILE "\\System32\\inetsrv\\config\\schema\\mod_iis_openam_schema.xml"
+#define IIS_SCHEMA_CONF_FILE "\\inetsrv\\config\\schema\\mod_iis_openam_schema.xml"
 #define AM_IIS_APPHOST L"MACHINE/WEBROOT/APPHOST"
 #define AM_IIS_SITES L"system.applicationHost/sites"
 #define AM_IIS_GLOBAL L"system.webServer/globalModules"
@@ -44,6 +44,23 @@ static BSTR module_name = L"OpenAmModule";
 static BSTR system_webserver = L"system.webServer";
 
 static BOOL add_to_modules(IAppHostWritableAdminManager* manager, BSTR config_path, const char* siteid);
+
+typedef void (WINAPI * GET_SYS_INFO)(LPSYSTEM_INFO);
+
+BOOL is_win64() {
+    SYSTEM_INFO info;
+    ZeroMemory(&info, sizeof (SYSTEM_INFO));
+    GET_SYS_INFO native = (GET_SYS_INFO) GetProcAddress(GetModuleHandle("kernel32.dll"), "GetNativeSystemInfo");
+    if (native != NULL) {
+        native(&info);
+    } else {
+        GetSystemInfo(&info);
+    }
+    if (info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64) {
+        return TRUE;
+    }
+    return FALSE;
+}
 
 char *utf8_encode(const wchar_t *wstr, size_t *outlen) {
     char *tmp = NULL;
@@ -694,8 +711,20 @@ int install_module(const char *modpath, const char *schema) {
     wchar_t *location = NULL;
     char schema_sys_file[MAX_PATH];
 
-    memset(&schema_sys_file[0], 0, sizeof (schema_sys_file));
-    GetEnvironmentVariableA("SYSTEMROOT", schema_sys_file, sizeof (schema_sys_file));
+    if (GetWindowsDirectoryA(schema_sys_file, MAX_PATH) == 0) {
+        fprintf(stderr, "Failed to locate Windows directory.\n");
+        return rv;
+    }
+
+    if (is_win64()) {
+#ifdef ADMIN64BIT
+        strcat(schema_sys_file, "\\System32");
+#else
+        strcat(schema_sys_file, "\\Sysnative");
+#endif
+    } else {
+        strcat(schema_sys_file, "\\System32");
+    }
     strcat(schema_sys_file, IIS_SCHEMA_CONF_FILE);
 
     location = utf8_decode(modpath, NULL);
