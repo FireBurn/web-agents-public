@@ -43,12 +43,8 @@ typedef struct {
 typedef struct {
 #ifdef _WIN32
     SOCKET sock;
-    HANDLE pw; /* event loop */
-    CRITICAL_SECTION lk;
 #else
     int sock;
-    pthread_t pw; /* event loop */
-    pthread_mutex_t lk;
 #endif
     unsigned long instance_id;
 
@@ -83,22 +79,22 @@ typedef struct {
     unsigned int http_status;
 
     struct addrinfo *ra;
-    am_event_t *ce; /* connected event */
-    am_event_t *de; /* disconnect event */
-    am_timer_event_t *tm; /* response timeout control */
 
     void *data;
     void (*on_connected)(void *udata, int status);
     void (*on_data)(void *udata, const char *data, size_t data_sz, int status);
     void (*on_complete)(void *udata, int status); /* callback when all data for the current request is read */
     void (*on_close)(void *udata, int status);
+
+    void (*reset_complete)(void *udata);
+    am_bool_t (*is_complete)(void *udata);
     int error;
 } am_net_t;
 
-int am_net_connect(am_net_t *n);
-int am_net_write(am_net_t *n, const char *data, size_t data_sz);
 
-void am_net_disconnect(am_net_t *n); /* disconnect socket (client side) */
+int am_net_sync_connect(am_net_t *n);
+int am_net_write(am_net_t *n, const char *data, size_t data_sz);
+void am_net_sync_recv(am_net_t *n, int timeout_ms);
 int am_net_close(am_net_t *n);
 
 void am_net_options_create(am_config_t *ac, am_net_options_t *options, void (*log)(const char *, ...));

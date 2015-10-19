@@ -27,6 +27,8 @@
 #define INVALID_SOCKET -1
 #endif
 
+#define RECV_BUFFER_SZ 1024
+
 #define AM_NET_CONNECT_TIMEOUT 8 /* in sec */
 
 enum {
@@ -74,12 +76,13 @@ static short read_avail_ev = POLLIN | POLLHUP;
                 tmp = realloc(es, size + 1);\
                 if (tmp == NULL) {\
                     am_free(es);\
+                    es = NULL;\
                     break;\
                 }\
                 es = tmp;\
             }\
             AM_LOG_ERROR(i, "net_error(%s:%d): %s (%d)", __FILE__, __LINE__, es, e);\
-            free(es);\
+            am_free(es);\
         }\
     } while(0)
 #endif
@@ -167,343 +170,11 @@ static int set_nonblocking(am_net_t *n, int cmd) {
     return 0;
 }
 
-static void net_async_poll_timeout(void *arg) {
-    static const char *thisfunc = "net_async_poll_timeout():";
-    am_net_t *n = (am_net_t *) arg;
-    AM_LOG_WARNING(n->instance_id,
-            "%s timeout waiting for a response from a server", thisfunc);
-    n->error = AM_ETIMEDOUT;
-    if (n->on_close) n->on_close(n->data, 0);
-    am_net_disconnect(n);
-}
-
-static void net_async_poll(am_net_t *n) {
-    int ev = 0, first_run = 1;
 #ifdef _WIN32
-    WSAPOLLFD fds[1];
+#define POLLFD WSAPOLLFD
 #else
-    struct pollfd fds[1];
+#define POLLFD struct pollfd
 #endif
-    memset(fds, 0, sizeof (fds));
-    
-    while (ev != -1) {
-
-        fds[0].fd = n->sock;
-        fds[0].events = read_ev;
-        fds[0].revents = 0;
-
-        if (first_run) {
-            set_event(n->ce);
-            if (n->on_connected) n->on_connected(n->data, 0);
-            first_run = 0;
-        }
-
-        if (wait_for_event(n->de, 5) != AM_ETIMEDOUT) {
-            break;
-        }
-
-        ev = sockpoll(fds, 1, 100);
-        if (ev < 0) {
-            net_log_error(n->instance_id, net_error());
-            break;
-        }
-        if (ev == 1 && fds[0].revents & (POLLNVAL | POLLERR)) {
-            if (n->on_close) n->on_close(n->data, 0);
-            break;
-        }
-        if (ev == 1 && fds[0].revents & read_avail_ev) {
-            /* read an output from a remote side */
-            int er = 0, error = 0;
-            char tmp[1024];
-            int got = 0;
-            SOCKLEN_T errlen = sizeof (error);
-            er = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (void *) &error, &errlen);
-            memset(&tmp[0], 0, sizeof (tmp));
-            if (error != 0) break;
-
-            got = recv(n->sock, tmp, sizeof (tmp), 0);
-            if (n->ssl.on) {
-                error = net_read_ssl(n, tmp, got);
-                if (error != AM_SUCCESS) {
-                    if (error != AM_EAGAIN) {
-                        if (n->on_close) n->on_close(n->data, 0);
-                        break;
-                    }
-                }
-            } else {
-                if (got < 0) {
-                    if (!net_in_progress(errno)) {
-                        if (n->on_close) n->on_close(n->data, 0);
-                        break;
-                    }
-                } else if (got == 0) {
-                    if (n->on_close) n->on_close(n->data, 0);
-                    break;
-                } else {
-                    http_parser_execute(n->hp, n->hs, tmp, got);
-                }
-            }
-        }
-    }
-}
-
-int am_net_write(am_net_t *n, const char *data, size_t data_sz) {
-    int status = 0, sent = 0, flags = 0;
-    int er = 0, error = 0;
-    SOCKLEN_T errlen = sizeof (error);
-    if (n != NULL && data != NULL && data_sz > 0) {
-
-        if (wait_for_event(n->ce, 0) == 0) {
-            size_t len = data_sz;
-            const char *buf = data;
-            if (n->error != 0) {
-                set_event(n->ce);
-                return n->error;
-            }
-            if (n->ssl.on) {
-                n->ssl.request_data_sz = 0;
-                am_free(n->ssl.request_data);
-                n->ssl.request_data = malloc(data_sz);
-                if (n->ssl.request_data != NULL) {
-                    memcpy(n->ssl.request_data, data, data_sz);
-                    n->ssl.request_data_sz = data_sz;
-                    net_write_ssl(n);
-                } else {
-                    set_event(n->ce);
-                    return AM_ENOMEM;
-                }
-            } else {
-#ifdef MSG_NOSIGNAL
-                flags |= MSG_NOSIGNAL;
-#endif 
-                er = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (void *) &error, &errlen);
-                while (sent < (int) len) {
-                    int rv = send(n->sock, buf + sent, (int) len - sent, flags);
-                    if (rv < 0) {
-                        if (net_in_progress(
-#ifdef _WIN32                 
-                                WSAGetLastError()
-#else
-                                errno
-#endif
-                                )) {
-#ifdef _WIN32
-                            WSAPOLLFD fds[1];
-#else
-                            struct pollfd fds[1];
-#endif
-                            memset(fds, 0, sizeof (fds));
-                            fds[0].fd = n->sock;
-                            fds[0].events = connect_ev;
-                            fds[0].revents = 0;
-                            if (sockpoll(fds, 1, -1) == -1) {
-                                break;
-                            }
-                            continue;
-                        }
-                        break;
-                    }
-                    if (rv == 0) {
-                        break;
-                    }
-                    sent += rv;
-                }
-            }
-            set_event(n->ce);
-        }
-    }
-    return status;
-}
-
-static void *net_async_connect(void *arg) {
-    am_net_t *n = (am_net_t *) arg;
-    static const char *thisfunc = "net_async_connect():";
-    struct in6_addr serveraddr;
-    struct addrinfo *rp, hints;
-    int i, err = 0, on = 1;
-    char port[7];
-    am_timer_t tmr;
-    int timeout = AM_NET_CONNECT_TIMEOUT;
-    char *ip_address = n->uv.host;
-
-    if (n->options != NULL) {
-        timeout = n->options->net_timeout;
-
-        /* try to use com.forgerock.agents.config.hostmap property values to 
-         * shortcut any host name resolution.
-         */
-        for (i = 0; i < n->options->hostmap_sz; i++) {
-            char *sep = strchr(n->options->hostmap[i], '|');
-            if (sep != NULL &&
-                    strncasecmp(n->options->hostmap[i], n->uv.host, sep - n->options->hostmap[i]) == 0) {
-                ip_address = sep++;
-                AM_LOG_DEBUG(n->instance_id, "%s found host '%s' (%s) entry in "AM_AGENTS_CONFIG_HOST_MAP,
-                        thisfunc, n->uv.host, ip_address);
-                break;
-            }
-        }
-    }
-
-    memset(&hints, 0, sizeof (struct addrinfo));
-    hints.ai_flags = AI_NUMERICSERV;
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
-    err = INETPTON(AF_INET, ip_address, &serveraddr);
-    if (err == 1) {
-        hints.ai_family = AF_INET;
-        hints.ai_flags |= AI_NUMERICHOST;
-    } else {
-        err = INETPTON(AF_INET6, ip_address, &serveraddr);
-        if (err == 1) {
-            hints.ai_family = AF_INET6;
-            hints.ai_flags |= AI_NUMERICHOST;
-        }
-    }
-
-    snprintf(port, sizeof (port), "%d", n->uv.port);
-
-    am_timer_start(&tmr);
-    if ((err = getaddrinfo(ip_address, port, &hints, &n->ra)) != 0) {
-        n->error = AM_EHOSTUNREACH;
-        am_timer_stop(&tmr);
-        am_timer_report(n->instance_id, &tmr, "getaddrinfo");
-        set_event(n->ce);
-        return NULL;
-    }
-
-    am_timer_stop(&tmr);
-    am_timer_report(n->instance_id, &tmr, "getaddrinfo");
-
-    n->error = 0;
-
-    for (rp = n->ra; rp != NULL; rp = rp->ai_next) {
-
-        if (rp->ai_family != AF_INET && rp->ai_family != AF_INET6 &&
-                rp->ai_socktype != SOCK_STREAM && rp->ai_protocol != IPPROTO_TCP) continue;
-
-        if ((n->sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol)) == INVALID_SOCKET) {
-            AM_LOG_ERROR(n->instance_id,
-                    "%s cannot create socket while connecting to %s:%d",
-                    thisfunc, n->uv.host, n->uv.port);
-            net_log_error(n->instance_id, net_error());
-            continue;
-        }
-
-        if (setsockopt(n->sock, IPPROTO_TCP, TCP_NODELAY, (void *) &on, sizeof (on)) < 0) {
-            net_log_error(n->instance_id, net_error());
-        }
-        if (setsockopt(n->sock, SOL_SOCKET, SO_REUSEADDR, (void *) &on, sizeof (on)) < 0) {
-            net_log_error(n->instance_id, net_error());
-        }
-#ifdef SO_NOSIGPIPE
-        if (setsockopt(n->sock, SOL_SOCKET, SO_NOSIGPIPE, (void *) &on, sizeof (on)) < 0) {
-            net_log_error(n->instance_id, net_error());
-        }
-#endif
-        if (set_nonblocking(n, 1) != 0) {
-            n->error = AM_EPERM;
-            continue;
-        }
-
-        err = connect(n->sock, rp->ai_addr, (SOCKLEN_T) rp->ai_addrlen);
-        if (err == 0) {
-            AM_LOG_DEBUG(n->instance_id, "%s connected to %s:%d (%s)",
-                    thisfunc, n->uv.host, n->uv.port,
-                    rp->ai_family == AF_INET ? "IPv4" : "IPv6");
-            n->error = 0;
-            if (n->uv.ssl) {
-                net_connect_ssl(n);
-                if (n->ssl.error != AM_SUCCESS) {
-                    AM_LOG_ERROR(n->instance_id,
-                            "%s SSL/TLS connection to %s:%d (%s) failed (%s)",
-                            thisfunc, n->uv.host, n->uv.port,
-                            rp->ai_family == AF_INET ? "IPv4" : "IPv6",
-                            am_strerror(n->ssl.error));
-                    net_close_socket(n->sock);
-                    n->sock = INVALID_SOCKET;
-                    n->error = n->ssl.error;
-                    break;
-                }
-            }
-            net_async_poll(n);
-            /* check for net_async_poll early-return errors (like event-loop timeout control) */
-            if (n->error != AM_SUCCESS) {
-                net_close_socket(n->sock);
-                n->sock = INVALID_SOCKET;
-            }
-            break;
-        }
-
-        if (err == INVALID_SOCKET && net_in_progress(net_error())) {
-#ifdef _WIN32
-            WSAPOLLFD fds[1];
-#else
-            struct pollfd fds[1];
-#endif
-            memset(fds, 0, sizeof (fds));
-            fds[0].fd = n->sock;
-            fds[0].events = connect_ev;
-            fds[0].revents = 0;
-
-            err = sockpoll(fds, 1, timeout > 0 ? timeout * 1000 : -1);
-            if (err > 0 && fds[0].revents & connected_ev) {
-                int pe = 0;
-                SOCKLEN_T pe_sz = sizeof (pe);
-                err = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (char *) &pe, &pe_sz);
-                if (err == 0 && pe == 0) {
-                    AM_LOG_DEBUG(n->instance_id, "%s connected to %s:%d (%s)",
-                            thisfunc, n->uv.host, n->uv.port,
-                            rp->ai_family == AF_INET ? "IPv4" : "IPv6");
-
-                    n->error = 0;
-                    if (n->uv.ssl) {
-                        net_connect_ssl(n);
-                        if (n->ssl.error != AM_SUCCESS) {
-                            AM_LOG_ERROR(n->instance_id,
-                                    "%s SSL/TLS connection to %s:%d (%s) failed (%s)",
-                                    thisfunc, n->uv.host, n->uv.port,
-                                    rp->ai_family == AF_INET ? "IPv4" : "IPv6",
-                                    am_strerror(n->ssl.error));
-                            net_close_socket(n->sock);
-                            n->sock = INVALID_SOCKET;
-                            n->error = n->ssl.error;
-                            break;
-                        }
-                    }
-                    net_async_poll(n);
-                    if (n->error != AM_SUCCESS) {
-                        net_close_socket(n->sock);
-                        n->sock = INVALID_SOCKET;
-                    }
-                    break;
-                }
-                net_log_error(n->instance_id, pe);
-                n->error = AM_ECONNREFUSED;
-            } else if (err == 0) {
-                AM_LOG_WARNING(n->instance_id,
-                        "%s timeout connecting to %s:%d (%s)",
-                        thisfunc, n->uv.host, n->uv.port,
-                        rp->ai_family == AF_INET ? "IPv4" : "IPv6");
-                n->error = AM_ETIMEDOUT;
-            } else {
-                int pe = 0;
-                SOCKLEN_T pe_sz = sizeof (pe);
-                err = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (char *) &pe, &pe_sz);
-                n->error = AM_ETIMEDOUT;
-                break;
-            }
-        }
-
-        net_close_socket(n->sock);
-        n->sock = INVALID_SOCKET;
-    }
-
-    if (n->error != 0) {
-        set_event(n->ce);
-    }
-    return NULL;
-}
 
 static int on_body_cb(http_parser *parser, const char *at, size_t length) {
     am_net_t *n = (am_net_t *) parser->data;
@@ -513,20 +184,23 @@ static int on_body_cb(http_parser *parser, const char *at, size_t length) {
 
 static int on_header_field_cb(http_parser *parser, const char *at, size_t length) {
     am_net_t *n = (am_net_t *) parser->data;
+    void *p;
     if (n->header_state == HEADER_ERROR) return 0;
     if (n->header_state != HEADER_FIELD) {
         n->num_headers++;
-        n->header_fields = realloc(n->header_fields, n->num_headers * sizeof (char *));
-        if (n->header_fields != NULL) {
+        p = realloc(n->header_fields, n->num_headers * sizeof (char *));
+        if (p != NULL) {
+            n->header_fields = p;
             n->header_fields[n->num_headers - 1] = strndup(at, length);
         } else {
             n->header_state = HEADER_ERROR;
             n->num_headers--;
         }
     } else {
-        n->header_fields[n->num_headers - 1] = realloc(n->header_fields[n->num_headers - 1],
+        p = realloc(n->header_fields[n->num_headers - 1],
                 strlen(n->header_fields[n->num_headers - 1]) + length + 1);
-        if (n->header_fields[n->num_headers - 1] != NULL) {
+        if (p != NULL) {
+            n->header_fields[n->num_headers - 1] = p;
             strncat(n->header_fields[n->num_headers - 1], at, length);
         } else {
             n->header_state = HEADER_ERROR;
@@ -538,20 +212,23 @@ static int on_header_field_cb(http_parser *parser, const char *at, size_t length
 
 static int on_header_value_cb(http_parser *parser, const char *at, size_t length) {
     am_net_t *n = (am_net_t *) parser->data;
+    void *p;
     if (n->header_state == HEADER_ERROR) return 0;
     if (n->header_state != HEADER_VALUE) {
         n->num_header_values++;
-        n->header_values = realloc(n->header_values, n->num_headers * sizeof (char *));
-        if (n->header_values != NULL) {
+        p = realloc(n->header_values, n->num_headers * sizeof (char *));
+        if (p != NULL) {
+            n->header_values = p;
             n->header_values[n->num_headers - 1] = strndup(at, length);
         } else {
             n->header_state = HEADER_ERROR;
             n->num_header_values--;
         }
     } else {
-        n->header_values[n->num_headers - 1] = realloc(n->header_values[n->num_headers - 1],
+        p = realloc(n->header_values[n->num_headers - 1],
                 strlen(n->header_values[n->num_headers - 1]) + length + 1);
-        if (n->header_values[n->num_headers - 1] != NULL) {
+        if (p != NULL) {
+            n->header_values[n->num_headers - 1] = p;
             strncat(n->header_values[n->num_headers - 1], at, length);
         } else {
             n->header_state = HEADER_ERROR;
@@ -590,165 +267,6 @@ static int on_message_complete_cb(http_parser *parser) {
     am_net_t *n = (am_net_t *) parser->data;
     if (n->on_complete) n->on_complete(n->data, 0);
     return 0;
-}
-
-int am_net_connect(am_net_t *n) {
-    static const char *thisfunc = "am_net_connect():";
-    int status = 0;
-    if (n == NULL) {
-        /* fatal - must not happen */
-        return AM_EINVAL;
-    }
-
-    n->error = AM_ENOTSTARTED;
-    n->sock = INVALID_SOCKET;
-    n->ssl.request_data = NULL;
-    n->ssl.ssl_handle = NULL;
-    n->ssl.ssl_context = NULL;
-    n->ssl.on = AM_FALSE;
-
-    if (n->url == NULL) {
-        return AM_EINVAL;
-    }
-
-    /* create "connected" event */
-    n->ce = create_event();
-    if (n->ce == NULL) {
-        AM_LOG_ERROR(n->instance_id,
-                "%s failed to create connected event", thisfunc);
-        return AM_ENOMEM;
-    }
-
-    /* create "disconnect" event */
-    n->de = create_event();
-    if (n->de == NULL) {
-        AM_LOG_ERROR(n->instance_id,
-                "%s failed to create disconnect event", thisfunc);
-        return AM_ENOMEM;
-    }
-
-    n->tm = am_create_timer_event(AM_TIMER_EVENT_ONCE, AM_NET_POOL_TIMEOUT,
-            n, net_async_poll_timeout);
-    if (n->tm == NULL) {
-        AM_LOG_ERROR(n->instance_id,
-                "%s failed to create response timeout control", thisfunc);
-        return AM_ENOMEM;
-    }
-
-    if (parse_url(n->url, &n->uv) != 0) {
-        AM_LOG_ERROR(n->instance_id,
-                "%s failed to parser url %s", LOGEMPTY(n->url));
-        return n->uv.error;
-    }
-
-    /* allocate memory for http_parser and initialize it */
-    n->hs = calloc(1, sizeof (http_parser_settings));
-    if (n->hs == NULL) {
-        AM_LOG_ERROR(n->instance_id, "%s memory allocation error", thisfunc);
-        return AM_ENOMEM;
-    }
-
-    n->hp = calloc(1, sizeof (http_parser));
-    if (n->hp == NULL) {
-        AM_LOG_ERROR(n->instance_id, "%s memory allocation error", thisfunc);
-        return AM_ENOMEM;
-    }
-
-    n->hs->on_header_field = on_header_field_cb;
-    n->hs->on_header_value = on_header_value_cb;
-    n->hs->on_headers_complete = on_headers_complete_cb;
-    n->hs->on_body = on_body_cb;
-    n->hs->on_message_complete = on_message_complete_cb;
-    http_parser_init(n->hp, HTTP_RESPONSE);
-
-    /* do asynchronous connect and start the event loop */
-#ifdef _WIN32
-    InitializeCriticalSection(&n->lk);
-    n->pw = CreateThread(NULL, 0,
-            (LPTHREAD_START_ROUTINE) net_async_connect, n, 0, NULL);
-    if (n->pw == NULL) {
-        AM_LOG_WARNING(n->instance_id, "%s unable to create a new async_connect worker", thisfunc);
-        status = AM_EAGAIN;
-    }
-#else
-    pthread_mutex_init(&n->lk, NULL);
-    if (pthread_create(&n->pw, NULL, net_async_connect, n) != 0) {
-        AM_LOG_WARNING(n->instance_id, "%s unable to create a new async_connect worker", thisfunc);
-        status = AM_EAGAIN;
-    }
-#endif
-    n->hp->data = n;
-
-    if (n->tm == NULL || n->tm->error != 0) {
-        AM_LOG_ERROR(n->instance_id,
-                "%s error %d creating response timeout control", thisfunc,
-                n->tm != NULL ? n->tm->error : AM_ENOTSTARTED);
-        return AM_ERROR;
-    }
-
-    am_start_timer_event(n->tm);
-
-    return status;
-}
-
-void am_net_disconnect(am_net_t *n) {
-    if (n != NULL) {
-        set_event(n->de);
-        net_close_ssl_notify(n);
-    }
-}
-
-int am_net_close(am_net_t *n) {
-    int i;
-    if (n == NULL) {
-        return AM_EINVAL;
-    }
-
-    if (n->error != AM_ENOTSTARTED) {
-#ifdef _WIN32   
-        WaitForSingleObject(n->pw, INFINITE);
-        CloseHandle(n->pw);
-        DeleteCriticalSection(&n->lk);
-#else
-        pthread_join(n->pw, NULL);
-        pthread_mutex_destroy(&n->lk);
-#endif
-    }
-
-    /* close ssl/socket */
-    am_net_disconnect(n);
-    net_close_ssl(n);
-    net_close_socket(n->sock);
-    n->sock = INVALID_SOCKET;
-
-    /* shut down connected/disconnected events */
-    close_event(&n->ce);
-    close_event(&n->de);
-
-    /* shut down response timeout handler */
-    am_close_timer_event(n->tm);
-    n->tm = NULL;
-
-    if (n->ra != NULL) {
-        freeaddrinfo(n->ra);
-    }
-    n->ra = NULL;
-
-    AM_FREE(n->hs, n->hp, n->req_headers);
-    n->hs = NULL;
-    n->hp = NULL;
-    n->req_headers = NULL;
-
-    for (i = 0; i < n->num_headers; i++) {
-        char *field = n->header_fields[i];
-        char *value = n->header_values[i];
-        AM_FREE(field, value);
-    }
-    AM_FREE(n->header_fields, n->header_values);
-    n->header_fields = NULL;
-    n->header_values = NULL;
-    n->num_headers = n->num_header_values = 0;
-    return AM_SUCCESS;
 }
 
 void am_net_options_create(am_config_t *conf, am_net_options_t *options, void (*log)(const char *, ...)) {
@@ -814,3 +332,442 @@ void am_net_options_delete(am_net_options_t *options) {
     }
     options->hostmap_sz = 0;
 }
+
+
+/**
+ * Synchronous comms - where one thread creates a connection then
+ * iteratively writes to server and reads HTTP response, then closes the connection.
+ */
+
+
+/**
+ * poll with a timeout for server response, where the timeout includes includes system interrupts (EINTR) errors
+ */
+static int poll_with_interrupt(POLLFD fds[], int nfds, int msec) {
+    uint64_t start_usec, end_usec;
+    int ev;
+    
+    am_bool_t intr;
+    do {
+        intr = AM_FALSE;
+        am_timer(&start_usec);
+        ev = sockpoll(fds, nfds, msec);
+        if (ev < 0 && net_error() == EINTR) {
+            am_timer(&end_usec);
+            msec -= (end_usec - start_usec) / 1000;
+            if (msec < 0) {
+                msec = 0;
+            }
+            intr = AM_TRUE;
+        }
+    } while (intr);
+    return ev;
+}
+
+/**
+ * create a non-blocking socket and connect to remote server
+ */
+static void sync_connect(am_net_t *n) {
+    static const char *thisfunc = "async_connect():";
+    struct in6_addr serveraddr;
+    struct addrinfo *rp, hints;
+    int i, err = 0, on = 1;
+    char port[7];
+    am_timer_t tmr;
+    int timeout = AM_NET_CONNECT_TIMEOUT;
+    char *ip_address = n->uv.host;
+    
+    if (n->options != NULL) {
+        timeout = n->options->net_timeout;
+        
+        /* try to use com.forgerock.agents.config.hostmap property values to
+         * shortcut any host name resolution.
+         */
+        for (i = 0; i < n->options->hostmap_sz; i++) {
+            char *sep = strchr(n->options->hostmap[i], '|');
+            if (sep != NULL &&
+                strncasecmp(n->options->hostmap[i], n->uv.host, sep - n->options->hostmap[i]) == 0) {
+                ip_address = sep++;
+                AM_LOG_DEBUG(n->instance_id, "%s found host '%s' (%s) entry in "AM_AGENTS_CONFIG_HOST_MAP,
+                             thisfunc, n->uv.host, ip_address);
+                break;
+            }
+        }
+    }
+    
+    memset(&hints, 0, sizeof (struct addrinfo));
+    hints.ai_flags = AI_NUMERICSERV;
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    err = INETPTON(AF_INET, ip_address, &serveraddr);
+    if (err == 1) {
+        hints.ai_family = AF_INET;
+        hints.ai_flags |= AI_NUMERICHOST;
+    } else {
+        err = INETPTON(AF_INET6, ip_address, &serveraddr);
+        if (err == 1) {
+            hints.ai_family = AF_INET6;
+            hints.ai_flags |= AI_NUMERICHOST;
+        }
+    }
+    
+    snprintf(port, sizeof (port), "%d", n->uv.port);
+    
+    am_timer_start(&tmr);
+    if ((err = getaddrinfo(ip_address, port, &hints, &n->ra)) != 0) {
+        n->error = AM_EHOSTUNREACH;
+        am_timer_stop(&tmr);
+        am_timer_report(n->instance_id, &tmr, "getaddrinfo");
+        return;
+    }
+    
+    am_timer_stop(&tmr);
+    am_timer_report(n->instance_id, &tmr, "getaddrinfo");
+    
+    for (rp = n->ra; rp != NULL; rp = rp->ai_next) {
+        
+        if (rp->ai_family != AF_INET && rp->ai_family != AF_INET6 &&
+            rp->ai_socktype != SOCK_STREAM && rp->ai_protocol != IPPROTO_TCP) continue;
+        
+        if ((n->sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol)) == INVALID_SOCKET) {
+            AM_LOG_ERROR(n->instance_id,
+                         "%s cannot create socket while connecting to %s:%d",
+                         thisfunc, n->uv.host, n->uv.port);
+            net_log_error(n->instance_id, net_error());
+            continue;
+        }
+        
+        if (setsockopt(n->sock, IPPROTO_TCP, TCP_NODELAY, (void *) &on, sizeof (on)) < 0) {
+            net_log_error(n->instance_id, net_error());
+        }
+        if (setsockopt(n->sock, SOL_SOCKET, SO_REUSEADDR, (void *) &on, sizeof (on)) < 0) {
+            net_log_error(n->instance_id, net_error());
+        }
+#ifdef SO_NOSIGPIPE
+        if (setsockopt(n->sock, SOL_SOCKET, SO_NOSIGPIPE, (void *) &on, sizeof (on)) < 0) {
+            net_log_error(n->instance_id, net_error());
+        }
+#endif
+        if (set_nonblocking(n, 1) != 0) {
+            n->error = AM_EPERM;
+            continue;
+        }
+        
+        err = connect(n->sock, rp->ai_addr, (SOCKLEN_T) rp->ai_addrlen);
+        if (err == 0) {
+            AM_LOG_DEBUG(n->instance_id, "%s connected to %s:%d (%s)",
+                         thisfunc, n->uv.host, n->uv.port,
+                         rp->ai_family == AF_INET ? "IPv4" : "IPv6");
+            n->error = 0;
+            if (n->uv.ssl) {
+                net_connect_ssl(n);
+                if (n->ssl.error != AM_SUCCESS) {
+                    AM_LOG_ERROR(n->instance_id,
+                                 "%s SSL/TLS connection to %s:%d (%s) failed (%s)",
+                                 thisfunc, n->uv.host, n->uv.port,
+                                 rp->ai_family == AF_INET ? "IPv4" : "IPv6",
+                                 am_strerror(n->ssl.error));
+                    net_close_socket(n->sock);
+                    n->sock = INVALID_SOCKET;
+                    n->error = n->ssl.error;
+                    break;
+                }
+            }
+            /* success */
+            return;
+        }
+        
+        if (err == INVALID_SOCKET && net_in_progress(net_error())) {
+            POLLFD fds[1];
+            memset(fds, 0, sizeof (fds));
+            fds[0].fd = n->sock;
+            fds[0].events = connect_ev;
+            fds[0].revents = 0;
+            
+            err = sockpoll(fds, 1, timeout > 0 ? timeout * 1000 : -1);
+            if (err > 0 && fds[0].revents & connected_ev) {
+                int pe = 0;
+                SOCKLEN_T pe_sz = sizeof (pe);
+                err = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (char *) &pe, &pe_sz);
+                if (err == 0 && pe == 0) {
+                    AM_LOG_DEBUG(n->instance_id, "%s connected to %s:%d (%s)",
+                                 thisfunc, n->uv.host, n->uv.port,
+                                 rp->ai_family == AF_INET ? "IPv4" : "IPv6");
+                    
+                    n->error = 0;
+                    if (n->uv.ssl) {
+                        net_connect_ssl(n);
+                        if (n->ssl.error != AM_SUCCESS) {
+                            AM_LOG_ERROR(n->instance_id,
+                                         "%s SSL/TLS connection to %s:%d (%s) failed (%s)",
+                                         thisfunc, n->uv.host, n->uv.port,
+                                         rp->ai_family == AF_INET ? "IPv4" : "IPv6",
+                                         am_strerror(n->ssl.error));
+                            net_close_socket(n->sock);
+                            n->sock = INVALID_SOCKET;
+                            n->error = n->ssl.error;
+                            break;
+                        }
+                    }
+                    /* success */
+                    return;
+                }
+                net_log_error(n->instance_id, pe);
+                n->error = AM_ECONNREFUSED;
+            } else if (err == 0) {
+                AM_LOG_WARNING(n->instance_id,
+                               "%s timeout connecting to %s:%d (%s)",
+                               thisfunc, n->uv.host, n->uv.port,
+                               rp->ai_family == AF_INET ? "IPv4" : "IPv6");
+                n->error = AM_ETIMEDOUT;
+            } else {
+                int pe = 0;
+                SOCKLEN_T pe_sz = sizeof (pe);
+                err = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (char *) &pe, &pe_sz);
+                n->error = AM_ETIMEDOUT;
+                break;
+            }
+        }
+        
+        net_close_socket(n->sock);
+        n->sock = INVALID_SOCKET;
+    }
+}
+
+/**
+ * initialise http parser and connect to server
+ */
+int am_net_sync_connect(am_net_t *n) {
+    static const char *thisfunc = "am_net_sync_connect():";
+    int status = 0;
+    if (n == NULL) {
+        /* fatal - must not happen */
+        return AM_EINVAL;
+    }
+    
+    n->error = AM_ENOTSTARTED;
+    n->sock = INVALID_SOCKET;
+    n->ssl.request_data = NULL;
+    n->ssl.ssl_handle = NULL;
+    n->ssl.ssl_context = NULL;
+    n->ssl.on = AM_FALSE;
+    
+    if (n->url == NULL) {
+        return AM_EINVAL;
+    }
+    
+    if (parse_url(n->url, &n->uv) != 0) {
+        AM_LOG_ERROR(n->instance_id,
+                     "%s failed to parse url %s", LOGEMPTY(n->url));
+        return n->uv.error;
+    }
+    
+    /* allocate memory for http_parser and initialize it */
+    n->hs = calloc(1, sizeof (http_parser_settings));
+    if (n->hs == NULL) {
+        AM_LOG_ERROR(n->instance_id, "%s memory allocation error", thisfunc);
+        return AM_ENOMEM;
+    }
+    
+    n->hp = calloc(1, sizeof (http_parser));
+    if (n->hp == NULL) {
+        AM_LOG_ERROR(n->instance_id, "%s memory allocation error", thisfunc);
+        return AM_ENOMEM;
+    }
+    
+    n->hs->on_header_field = on_header_field_cb;
+    n->hs->on_header_value = on_header_value_cb;
+    n->hs->on_headers_complete = on_headers_complete_cb;
+    n->hs->on_body = on_body_cb;
+    n->hs->on_message_complete = on_message_complete_cb;
+    
+    http_parser_init(n->hp, HTTP_RESPONSE);
+    n->hp->data = n;
+    
+    sync_connect(n);
+    return n->error;
+}
+
+/**
+ * write data to remote server
+ */
+int am_net_write(am_net_t *n, const char *data, size_t data_sz) {
+    int status = 0, sent = 0, flags = 0;
+    int er = 0, error = 0;
+    SOCKLEN_T errlen = sizeof (error);
+    if (n != NULL && data != NULL && data_sz > 0) {
+        
+        size_t len = data_sz;
+        const char *buf = data;
+        if (n->error != 0) {
+            return n->error;
+        }
+        if (n->ssl.on) {
+            n->ssl.request_data_sz = 0;
+            am_free(n->ssl.request_data);
+            n->ssl.request_data = malloc(data_sz);
+            if (n->ssl.request_data == NULL) {
+                return AM_ENOMEM;
+            }
+            memcpy(n->ssl.request_data, data, data_sz);
+            n->ssl.request_data_sz = data_sz;
+            net_write_ssl(n);
+        } else {
+#ifdef MSG_NOSIGNAL
+            flags |= MSG_NOSIGNAL;
+#endif
+            er = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (void *) &error, &errlen);
+            while (sent < (int) len) {
+                int rv = send(n->sock, buf + sent, (int) len - sent, flags);
+                if (rv < 0) {
+                    if (net_in_progress(net_error())) {
+                        POLLFD fds[1];
+                        memset(fds, 0, sizeof (fds));
+                        fds[0].fd = n->sock;
+                        fds[0].events = connect_ev;
+                        fds[0].revents = 0;
+                        if (sockpoll(fds, 1, -1) == -1) {
+                            break;
+                        }
+                        continue;
+                    }
+                    break;
+                }
+                if (rv == 0) {
+                    break;
+                }
+                sent += rv;
+            }
+        }
+    }
+    return status;
+}
+
+/**
+ * receive and parse http message, returning when message http message is complete
+ */
+void am_net_sync_recv(am_net_t *n, int timeout_secs) {
+    int ev = 0;
+    int poll_msec = timeout_secs * 1000;
+    uint64_t start_usec, end_usec;
+    POLLFD fds[1];
+    char *buffer;
+
+    if (n == NULL) {
+        return;
+    }
+
+    buffer = malloc(RECV_BUFFER_SZ);
+    if (buffer == NULL) {
+        n->error = AM_ENOMEM;
+        return;
+    }
+
+    memset(fds, 0, sizeof (fds));
+    n->reset_complete(n->data);
+    
+    while (ev != -1) {
+        fds[0].fd = n->sock;
+        fds[0].events = read_ev;
+        fds[0].revents = 0;
+        
+        ev = poll_with_interrupt(fds, 1, poll_msec);
+        if (ev == 0) {
+            /* timeout */
+            AM_LOG_WARNING(n->instance_id,
+                           "%s timeout waiting for a response from a server", "am_net_sync_recv()");
+            
+            n->error = AM_ETIMEDOUT;
+            break;
+        }
+        if (ev < 0) {
+            net_log_error(n->instance_id, net_error());
+            break;
+        }
+        if (ev == 1 && fds[0].revents & (POLLNVAL | POLLERR)) {
+            if (n->on_close) n->on_close(n->data, 0);
+            break;
+        }
+        if (ev == 1 && fds[0].revents & read_avail_ev) {
+            /* read an output from a remote side */
+            int got = 0;
+            int error = 0;
+            SOCKLEN_T errlen = sizeof (error);
+            if (getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (void *) &error, &errlen) == 0 && error != 0) {
+                net_log_error(n->instance_id, error);
+                n->error = error;
+                break;
+            }
+            memset(buffer, 0, RECV_BUFFER_SZ);
+            got = recv(n->sock, buffer, RECV_BUFFER_SZ, 0);
+            if (n->ssl.on) {
+                error = net_read_ssl(n, buffer, got);
+                if (error != AM_SUCCESS) {
+                    if (error != AM_EAGAIN) {
+                        if (n->on_close) n->on_close(n->data, 0);
+                        break;
+                    }
+                }
+            } else {
+                if (got < 0) {
+                    if (!net_in_progress(net_error())) {
+                        if (n->on_close) n->on_close(n->data, 0);
+                        break;
+                    }
+                } else if (got == 0) {
+                    if (n->on_close) n->on_close(n->data, 0);
+                    break;
+                } else {
+                    http_parser_execute(n->hp, n->hs, buffer, got);
+                }
+            }
+            /* message is complete here */
+            if (n->is_complete(n->data)) {
+                break;
+            }
+        }
+    }
+    AM_FREE(buffer);
+}
+
+/**
+ * close connection and clear resources
+ */
+int am_net_close(am_net_t *n) {
+    int i;
+    if (n == NULL) {
+        return AM_EINVAL;
+    }
+    
+    /* close ssl/socket */
+    net_close_ssl(n);
+    net_close_socket(n->sock);
+    n->sock = INVALID_SOCKET;
+    
+    if (n->ra != NULL) {
+        freeaddrinfo(n->ra);
+    }
+    n->ra = NULL;
+    
+    AM_FREE(n->req_headers);
+    n->req_headers = NULL;
+    
+    AM_FREE(n->hs, n->hp);
+    n->hs = NULL;
+    n->hp = NULL;
+    
+    for (i = 0; i < n->num_headers; i++) {
+        char *field = n->header_fields[i];
+        char *value = n->header_values[i];
+        AM_FREE(field, value);
+    }
+    AM_FREE(n->header_fields, n->header_values);
+    n->header_fields = NULL;
+    n->header_values = NULL;
+    n->num_headers = n->num_header_values = 0;
+    return AM_SUCCESS;
+}
+
+
+

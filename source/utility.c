@@ -1684,7 +1684,7 @@ void xml_entity_escape(char *temp_str, size_t str_len) {
  * Timer functions
  *********************************************************************************************/
 
-static void am_timer(uint64_t *t) {
+void am_timer(uint64_t *t) {
 #ifdef _WIN32
     QueryPerformanceCounter((LARGE_INTEGER *) t);
 #else

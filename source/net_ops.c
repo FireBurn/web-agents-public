@@ -27,7 +27,7 @@ struct request_data {
     char *data;
     size_t data_size;
     int error;
-    am_event_t *event;
+    am_bool_t message_complete;
 };
 
 static void on_agent_request_data_cb(void *udata, const char *data, size_t data_sz, int status) {
@@ -61,12 +61,21 @@ static void on_connected_cb(void *udata, int status) {
 
 static void on_close_cb(void *udata, int status) {
     struct request_data *ld = (struct request_data *) udata;
-    set_event(ld->event);
 }
 
 static void on_complete_cb(void *udata, int status) {
     struct request_data *ld = (struct request_data *) udata;
-    set_event(ld->event);
+    ld->message_complete = AM_TRUE;
+}
+
+static void reset_complete_cb(void *udata) {
+    struct request_data *ld = (struct request_data *) udata;
+    ld->message_complete = AM_FALSE;
+}
+
+static am_bool_t is_complete(void *udata) {
+    struct request_data *ld = udata;
+    return ld->message_complete;
 }
 
 static void create_cookie_header(am_net_t *conn, const char *token) {
@@ -217,7 +226,7 @@ static int send_authcontext_request(am_net_t *conn, const char *realm, char **to
     free(post);
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data->event, 0);
+        am_net_sync_recv(conn, AM_NET_POOL_TIMEOUT);
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s response status code: %d\n%s",
@@ -352,7 +361,7 @@ static int send_login_request(am_net_t *conn, char **token, const char *user, co
     *token = NULL;
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data->event, 0);
+        am_net_sync_recv(conn, AM_NET_POOL_TIMEOUT);
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s authenticate response status code: %d\n%s",
@@ -436,7 +445,7 @@ static int send_attribute_request(am_net_t *conn, char **token, char **pxml, siz
     free(post);
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data->event, 0);
+        am_net_sync_recv(conn, AM_NET_POOL_TIMEOUT);
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s response status code: %d\n%s",
@@ -561,7 +570,7 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
     AM_FREE(post, post_data, token_b64, token_in, lsnr_req);
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data->event, 0);
+        am_net_sync_recv(conn, AM_NET_POOL_TIMEOUT);
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s response status code: %d\n%s",
@@ -665,7 +674,7 @@ static int send_policychange_request(am_net_t *conn, char **token) {
     free(post);
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data->event, 0);
+        am_net_sync_recv(conn, AM_NET_POOL_TIMEOUT);
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s authenticate response status code: %d\n%s",
@@ -762,7 +771,7 @@ static int send_policy_request(am_net_t *conn, const char *token, const char *us
     AM_FREE(post_data, post, req_url_escaped);
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data->event, 0);
+        am_net_sync_recv(conn, AM_NET_POOL_TIMEOUT);
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s authenticate response status code: %d\n%s",
@@ -801,16 +810,16 @@ static int do_net_connect(am_net_t *conn, struct request_data *req_data,
     conn->instance_id = instance_id;
     conn->url = openam;
 
-    req_data->event = create_event();
-    if (req_data->event == NULL) return AM_ENOMEM;
-
     conn->data = req_data;
     conn->on_connected = on_connected_cb;
     conn->on_close = on_close_cb;
     conn->on_data = on_agent_request_data_cb;
     conn->on_complete = on_complete_cb;
 
-    return am_net_connect(conn);
+    conn->reset_complete = reset_complete_cb;
+    conn->is_complete = is_complete;
+
+    return am_net_sync_connect(conn);
 }
 
 int am_agent_login(unsigned long instance_id, const char *openam,
@@ -875,7 +884,6 @@ int am_agent_login(unsigned long instance_id, const char *openam,
                 }
                 if (!keepalive) {
                     am_net_close(conn);
-                    close_event(&req_data->event);
                     state = login_request;
                     if (req_data != NULL) {
                         AM_FREE(req_data->data, req_data);
@@ -894,7 +902,6 @@ int am_agent_login(unsigned long instance_id, const char *openam,
                 }
                 if (!keepalive) {
                     am_net_close(conn);
-                    close_event(&req_data->event);
                     state = login_attributes;
                     if (req_data != NULL) {
                         AM_FREE(req_data->data, req_data);
@@ -916,7 +923,6 @@ int am_agent_login(unsigned long instance_id, const char *openam,
                     }
                     if (!keepalive) {
                         am_net_close(conn);
-                        close_event(&req_data->event);
                         state = login_session;
                         if (req_data != NULL) {
                             AM_FREE(req_data->data, req_data);
@@ -940,7 +946,6 @@ int am_agent_login(unsigned long instance_id, const char *openam,
                 }
                 if (!keepalive) {
                     am_net_close(conn);
-                    close_event(&req_data->event);
                     state = login_policychange;
                     if (req_data != NULL) {
                         AM_FREE(req_data->data, req_data);
@@ -960,15 +965,13 @@ int am_agent_login(unsigned long instance_id, const char *openam,
     }
 
     if (status != AM_SUCCESS) {
-        AM_LOG_DEBUG(instance_id, "%s disconnecting", thisfunc);
+        AM_LOG_DEBUG(instance_id, "%s closing connection after failure", thisfunc);
         if (options != NULL && options->log != NULL) {
-            options->log("%s disconnecting", thisfunc);
+            options->log("%s closing connection after failure", thisfunc);
         }
-        am_net_disconnect(conn);
     }
 
     am_net_close(conn);
-    close_event(&req_data->event);
     if (req_data != NULL) {
         AM_FREE(req_data->data, req_data);
     }
@@ -1056,13 +1059,12 @@ int am_agent_logout(unsigned long instance_id, const char *openam, const char *t
 
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data->event, 0);
+        am_net_sync_recv(conn, AM_NET_POOL_TIMEOUT);
     } else {
-        AM_LOG_DEBUG(instance_id, "%s disconnecting", thisfunc);
+        AM_LOG_DEBUG(instance_id, "%s closing connection after failure", thisfunc);
         if (options != NULL && options->log != NULL) {
-            options->log("%s disconnecting", thisfunc);
+            options->log("%s closing connection after failure", thisfunc);
         }
-        am_net_disconnect(conn);
     }
 
     AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, conn->http_status);
@@ -1071,7 +1073,6 @@ int am_agent_logout(unsigned long instance_id, const char *openam, const char *t
     }
 
     am_net_close(conn);
-    close_event(&req_data->event);
     if (req_data != NULL) {
         AM_FREE(req_data->data, req_data);
     }
@@ -1139,7 +1140,6 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
 
                 if (!keepalive) {
                     am_net_close(conn);
-                    close_event(&req_data->event);
                     if (req_data != NULL) {
                         AM_FREE(req_data->data, req_data);
                     }
@@ -1160,15 +1160,13 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
     }
 
     if (status != AM_SUCCESS) {
-        AM_LOG_DEBUG(instance_id, "%s disconnecting", thisfunc);
+        AM_LOG_DEBUG(instance_id, "%s closing connection after failure", thisfunc);
         if (options != NULL && options->log != NULL) {
-            options->log("%s disconnecting", thisfunc);
+            options->log("%s closing connection after failure", thisfunc);
         }
-        am_net_disconnect(conn);
     }
 
     am_net_close(conn);
-    close_event(&req_data->event);
     if (req_data != NULL) {
         AM_FREE(req_data->data, req_data);
     }
@@ -1247,13 +1245,12 @@ int am_url_validate(unsigned long instance_id, const char* url, am_net_options_t
     }
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data->event, 0);
+        am_net_sync_recv(conn, AM_NET_POOL_TIMEOUT);
     } else {
-        AM_LOG_DEBUG(instance_id, "%s disconnecting", thisfunc);
+        AM_LOG_DEBUG(instance_id, "%s closing connection after failure", thisfunc);
         if (options != NULL && options->log != NULL) {
-            options->log("%s disconnecting", thisfunc);
+            options->log("%s closing connection after failure", thisfunc);
         }
-        am_net_disconnect(conn);
     }
 
     AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, conn->http_status);
@@ -1265,7 +1262,6 @@ int am_url_validate(unsigned long instance_id, const char* url, am_net_options_t
     }
 
     am_net_close(conn);
-    close_event(&req_data->event);
     if (req_data != NULL) {
         AM_FREE(req_data->data, req_data);
     }
@@ -1344,16 +1340,14 @@ int am_agent_audit_request(unsigned long instance_id, const char *openam, const 
     }
 
     if (status == AM_SUCCESS) {
-        wait_for_event(req_data->event, 0);
+        am_net_sync_recv(conn, AM_NET_POOL_TIMEOUT);
     } else {
-        AM_LOG_DEBUG(instance_id, "%s disconnecting", thisfunc);
-        am_net_disconnect(conn);
+        AM_LOG_DEBUG(instance_id, "%s closing connection after failure", thisfunc);
     }
 
     AM_LOG_DEBUG(instance_id, "%s response status code: %d", thisfunc, conn->http_status);
 
     am_net_close(conn);
-    close_event(&req_data->event);
     if (req_data != NULL) {
         AM_FREE(req_data->data, req_data);
     }

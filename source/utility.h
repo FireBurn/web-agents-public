@@ -159,6 +159,7 @@ typedef struct {
 void delete_am_cookie_list(struct am_cookie **list);
 void delete_am_policy_result_list(struct am_policy_result **list);
 
+void am_timer(uint64_t *t);
 void am_timer_start(am_timer_t *t);
 void am_timer_stop(am_timer_t *t);
 void am_timer_pause(am_timer_t *t);
