@@ -153,7 +153,8 @@ static am_status_t add_audit_entry(struct am_audit_config *config, unsigned long
     } else {
         memset(audit_entry->server_id, 0, sizeof (audit_entry->server_id));
     }
-    strncpy(audit_entry->value, message, size);
+    memcpy(audit_entry->value, message, size);
+    audit_entry->value[size] = '\0';
     audit_entry->instance_id = instance_id;
 
     audit_entry->lh.next = audit_entry->lh.prev = 0;
@@ -168,6 +169,7 @@ int am_add_remote_audit_entry(unsigned long instance_id, const char *agent_token
         const char *user_token, const char *format, ...) {
     va_list args;
     size_t size;
+    int msg_size;
     am_status_t status;
     struct am_audit_config *config;
     char *tmp = NULL, *message = NULL, *message_b64 = NULL;
@@ -178,28 +180,31 @@ int am_add_remote_audit_entry(unsigned long instance_id, const char *agent_token
     }
 
     va_start(args, format);
-    size = (size_t) am_vasprintf(&tmp, format, args);
+    msg_size = am_vasprintf(&tmp, format, args);
     va_end(args);
 
-    if (size == 0 || tmp == NULL) {
+    if (msg_size <= 0 || tmp == NULL) {
         am_free(tmp);
         return AM_ENOMEM;
     }
 
+    size = msg_size;
     message_b64 = base64_encode(tmp, &size);
     if (message_b64 == NULL) {
         am_free(tmp);
         return AM_ENOMEM;
     }
 
-    size = am_asprintf(&message, AUDIT_REQ_MSG, file_name, agent_token, message_b64, user_token);
-    if (size == 0 || message == NULL) {
-        AM_FREE(tmp, message_b64);
+    msg_size = am_asprintf(&message, AUDIT_REQ_MSG, file_name, agent_token, message_b64, user_token);
+    if (msg_size <= 0 || message == NULL) {
+        AM_FREE(tmp, message, message_b64);
         return AM_ENOMEM;
     }
+    size = msg_size;
 
     status = am_shm_lock(audit_shm);
     if (status != AM_SUCCESS) {
+        AM_FREE(tmp, message, message_b64);
         return status;
     }
 
@@ -231,10 +236,12 @@ static am_status_t extract_audit_entries(unsigned long instance_id,
 
     status = am_shm_lock(audit_shm);
     if (status != AM_SUCCESS)
+        AM_FREE(batch);
         return status;
 
     config = get_audit_config(instance_id);
     if (config == NULL) {
+        AM_FREE(batch);
         am_shm_unlock(audit_shm);
         return AM_EINVAL;
     }
@@ -276,7 +283,7 @@ static am_status_t extract_audit_entries(unsigned long instance_id,
 
 static am_status_t write_entries_to_server(const char *openam, int count, struct am_audit_transfer *batch) {
     static const char *thisfunc = "write_entries_to_server():";
-    int i;
+    int i, msg_size;
     struct audit_worker_data *wd;
     char *server_id = NULL, *msg = NULL, *config_file = NULL;
     unsigned long instance_id;
@@ -295,12 +302,12 @@ static am_status_t write_entries_to_server(const char *openam, int count, struct
             server_id = batch[i].server_id;
             instance_id = batch[i].instance_id;
             config_file = batch[i].config_file;
-            am_asprintf(&msg, batch[i].message, i + 1, "");
+            msg_size = am_asprintf(&msg, batch[i].message, i + 1, "");
         } else {
-            am_asprintf(&msg, batch[i].message, i + 1, msg);
+            msg_size = am_asprintf(&msg, batch[i].message, i + 1, msg);
         }
-        if (msg == NULL) {
-            free(wd);
+        if (msg_size <= 0 || msg == NULL) {
+            AM_FREE(wd, msg);
             return AM_ENOMEM;
         }
     }
