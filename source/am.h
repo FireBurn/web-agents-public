@@ -60,8 +60,12 @@ typedef enum {
 #define AM_HASH_TABLE_SIZE          6151 /* must be a prime */
 #endif
 
-#ifndef AM_SHARED_MAX_RESIZE
-#define AM_SHARED_MAX_RESIZE        2
+#ifndef AM_SHARED_MAX_SIZE
+#define AM_SHARED_MAX_SIZE          0x7FFFF000 /* maximim shared memory pool allocation */
+#endif
+
+#ifndef AM_SHARED_MAX_SIZE_VAR      
+#define AM_SHARED_MAX_SIZE_VAR      "AM_MAX_SHARED_POOL_SIZE" /* env var used to limit pool size */
 #endif
 
 #ifndef AM_MAX_INSTANCES

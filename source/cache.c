@@ -99,11 +99,16 @@ am_shm_t* get_cache(void) {
 }
 
 int am_cache_init(int id) {
-    size_t i;
+    size_t size;
     if (cache != NULL) return AM_SUCCESS;
+#ifdef __APPLE__
+    size = AM_SHARED_MAX_SIZE;
+#else
+    /* initially the hash table, 2048 cache entries, each with 3 entry data items */
+    size = sizeof(struct am_cache) + 2048 * (sizeof(struct am_cache_entry) + AM_MAX_TOKEN_LENGTH + 3 * sizeof(struct am_cache_entry_data));
+#endif
+    cache = am_shm_create(get_global_name(AM_CACHE_SHM_NAME, id), size);
 
-    cache = am_shm_create(get_global_name(AM_CACHE_SHM_NAME, id), sizeof(struct am_cache) +
-            (sizeof(struct am_cache_entry) + AM_MAX_TOKEN_LENGTH + sizeof(struct am_cache_entry_data)) * 2048);
     if (cache == NULL) {
         return AM_ERROR;
     }
@@ -112,6 +117,7 @@ int am_cache_init(int id) {
     }
 
     if (cache->init) {
+        size_t i;
         struct am_cache *cache_data = (struct am_cache *) am_shm_alloc(cache, sizeof(struct am_cache));
         if (cache_data == NULL) {
             return AM_ENOMEM;
@@ -269,7 +275,7 @@ static int delete_cache_entry_element_by_index(struct am_cache_entry *entry, int
  *
  * Returns the number of cache entries removed.
  */
-int am_purge_caches(time_t expiry_time) {
+int am_purge_caches(unsigned long instance_id, time_t expiry_time) {
     struct am_cache_entry *cache_entry, *tmp, *head;
     struct am_cache *cache_data;
     
@@ -297,6 +303,7 @@ int am_purge_caches(time_t expiry_time) {
             }
         }
     }
+    AM_LOG_INFO(instance_id, "evicted %d sessions out of %lu\n", delete_count, (unsigned long)cache_data->count);
     cache_data->count -= delete_count;
     return delete_count;
 }
@@ -304,9 +311,9 @@ int am_purge_caches(time_t expiry_time) {
 /*
  * Purge caches to the current time
  */
-int am_purge_caches_to_now()
+int am_purge_caches_to_now(unsigned long instance_id)
 {
-    return am_purge_caches(time(NULL));
+    return am_purge_caches(instance_id, time(NULL));
 }
 
 
@@ -466,9 +473,9 @@ int am_add_pdp_cache_entry(am_request_t *request, const char *key, const char *u
         }
     }
 
-    cache_entry = am_shm_alloc_and_purge(cache, sizeof(struct am_cache_entry), am_purge_caches_to_now);
+    cache_entry = am_shm_alloc_with_gc(cache, sizeof(struct am_cache_entry), am_purge_caches_to_now, request->instance_id);
     if (cache_entry == NULL) {
-        AM_LOG_ERROR(request->instance_id, "%s failed to allocate %ld bytes",
+        AM_LOG_DEBUG(request->instance_id, "%s failed to allocate %ld bytes",
                 thisfunc, sizeof(struct am_cache_entry));
         am_shm_unlock(cache);
         return AM_ENOMEM;
@@ -480,9 +487,9 @@ int am_add_pdp_cache_entry(am_request_t *request, const char *key, const char *u
     cache_entry->instance_id = request->instance_id;
     
     key_sz = strlen(key);
-    cache_entry_key = am_shm_alloc_and_purge(cache, key_sz + 1, am_purge_caches_to_now);
+    cache_entry_key = am_shm_alloc_with_gc(cache, key_sz + 1, am_purge_caches_to_now, request->instance_id);
     if (cache_entry_key == NULL) {
-        AM_LOG_ERROR(request->instance_id, "%s failed to allocate %ld bytes",
+        AM_LOG_DEBUG(request->instance_id, "%s failed to allocate %ld bytes",
                      thisfunc, key_sz + 1);
         am_shm_unlock(cache);
         am_shm_free(cache, cache_entry);
@@ -506,10 +513,10 @@ int am_add_pdp_cache_entry(am_request_t *request, const char *key, const char *u
     AM_OFFSET_LIST_INSERT(cache->pool, cache_entry, &(cache_data->table[entry_index]), struct am_cache_entry);
 
     entry_data_len = sizeof(struct am_cache_entry_data) +url_length + file_length + content_type_length + 3;
-    cache_entry_data = am_shm_alloc_and_purge(cache, entry_data_len, am_purge_caches_to_now);
+    cache_entry_data = am_shm_alloc_with_gc(cache, entry_data_len, am_purge_caches_to_now, request->instance_id);
     
     if (cache_entry_data == NULL) {
-        AM_LOG_ERROR(request->instance_id, "%s failed to allocate %ld bytes",
+        AM_LOG_DEBUG(request->instance_id, "%s failed to allocate %ld bytes",
                 thisfunc, entry_data_len);
         am_shm_unlock(cache);
         return AM_ENOMEM;
@@ -736,11 +743,11 @@ static int am_store_policy_result_element(am_request_t *request, struct am_polic
     
     size_t resource_len = strlen(element->resource);
     size_t policy_len = sizeof(struct am_cache_entry_data) + resource_len + 1;
-    struct am_cache_entry_data *policy = am_shm_alloc_and_purge(cache, policy_len, am_purge_caches_to_now);
+    struct am_cache_entry_data *policy = am_shm_alloc_with_gc(cache, policy_len, am_purge_caches_to_now, request->instance_id);
     cache_entry = AM_GET_POINTER(cache->pool, cache_entry_offset);
     
     if (policy == NULL) {
-        AM_LOG_ERROR(request->instance_id, "%s failed to allocate %ld bytes", thisfunc, policy_len);
+        AM_LOG_DEBUG(request->instance_id, "%s failed to allocate %ld bytes", thisfunc, policy_len);
         return AM_ENOMEM;
     }
 
@@ -758,11 +765,11 @@ static int am_store_policy_result_element(am_request_t *request, struct am_polic
     /* add response attributes */
     AM_LIST_FOR_EACH(element->response_attributes, rae, rat) {
         size_t attr_len = sizeof(struct am_cache_entry_data) + rae->ns + rae->vs + 2;
-        struct am_cache_entry_data *attr = am_shm_alloc_and_purge(cache, attr_len, am_purge_caches_to_now);
+        struct am_cache_entry_data *attr = am_shm_alloc_with_gc(cache, attr_len, am_purge_caches_to_now, request->instance_id);
         cache_entry = AM_GET_POINTER(cache->pool, cache_entry_offset);
         
         if (attr == NULL) {
-            AM_LOG_ERROR(request->instance_id, "%s failed to allocate %ld bytes", thisfunc, attr_len);
+            AM_LOG_DEBUG(request->instance_id, "%s failed to allocate %ld bytes", thisfunc, attr_len);
             return AM_ENOMEM;
         }
 
@@ -783,11 +790,11 @@ static int am_store_policy_result_element(am_request_t *request, struct am_polic
         {
             /* add action decision */
             size_t action_decision_len = sizeof(struct am_cache_entry_data);
-            struct am_cache_entry_data *action_decision = am_shm_alloc_and_purge(cache, action_decision_len, am_purge_caches_to_now);
+            struct am_cache_entry_data *action_decision = am_shm_alloc_with_gc(cache, action_decision_len, am_purge_caches_to_now, request->instance_id);
             cache_entry = AM_GET_POINTER(cache->pool, cache_entry_offset);
             
             if (action_decision == NULL) {
-                AM_LOG_ERROR(request->instance_id, "%s failed to allocate %ld bytes", thisfunc, action_decision_len);
+                AM_LOG_DEBUG(request->instance_id, "%s failed to allocate %ld bytes", thisfunc, action_decision_len);
                 return AM_ENOMEM;
             }
 
@@ -808,11 +815,11 @@ static int am_store_policy_result_element(am_request_t *request, struct am_polic
         AM_LIST_FOR_EACH(ae->advices, aee, att) {
             /* add advices */
             size_t advice_len = sizeof(struct am_cache_entry_data) + aee->ns + aee->vs + 2;
-            struct am_cache_entry_data *advice = am_shm_alloc_and_purge(cache, advice_len, am_purge_caches_to_now);
+            struct am_cache_entry_data *advice = am_shm_alloc_with_gc(cache, advice_len, am_purge_caches_to_now, request->instance_id);
             cache_entry = AM_GET_POINTER(cache->pool, cache_entry_offset);
             
             if (advice == NULL) {
-                AM_LOG_ERROR(request->instance_id, "%s failed to allocate %ld bytes", thisfunc, advice_len);
+                AM_LOG_DEBUG(request->instance_id, "%s failed to allocate %ld bytes", thisfunc, advice_len);
                 return AM_ENOMEM;
             }
 
@@ -832,11 +839,11 @@ static int am_store_policy_result_element(am_request_t *request, struct am_polic
     /* add response decisions (profile attributes) */
     AM_LIST_FOR_EACH(element->response_decisions, rde, rdt) {
         size_t profile_attr_len = sizeof(struct am_cache_entry_data) + rde->ns + rde->vs + 2;
-        struct am_cache_entry_data *profile_attr = am_shm_alloc_and_purge(cache, profile_attr_len, am_purge_caches_to_now);
+        struct am_cache_entry_data *profile_attr = am_shm_alloc_with_gc(cache, profile_attr_len, am_purge_caches_to_now, request->instance_id);
         cache_entry = AM_GET_POINTER(cache->pool, cache_entry_offset);
 
         if (profile_attr == NULL) {
-            AM_LOG_ERROR(request->instance_id, "%s failed to allocate %ld bytes", thisfunc, profile_attr_len);
+            AM_LOG_DEBUG(request->instance_id, "%s failed to allocate %ld bytes", thisfunc, profile_attr_len);
             return AM_ENOMEM;
         }
 
@@ -953,13 +960,16 @@ int am_add_session_policy_cache_entry(am_request_t *request, const char *key,
     if (cache_entry != NULL) {
         int status = am_merge_session_policy_cache_entry(request, key,
                 policy, session, cache_entry);
+        if (status != AM_SUCCESS) {
+            am_remove_cache_entry(request->instance_id, key);
+        }
         am_shm_unlock(cache);
         return status;
     }
 
-    cache_entry = am_shm_alloc_and_purge(cache, sizeof(struct am_cache_entry), am_purge_caches_to_now);
+    cache_entry = am_shm_alloc_with_gc(cache, sizeof(struct am_cache_entry), am_purge_caches_to_now, request->instance_id);
     if (cache_entry == NULL) {
-        AM_LOG_ERROR(request->instance_id, "%s failed to allocate %ld bytes",
+        AM_LOG_DEBUG(request->instance_id, "%s failed to allocate %ld bytes",
                 thisfunc, sizeof(struct am_cache_entry));
         am_shm_unlock(cache);
         return AM_ENOMEM;
@@ -977,9 +987,9 @@ int am_add_session_policy_cache_entry(am_request_t *request, const char *key,
     cache_entry->instance_id = request->instance_id;
     
     key_sz = strlen(key);
-    cache_entry_key = am_shm_alloc_and_purge(cache, key_sz + 1, am_purge_caches_to_now);
+    cache_entry_key = am_shm_alloc_with_gc(cache, key_sz + 1, am_purge_caches_to_now, request->instance_id);
     if (cache_entry_key == NULL) {
-        AM_LOG_ERROR(request->instance_id, "%s failed to allocate %ld bytes",
+        AM_LOG_DEBUG(request->instance_id, "%s failed to allocate %ld bytes",
                      thisfunc, key_sz + 1);
         am_shm_unlock(cache);
         am_shm_free(cache, cache_entry);
@@ -1008,10 +1018,10 @@ int am_add_session_policy_cache_entry(am_request_t *request, const char *key,
         
         AM_LIST_FOR_EACH(session, element, tmp) {
             size_t session_attr_len = sizeof(struct am_cache_entry_data) +element->ns + element->vs + 2;
-            struct am_cache_entry_data *session_attr = am_shm_alloc_and_purge(cache, session_attr_len, am_purge_caches_to_now);
+            struct am_cache_entry_data *session_attr = am_shm_alloc_with_gc(cache, session_attr_len, am_purge_caches_to_now, request->instance_id);
             cache_entry = AM_GET_POINTER(cache->pool, cache_entry_offset);
             if (session_attr == NULL) {
-                AM_LOG_ERROR(request->instance_id, "%s failed to allocate %ld bytes", thisfunc, session_attr_len);
+                AM_LOG_DEBUG(request->instance_id, "%s failed to allocate %ld bytes", thisfunc, session_attr_len);
 		am_remove_cache_entry(request->instance_id, key);
                 am_shm_unlock(cache);
                 return AM_ENOMEM;
@@ -1162,9 +1172,9 @@ int am_add_policy_cache_entry(am_request_t *r, const char *key, int valid) {
         return AM_SUCCESS;
     }
 
-    cache_entry = am_shm_alloc_and_purge(cache, sizeof(struct am_cache_entry), am_purge_caches_to_now);
+    cache_entry = am_shm_alloc_with_gc(cache, sizeof(struct am_cache_entry), am_purge_caches_to_now, r->instance_id);
     if (cache_entry == NULL) {
-        AM_LOG_ERROR(r->instance_id, "%s failed to allocate %ld bytes",
+        AM_LOG_DEBUG(r->instance_id, "%s failed to allocate %ld bytes",
                 thisfunc, sizeof(struct am_cache_entry));
         am_shm_unlock(cache);
         return AM_ENOMEM;
@@ -1176,9 +1186,9 @@ int am_add_policy_cache_entry(am_request_t *r, const char *key, int valid) {
     cache_entry->instance_id = r->instance_id;
     
     key_sz = strlen(key);
-    cache_entry_key = am_shm_alloc_and_purge(cache, key_sz + 1, am_purge_caches_to_now);
+    cache_entry_key = am_shm_alloc_with_gc(cache, key_sz + 1, am_purge_caches_to_now, r->instance_id);
     if (cache_entry_key == NULL) {
-        AM_LOG_ERROR(r->instance_id, "%s failed to allocate %ld bytes",
+        AM_LOG_DEBUG(r->instance_id, "%s failed to allocate %ld bytes",
                      thisfunc, key_sz + 1);
         am_shm_unlock(cache);
         am_shm_free(cache, cache_entry);

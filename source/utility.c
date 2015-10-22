@@ -3002,3 +3002,4 @@ am_bool_t validate_directory_access(const char *path, int mask) {
 #endif
     return ret;
 }
+

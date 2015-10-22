@@ -32,9 +32,9 @@ struct mem_chunk {
 
 struct mem_pool {
     size_t size;
+    size_t max_size;
     size_t user_offset;
     int open;
-    int resize;
     int freelist_hdrs[3];
     struct offset_list lh; /* first, last */
 };
@@ -161,7 +161,7 @@ static void remove_from_freelist(struct mem_pool *pool, struct mem_chunk *chunk)
 /**
  * scan freelists for large enough chunk
  */
-static struct mem_chunk *get_chunk_for_size(struct mem_pool *pool, size_t size) {
+static struct mem_chunk *get_free_chunk_for_size(struct mem_pool *pool, size_t size) {
     int hdr_offset = get_freelist_hdr_for(size);
     while (hdr_offset < 3) {
         unsigned i;
@@ -173,6 +173,22 @@ static struct mem_chunk *get_chunk_for_size(struct mem_pool *pool, size_t size) 
         hdr_offset++;
     }
     return NULL;
+}
+
+/**
+ * get the max pool size for shared memory
+ */
+size_t am_shm_max_pool_size() {
+    char *env = getenv(AM_SHARED_MAX_SIZE_VAR);
+    if (ISVALID(env)) {
+        char *endp = NULL;
+        unsigned long v = strtoul(env, &endp, 0);
+        if (env < endp && *endp == '\0' && 0 < v && v < AM_SHARED_MAX_SIZE) {
+            /* whole string is digits (dec, hex or octal) not 0 and less than our hard max */
+            return v;
+        }
+    }
+    return AM_SHARED_MAX_SIZE;
 }
 
 int am_shm_lock(am_shm_t *am) {
@@ -354,7 +370,7 @@ void *am_shm_get_user_pointer(am_shm_t *am) {
 
 am_shm_t *am_shm_create(const char *name, size_t usize) {
     struct mem_pool *pool = NULL;
-    size_t size;
+    size_t size, max_size;
     char opened = AM_FALSE;
     void *area = NULL;
     am_shm_t *ret = NULL;
@@ -404,6 +420,12 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
 #endif
 
     size = page_size(usize + SIZEOF_mem_pool); /* need at least the size of the mem_pool header */
+    max_size = am_shm_max_pool_size();
+
+    /* enable shm size limits */
+    if (max_size < size) {
+        size = max_size;
+    }
 
 #ifdef _WIN32
     if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
@@ -611,9 +633,9 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
     if (ret->init) {
         struct mem_chunk *e = (struct mem_chunk *) ((char *) pool + SIZEOF_mem_pool);
         pool->size = size;
+        pool->max_size = max_size;
         pool->user_offset = 0;
         pool->open = 1;
-        pool->resize = 0;
 
         initialise_freelist(pool);
 
@@ -657,6 +679,7 @@ static BOOL resize_file(HANDLE file, size_t new_size) {
 
 static int am_shm_extend(am_shm_t *am, size_t usize) {
     size_t size, osize;
+    struct mem_pool *pool;
     int rv = AM_SUCCESS;
 #ifdef _WIN32
     SECURITY_DESCRIPTOR sec_descr;
@@ -667,7 +690,16 @@ static int am_shm_extend(am_shm_t *am, size_t usize) {
         return AM_EINVAL;
     }
 
+    pool = (struct mem_pool *) am->pool;
     size = page_size(usize + SIZEOF_mem_pool);
+
+    /* enable shm size limits */
+    if (pool->size == pool->max_size) {
+        return AM_ENOMEM;
+    }
+    if (size > pool->max_size) {
+        size = pool->max_size;
+    }
 
 #ifdef _WIN32
 
@@ -701,7 +733,7 @@ static int am_shm_extend(am_shm_t *am, size_t usize) {
         rv = AM_ERROR;
     } else
 #else
-    osize = ((struct mem_pool *) am->pool)->size;
+    osize = pool->size;
     rv = ftruncate(am->fd, size);
     if (rv == -1) {
         am->error = errno;
@@ -715,8 +747,9 @@ static int am_shm_extend(am_shm_t *am, size_t usize) {
     } else
 #endif
     {
-        struct mem_pool *pool = (struct mem_pool *) am->pool;
-        struct mem_chunk *last = (struct mem_chunk *) AM_GET_POINTER(pool, pool->lh.next);
+        struct mem_chunk *last;
+        pool = (struct mem_pool *) am->pool;
+        last = (struct mem_chunk *) AM_GET_POINTER(pool, pool->lh.next);
 
         if (last == NULL) {
             am->error = AM_ENOMEM;
@@ -727,6 +760,7 @@ static int am_shm_extend(am_shm_t *am, size_t usize) {
             /* the last chunk is not used - add all newly allocated space there */
             remove_from_freelist(pool, last);
             last->size += size - pool->size;
+
             add_to_freelist(pool, last);
         } else {
             /* the last chunk is used - add all newly allocated space right after the last chunk 
@@ -750,16 +784,16 @@ static int am_shm_extend(am_shm_t *am, size_t usize) {
 }
 
 /*
- * This allocator will attempt to allocate, but on failure it will first try to purge
- * from the memory pool (if the caller has passed a non-null purge_f argument), and then
+ * This allocator will attempt to allocate, but on failure it will first try to garbage
+ * collect the memory pool if the caller has passed a non-null gc argument, and then
  * if the required usize cannot be allocated, it will try to resize the memory pool. It is
  * unable to resize the pool on OS X
  */
-void *am_shm_alloc_and_purge(am_shm_t *am, size_t usize, int (* purge_f)()) {
+void *am_shm_alloc_with_gc(am_shm_t *am, size_t usize, int (* gc)(unsigned long), unsigned long id) {
     struct mem_pool *pool;
-    struct mem_chunk *e, *t, *n, *head, *cmin = NULL;
+    struct mem_chunk *cmin, *n;
     void *ret = NULL;
-    size_t size, smin, s;
+    size_t size, s;
 
     if (usize == 0 || am == NULL ||
             am->pool == NULL || am_shm_lock(am) != AM_SUCCESS) {
@@ -768,11 +802,9 @@ void *am_shm_alloc_and_purge(am_shm_t *am, size_t usize, int (* purge_f)()) {
 
     pool = (struct mem_pool *) am->pool;
     size = AM_ALIGN(usize + CHUNK_HEADER_SIZE);
-    head = (struct mem_chunk *) AM_GET_POINTER(pool, pool->lh.prev);
 
-    /* find the first-fitting chunk */
-    smin = pool->size;
-    cmin = get_chunk_for_size(pool, size);
+    /* find free memory chunk for the size */
+    cmin = get_free_chunk_for_size(pool, size);
 
 #ifdef FREELIST_DEBUG
     verify_freelists(pool, "before insert");
@@ -814,9 +846,9 @@ void *am_shm_alloc_and_purge(am_shm_t *am, size_t usize, int (* purge_f)()) {
     }
 
     if (ret == NULL) {
-        // purge obsolete cache data from the pool and retry allocation
-        if (purge_f != NULL) {
-            if (purge_f()) {
+        // gc (evict obsolete cache data) from the pool and retry allocation
+        if (gc) {
+            if (gc(id)) {
                 // some content was removed, so try to allocate again
                 am_shm_unlock(am);
                 return am_shm_alloc(am, usize);
@@ -826,21 +858,16 @@ void *am_shm_alloc_and_purge(am_shm_t *am, size_t usize, int (* purge_f)()) {
 #ifdef __APPLE__
         am->error = AM_EOPNOTSUPP;
 #else
-        // attempt to resize the memory pool
-        if (pool->resize++ > AM_SHARED_MAX_RESIZE) {
-            am->error = AM_ENOMEM;
-        } else {
 #ifdef FREELIST_DEBUG
-            verify_freelists(pool, "extend (before)");
+        verify_freelists(pool, "extend (before)");
 #endif
-            if (am_shm_extend(am, (pool->size + size) * 2) == AM_SUCCESS) {
-                am_shm_unlock(am);
-                return am_shm_alloc(am, usize);
-            }
-#ifdef FREELIST_DEBUG
-            verify_freelists(pool, "extend (after)");
-#endif
+        if (am_shm_extend(am, (pool->size + size) * 2) == AM_SUCCESS) {
+            am_shm_unlock(am);
+            return am_shm_alloc(am, usize);
         }
+#ifdef FREELIST_DEBUG
+        verify_freelists(pool, "extend (after)");
+#endif
 #endif
     }
 #ifdef FREELIST_DEBUG
@@ -851,10 +878,10 @@ void *am_shm_alloc_and_purge(am_shm_t *am, size_t usize, int (* purge_f)()) {
 }
 
 /*
- * This allocator will not call a routine to purge data before resize
+ * This allocator will not call a garbage collector before resize
  */
 void *am_shm_alloc(am_shm_t *am, size_t usize) {
-    return am_shm_alloc_and_purge(am, usize, NULL);
+    return am_shm_alloc_with_gc(am, usize, NULL, 0ul);
 }
 
 

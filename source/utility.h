@@ -182,12 +182,13 @@ size_t am_bin_path(char* buffer, size_t len);
 
 int string_replace(char **original, const char *pattern, const char *replace, size_t *sz);
 
+size_t am_shm_max_pool_size();
 void am_shm_unlock(am_shm_t *);
 int am_shm_lock(am_shm_t *);
 am_shm_t *am_shm_create(const char *, size_t);
 void am_shm_shutdown(am_shm_t *);
 void *am_shm_alloc(am_shm_t *am, size_t usize);
-void *am_shm_alloc_and_purge(am_shm_t *am, size_t usize, int (*purge_f)());
+void *am_shm_alloc_with_gc(am_shm_t *am, size_t usize, int (*gc)(unsigned long), unsigned long instance_id);
 void am_shm_free(am_shm_t *am, void *ptr);
 void *am_shm_realloc(am_shm_t *am, void *ptr, size_t size);
 void am_shm_set_user_offset(am_shm_t *r, size_t s);

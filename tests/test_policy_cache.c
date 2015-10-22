@@ -29,7 +29,7 @@
 void* am_parse_policy_xml(unsigned long instance_id, const char* xml, size_t xml_sz, int scope);
 void am_worker_pool_init_reset();
 void am_net_init_ssl_reset();
-int am_purge_caches(time_t expiry_time);
+int am_purge_caches(unsigned long instance_id, time_t expiry_time);
 void dump_cache_memory(void);
 
 char* policy_xml = "<PolicyService version='1.0' revisionNumber='60'>"
@@ -289,6 +289,21 @@ void test_policy_result_reader(void **state) {
     test_policy_structure(result);
 }
 
+static void test_log_callback(void *arg, char *name, int error) {
+    int *pcount = arg;
+    (*pcount)++;
+    printf("%s -> error %d (%s)\n", name, error, strerror(error));
+}
+
+static void cleardown() {
+    int clearup_count = 0;
+
+    am_cache_destroy();
+    am_remove_shm_and_locks(AM_DEFAULT_AGENT_ID, test_log_callback, &clearup_count);
+
+//printf("hit return to continue\n");
+//getc(stdin);
+}
 
 void test_policy_cache_simple(void **state) {
     
@@ -310,17 +325,13 @@ void test_policy_cache_simple(void **state) {
     free(buffer);
     
     // destroy the cache, if it exists
-    am_cache_destroy();
-    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
-    am_init_worker(AM_DEFAULT_AGENT_ID);
+    cleardown();
+    assert_int_equal(am_cache_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
         
     am_add_session_policy_cache_entry(&request, "Policy-key", result, NULL);
     am_get_session_policy_cache_entry(&request, "Policy-key", &r, &session, &ets);
     
-    am_shutdown_worker();
-    am_cache_destroy();
-    am_worker_pool_init_reset();
-    am_net_init_ssl_reset();
+    am_cache_shutdown();
     
     test_policy_structure(r);
 }
@@ -341,10 +352,10 @@ void create_random_cache_key(char * buffer, size_t size)
     buffer[count] = 0;
 }
 
-static int test_cache_with_seed(int seed, int test_size, am_request_t * request, struct am_policy_result * result)
+static int test_cache_with_seed(int seed, int test_size, am_request_t * request, struct am_policy_result * result, am_bool_t error)
 {
     int i;
-    char key[128];
+    char key[16];
     int capacity = test_size;
     
     /* create initial entries */
@@ -356,7 +367,7 @@ static int test_cache_with_seed(int seed, int test_size, am_request_t * request,
             capacity = i;
             break;
         }
-        if (i % 1000 == 0)
+        if (i % 10000 == 0)
             printf("loaded %d..\n", i);
     }
     
@@ -364,8 +375,12 @@ static int test_cache_with_seed(int seed, int test_size, am_request_t * request,
     srand(seed);
     for(i = 0; i < capacity; i++) {
         create_random_cache_key(key, sizeof(key));
-        assert_int_equal(am_add_session_policy_cache_entry(request, key, result, NULL), AM_SUCCESS);
-        if (i % 1000 == 0)
+        if (error)
+           assert_int_equal(am_add_session_policy_cache_entry(request, key, result, NULL), AM_SUCCESS);
+        else
+           am_add_session_policy_cache_entry(request, key, result, NULL);
+
+        if (i % 10000 == 0)
             printf("reloaded %d..\n", i);
     }
     
@@ -377,17 +392,21 @@ static int test_cache_with_seed(int seed, int test_size, am_request_t * request,
         struct am_namevalue * session = NULL;
         
         create_random_cache_key(key, sizeof(key));
-        assert_int_equal(am_get_session_policy_cache_entry(request, key, &r, &session, &ets), AM_SUCCESS);
-        test_policy_structure(r);
+        if (error) {
+            assert_int_equal(am_get_session_policy_cache_entry(request, key, &r, &session, &ets), AM_SUCCESS);
+            test_policy_structure(r);
+        } else if (am_get_session_policy_cache_entry(request, key, &r, &session, &ets) == AM_SUCCESS) {
+            test_policy_structure(r);
+        }
 
-        if (i % 1000 == 0)
+        if (i % 10000 == 0)
             printf("read %d..\n", i);
     }
     return capacity;
 }
 
 static int test_cache(int test_size, am_request_t * request, struct am_policy_result * result) {
-    return test_cache_with_seed(543542, test_size, request, result);
+    return test_cache_with_seed(543542, test_size, request, result, AM_TRUE);
 }
 
 
@@ -437,24 +456,20 @@ void test_policy_cache_many_entries(void **state) {
     free(buffer);
     
     // destroy the cache, if it exists
-    am_cache_destroy();
-    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
-    am_init_worker(AM_DEFAULT_AGENT_ID);
+    cleardown();
+    assert_int_equal(am_cache_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
         
     test_cache(test_size, &request, result);
     
     delete_am_policy_result_list(&result);
     
-    am_shutdown_worker();
     am_cache_destroy();
-    am_worker_pool_init_reset();
-    am_net_init_ssl_reset();
 }
 
 void test_policy_cache_purge_many_entries(void **state) {
     
     const int test_size = 4096;
-    const int cache_valid_secs = 10000;
+    const int cache_valid_secs = 1;
     
     char* buffer = NULL;
     struct am_policy_result * result;
@@ -475,25 +490,21 @@ void test_policy_cache_purge_many_entries(void **state) {
     free(buffer);
     
     // destroy the cache, if it exists
-    am_cache_destroy();
-    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
-    am_init_worker(AM_DEFAULT_AGENT_ID);
+    cleardown();
+    assert_int_equal(am_cache_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
     
     capacity = test_cache(test_size, &request, result);
-    assert_int_equal(am_purge_caches(time(NULL) + cache_valid_secs + 1), capacity);
+    assert_int_equal(am_purge_caches(0, time(NULL) + cache_valid_secs + 1), capacity);
     dump_cache_memory();
 
     delete_am_policy_result_list(&result);
     
-    am_shutdown_worker();
-    am_cache_destroy();
-    am_worker_pool_init_reset();
-    am_net_init_ssl_reset();
+    am_cache_shutdown();
 }
 
 void test_policy_cache_purge_during_insert(void **state) {
-    const int test_size = 4096 * 10; // must be beyond the capacity
-    const int cache_valid = 6000;    // must be large enough to not time out during inster phases
+    const int test_size = 4096 * 10000; // must be beyond the capacity
+    const int cache_valid = 6000;    // must be large enough to not time out during insert phases
     
     char* buffer = NULL;
     struct am_policy_result * result;
@@ -514,9 +525,8 @@ void test_policy_cache_purge_during_insert(void **state) {
     free(buffer);
     
     // destroy the cache, if it exists
-    am_cache_destroy();
-    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
-    am_init_worker(AM_DEFAULT_AGENT_ID);
+    cleardown();
+    assert_int_equal(am_cache_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
 
     // time load to capacity
     printf("starting timing phase..\n");
@@ -524,7 +534,7 @@ void test_policy_cache_purge_during_insert(void **state) {
     loaded = test_cache(test_size, &request, result);
     elapsed = time(NULL) - t0;
 
-    assert_int_equal(am_purge_caches(time(NULL) + cache_valid + 1), loaded);
+    assert_int_equal(am_purge_caches(0, time(NULL) + cache_valid + 1), loaded);
     dump_cache_memory();
 
     printf("loading for %ld secs..\n", elapsed);
@@ -537,16 +547,13 @@ void test_policy_cache_purge_during_insert(void **state) {
     
     // this update should trigger purge 
     printf("verifying expiry during load.. \n");
-    test_cache_with_seed(321213, 100, &request, result);
-    assert_int_equal(am_purge_caches(time(NULL) + elapsed + 10), 100);
+    loaded = test_cache_with_seed(321213, 100, &request, result, AM_TRUE);
+    assert_int_equal(am_purge_caches(0, time(NULL) + elapsed + 10), loaded);
     dump_cache_memory();
 
     delete_am_policy_result_list(&result);
     
-    am_shutdown_worker();
-    am_cache_destroy();
-    am_worker_pool_init_reset();
-    am_net_init_ssl_reset();
+    am_cache_shutdown();
 }
 
 
@@ -573,11 +580,9 @@ void test_policy_cache_with_many_different_entries_single_session(void **state) 
     am_request_t                request;
     
     // destroy the cache, if it exists
-    am_cache_destroy();
+    cleardown();
     
-    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
-    am_init_worker(AM_DEFAULT_AGENT_ID);
-    
+    assert_int_equal(am_cache_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
     create_random_cache_key(fake_session, sizeof(fake_session));
     
     /**
@@ -628,17 +633,13 @@ void test_policy_cache_with_many_different_entries_single_session(void **state) 
         }
     }
         
-    am_shutdown_worker();
-    am_cache_destroy();
-    am_worker_pool_init_reset();
-    am_net_init_ssl_reset();
+    am_cache_shutdown();
 }
 
 
 
 struct test_cache_params {
     int test_size;
-    char** keys;
     int iterations;
     am_request_t * request;
     struct am_policy_result * result;
@@ -650,27 +651,26 @@ static void* test_cache_procedure(void * params)
     struct test_cache_params * p = params;
 
     for (i = 0; i < p->iterations; i++) {
-        test_cache_keys(p->test_size, p->keys, p->request, p->result);
+        test_cache_with_seed(47329847, p->test_size, p->request, p->result, AM_FALSE);
     }
     
     return 0;
 }
 
-void test_policy_cache_multithread() {
+void test_policy_cache_multithread(void **state) {
     
     am_config_t config;
     am_request_t request;
     char* buffer = NULL;
     struct am_policy_result* result;
     /* this must be slightly less than the maximum because re-use of shm chunks might use more space */
-#define TEST_SIZE  195
-    char* keys [TEST_SIZE];
-    char key_buffer[64];
+#define TEST_SIZE  4096*100
     int i;
 
-    am_cache_destroy();
+    cleardown();
     
     memset(&config, 0, sizeof (am_config_t));
+    config.token_cache_valid = 1;
     memset(&request, 0, sizeof (am_request_t));
     request.conf = &config;
 
@@ -684,24 +684,18 @@ void test_policy_cache_multithread() {
     if (result != NULL) {
         struct test_cache_params params = {
             .test_size = TEST_SIZE,
-            .keys = keys,
 
-            .iterations = 32,
+            .iterations = 1,
 
             .request = &request,
             .result = result,
         };
 
         long t0 = clock();
-#define NTHREADS 2
+#define NTHREADS 8
         am_thread_t threads [NTHREADS];
         double dt;
         
-        for (i = 0; i < TEST_SIZE; i++) {
-            create_random_cache_key(key_buffer, sizeof (key_buffer));
-            keys[i] = strdup(key_buffer);
-        }
-
         assert_int_equal(am_cache_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
 
         fprintf(stdout, "info: started multithreaded cache tests.. ");
@@ -721,10 +715,6 @@ void test_policy_cache_multithread() {
         assert_int_equal(am_cache_shutdown(), AM_SUCCESS);
 
         delete_am_policy_result_list(&result);
-
-        for (i = 0; i < TEST_SIZE; i++) {
-            free(keys[i]);
-        }
     }
     
     am_cache_destroy();

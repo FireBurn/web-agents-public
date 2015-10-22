@@ -368,7 +368,7 @@ static int poll_with_interrupt(POLLFD fds[], int nfds, int msec) {
  * create a non-blocking socket and connect to remote server
  */
 static void sync_connect(am_net_t *n) {
-    static const char *thisfunc = "async_connect():";
+    static const char *thisfunc = "sync_connect():";
     struct in6_addr serveraddr;
     struct addrinfo *rp, hints;
     int i, err = 0, on = 1;
@@ -540,7 +540,7 @@ static void sync_connect(am_net_t *n) {
  */
 int am_net_sync_connect(am_net_t *n) {
     static const char *thisfunc = "am_net_sync_connect():";
-    int status = 0;
+
     if (n == NULL) {
         /* fatal - must not happen */
         return AM_EINVAL;
@@ -650,7 +650,6 @@ int am_net_write(am_net_t *n, const char *data, size_t data_sz) {
 void am_net_sync_recv(am_net_t *n, int timeout_secs) {
     int ev = 0;
     int poll_msec = timeout_secs * 1000;
-    uint64_t start_usec, end_usec;
     POLLFD fds[1];
     char *buffer;
 
