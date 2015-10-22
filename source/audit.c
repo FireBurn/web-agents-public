@@ -235,9 +235,10 @@ static am_status_t extract_audit_entries(unsigned long instance_id,
     }
 
     status = am_shm_lock(audit_shm);
-    if (status != AM_SUCCESS)
+    if (status != AM_SUCCESS) {
         AM_FREE(batch);
         return status;
+    }
 
     config = get_audit_config(instance_id);
     if (config == NULL) {
