@@ -1583,7 +1583,7 @@ static void install_interactive(int argc, char **argv) {
             input = prompt_and_read("\nEnter the path to a file that contains the password to be used\n"
                     "for identifying the Agent\n"
                     "[ q or 'ctrl+c' to exit ]\n"
-                    "The path to the password file:");
+                    "The path and name of the password file:");
             check_if_quit_wanted(input);
             if (ISVALID(input)) {
                 char *password_data = load_file(input, NULL);

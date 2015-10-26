@@ -132,13 +132,14 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
     /* main process init */
     int status;
     apr_status_t rv = APR_SUCCESS;
-    void *data;
-    amagent_config_t *config = ap_get_module_config(s->module_config, &amagent_module);
+    void *data = NULL;
+    apr_dso_handle_t *mod_handle = NULL;
+    amagent_config_t *config;
 
 #define AMAGENT_INIT_ONCE "AMAGENT_INIT_ONCE"
     apr_pool_userdata_get(&data, AMAGENT_INIT_ONCE, s->process->pool);
-    if (!data) {
-        /* module has already been initialized */
+    if (data == NULL) {
+        /* this is a configuration check phase - do nothing */
         apr_pool_userdata_set((const void *) 1, AMAGENT_INIT_ONCE,
                 apr_pool_cleanup_null, s->process->pool);
         return rv;
@@ -148,6 +149,15 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
     LOG_S(APLOG_DEBUG, s, "amagent_init() %d", getpid());
 
 #ifndef _WIN32
+    config = ap_get_module_config(s->module_config, &amagent_module);
+    
+    /* prevent agent module from being unloaded (support for restart/graceful options) */
+    rv = apr_dso_load(&mod_handle, "mod_openam.so", s->process->pool);
+    if (rv) {
+        LOG_S(APLOG_ERR, s, "amagent_init() failed to load agent module, error: %d", rv);
+        return APR_EINIT;
+    }
+
     /* find and clear down shared memory resources after abnormal termination */
     if (am_remove_shm_and_locks(config->agent_id, recovery_callback, s) != AM_SUCCESS) {
         LOG_S(APLOG_ERR, s, "amagent_init() failed to recover after abnormal termination");
