@@ -19,7 +19,6 @@
 
 int perform_logging(unsigned long instance_id, int level);
 void am_log_write(unsigned long instance_id, int level, const char* header, int header_sz, const char *format, ...);
-am_bool_t zero_instance_logging_wanted(am_bool_t wanted);
 
 #ifdef _WIN32
 #define AM_LOG_ALWAYS(instance, format, ...)\

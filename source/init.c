@@ -199,6 +199,7 @@ static am_bool_t get_log_shm_name(int id, char *buffer, size_t buffer_sz) {
 }
 
 static am_bool_t unlink_shm(char *shm_name, void (*log_cb)(void *arg, char *name, int error), void *cb_arg) {
+    errno = 0;
     if (shm_unlink(shm_name) == 0) {
         // warn: shared memory was present but successfully cleared
         log_cb(cb_arg, shm_name, 0);
@@ -230,6 +231,7 @@ static am_bool_t get_config_sem_name(int id, char *buffer, size_t buffer_sz) {
 }
 
 static am_bool_t unlink_sem(char *sem_name, void (*log_cb)(void *arg, char *name, int error), void *cb_arg) {
+    errno = 0;
     if (sem_unlink(sem_name) == 0) {
         // warn: semaphore was present but successfully cleared
         log_cb(cb_arg, sem_name, 0);
@@ -252,24 +254,27 @@ am_status_t am_remove_shm_and_locks(int id, void (*log_cb)(void *arg, char *name
 #else
     am_status_t status = AM_SUCCESS;
     char name [AM_PATH_SIZE];
-    
-    if (! (get_shm_name(AM_AUDIT_SHM_NAME, id, name, sizeof(name)) && unlink_shm(name, log_cb, cb_arg)))
-        status = AM_ERROR;
-    
-    if (! (get_shm_name(AM_CACHE_SHM_NAME, id, name, sizeof(name)) && unlink_shm(name, log_cb, cb_arg)))
-        status = AM_ERROR;
 
-    if (! (get_shm_name(AM_CONFIG_SHM_NAME, id, name, sizeof(name)) && unlink_shm(name, log_cb, cb_arg)))
+    if (!get_shm_name(AM_AUDIT_SHM_NAME, id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg)) {
         status = AM_ERROR;
+    }
+
+    if (!get_shm_name(AM_CACHE_SHM_NAME, id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg)) {
+        status = AM_ERROR;
+    }
+
+    if (!get_shm_name(AM_CONFIG_SHM_NAME, id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg)) {
+        status = AM_ERROR;
+    }
+
+    if (!get_log_shm_name(id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg)) {
+        status = AM_ERROR;
+    }
+
+    if (!get_config_sem_name(id, name, sizeof (name)) && unlink_sem(name, log_cb, cb_arg)) {
+        status = AM_ERROR;
+    }
     
-    if (! (get_log_shm_name(id, name, sizeof(name)) && unlink_shm(name, log_cb, cb_arg)))
-        status = AM_ERROR;
-    
-#ifndef __APPLE__
-    /* with OS X we are using mach semaphores for the log initialisation lock, and this does not apply */
-    if (! (get_config_sem_name(id, name, sizeof(name)) && unlink_sem(name, log_cb, cb_arg)))
-        status = AM_ERROR;
-#endif
     return status;
 #endif
 }

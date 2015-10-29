@@ -23,17 +23,9 @@
 
 #if defined(_WIN32)
 static HANDLE ic_sem = NULL;
-#elif defined(__APPLE__)
-static semaphore_t ic_sem;
 #else
 static sem_t *ic_sem = NULL;
 #endif
-
-
-/**
- * This flag says we want debugging messages when the instance id is zero
- */
-static am_bool_t zero_instance_logging_is_wanted = AM_FALSE;
 
 struct am_shared_log {
     void *area;
@@ -663,7 +655,7 @@ int perform_logging(unsigned long instance_id, int level) {
 
     /* If the instance id is zero, we are either running a test case, or installing something */
     if (instance_id == 0) {
-        return zero_instance_logging_is_wanted;
+        return AM_FALSE;
     }
 
     /* We simply cannot log if the shared memory segment is not initialised */
@@ -1154,11 +1146,6 @@ int am_agent_instance_init_init(int id) {
     if (ic_sem != NULL) {
         status = AM_SUCCESS;
     }
-#elif defined(__APPLE__)
-    kern_return_t rv = semaphore_create(mach_task_self(), &ic_sem, SYNC_POLICY_FIFO, 1);
-    if (rv == KERN_SUCCESS) {
-        status = AM_SUCCESS;
-    }
 #else
     ic_sem = sem_open(get_global_name(
 #ifdef __sun
@@ -1177,8 +1164,6 @@ int am_agent_instance_init_init(int id) {
 void am_agent_instance_init_lock() {
 #if defined(_WIN32)
     WaitForSingleObject(ic_sem, INFINITE);
-#elif defined(__APPLE__)
-    semaphore_wait(ic_sem);
 #else
     sem_wait(ic_sem);
 #endif 
@@ -1187,8 +1172,6 @@ void am_agent_instance_init_lock() {
 void am_agent_instance_init_unlock() {
 #if defined(_WIN32)
     ReleaseSemaphore(ic_sem, 1, NULL);
-#elif defined(__APPLE__)
-    semaphore_signal_all(ic_sem);
 #else
     sem_post(ic_sem);
 #endif 
@@ -1197,8 +1180,6 @@ void am_agent_instance_init_unlock() {
 void am_agent_instance_init_release(int id, char unlink) {
 #if defined(_WIN32)
     CloseHandle(ic_sem);
-#elif defined(__APPLE__)
-    semaphore_destroy(mach_task_self(), ic_sem);
 #else
     sem_close(ic_sem);
     if (unlink) {
@@ -1268,18 +1249,3 @@ int am_agent_init_get_value(unsigned long instance_id, char lock) {
     }
     return status;
 }
-
-/**
- * This function gives controlled access to the flag which says whether to log or not when
- * there is no instance id.  This happens when we are running test cases and/or when we are
- * running the installation code.
- *
- * @param wanted true to enable zero instance id logging, false to disable
- * @return the previous value of the flag.
- */
-am_bool_t zero_instance_logging_wanted(am_bool_t wanted) {
-    am_bool_t result = zero_instance_logging_is_wanted;
-    zero_instance_logging_is_wanted = wanted;
-    return result;
-}
-
