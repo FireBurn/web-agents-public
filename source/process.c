@@ -1828,13 +1828,14 @@ static am_return_t handle_exit(am_request_t *r) {
             set_user_attributes(r);
 
             if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_ALLOW)) {
+            	const char *user_name_log = ISVALID(r->user) ? r->user : r->user_temp;
                 AM_LOG_AUDIT(r->instance_id, AUDIT_ALLOW_USER_MESSAGE,
-                        LOGEMPTY(r->user), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
+                        LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
                 if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE)) {
                     int audit_status = am_add_remote_audit_entry(r->instance_id, r->conf->token,
                             r->session_info.si, r->conf->audit_file_remote,
                             r->token, AUDIT_ALLOW_USER_MESSAGE,
-                            LOGEMPTY(r->user), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
+                            LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
                     if (audit_status != AM_SUCCESS) {
                         AM_LOG_ERROR(r->instance_id, "%s failed to store remote audit log message (%s)",
                                 thisfunc, am_strerror(audit_status));
