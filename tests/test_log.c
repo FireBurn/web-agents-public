@@ -98,7 +98,7 @@ void logging_setup(int logging_level) {
     // destroy the cache, if it exists
     am_cache_destroy();
     
-    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
+    assert_int_equal(am_init(AM_DEFAULT_AGENT_ID, NULL), AM_SUCCESS);
 
     am_init_worker(AM_DEFAULT_AGENT_ID);
     

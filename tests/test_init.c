@@ -39,22 +39,16 @@ void test_init_cleanup(void **state) {
     assert_int_equal(am_remove_shm_and_locks(instance, test_log_callback, &clearup_count), AM_SUCCESS);
     assert_int_equal(clearup_count, 0);
 
-    am_init(instance);
+    am_init(instance, NULL);
     clearup_count = 0;
     assert_int_equal(am_remove_shm_and_locks(instance, test_log_callback, &clearup_count), AM_SUCCESS);
 #ifdef _WIN32
     assert_int_equal(clearup_count, 0);
 #else
-#ifdef __APPLE__
-    /* OS X mach semaphore is not cleared */
-    assert_int_equal(clearup_count, 4);
-#else
     assert_int_equal(clearup_count, 5);
-#endif
 #endif
 
     clearup_count = 0;
     assert_int_equal(am_remove_shm_and_locks(instance, test_log_callback, &clearup_count), AM_SUCCESS);
     assert_int_equal(clearup_count, 0);
 }
-

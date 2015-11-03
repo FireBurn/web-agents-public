@@ -818,7 +818,7 @@ int init_function(struct vmod_priv *priv, const struct VCL_conf *conf) {
     if (settings) {
         settings->status = AM_ERROR;
         if (n_init++ == 0) {
-            settings->status = am_init(AM_DEFAULT_AGENT_ID);
+            settings->status = am_init(AM_DEFAULT_AGENT_ID, NULL);
             am_init_worker(AM_DEFAULT_AGENT_ID);
         }
     } else {

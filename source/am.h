@@ -301,7 +301,7 @@ void am_request_free(am_request_t *r);
 const char *am_method_num_to_str(int method);
 int am_method_str_to_num(const char *method_str);
 
-int am_init(int id);
+int am_init(int id, int (*init_status_cb)(int));
 int am_init_worker(int id);
 int am_shutdown(int id);
 int am_shutdown_worker();

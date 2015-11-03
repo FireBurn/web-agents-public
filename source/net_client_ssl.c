@@ -277,7 +277,7 @@ static void *load_library(const char *lib, struct ssl_func *sw) {
     }
 #else
 #if defined(__APPLE__)
-    lib_handle = dlopen(name, RTLD_LAZY | RTLD_GLOBAL);
+    lib_handle = dlopen(name, RTLD_LAZY | RTLD_GLOBAL | RTLD_NODELETE);
 #else
     name_variants[ARRAY_SIZE(name_variants) - 1] = name;
     for (i = 0; i < ARRAY_SIZE(name_variants); i++) {
@@ -286,7 +286,7 @@ static void *load_library(const char *lib, struct ssl_func *sw) {
         } else {
             strncpy(temp, name_variants[i], sizeof (temp) - 1);
         }
-        lib_handle = dlopen(temp, RTLD_LAZY | RTLD_GLOBAL
+        lib_handle = dlopen(temp, RTLD_LAZY | RTLD_GLOBAL | RTLD_NODELETE
 #if defined(AIX)      
                 | RTLD_MEMBER
 #endif 

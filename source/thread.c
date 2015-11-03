@@ -260,6 +260,8 @@ void
 create_threadpool(
 #ifdef _WIN32
         PINIT_ONCE io, PVOID p, PVOID *c
+#else
+        int (*init_status_cb)(int)
 #endif
         ) {
 #ifdef _WIN32
@@ -290,9 +292,14 @@ create_threadpool(
 
     sigfillset(&fillset);
 
-    if (!worker_pool_atfork && pthread_atfork(worker_pool_lock_all,
-            worker_pool_unlock_all, worker_pool_fork_handler) != 0) {
-        return; /* ENOMEM */
+    if (!worker_pool_atfork) {
+        if (!init_status_cb || !init_status_cb(AM_FALSE)) {
+            if (pthread_atfork(worker_pool_lock_all,
+                    worker_pool_unlock_all, worker_pool_fork_handler) != 0) {
+                return; /* ENOMEM */
+            }
+            if (init_status_cb) init_status_cb(AM_TRUE);
+        }
     }
     worker_pool_atfork = 1;
 
@@ -320,11 +327,11 @@ create_threadpool(
 #endif
 }
 
-void am_worker_pool_init() {
+void am_worker_pool_init(int (*init_status_cb)(int)) {
 #ifdef _WIN32
     InitOnceExecuteOnce(&worker_pool_initialized, create_threadpool, NULL, NULL);
 #else
-    create_threadpool();
+    create_threadpool(init_status_cb);
 #endif
 }
 

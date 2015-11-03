@@ -85,7 +85,7 @@ void am_start_timer_event(am_timer_event_t *e);
 void am_close_timer_event(am_timer_event_t *e);
 
 void am_worker_pool_shutdown();
-void am_worker_pool_init();
+void am_worker_pool_init(int (*init_status_cb)(int));
 
 int am_worker_dispatch(void (*worker_f)(void *), void *arg);
 

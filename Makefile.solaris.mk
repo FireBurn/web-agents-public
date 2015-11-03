@@ -45,7 +45,7 @@ endif
 
 $(TEST_OBJECTS): CFLAGS += -D_UINTPTR_T_DEFINED
 
-LDFLAGS += -i -z ignore -z lazyload -z nodefs -z combreloc -z origin -R'$$ORIGIN/../lib' -R'$$ORIGIN' \
+LDFLAGS += -i -z ignore -z lazyload -z nodefs -z combreloc -z nodelete -z origin -R'$$ORIGIN/../lib' -R'$$ORIGIN' \
 	-lc -lsocket -lnsl -ldl -lrt -lsendfile -lresolv
 
 libopenam: $(OUT_OBJS)

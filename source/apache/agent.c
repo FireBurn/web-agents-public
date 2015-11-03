@@ -127,6 +127,14 @@ static void recovery_callback(void *cb_arg, char * name, int error) {
     }
 }
 
+static int main_init_status(int set) {
+    if (set) {
+        *(char **) apr_array_push(ap_server_config_defines) = "AM_PTHREAD_ATFORK_DONE";
+        return AM_SUCCESS;
+    }
+    return ap_exists_config_define("AM_PTHREAD_ATFORK_DONE");
+}
+
 static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
         server_rec *s) {
     /* main process init */
@@ -150,13 +158,15 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
 
 #ifndef _WIN32
     config = ap_get_module_config(s->module_config, &amagent_module);
-    
+
+#ifdef __APPLE__
     /* prevent agent module from being unloaded (support for restart/graceful options) */
     rv = apr_dso_load(&mod_handle, "mod_openam.so", s->process->pool);
     if (rv) {
         LOG_S(APLOG_ERR, s, "amagent_init() failed to load agent module, error: %d", rv);
         return APR_EINIT;
     }
+#endif
 
     /* find and clear down shared memory resources after abnormal termination */
     if (am_remove_shm_and_locks(config->agent_id, recovery_callback, s) != AM_SUCCESS) {
@@ -164,7 +174,7 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
         return APR_EINIT;
     }
 
-    status = am_init(config->agent_id);
+    status = am_init(config->agent_id, main_init_status);
     if (status != AM_SUCCESS) {
         rv = APR_EINIT;
         LOG_S(APLOG_ERR, s, "amagent_init() status: %s", am_strerror(status));
@@ -239,21 +249,21 @@ static int am_status_value(am_status_t v) {
 
 static am_status_t get_request_url(am_request_t *req) {
     request_rec *rec;
-    
+
     if (req == NULL) {
         return AM_EINVAL;
     }
-    
+
     rec = (request_rec *) req->ctx;
     if (rec == NULL) {
         return AM_EINVAL;
     }
-    
+
     req->orig_url = ap_construct_url(rec->pool, rec->unparsed_uri, rec);
     if (req->orig_url == NULL) {
         return AM_EINVAL;
     }
-    
+
     req->path_info = rec->path_info;
     return AM_SUCCESS;
 }

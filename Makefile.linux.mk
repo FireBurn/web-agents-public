@@ -37,7 +37,7 @@ else
  LDFLAGS += -m32
 endif
 
-LDFLAGS += -Wl,-rpath,'$$ORIGIN/../lib' -Wl,-rpath,'$$ORIGIN' -Wl,--no-as-needed -lpthread -lresolv -lrt -ldl
+LDFLAGS += -Wl,-rpath,'$$ORIGIN/../lib' -Wl,-rpath,'$$ORIGIN' -Wl,--no-as-needed -Wl,-z,nodelete -lpthread -lresolv -lrt -ldl
 
 libopenam: $(OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" shared library ***]"

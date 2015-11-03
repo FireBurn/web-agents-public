@@ -89,7 +89,7 @@ static void am_main_init_unlock() {
  * init calls to get agent bootstrapped in different environments, i.e. for unix (and it's variants) we
  * call this function am_init.  For Windows, call am_init_worker.
  */
-int am_init(int id) {
+int am_init(int id, int (*init_status_cb)(int)) {
     int rv = AM_SUCCESS;
 #ifndef _WIN32
     am_net_init();
@@ -99,7 +99,7 @@ int am_init(int id) {
     am_audit_processor_init();
     am_url_validator_init();
     rv = am_cache_init(id);
-    am_worker_pool_init();
+    am_worker_pool_init(init_status_cb);
 #endif
     return rv;
 }
@@ -118,7 +118,7 @@ int am_init_worker(int id) {
     }
     am_cache_init(id);
 #endif
-    am_worker_pool_init();
+    am_worker_pool_init(NULL);
     return 0;
 }
 
@@ -235,7 +235,11 @@ static am_bool_t unlink_sem(char *sem_name, void (*log_cb)(void *arg, char *name
     if (sem_unlink(sem_name) == 0) {
         // warn: semaphore was present but successfully cleared
         log_cb(cb_arg, sem_name, 0);
-    } else if (errno != ENOENT) {
+    } else if (errno != ENOENT
+#ifdef __APPLE__
+            && errno != EINVAL
+#endif
+            ) {
         // failure: semaphore was not cleared
         log_cb(cb_arg, sem_name, errno);
         return AM_FALSE;
@@ -255,23 +259,23 @@ am_status_t am_remove_shm_and_locks(int id, void (*log_cb)(void *arg, char *name
     am_status_t status = AM_SUCCESS;
     char name [AM_PATH_SIZE];
 
-    if (!get_shm_name(AM_AUDIT_SHM_NAME, id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg)) {
+    if (!(get_shm_name(AM_AUDIT_SHM_NAME, id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg))) {
         status = AM_ERROR;
     }
 
-    if (!get_shm_name(AM_CACHE_SHM_NAME, id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg)) {
+    if (!(get_shm_name(AM_CACHE_SHM_NAME, id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg))) {
         status = AM_ERROR;
     }
 
-    if (!get_shm_name(AM_CONFIG_SHM_NAME, id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg)) {
+    if (!(get_shm_name(AM_CONFIG_SHM_NAME, id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg))) {
         status = AM_ERROR;
     }
 
-    if (!get_log_shm_name(id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg)) {
+    if (!(get_log_shm_name(id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg))) {
         status = AM_ERROR;
     }
 
-    if (!get_config_sem_name(id, name, sizeof (name)) && unlink_sem(name, log_cb, cb_arg)) {
+    if (!(get_config_sem_name(id, name, sizeof (name)) && unlink_sem(name, log_cb, cb_arg))) {
         status = AM_ERROR;
     }
     
