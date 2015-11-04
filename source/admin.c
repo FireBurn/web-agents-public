@@ -1389,6 +1389,12 @@ static void install_interactive(int argc, char **argv) {
                 
                 /* password cannot be preserved because the cypher is not compatible */
                 property_map_remove_key(property_map, "com.sun.identity.agents.config.password");
+
+                /* password key cannot be preserved because we will generate a new one during installation */
+                property_map_remove_key(property_map, "com.sun.identity.agents.config.key");
+
+                /* log file location will not be preserved */
+                property_map_remove_key(property_map, "com.sun.identity.agents.config.local.logfile");
                 break;
             }
             fprintf(stdout, "Error: unable to open the configuration file\nPlease try again.\n");
