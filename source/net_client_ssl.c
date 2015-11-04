@@ -286,9 +286,11 @@ static void *load_library(const char *lib, struct ssl_func *sw) {
         } else {
             strncpy(temp, name_variants[i], sizeof (temp) - 1);
         }
-        lib_handle = dlopen(temp, RTLD_LAZY | RTLD_GLOBAL | RTLD_NODELETE
+        lib_handle = dlopen(temp, RTLD_LAZY | RTLD_GLOBAL
 #if defined(AIX)      
                 | RTLD_MEMBER
+#else 
+                | RTLD_NODELETE
 #endif 
                 );
         if (lib_handle != NULL) {
