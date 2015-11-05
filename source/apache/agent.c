@@ -460,7 +460,7 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
             break;
         }
     }
-    AM_LOG_INFO(rq->instance_id, "set_custom_response(): status: %s (exit: %s)",
+    AM_LOG_DEBUG(rq->instance_id, "set_custom_response(): status: %s (exit: %s)",
             am_strerror(status), am_strerror(rq->status));
 
     return AM_SUCCESS;

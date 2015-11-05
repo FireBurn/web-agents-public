@@ -271,13 +271,12 @@ void remove_agent_instance_byname(const char *name) {
     h = (struct am_instance_entry *) AM_GET_POINTER(conf->pool, instance_data->list.prev);
 
     AM_OFFSET_LIST_FOR_EACH(conf->pool, h, e, t, struct am_instance_entry) {
-        if (strcmp(e->name, name) == 0) {
+        if (strcasecmp(e->name, name) == 0) {
             am_remove_cache_entry(e->instance_id, e->token); /* delete cached agent session data */
             am_agent_init_set_value(e->instance_id, AM_TRUE, AM_FALSE); /* set this instance to 'unconfigured' */
             if (delete_instance_entry(e) == AM_SUCCESS) { /* remove cached configuration data */
                 am_shm_free(conf, e);
             }
-            break;
         }
     }
     am_shm_unlock(conf);
