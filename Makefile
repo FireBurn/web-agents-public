@@ -33,7 +33,7 @@ ifneq ("$(PROGRAMFILES)$(ProgramFiles)","")
  CP := cmd /c copy /Y
  CD := cd
  EXEC := 
- REVISION := $(shell svn info . | findstr "Revision:")
+ REVISION := Revision: $(shell git rev-parse --short HEAD)
  BUILD_MACHINE := $(shell hostname)
  IDENT_DATE := $(shell powershell get-date -format "{dd.MM.yyyy}")
  PATHSEP=\\
@@ -52,7 +52,7 @@ else
  CP := cp
  CD := cd
  EXEC := ./
- REVISION := $(shell svn info . | grep Revision:)
+ REVISION := Revision: $(shell git rev-parse --short HEAD)
  BUILD_MACHINE := $(shell hostname)
  IDENT_DATE := $(shell date +'%d.%m.%y')
  PATHSEP=/
