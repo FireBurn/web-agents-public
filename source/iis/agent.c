@@ -969,7 +969,7 @@ class OpenAMHttpModule : public CHttpModule{
             am_free(payload);
         }
 
-        AM_LOG_DEBUG(site->GetSiteId(), "%s exit status: %s (%d)", thisfunc, am_strerror(d.status), d.status);
+        AM_LOG_DEBUG(site->GetSiteId(), "%s exit status: %s (%d), HTTP status: %d", thisfunc, am_strerror(d.status), d.status, status_code);
 
         am_config_free(&d.conf);
         am_request_free(&d);

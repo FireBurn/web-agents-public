@@ -677,10 +677,10 @@ static int send_policychange_request(am_net_t *conn, char **token) {
         am_net_sync_recv(conn, AM_NET_POOL_TIMEOUT);
     }
 
-    AM_LOG_DEBUG(conn->instance_id, "%s authenticate response status code: %d\n%s",
+    AM_LOG_DEBUG(conn->instance_id, "%s response status code: %d\n%s",
             thisfunc, conn->http_status, LOGEMPTY(req_data->data));
     if (conn->options != NULL && conn->options->log != NULL) {
-        conn->options->log("%s authenticate response status code: %d\n%s", thisfunc,
+        conn->options->log("%s response status code: %d\n%s", thisfunc,
                 conn->http_status, LOGEMPTY(req_data->data));
     }
 
@@ -774,10 +774,10 @@ static int send_policy_request(am_net_t *conn, const char *token, const char *us
         am_net_sync_recv(conn, AM_NET_POOL_TIMEOUT);
     }
 
-    AM_LOG_DEBUG(conn->instance_id, "%s authenticate response status code: %d\n%s",
+    AM_LOG_DEBUG(conn->instance_id, "%s response status code: %d\n%s",
             thisfunc, conn->http_status, LOGEMPTY(req_data->data));
     if (conn->options != NULL && conn->options->log != NULL) {
-        conn->options->log("%s authenticate response status code: %d\n%s", thisfunc,
+        conn->options->log("%s response status code: %d\n%s", thisfunc,
                 conn->http_status, LOGEMPTY(req_data->data));
     }
 

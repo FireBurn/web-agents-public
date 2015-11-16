@@ -1836,7 +1836,6 @@ static void install_silent(int argc, char** argv) {
             if (rv != AM_SUCCESS) {
                 fprintf(stderr, "\nError validating OpenAM - Agent configuration.\n");
                 install_log("error validating OpenAM agent configuration");
-                am_free(agent_token);
             } else {
                 fprintf(stdout, "\nValidating... Success.\n");
                 install_log("validating configuration parameters... success");

@@ -21,7 +21,7 @@
 64=1
 # DEBUG=1
 
-VERSION := 4.0.0
+VERSION := 4.0.1-SNAPSHOT
 
 ifneq ("$(PROGRAMFILES)$(ProgramFiles)","")
  OS_ARCH := WINNT
