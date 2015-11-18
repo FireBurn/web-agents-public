@@ -282,10 +282,10 @@ static void *am_log_worker(void *arg) {
             }
 
             if (f->fd_debug == -1) {
-                fprintf(stderr, "am_log_worker() failed to open log file %s: error: %d", f->name_debug, errno);
+                fprintf(stderr, "am_log_worker() failed to open log file %s: error: %d\n", f->name_debug, errno);
                 f->fd_debug = f->fd_audit = -1;
             } else if (f->fd_audit == -1) {
-                fprintf(stderr, "am_log_worker() failed to open audit file %s: error: %d", f->name_audit, errno);
+                fprintf(stderr, "am_log_worker() failed to open audit file %s: error: %d\n", f->name_audit, errno);
                 f->fd_debug = f->fd_audit = -1;
             } else {
                 int file_handle = is_audit ? f->fd_audit : f->fd_debug;
@@ -361,12 +361,13 @@ static void *am_log_worker(void *arg) {
                     }
                 }
 
-                _close(file_handle);
-                if (is_audit) {
-                    f->fd_audit = -1;
-                } else {
-                    f->fd_debug = -1;
+                if (f->fd_audit != -1) {
+                    _close(f->fd_audit);
                 }
+                if (f->fd_debug != -1) {
+                    _close(f->fd_debug);
+                }
+                f->fd_debug = f->fd_audit = -1;
 #else
                 wrote = write(file_handle, "\n", 1);
                 fsync(file_handle);
@@ -1248,4 +1249,111 @@ int am_agent_init_get_value(unsigned long instance_id, char lock) {
         am_agent_instance_init_unlock();
     }
     return status;
+}
+
+#ifdef _WIN32
+
+static int gettimeofday(struct timeval *tv, void *tz) {
+    FILETIME ft;
+    ULARGE_INTEGER tmp;
+
+    if (tv == NULL) return -1;
+
+    GetSystemTimeAsFileTime(&ft);
+
+    /* GetSystemTimeAsFileTime returns the number of 100 nanosecond 
+     * intervals since Jan 1, 1601 (UTC) 
+     */
+    tmp.LowPart = ft.dwLowDateTime;
+    tmp.HighPart = ft.dwHighDateTime;
+
+    /* convert to microseconds */
+    tmp.QuadPart /= 10ULL;
+
+    /* the UNIX epoch starts on Jan 1 1970 - need to subtract the difference 
+     * in seconds from Jan 1 1601
+     */
+    tmp.QuadPart -= 11644473600000000ULL;
+
+    /* finally change microseconds to seconds and place in the seconds value, 
+     * the modulus picks up the microseconds
+     */
+    tv->tv_usec = (long) (tmp.QuadPart % 1000000LL);
+    tv->tv_sec = (long) (tmp.QuadPart / 1000000LL);
+    return 0;
+}
+
+#endif
+
+char *log_header(int log_level, int *header_sz, const char *file, int line) {
+    static AM_THREAD_LOCAL char header[160];
+    char tz[6];
+    size_t time_string_sz;
+    struct tm now;
+    struct timeval tv;
+    const char *level;
+    time_t rawtime;
+
+    gettimeofday(&tv, NULL);
+    rawtime = (time_t) tv.tv_sec;
+    localtime_r(&rawtime, &now);
+
+    switch (log_level) {
+        case AM_LOG_LEVEL_AUDIT:
+            level = "AUDIT";
+            break;
+        case AM_LOG_LEVEL_DEBUG:
+            level = "DEBUG";
+            break;
+        case AM_LOG_LEVEL_ERROR:
+            level = "ERROR";
+            break;
+        case AM_LOG_LEVEL_WARNING:
+            level = "WARNING";
+            break;
+        default:
+            level = "INFO";
+            break;
+    }
+    /* format time */
+    time_string_sz = strftime(header, sizeof (header), "%Y-%m-%d %H:%M:%S", &now);
+
+    /* and time zone */
+#ifdef _WIN32
+#define LOG_HEADER_THREAD_ID "%d"
+    TIME_ZONE_INFORMATION tz_info;
+    GetTimeZoneInformation(&tz_info);
+    snprintf(tz, sizeof (tz), "%03d%02d", -(tz_info.Bias) / 60, abs(-(tz_info.Bias) % 60));
+    if (tz[0] == '0') {
+        tz[0] = '+';
+    }
+#else
+#define LOG_HEADER_THREAD_ID "%p"
+    strftime(tz, sizeof (tz), "%z", &now);
+#endif
+
+    /* set all the data for the final log header */
+    if (log_level == AM_LOG_LEVEL_DEBUG) {
+        *header_sz = snprintf(header + time_string_sz, sizeof (header) - time_string_sz,
+                ".%03ld %s %7.7s ["LOG_HEADER_THREAD_ID":%d][%s:%d] ",
+                tv.tv_usec / 1000L, tz, level,
+#ifdef _WIN32
+                GetCurrentThreadId(),
+#else
+                (void *) (uintptr_t) pthread_self(),
+#endif
+                getpid(), NOTNULL(file), line);
+    } else {
+        *header_sz = snprintf(header + time_string_sz, sizeof (header) - time_string_sz,
+                ".%03ld %s %7.7s ["LOG_HEADER_THREAD_ID":%d] ",
+                tv.tv_usec / 1000L, tz, level,
+#ifdef _WIN32
+                GetCurrentThreadId(),
+#else
+                (void *) (uintptr_t) pthread_self(),
+#endif
+                getpid());
+    }
+    *header_sz += (int) time_string_sz;
+    return header;
 }
