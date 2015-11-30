@@ -311,8 +311,9 @@ static am_return_t setup_request_data(am_request_t *r) {
             LOGEMPTY(r->normalized_url_pathinfo), LOGEMPTY(r->overridden_url_pathinfo));
 
     if (r->method == AM_REQUEST_POST && !ISVALID(r->content_type)) {
-        AM_LOG_ERROR(r->instance_id, "%s HTTP POST requires a valid Content-Type header value", thisfunc);
-        return AM_FAIL;
+        r->content_type = "application/octet-stream";
+        AM_LOG_WARNING(r->instance_id, "%s HTTP POST should contain a valid Content-Type header value, "
+                "defaulting to application/octet-stream", thisfunc);
     }
 
     r->status = status;
