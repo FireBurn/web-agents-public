@@ -113,8 +113,7 @@ void url_validator_worker(void *arg) {
 
     set_valid_url_instance_running(w->instance_id, AM_TRUE);
 
-    conf = am_get_config_file(w->instance_id, w->config_path);
-    if (conf == NULL) {
+    if (am_get_agent_config_cache_or_local(w->instance_id, w->config_path, &conf) != AM_SUCCESS) {
         AM_LOG_WARNING(w->instance_id, "%s failed to get agent configuration (%s)",
                 thisfunc, LOGEMPTY(w->config_path));
         set_valid_url_instance_running(w->instance_id, AM_FALSE);

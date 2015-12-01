@@ -1514,3 +1514,47 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
 
     return rv;
 }
+
+int am_get_agent_config_cache_or_local(unsigned long instance_id, const char *config_file, am_config_t **cnf) {
+    struct am_instance_entry *entry;
+    int status = AM_ERROR;
+
+    if (instance_id == 0 || cnf == NULL) return AM_EINVAL;
+
+    do {
+        if (conf == NULL || am_shm_lock(conf) != AM_SUCCESS) break;
+
+        /* try to get instance configuration from cache */
+
+        entry = get_instance_entry(instance_id);
+        if (entry == NULL) {
+            /* nothing is found - fail back to reading a configuration file instead */
+            am_shm_unlock(conf);
+            break;
+        }
+
+        *cnf = am_get_stored_agent_config(entry);
+        if (*cnf != NULL) {
+            (*cnf)->instance_id = instance_id;
+            (*cnf)->ts = entry->ts;
+            (*cnf)->token = strdup(entry->token);
+            (*cnf)->config = strdup(entry->config);
+            if (ISVALID((*cnf)->cert_key_pass)) {
+                (*cnf)->cert_key_pass_sz = strlen((*cnf)->cert_key_pass);
+            }
+        }
+
+        am_shm_unlock(conf);
+        if (*cnf == NULL) break;
+
+        return AM_SUCCESS;
+    } while (0);
+
+    /* there is no cache entry for this instance or cache is not (yet) available - read it from a config_file */
+
+    *cnf = am_get_config_file(instance_id, config_file);
+    if (*cnf != NULL) {
+        status = AM_SUCCESS;
+    }
+    return status;
+}

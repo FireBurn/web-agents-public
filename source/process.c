@@ -1075,7 +1075,7 @@ static am_return_t validate_policy(am_request_t *r) {
                 return AM_OK;
             }
         }
-        
+
         /* pre-fetch user parameter value */
         if (ISVALID(r->conf->userid_param) && ISVALID(r->conf->userid_param_type)) {
             if (strcasecmp(r->conf->userid_param_type, "SESSION") == 0) {
@@ -1308,8 +1308,20 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
 
     /* set cookie value */
     if (cookie != NULL) {
-        cookie_value = r->conf->cookie_encode_chars ? url_encode((char *) value) : (char *) value;
-        am_asprintf(&cookie, "%s%s", cookie, NOTNULL(cookie_value));
+        const char *value_format;
+        if (ISVALID(value) && !r->conf->cookie_encode_chars && (strchr(value, '=') != NULL ||
+                strchr(value, ';') != NULL || strchr(value, ' ') != NULL ||
+                strchr(value, ',') != NULL || strchr(value, '\\') != NULL ||
+                contains_ctl(value))) {
+            /* RFC6265#section-4.1.1, except double-quotes, which are handled by urlencoding value (forced) */
+            AM_LOG_DEBUG(r->instance_id, "%s enclosing value %s in double quotes", thisfunc, value);
+            value_format = "%s\"%s\"";
+        } else {
+            value_format = "%s%s";
+        }
+        cookie_value = r->conf->cookie_encode_chars || (ISVALID(value) && strchr(value, '"') != NULL) ?
+                url_encode((char *) value) : (char *) value;
+        am_asprintf(&cookie, value_format, cookie, NOTNULL(cookie_value));
         if (r->conf->cookie_encode_chars) {
             am_free(cookie_value);
         }
@@ -1829,7 +1841,7 @@ static am_return_t handle_exit(am_request_t *r) {
             set_user_attributes(r);
 
             if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_ALLOW)) {
-            	const char *user_name_log = ISVALID(r->user) ? r->user : r->user_temp;
+                const char *user_name_log = ISVALID(r->user) ? r->user : r->user_temp;
                 AM_LOG_AUDIT(r->instance_id, AUDIT_ALLOW_USER_MESSAGE,
                         LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
                 if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE)) {

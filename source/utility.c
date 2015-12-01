@@ -3002,4 +3002,20 @@ am_bool_t validate_directory_access(const char *path, int mask) {
 #endif
     return ret;
 }
-
+/**
+ * Test if input value contains any ASCII control characters.
+ *
+ * @param string The incoming string.
+ * @return AM_TRUE if string contains CTL, AM_FALSE otherwise.
+ */
+am_bool_t contains_ctl(const char *string) {
+    int j;
+    if (string != NULL) {
+        for (j = 0; string[j] != '\0'; j++) {
+            if (iscntrl(string[j])) {
+                return AM_TRUE;
+            }
+        }
+    }
+    return AM_FALSE;
+}

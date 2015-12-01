@@ -231,6 +231,7 @@ int copy_file(const char *from, const char *to);
 
 void xml_entity_escape(char *temp_str, size_t str_len);
 
+am_bool_t contains_ctl(const char *string);
 int char_count(const char *string, int c, int *last);
 void uuid(char *buf, size_t buflen);
 
@@ -299,6 +300,8 @@ void am_agent_instance_init_unlock();
 void am_agent_instance_init_release(int id, char unlink);
 
 void am_agent_init_set_value(unsigned long instance_id, char lock, int val);
+
+int am_get_agent_config_cache_or_local(unsigned long instance_id, const char *config_file, am_config_t **cnf);
 
 am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, size_t xml_sz, char log_enable);
 
