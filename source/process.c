@@ -798,7 +798,7 @@ static am_return_t validate_token(am_request_t *r) {
     }
 
     if (status == AM_SUCCESS && ISVALID(r->token) && (strchr(r->token, '%') != NULL)) {
-    	// token is url encoded and needs to be decoded
+    	/* token is url encoded and needs to be decoded */
     	char* decoded_token = url_decode(r->token);
     	if (decoded_token != NULL) {
     		am_free(r->token);
