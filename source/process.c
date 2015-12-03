@@ -797,6 +797,13 @@ static am_return_t validate_token(am_request_t *r) {
         }
     }
 
+    if (status == AM_SUCCESS && ISVALID(r->token) && (strchr(r->token, '%') != NULL)) {
+    	// token is url encoded and needs to be decoded
+    	char* decoded_token = url_decode(r->token);
+    	am_free(r->token);
+    	r->token = decoded_token;
+    }
+
     AM_LOG_DEBUG(r->instance_id, "%s sso token: %s, status: %s", thisfunc,
             LOGEMPTY(r->token), am_strerror(r->status));
 
