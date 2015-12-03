@@ -413,14 +413,31 @@ init_ssl(
     int i, size;
 
 #ifdef _WIN32
+    wchar_t dll_path[AM_URI_SIZE];
     ADD_DLL_PROC add_directory =
             (ADD_DLL_PROC) GetProcAddress(GetModuleHandleA("kernel32.dll"), "AddDllDirectory");
     if (add_directory != NULL) {
-        wchar_t dll_path[AM_URI_SIZE];
-        if (GetModuleFileNameW(NULL, dll_path, sizeof (dll_path) - 1) > 0) {
+        if (GetModuleFileNameW(NULL, dll_path, sizeof (dll_path) - 1) > 0 &&
+                (wcsstr(dll_path, L"agentadmin.exe") != NULL || wcsstr(dll_path, L"test.exe") != NULL)) {
+
+            /* we are running from within agentadmin or testing module */
+
             PathRemoveFileSpecW(dll_path); /* remove exe part */
             PathRemoveFileSpecW(dll_path); /* remove bin part */
             wcscat(dll_path, L"\\lib");
+            dll_directory_cookie = ((ADD_DLL_PROC) add_directory)(dll_path);
+
+        } else if (GetModuleFileNameW(GetModuleHandleA(
+#ifdef APACHE2
+                "mod_openam.dll"
+#else
+                "mod_iis_openam.dll"
+#endif
+                ), dll_path, sizeof (dll_path) - 1) > 0) {
+
+            /* running from within agent library */
+
+            PathRemoveFileSpecW(dll_path); /* remove dll name part */
             dll_directory_cookie = ((ADD_DLL_PROC) add_directory)(dll_path);
         }
     }
