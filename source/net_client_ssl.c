@@ -417,7 +417,7 @@ init_ssl(
     ADD_DLL_PROC add_directory =
             (ADD_DLL_PROC) GetProcAddress(GetModuleHandleA("kernel32.dll"), "AddDllDirectory");
     if (add_directory != NULL) {
-        if (GetModuleFileNameW(NULL, dll_path, sizeof (dll_path) - 1) > 0 &&
+        if (GetModuleFileNameW(NULL, dll_path, (sizeof (dll_path) / sizeof (wchar_t)) - 1) > 0 &&
                 (wcsstr(dll_path, L"agentadmin.exe") != NULL || wcsstr(dll_path, L"test.exe") != NULL)) {
 
             /* we are running from within agentadmin or testing module */
@@ -433,7 +433,7 @@ init_ssl(
 #else
                 "mod_iis_openam.dll"
 #endif
-                ), dll_path, sizeof (dll_path) - 1) > 0) {
+                ), dll_path, (sizeof (dll_path) / sizeof (wchar_t)) - 1) > 0) {
 
             /* running from within agent library */
 
