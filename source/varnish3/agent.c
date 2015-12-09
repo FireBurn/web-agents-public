@@ -317,28 +317,51 @@ static am_status_t set_header_in_request(am_request_t *ar, const char *key, cons
     return AM_SET_HEADER_REQ(req, make_header_key(key), NOTNULL(value));
 }
 
+static char *WS_Copy(struct ws *ws, const char *string, size_t size) {
+    char *copy = WS_Alloc(ws, size + 1);
+    if (copy == NULL) return NULL;
+    memcpy(copy, string, size);
+    copy[size] = 0;
+    return copy;
+}
+
 static am_status_t set_cookie(am_request_t *ar, const char *header) {
     struct request *req = (struct request *) ar->ctx;
+    am_status_t status = AM_SUCCESS;
     const char *current_cookies;
-    if (req == NULL || !ISVALID(header)) return AM_EINVAL;
+    char *cookie, *equals, *sep;
+    if (req == NULL || ISINVALID(header)) return AM_EINVAL;
 
+    /* add cookie in response headers */
     AM_ADD_HEADER_RESP_DELIVER(req, make_header_key("Set-Cookie"), header);
 
-    current_cookies = get_request_header(req->ctx, HTTP_HDR_COOKIE);
-    if (ISVALID(current_cookies)) {
-        char *h = WS_Alloc(req->ctx->ws, strlen(current_cookies) + strlen(header) + 3);
-        if (h == NULL) {
-            return AM_ENOMEM;
-        }
-        strcpy(h, header);
-        strcat(h, "; ");
-        strcat(h, current_cookies);
-        set_header_in_request(ar, HTTP_HDR_COOKIE, h);
-        return AM_SUCCESS;
-    }
+    /* modify Cookie request header */
+    cookie = WS_Copy(req->ctx->ws, header, strlen(header));
+    if (cookie == NULL) return AM_ENOMEM;
 
-    set_header_in_request(ar, HTTP_HDR_COOKIE, header);
-    return AM_SUCCESS;
+    equals = strchr(cookie, '=');
+    sep = strchr(cookie, ';');
+    current_cookies = get_request_header(req->ctx, HTTP_HDR_COOKIE);
+
+    if (sep != NULL && equals != NULL && (sep - equals) > 1) {
+        char *new_key = WS_Copy(req->ctx->ws, cookie, (equals - cookie) + 1); /* keep equals sign */
+        char *new_value = WS_Copy(req->ctx->ws, cookie, sep - cookie);
+        if (new_key == NULL || new_value == NULL) return AM_ENOMEM;
+        if (ISINVALID(current_cookies)) {
+            /* Cookie request header is not available yet - set it now */
+            return set_header_in_request(ar, HTTP_HDR_COOKIE, new_value);
+        }
+        if (strstr(current_cookies, new_key) == NULL) {
+            /* append header value to the existing one */
+            char *new_cookie = WS_Alloc(req->ctx->ws, strlen(current_cookies) + strlen(new_value) + 2);
+            if (new_cookie == NULL) return AM_ENOMEM;
+            strcpy(new_cookie, current_cookies);
+            strcat(new_cookie, ";");
+            strcat(new_cookie, new_value);
+            status = set_header_in_request(ar, HTTP_HDR_COOKIE, new_cookie);
+        }
+    }
+    return status;
 }
 
 static am_status_t add_header_in_response(am_request_t *ar, const char *key, const char *value) {

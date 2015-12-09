@@ -48,9 +48,9 @@ APLOG_USE_MODULE(amagent);
 
 /* APLOG_INFO APLOG_ERR APLOG_WARNING APLOG_DEBUG */
 #define LOG_R(l,r,...) \
-	ap_log_rerror(APLOG_MARK,l|APLOG_NOERRNO,0,r, "%s", apr_psprintf((r)->pool, __VA_ARGS__))
+        ap_log_rerror(APLOG_MARK,l|APLOG_NOERRNO,0,r, "%s", apr_psprintf((r)->pool, __VA_ARGS__))
 #define LOG_S(l,s,...) \
-	ap_log_error(APLOG_MARK,l|APLOG_NOERRNO,0,s, "%s", apr_psprintf((s)->process->pool, __VA_ARGS__))
+        ap_log_error(APLOG_MARK,l|APLOG_NOERRNO,0,s, "%s", apr_psprintf((s)->process->pool, __VA_ARGS__))
 
 typedef struct {
     char enabled;
@@ -291,14 +291,31 @@ static am_status_t set_header_in_request(am_request_t *rq, const char *key, cons
 
 static am_status_t set_cookie(am_request_t *rq, const char *header) {
     request_rec *r = (request_rec *) (rq != NULL ? rq->ctx : NULL);
-    const char *c;
-    if (r == NULL || !ISVALID(header)) return AM_EINVAL;
+    const char *current_cookies;
+    char *cookie, *equals, *sep;
+    if (r == NULL || ISINVALID(header)) return AM_EINVAL;
+    /* add cookie in response headers */
     apr_table_add(r->err_headers_out, "Set-Cookie", header);
-    c = apr_table_get(r->headers_in, "Cookie");
-    if (c == NULL) {
-        apr_table_add(r->headers_in, "Cookie", header);
-    } else {
-        apr_table_set(r->headers_in, "Cookie", apr_pstrcat(r->pool, header, ";", c, NULL));
+
+    /* modify Cookie request header */
+    cookie = apr_pstrdup(r->pool, header);
+    if (cookie == NULL) return AM_ENOMEM;
+
+    equals = strchr(cookie, '=');
+    sep = strchr(cookie, ';');
+    current_cookies = apr_table_get(r->headers_in, "Cookie");
+
+    if (sep != NULL && equals != NULL && (sep - equals) > 1) {
+        char *new_key = apr_pstrndup(r->pool, cookie, (equals - cookie) + 1); /* keep equals sign */
+        char *new_value = apr_pstrndup(r->pool, cookie, sep - cookie);
+        if (new_key == NULL || new_value == NULL) return AM_ENOMEM;
+        if (ISINVALID(current_cookies)) {
+            /* Cookie request header is not available yet - set it now */
+            apr_table_add(r->headers_in, "Cookie", new_value);
+        } else if (strstr(current_cookies, new_key) == NULL) {
+            /* append header value to the existing one */
+            apr_table_set(r->headers_in, "Cookie", apr_pstrcat(r->pool, current_cookies, ";", new_value, NULL));
+        }
     }
     return AM_SUCCESS;
 }

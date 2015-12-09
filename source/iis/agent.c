@@ -59,6 +59,13 @@ static void *alloc_request(IHttpContext *r, size_t s) {
     return ret;
 }
 
+static char *strndup_request(IHttpContext *r, const char *string, size_t size) {
+    char *copy = (char *) alloc_request(r, size + 1);
+    if (copy == NULL) return NULL;
+    memcpy(copy, string, size);
+    return copy;
+}
+
 static char *utf8_encode(IHttpContext *r, const wchar_t *wstr, size_t *outlen) {
     char *tmp = NULL;
     int ret_len, out_len = wstr != NULL ?
@@ -553,43 +560,47 @@ static am_status_t set_header_in_request(am_request_t *rq, const char *key, cons
 
 static am_status_t set_cookie(am_request_t *rq, const char *header) {
     static const char *thisfunc = "set_cookie():";
-    am_status_t status = AM_ERROR;
-    const char *cookie;
-    size_t header_sz = 0;
-    char *header_data;
+    am_status_t status = AM_SUCCESS;
+    const char *current_cookies;
+    char *cookie, *equals, *sep;
+    size_t cookie_sz;
     HRESULT hr;
     IHttpContext *r = (IHttpContext *) (rq != NULL ? rq->ctx : NULL);
-    if (r == NULL || !ISVALID(header)) return AM_EINVAL;
+    if (r == NULL || ISINVALID(header)) return AM_EINVAL;
 
-    header_sz = strlen(header);
-    header_data = (char *) alloc_request(r, header_sz + 1);
-    if (header_data != NULL) {
-        memcpy(header_data, header, header_sz);
-        header_data[header_sz] = 0;
-        hr = r->GetResponse()->SetHeader("Set-Cookie", header_data, (USHORT) header_sz, FALSE);
-        if (!FAILED(hr)) {
-            status = AM_SUCCESS;
-        } else {
-            AM_LOG_WARNING(rq->instance_id, "%s failed to set response header Set-Cookie value %s (%d)", thisfunc,
-                    LOGEMPTY(header_data), hr_to_winerror(hr));
-        }
-    } else {
-        status = AM_ENOMEM;
+    /* add cookie in response headers */
+    cookie_sz = strlen(header);
+    cookie = strndup_request(r, header, cookie_sz);
+    if (cookie == NULL) return AM_ENOMEM;
+
+    hr = r->GetResponse()->SetHeader("Set-Cookie", cookie, (USHORT) cookie_sz, FALSE);
+    if (FAILED(hr)) {
+        AM_LOG_WARNING(rq->instance_id, "%s failed to set response header Set-Cookie value %s (%d)", thisfunc,
+                LOGEMPTY(cookie), hr_to_winerror(hr));
+        return AM_ERROR;
     }
 
-    cookie = get_server_variable(r, rq->instance_id, "HTTP_COOKIE");
-    if (cookie == NULL) {
-        status = set_header_in_request(rq, "Cookie", header);
-    } else {
-        size_t cookie_sz = strlen(cookie);
-        char *new_cookie = (char *) alloc_request(r, cookie_sz + header_sz + 3);
-        if (new_cookie != NULL) {
-            strcpy(new_cookie, cookie);
-            strcat(new_cookie, "; ");
-            strcat(new_cookie, header);
+    /* modify Cookie request header */
+    equals = strchr(cookie, '=');
+    sep = strchr(cookie, ';');
+    current_cookies = get_server_variable(r, rq->instance_id, "HTTP_COOKIE");
+
+    if (sep != NULL && equals != NULL && (sep - equals) > 1) {
+        char *new_key = strndup_request(r, cookie, (equals - cookie) + 1); /* keep equals sign */
+        char *new_value = strndup_request(r, cookie, sep - cookie);
+        if (new_key == NULL || new_value == NULL) return AM_ENOMEM;
+        if (ISINVALID(current_cookies)) {
+            /* Cookie request header is not available yet - set it now */
+            return set_header_in_request(rq, "Cookie", new_value);
+        }
+        if (strstr(current_cookies, new_key) == NULL) {
+            /* append header value to the existing one */
+            char *new_cookie = (char *) alloc_request(r, strlen(current_cookies) + strlen(new_value) + 2);
+            if (new_cookie == NULL) return AM_ENOMEM;
+            strcpy(new_cookie, current_cookies);
+            strcat(new_cookie, ";");
+            strcat(new_cookie, new_value);
             status = set_header_in_request(rq, "Cookie", new_cookie);
-        } else {
-            status = AM_ENOMEM;
         }
     }
     return status;
@@ -871,7 +882,7 @@ class OpenAMHttpModule : public CHttpModule{
             /* WriteEventLog("%s GetConfig config is not enabled for site %d", thisfunc, site->GetSiteId()); */
             return RQ_NOTIFICATION_CONTINUE;
         }
-        
+
         boot = conf->GetBootConf();
         if (boot != NULL) {
             /* register and update instance logger configuration (for already registered

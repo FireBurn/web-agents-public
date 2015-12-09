@@ -1349,27 +1349,31 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
              * if not - try cookie_maxage parameter;
              * if none of the above is provided/valid use a default 300 sec value
              */
+#define COOKIE_MAX_AGE_DEFAULT 300
+
             errno = 0;
             sec = ISVALID(maxage) ? strtol(maxage, NULL, AM_BASE_TEN)
-                    : r->conf->cookie_maxage > 0 ? r->conf->cookie_maxage : 300;
+                    : r->conf->cookie_maxage > 0 ? r->conf->cookie_maxage : COOKIE_MAX_AGE_DEFAULT;
             if (sec <= 0 || errno == ERANGE) {
-                am_asprintf(&cookie, "%s;Max-Age=0;Expires=Thu, 01-Jan-1970 00:00:01 GMT", cookie);
-            } else {
-                time(&raw);
-                raw += sec;
-#ifdef _WIN32
-                gmtime_s(&now, &raw);
-#endif
-                strftime(time_string, sizeof (time_string),
-                        "%a, %d-%b-%Y %H:%M:%S GMT",
-#ifdef _WIN32
-                        &now
-#else
-                        gmtime_r(&raw, &now)
-#endif
-                        );
-                am_asprintf(&cookie, "%s;Max-Age=%d;Expires=%s", cookie, sec, time_string);
+                AM_LOG_WARNING(r->instance_id, "%s failed to set max-age parameter value %s, defaulting to %d seconds",
+                        thisfunc, LOGEMPTY(maxage), COOKIE_MAX_AGE_DEFAULT);
+                sec = COOKIE_MAX_AGE_DEFAULT;
             }
+
+            time(&raw);
+            raw += sec;
+#ifdef _WIN32
+            gmtime_s(&now, &raw);
+#endif
+            strftime(time_string, sizeof (time_string),
+                    "%a, %d-%b-%Y %H:%M:%S GMT",
+#ifdef _WIN32
+                    &now
+#else
+                    gmtime_r(&raw, &now)
+#endif
+                    );
+            am_asprintf(&cookie, "%s;Max-Age=%d;Expires=%s", cookie, sec, time_string);
         }
     }
 
@@ -1504,6 +1508,16 @@ static void set_user_attributes(am_request_t *r) {
                         "cookie header %s", thisfunc, am_strerror(rv),
                         LOGEMPTY(r->conf->cookie_name), LOGEMPTY(r->cookies));
             } else {
+                const char *timeleft = get_attr_value(r, "timeleft", AM_SESSION_ATTRIBUTE);
+                if (ISVALID(timeleft)) {
+                    long sec;
+                    errno = 0;
+                    sec = strtol(timeleft, NULL, AM_BASE_TEN);
+                    if (sec <= 0L || errno == ERANGE || sec > 86400L) {
+                        /* do not allow invalid or unreasonably high values for a session cookie */
+                        timeleft = NULL;
+                    }
+                }
 
                 am_asprintf(&new_cookie_hdr, "%s%s%s=%s",
                         new_cookie_hdr == NULL ? "" : new_cookie_hdr,
@@ -1523,10 +1537,10 @@ static void set_user_attributes(am_request_t *r) {
                         am_config_map_t *m = &r->conf->cdsso_cookie_domain_map[i];
                         AM_LOG_DEBUG(r->instance_id, "%s setting session cookie in %s domain",
                                 thisfunc, LOGEMPTY(m->value));
-                        do_cookie_set_generic(r, NULL, r->conf->cookie_name, r->token, m->value, NULL, NULL);
+                        do_cookie_set_generic(r, NULL, r->conf->cookie_name, r->token, m->value, NULL, timeleft);
                     }
                 } else {
-                    do_cookie_set_generic(r, NULL, r->conf->cookie_name, r->token, NULL, NULL, NULL);
+                    do_cookie_set_generic(r, NULL, r->conf->cookie_name, r->token, NULL, NULL, timeleft);
                 }
             }
         }
