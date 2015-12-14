@@ -40,6 +40,8 @@
 #include "am.h"
 
 static const char amagent_post_filter_name[] = "AmModuleFilterIn";
+static const char amagent_preserve_url_hook_name[] = "AmModulePreservedUrl";
+
 module AP_MODULE_DECLARE_DATA amagent_module;
 
 #ifdef APLOG_USE_MODULE
@@ -259,7 +261,7 @@ static am_status_t get_request_url(am_request_t *req) {
         return AM_EINVAL;
     }
 
-    req->orig_url = ap_construct_url(rec->pool, rec->unparsed_uri, rec);
+    req->orig_url = apr_table_get(rec->notes, amagent_preserve_url_hook_name);
     if (req->orig_url == NULL) {
         return AM_EINVAL;
     }
@@ -791,12 +793,58 @@ static apr_status_t amagent_post_filter(ap_filter_t *f, apr_bucket_brigade *buck
     return ap_get_brigade(f->next, bucket_out, emode, eblock, nbytes);
 }
 
+static int amagent_preserve_url(request_rec *r) {
+    int i;
+    request_rec *prev, *main;
+#define AM_REQUEST_CHAIN_LIMIT 5
+
+    const char* url = apr_table_get(r->notes, amagent_preserve_url_hook_name);
+    if (url != NULL) return DECLINED;
+
+
+    /* Go down the prev chain to see if this request was a rewrite
+     * from another one.  We want to store the uri the user passed in,
+     * not the one it was rewritten to */
+    prev = r->prev;
+    for (i = 0; (url == NULL) && (prev != NULL) && (i < AM_REQUEST_CHAIN_LIMIT);
+            ++i, prev = prev->prev) {
+        url = apr_table_get(prev->notes, amagent_preserve_url_hook_name);
+    }
+
+    /* Do the same for main chain as well (mod_dir internal redirects) */
+    main = r->main;
+    for (i = 0; (url == NULL) && (main != NULL) && (i < AM_REQUEST_CHAIN_LIMIT);
+            ++i, main = main->main) {
+        url = apr_table_get(main->notes, amagent_preserve_url_hook_name);
+    }
+
+    /* Look into unparsed_uri to check if it is an absolute or relative url/uri.
+     * ap_construct_url() works on relative uri values.
+     */
+    if (url == NULL) {
+#ifdef _WIN32
+        if (_strnicmp(r->unparsed_uri,
+#else
+        if (strncasecmp(r->unparsed_uri,
+#endif
+                "http", 4) == 0) {
+            url = apr_pstrdup(r->pool, r->unparsed_uri);
+        } else {
+            url = ap_construct_url(r->pool, r->unparsed_uri, r);
+        }
+    }
+
+    apr_table_set(r->notes, amagent_preserve_url_hook_name, url);
+    return DECLINED;
+}
+
 static void amagent_register_hooks(apr_pool_t *p) {
 #if AP_SERVER_MAJORVERSION_NUMBER == 2 && AP_SERVER_MINORVERSION_NUMBER < 3
     ap_hook_access_checker(amagent_auth_handler, NULL, NULL, APR_HOOK_FIRST);
 #else
     ap_hook_check_access_ex(amagent_auth_handler, NULL, NULL, APR_HOOK_FIRST, AP_AUTH_INTERNAL_PER_CONF);
 #endif
+    ap_hook_translate_name(amagent_preserve_url, NULL, NULL, APR_HOOK_FIRST - 2);
     ap_hook_post_config(amagent_init, NULL, NULL, APR_HOOK_MIDDLE);
     ap_hook_child_init(amagent_worker_init, NULL, NULL, APR_HOOK_MIDDLE);
 

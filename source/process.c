@@ -192,6 +192,9 @@ static am_return_t setup_request_data(am_request_t *r) {
         AM_LOG_ERROR(r->instance_id, "%s failed to get request url", thisfunc);
         return AM_FAIL;
     }
+    
+    AM_LOG_DEBUG(r->instance_id, "%s original request url: %s", thisfunc, r->orig_url);
+    
     if (parse_url(r->orig_url, &r->url)) {
         AM_LOG_ERROR(r->instance_id, "%s failed to normalize request url: %s (%s)",
                 thisfunc, r->orig_url, am_strerror(r->url.error));
