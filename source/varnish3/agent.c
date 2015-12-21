@@ -71,7 +71,7 @@ struct request {
 static pthread_mutex_t init_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_once_t thread_once = PTHREAD_ONCE_INIT;
 static pthread_key_t thread_key;
-static int n_init = 0;
+static volatile int n_init = 0;
 static const size_t min_stack_sz = 128 * 1024;
 
 char *url_decode(const char *str);
@@ -317,7 +317,7 @@ static am_status_t set_header_in_request(am_request_t *ar, const char *key, cons
     return AM_SET_HEADER_REQ(req, make_header_key(key), NOTNULL(value));
 }
 
-static char *WS_Copy(struct ws *ws, const char *string, size_t size) {
+static char *WS_Copy_internal(struct ws *ws, const char *string, size_t size) {
     char *copy = WS_Alloc(ws, size + 1);
     if (copy == NULL) return NULL;
     memcpy(copy, string, size);
@@ -336,7 +336,7 @@ static am_status_t set_cookie(am_request_t *ar, const char *header) {
     AM_ADD_HEADER_RESP_DELIVER(req, make_header_key("Set-Cookie"), header);
 
     /* modify Cookie request header */
-    cookie = WS_Copy(req->ctx->ws, header, strlen(header));
+    cookie = WS_Copy_internal(req->ctx->ws, header, strlen(header));
     if (cookie == NULL) return AM_ENOMEM;
 
     equals = strchr(cookie, '=');
@@ -344,8 +344,8 @@ static am_status_t set_cookie(am_request_t *ar, const char *header) {
     current_cookies = get_request_header(req->ctx, HTTP_HDR_COOKIE);
 
     if (sep != NULL && equals != NULL && (sep - equals) > 1) {
-        char *new_key = WS_Copy(req->ctx->ws, cookie, (equals - cookie) + 1); /* keep equals sign */
-        char *new_value = WS_Copy(req->ctx->ws, cookie, sep - cookie);
+        char *new_key = WS_Copy_internal(req->ctx->ws, cookie, (equals - cookie) + 1); /* keep equals sign */
+        char *new_value = WS_Copy_internal(req->ctx->ws, cookie, sep - cookie);
         if (new_key == NULL || new_value == NULL) return AM_ENOMEM;
         if (ISINVALID(current_cookies)) {
             /* Cookie request header is not available yet - set it now */
@@ -841,8 +841,8 @@ int init_function(struct vmod_priv *priv, const struct VCL_conf *conf) {
     if (settings) {
         settings->status = AM_ERROR;
         if (n_init++ == 0) {
-            settings->status = am_init(AM_DEFAULT_AGENT_ID, NULL);
-            am_init_worker(AM_DEFAULT_AGENT_ID);
+            settings->status = am_init(AM_DEFAULT_AGENT_ID);
+            /* am_init_worker(AM_DEFAULT_AGENT_ID); */
         }
     } else {
         fprintf(stderr, "am_vmod_init failed. memory allocation error\n");

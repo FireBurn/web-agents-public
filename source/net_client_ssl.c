@@ -326,20 +326,28 @@ static void show_server_cert(am_net_t *net) {
     char *line;
     cert = SSL_get_peer_certificate(net->ssl.ssl_handle);
     if (cert != NULL) {
-        line = X509_NAME_oneline(X509_get_subject_name(cert), 0, 0);
+
+#define X509_DN_SIZE 1024
+
+        line = calloc(1, X509_DN_SIZE);
+        if (line == NULL) {
+            AM_LOG_ERROR(net->instance_id, "%s memory allocation error", thisfunc);
+            return;
+        }
+        X509_NAME_oneline(X509_get_subject_name(cert), line, X509_DN_SIZE - 1);
         AM_LOG_DEBUG(net->instance_id,
                 "%s server certificate subject: %s", thisfunc, LOGEMPTY(line));
         if (net->options != NULL && net->options->log != NULL) {
             net->options->log("%s server certificate subject: %s", thisfunc, LOGEMPTY(line));
         }
-        am_free(line);
-        line = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0);
+        memset(line, 0, X509_DN_SIZE);
+        X509_NAME_oneline(X509_get_issuer_name(cert), line, X509_DN_SIZE - 1);
         AM_LOG_DEBUG(net->instance_id,
                 "%s server certificate issuer: %s", thisfunc, LOGEMPTY(line));
         if (net->options != NULL && net->options->log != NULL) {
             net->options->log("%s server certificate issuer: %s", thisfunc, LOGEMPTY(line));
         }
-        am_free(line);
+        free(line);
         X509_free(cert);
     }
 }

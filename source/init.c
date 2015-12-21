@@ -89,7 +89,7 @@ static void am_main_init_unlock() {
  * init calls to get agent bootstrapped in different environments, i.e. for unix (and it's variants) we
  * call this function am_init.  For Windows, call am_init_worker.
  */
-int am_init(int id, int (*init_status_cb)(int)) {
+int am_init(int id) {
     int rv = AM_SUCCESS;
 #ifndef _WIN32
     am_net_init();
@@ -99,7 +99,7 @@ int am_init(int id, int (*init_status_cb)(int)) {
     am_audit_processor_init();
     am_url_validator_init();
     rv = am_cache_init(id);
-    am_worker_pool_init(init_status_cb);
+    am_worker_pool_init_main();
 #endif
     return rv;
 }
@@ -118,7 +118,7 @@ int am_init_worker(int id) {
     }
     am_cache_init(id);
 #endif
-    am_worker_pool_init(NULL);
+    am_worker_pool_init();
     return 0;
 }
 
@@ -132,7 +132,7 @@ int am_shutdown(int id) {
 #ifdef _WIN32
     am_main_destroy();
 #else
-    am_worker_pool_shutdown();
+    am_worker_pool_shutdown_main();
     am_net_shutdown();
 #endif
     return 0;

@@ -129,14 +129,6 @@ static void recovery_callback(void *cb_arg, char * name, int error) {
     }
 }
 
-static int main_init_status(int set) {
-    if (set) {
-        *(char **) apr_array_push(ap_server_config_defines) = "AM_PTHREAD_ATFORK_DONE";
-        return AM_SUCCESS;
-    }
-    return ap_exists_config_define("AM_PTHREAD_ATFORK_DONE");
-}
-
 static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
         server_rec *s) {
     /* main process init */
@@ -176,7 +168,7 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
         return APR_EINIT;
     }
 
-    status = am_init(config->agent_id, main_init_status);
+    status = am_init(config->agent_id);
     if (status != AM_SUCCESS) {
         rv = APR_EINIT;
         LOG_S(APLOG_ERR, s, "amagent_init() status: %s", am_strerror(status));

@@ -42,7 +42,8 @@ static TP_CALLBACK_ENVIRON worker_env;
 static PTP_POOL worker_pool = NULL;
 static PTP_CLEANUP_GROUP worker_pool_cleanup = NULL;
 #else
-static int worker_pool_atfork = 0;
+static pthread_once_t worker_pool_initialized = PTHREAD_ONCE_INIT;
+static pthread_once_t worker_pool_main_initialized = PTHREAD_ONCE_INIT;
 static sigset_t fillset;
 
 enum {
@@ -78,31 +79,7 @@ struct am_threadpool {
 };
 
 static struct am_threadpool *worker_pool = NULL;
-
-static void worker_pool_unlock_all() {
-    pthread_mutex_unlock(&worker_pool->lock);
-}
-
-static void worker_pool_lock_all() {
-    pthread_mutex_lock(&worker_pool->lock);
-}
-
-static void worker_pool_fork_handler() {
-    struct am_threadpool_work *work;
-
-    for (work = worker_pool->head; work != NULL; work = worker_pool->head) {
-        worker_pool->head = work->next;
-        free(work);
-    }
-
-    pthread_attr_destroy(&worker_pool->attr);
-    pthread_cond_destroy(&worker_pool->busy);
-    pthread_cond_destroy(&worker_pool->work);
-    pthread_cond_destroy(&worker_pool->wait);
-    pthread_mutex_init(&worker_pool->lock, NULL);
-    free(worker_pool);
-    worker_pool = NULL;
-}
+static struct am_threadpool *worker_pool_main = NULL;
 
 static void *do_work(void *arg);
 
@@ -260,8 +237,6 @@ void
 create_threadpool(
 #ifdef _WIN32
         PINIT_ONCE io, PVOID p, PVOID *c
-#else
-        int (*init_status_cb)(int)
 #endif
         ) {
 #ifdef _WIN32
@@ -292,17 +267,6 @@ create_threadpool(
 
     sigfillset(&fillset);
 
-    if (!worker_pool_atfork) {
-        if (!init_status_cb || !init_status_cb(AM_FALSE)) {
-            if (pthread_atfork(worker_pool_lock_all,
-                    worker_pool_unlock_all, worker_pool_fork_handler) != 0) {
-                return; /* ENOMEM */
-            }
-            if (init_status_cb) init_status_cb(AM_TRUE);
-        }
-    }
-    worker_pool_atfork = 1;
-
     worker_pool = (struct am_threadpool *) malloc(sizeof (struct am_threadpool));
     if (worker_pool == NULL) {
         return;
@@ -327,11 +291,52 @@ create_threadpool(
 #endif
 }
 
-void am_worker_pool_init(int (*init_status_cb)(int)) {
+#ifndef _WIN32
+
+static void create_threadpool_main() {
+
+    if (worker_pool_main != NULL) return;
+
+    sigfillset(&fillset);
+
+    worker_pool_main = (struct am_threadpool *) malloc(sizeof (struct am_threadpool));
+    if (worker_pool_main == NULL) {
+        return;
+    }
+
+    worker_pool_main->active = NULL;
+    worker_pool_main->head = worker_pool_main->tail = NULL;
+    worker_pool_main->flag = 0;
+    worker_pool_main->linger = AM_THREADS_POOL_LINGER;
+    worker_pool_main->min_threads = AM_MIN_THREADS_POOL;
+    worker_pool_main->max_threads = AM_MAX_THREADS_POOL;
+    worker_pool_main->num_threads = 0;
+    worker_pool_main->idle = 0;
+
+    pthread_attr_init(&worker_pool_main->attr);
+    pthread_attr_setdetachstate(&worker_pool_main->attr, PTHREAD_CREATE_DETACHED);
+
+    pthread_mutex_init(&worker_pool_main->lock, NULL);
+    pthread_cond_init(&worker_pool_main->busy, NULL);
+    pthread_cond_init(&worker_pool_main->work, NULL);
+    pthread_cond_init(&worker_pool_main->wait, NULL);
+}
+
+#endif
+
+/* Init thread pool in worker/child process */
+void am_worker_pool_init() {
 #ifdef _WIN32
     InitOnceExecuteOnce(&worker_pool_initialized, create_threadpool, NULL, NULL);
 #else
-    create_threadpool(init_status_cb);
+    pthread_once(&worker_pool_initialized, create_threadpool);
+#endif
+}
+
+/* Init thread pool in main process */
+void am_worker_pool_init_main() {
+#ifndef _WIN32
+    pthread_once(&worker_pool_main_initialized, create_threadpool_main);
 #endif
 }
 
@@ -341,8 +346,10 @@ void am_worker_pool_init(int (*init_status_cb)(int)) {
 void am_worker_pool_init_reset() {
 #ifdef _WIN32
     INIT_ONCE once = INIT_ONCE_STATIC_INIT;
-    memcpy(&worker_pool_initialized, &once, sizeof (worker_pool_initialized));
+#else
+    pthread_once_t once = PTHREAD_ONCE_INIT;
 #endif
+    memcpy(&worker_pool_initialized, &once, sizeof (worker_pool_initialized));
 }
 
 #ifdef _WIN32
@@ -370,8 +377,17 @@ int am_worker_dispatch(void (*worker_f)(void *), void *arg) {
     return status == FALSE ? AM_ENOMEM : AM_SUCCESS;
 #else
     struct am_threadpool_work *cur;
+    struct am_threadpool *pool = NULL;
 
-    if (worker_pool == NULL) return AM_EFAULT;
+    if (worker_pool != NULL) {
+        /* we've been requested to run a job from within a worker process */
+        pool = worker_pool;
+    } else if (worker_pool_main != NULL) {
+        /* or from within main process */
+        pool = worker_pool_main;
+    }
+
+    if (pool == NULL) return AM_EFAULT;
 
     cur = (struct am_threadpool_work *) malloc(sizeof (struct am_threadpool_work));
     if (cur == NULL) {
@@ -382,29 +398,78 @@ int am_worker_dispatch(void (*worker_f)(void *), void *arg) {
     cur->arg = arg;
     cur->next = NULL;
 
-    pthread_mutex_lock(&worker_pool->lock);
+    pthread_mutex_lock(&pool->lock);
 
-    if (worker_pool->head == NULL) {
-        worker_pool->head = cur;
+    if (pool->head == NULL) {
+        pool->head = cur;
     } else {
-        worker_pool->tail->next = cur;
+        pool->tail->next = cur;
     }
-    worker_pool->tail = cur;
+    pool->tail = cur;
 
-    if (worker_pool->idle > 0) {
+    if (pool->idle > 0) {
         /* if there is an idle worker in the pool - wake it up */
-        pthread_cond_signal(&worker_pool->work);
-    } else if (worker_pool->num_threads < worker_pool->max_threads &&
-            create_worker(worker_pool) == 0) {
+        pthread_cond_signal(&pool->work);
+    } else if (pool->num_threads < pool->max_threads &&
+            create_worker(pool) == 0) {
         /* new worker scheduled */
-        worker_pool->num_threads++;
+        pool->num_threads++;
     }
 
-    pthread_mutex_unlock(&worker_pool->lock);
+    pthread_mutex_unlock(&pool->lock);
     return AM_SUCCESS;
 #endif
 }
 
+#ifndef _WIN32
+
+static void worker_pool_shutdown(struct am_threadpool **threadpool) {
+    struct am_threadpool_active *active;
+    struct am_threadpool_work *work;
+    struct am_threadpool *pool;
+
+    if (threadpool == NULL || *threadpool == NULL) return;
+    pool = *threadpool;
+
+    pthread_mutex_lock(&pool->lock);
+    pthread_cleanup_push(cleanup_unlock_mutex, &pool->lock);
+
+    pool->flag |= AM_THREADPOOL_DESTROY;
+    pthread_cond_broadcast(&pool->work);
+
+    /* cancel all active workers */
+    for (active = pool->active; active != NULL; active = active->next) {
+        pthread_cancel(active->thread);
+    }
+
+    /* wait for all active workers to finish */
+    while (pool->active != NULL) {
+        pool->flag |= AM_THREADPOOL_WAIT;
+        pthread_cond_wait(&pool->wait, &pool->lock);
+    }
+
+    while (pool->num_threads != 0) {
+        pthread_cond_wait(&pool->busy, &pool->lock);
+    }
+    pthread_cleanup_pop(1);
+
+    for (work = pool->head; work != NULL; work = pool->head) {
+        pool->head = work->next;
+        free(work);
+    }
+
+    pthread_attr_destroy(&pool->attr);
+    pthread_mutex_destroy(&pool->lock);
+    pthread_cond_destroy(&pool->busy);
+    pthread_cond_destroy(&pool->work);
+    pthread_cond_destroy(&pool->wait);
+    free(pool);
+    *threadpool = NULL;
+}
+
+#endif
+
+/* Shut down thread pool in worker/child process */
 void am_worker_pool_shutdown() {
 #ifdef _WIN32
     CloseThreadpoolCleanupGroupMembers(worker_pool_cleanup, TRUE, NULL);
@@ -412,47 +477,20 @@ void am_worker_pool_shutdown() {
     DestroyThreadpoolEnvironment(&worker_env);
     CloseThreadpool(worker_pool);
     worker_pool_cleanup = NULL;
-#else
-    struct am_threadpool_active *active;
-    struct am_threadpool_work *work;
-
-    if (worker_pool == NULL) return;
-
-    pthread_mutex_lock(&worker_pool->lock);
-    pthread_cleanup_push(cleanup_unlock_mutex, &worker_pool->lock);
-
-    worker_pool->flag |= AM_THREADPOOL_DESTROY;
-    pthread_cond_broadcast(&worker_pool->work);
-
-    /* cancel all active workers */
-    for (active = worker_pool->active; active != NULL; active = active->next) {
-        pthread_cancel(active->thread);
-    }
-
-    /* wait for all active workers to finish */
-    while (worker_pool->active != NULL) {
-        worker_pool->flag |= AM_THREADPOOL_WAIT;
-        pthread_cond_wait(&worker_pool->wait, &worker_pool->lock);
-    }
-
-    while (worker_pool->num_threads != 0) {
-        pthread_cond_wait(&worker_pool->busy, &worker_pool->lock);
-    }
-    pthread_cleanup_pop(1);
-
-    for (work = worker_pool->head; work != NULL; work = worker_pool->head) {
-        worker_pool->head = work->next;
-        free(work);
-    }
-
-    pthread_attr_destroy(&worker_pool->attr);
-    pthread_mutex_destroy(&worker_pool->lock);
-    pthread_cond_destroy(&worker_pool->busy);
-    pthread_cond_destroy(&worker_pool->work);
-    pthread_cond_destroy(&worker_pool->wait);
-    free(worker_pool);
-#endif
     worker_pool = NULL;
+#else
+    worker_pool_shutdown(&worker_pool);
+#endif
+}
+
+/* Shut down thread pool in main process (does not affect worker/child process pool(s). */
+void am_worker_pool_shutdown_main() {
+#ifndef _WIN32
+    pthread_once_t once = PTHREAD_ONCE_INIT;
+    worker_pool_shutdown(&worker_pool_main);
+    /* reset main process pool init flag */
+    memcpy(&worker_pool_main_initialized, &once, sizeof (worker_pool_main_initialized));
+#endif
 }
 
 am_event_t *create_event() {
