@@ -102,6 +102,7 @@ typedef long                gid_t;
 #include <dlfcn.h>
 #include <pwd.h>
 #include <grp.h>
+#include <strings.h>
 
 #ifdef __APPLE__
 #include <mach-o/dyld.h>

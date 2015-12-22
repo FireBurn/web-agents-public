@@ -119,7 +119,7 @@ static am_return_t setup_request_data(am_request_t *r) {
     static const char *thisfunc = "setup_request_data():";
     am_status_t status = AM_ERROR, status_token_query = AM_ERROR;
     char *s, *v;
-    struct url u, au;
+    struct url request_url, agent_url;
 
     if (r == NULL || r->ctx == NULL || r->conf == NULL) {
         return AM_FAIL;
@@ -192,9 +192,9 @@ static am_return_t setup_request_data(am_request_t *r) {
         AM_LOG_ERROR(r->instance_id, "%s failed to get request url", thisfunc);
         return AM_FAIL;
     }
-    
+
     AM_LOG_DEBUG(r->instance_id, "%s original request url: %s", thisfunc, r->orig_url);
-    
+
     if (parse_url(r->orig_url, &r->url)) {
         AM_LOG_ERROR(r->instance_id, "%s failed to normalize request url: %s (%s)",
                 thisfunc, r->orig_url, am_strerror(r->url.error));
@@ -236,24 +236,28 @@ static am_return_t setup_request_data(am_request_t *r) {
         *pos = '\0';
     }
 
-    /* re-format normalized request url depending on override parameter values */
-    memcpy(&u, &r->url, sizeof (struct url));
-    if (parse_url(r->conf->agenturi, &au) == 0) {
+    /* Re-format normalized request url based on override parameter values.
+     * In a case where none of the override parameters are set, overridden_url will 
+     * have the same value as normalized_url. 
+     **/
+    memcpy(&request_url, &r->url, sizeof (struct url));
+    if (parse_url(r->conf->agenturi, &agent_url) == 0) {
         if (r->conf->override_protocol) {
-            strncpy(u.proto, au.proto, sizeof (u.proto) - 1);
+            strncpy(request_url.proto, agent_url.proto, sizeof (request_url.proto) - 1);
         }
         if (r->conf->override_host) {
-            strncpy(u.host, au.host, sizeof (u.host) - 1);
+            strncpy(request_url.host, agent_url.host, sizeof (request_url.host) - 1);
         }
         if (r->conf->override_port) {
-            u.port = au.port;
+            request_url.port = agent_url.port;
         }
     } else {
         AM_LOG_WARNING(r->instance_id, "%s failed to parse agenturi.prefix %s",
                 thisfunc, LOGEMPTY(r->conf->agenturi));
     }
 
-    am_asprintf(&r->overridden_url, "%s://%s:%d%s%s", u.proto, u.host, u.port, u.path, u.query);
+    am_asprintf(&r->overridden_url, "%s://%s:%d%s%s", request_url.proto, request_url.host,
+            request_url.port, request_url.path, request_url.query);
     if (r->overridden_url == NULL) {
         AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
         r->status = AM_ENOMEM;
@@ -329,7 +333,7 @@ static am_return_t validate_url(am_request_t *r) {
     AM_LOG_DEBUG(r->instance_id, "%s", thisfunc);
 
     if (ISVALID(r->conf->url_check_regex)) {
-        int s = match(r->instance_id, r->normalized_url, r->conf->url_check_regex);
+        int s = match(r->instance_id, r->overridden_url, r->conf->url_check_regex);
         if (s != 0) {
             AM_LOG_ERROR(r->instance_id, "%s request url validation failed", thisfunc);
             r->status = AM_FORBIDDEN;
@@ -480,7 +484,7 @@ static am_bool_t url_matches_pattern(am_request_t *r, const char *pattern,
 static am_return_t handle_not_enforced(am_request_t *r) {
     static const char *thisfunc = "handle_not_enforced():";
     int i;
-    const char *url = r->normalized_url;
+    const char *url = r->overridden_url;
     char *pdp_path = NULL;
 
     AM_LOG_DEBUG(r->instance_id, "%s", thisfunc);
@@ -801,16 +805,15 @@ static am_return_t validate_token(am_request_t *r) {
     }
 
     if (status == AM_SUCCESS && ISVALID(r->token) && (strchr(r->token, '%') != NULL)) {
-    	/* token is url encoded and needs to be decoded */
-    	char* decoded_token = url_decode(r->token);
-    	if (decoded_token != NULL) {
-    		am_free(r->token);
-    		r->token = decoded_token;
-    	}
-    	else {
-    		status = AM_ENOMEM;
-    		return_status = AM_FAIL;
-    	}
+        /* token is url encoded and needs to be decoded */
+        char* decoded_token = url_decode(r->token);
+        if (decoded_token != NULL) {
+            am_free(r->token);
+            r->token = decoded_token;
+        } else {
+            status = AM_ENOMEM;
+            return_status = AM_FAIL;
+        }
     }
 
     AM_LOG_DEBUG(r->instance_id, "%s sso token: %s, status: %s", thisfunc,
@@ -1593,7 +1596,7 @@ static char *find_active_login_server(am_request_t *r, char add_goto_value) {
     char local_alloc = AM_FALSE;
     char *cdsso_elements = NULL;
     char *login_url = NULL;
-    const char *url = r->normalized_url;
+    const char *url = r->overridden_url;
     int valid_idx = get_valid_url_index(r->instance_id);
 
     if (r->conf->cdsso_enable) {
@@ -1873,12 +1876,12 @@ static am_return_t handle_exit(am_request_t *r) {
             if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_ALLOW)) {
                 const char *user_name_log = ISVALID(r->user) ? r->user : r->user_temp;
                 AM_LOG_AUDIT(r->instance_id, AUDIT_ALLOW_USER_MESSAGE,
-                        LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
+                        LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
                 if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE)) {
                     int audit_status = am_add_remote_audit_entry(r->instance_id, r->conf->token,
                             r->session_info.si, r->conf->audit_file_remote,
                             r->token, AUDIT_ALLOW_USER_MESSAGE,
-                            LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
+                            LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
                     if (audit_status != AM_SUCCESS) {
                         AM_LOG_ERROR(r->instance_id, "%s failed to store remote audit log message (%s)",
                                 thisfunc, am_strerror(audit_status));
@@ -1893,17 +1896,17 @@ static am_return_t handle_exit(am_request_t *r) {
                         "<body onload=\"return submitform(document.getform);\">"
                         "<form name=\"getform\" method=\"GET\" action=\"%s\">"
                         "</form></body></html>",
-                        r->normalized_url);
+                        r->overridden_url);
                 if (url != NULL) {
                     AM_LOG_DEBUG(r->instance_id, "%s CDSSO GET request form auto-submitted to %s",
-                            thisfunc, r->normalized_url);
+                            thisfunc, r->overridden_url);
                     r->status = AM_DONE;
                     r->am_set_custom_response_f(r, url, "text/html");
                     free(url);
                 } else {
                     /* r->status = AM_INTERNAL_REDIRECT; */
                     r->status = AM_REDIRECT;
-                    r->am_set_custom_response_f(r, r->normalized_url, NULL);
+                    r->am_set_custom_response_f(r, r->overridden_url, NULL);
                 }
                 break;
             }
@@ -2042,13 +2045,13 @@ static am_return_t handle_exit(am_request_t *r) {
                 const char *user_name_log = ISVALID(r->user) ? r->user : r->user_temp;
 
                 AM_LOG_AUDIT(r->instance_id, AUDIT_DENY_USER_MESSAGE,
-                        LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
+                        LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
 
                 if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE)) {
                     int audit_status = am_add_remote_audit_entry(r->instance_id, r->conf->token,
                             r->session_info.si, r->conf->audit_file_remote,
                             r->token, AUDIT_DENY_USER_MESSAGE,
-                            LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->normalized_url));
+                            LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
                     if (audit_status != AM_SUCCESS) {
                         AM_LOG_ERROR(r->instance_id, "%s failed to store remote audit log message (%s)",
                                 thisfunc, am_strerror(audit_status));
