@@ -39,7 +39,7 @@ void test_init_cleanup(void **state) {
     assert_int_equal(am_remove_shm_and_locks(instance, test_log_callback, &clearup_count), AM_SUCCESS);
     assert_int_equal(clearup_count, 0);
 
-    am_init(instance, NULL);
+    am_init(instance);
     clearup_count = 0;
     assert_int_equal(am_remove_shm_and_locks(instance, test_log_callback, &clearup_count), AM_SUCCESS);
 #ifdef _WIN32

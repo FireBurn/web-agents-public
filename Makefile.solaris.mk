@@ -45,21 +45,22 @@ endif
 
 $(TEST_OBJECTS): CFLAGS += -D_UINTPTR_T_DEFINED
 
-LDFLAGS += -i -z ignore -z lazyload -z nodefs -z combreloc -z nodelete -z origin -R'$$ORIGIN/../lib' -R'$$ORIGIN' \
+LDFLAGS += -i -z ignore -z lazyload -z nodefs -z combreloc -z origin -R'$$ORIGIN/../lib' -R'$$ORIGIN' \
 	-lc -lsocket -lnsl -ldl -lrt -lsendfile -lresolv
+LDFLAGS_SO = -z nodelete
 
 libopenam: $(OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
-	${CC} $(SHARED) -h libopenam.so  $(LDFLAGS) $(OUT_OBJS) -o build/libopenam.so
+	${CC} $(SHARED) -h libopenam.so  $(LDFLAGS) $(LDFLAGS_SO) $(OUT_OBJS) -o build/libopenam.so
 	
 apache: $(OUT_OBJS) $(APACHE_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
-	${CC} $(SHARED) -h mod_openam.so -Wl,-M,source/apache/agent.map $(LDFLAGS) $(OUT_OBJS) \
+	${CC} $(SHARED) -h mod_openam.so -Wl,-M,source/apache/agent.map $(LDFLAGS) $(LDFLAGS_SO) $(OUT_OBJS) \
 	    $(APACHE_OUT_OBJS) -o build/mod_openam.so
 
 apache22: apache22_pre $(OUT_OBJS) $(APACHE22_OUT_OBJS) apache22_post
 	@$(ECHO) "[*** Creating "$@" shared library ***]"
-	${CC} $(SHARED) -h mod_openam.so -Wl,-M,source/apache/agent.map $(LDFLAGS) $(OUT_OBJS) \
+	${CC} $(SHARED) -h mod_openam.so -Wl,-M,source/apache/agent.map $(LDFLAGS) $(LDFLAGS_SO) $(OUT_OBJS) \
 	    $(APACHE22_OUT_OBJS) -o build/mod_openam.so
 	
 iis: 

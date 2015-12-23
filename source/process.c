@@ -70,7 +70,7 @@ static struct transition state_transitions[] = {
     {validate_fqdn_access_c, AM_FAIL, handle_exit_c},
 
     {handle_not_enforced_c, AM_OK, validate_policy_c},
-    {handle_not_enforced_c, AM_FAIL, handle_exit_c},
+    {handle_not_enforced_c, AM_QUIT, handle_exit_c},
 
     {validate_token_c, AM_OK, handle_not_enforced_c},
     {validate_token_c, AM_FAIL, handle_exit_c},
@@ -1505,8 +1505,8 @@ static void set_user_attributes(am_request_t *r) {
             break;
         }
 
-        /* CDSSO: update request Cookie header (session token) */
-        if (r->conf->cdsso_enable) {
+        /* CDSSO: update request/response Cookie header (for a session token) */
+        if (r->conf->cdsso_enable && ISVALID(r->token)) {
             char *new_cookie_hdr = NULL;
             int rv = remove_cookie(r, r->conf->cookie_name, &new_cookie_hdr);
             if (rv != AM_SUCCESS && rv != AM_NOT_FOUND) {

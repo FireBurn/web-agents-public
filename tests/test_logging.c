@@ -154,7 +154,7 @@ void test_logging(void **state) {
 #ifdef _WIN32
     am_init_worker(instance);
 #else
-    am_init(instance, NULL);
+    am_init(instance);
 #endif
 
     am_delete_file("temp-debug.log");
