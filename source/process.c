@@ -957,6 +957,16 @@ static am_return_t validate_policy(am_request_t *r) {
     AM_LOG_DEBUG(r->instance_id, "%s get session cache status: %s",
             thisfunc, am_strerror(status));
 
+    if (status != AM_SUCCESS && r->not_enforced && r->conf->not_enforced_fetch_attr) {
+        /* in case request url is not enforced and attribute fetch is enabled
+         * but there are no cached session data for this token - quit w/o policy evaluation.
+         * 
+         * headers/cookies will be cleared in handle_exit->set_user_attributes
+         */
+        r->status = AM_SUCCESS;
+        return AM_OK;
+    }
+
     if ((status == AM_SUCCESS && cache_ts > 0) || status != AM_SUCCESS) {
         struct am_policy_result *policy_cache_new = NULL;
         struct am_namevalue *session_cache_new = NULL;
@@ -1877,7 +1887,7 @@ static am_return_t handle_exit(am_request_t *r) {
                 const char *user_name_log = ISVALID(r->user) ? r->user : r->user_temp;
                 AM_LOG_AUDIT(r->instance_id, AUDIT_ALLOW_USER_MESSAGE,
                         LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
-                if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE)) {
+                if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE) && ISVALID(r->token)) {
                     int audit_status = am_add_remote_audit_entry(r->instance_id, r->conf->token,
                             r->session_info.si, r->conf->audit_file_remote,
                             r->token, AUDIT_ALLOW_USER_MESSAGE,
@@ -2047,7 +2057,7 @@ static am_return_t handle_exit(am_request_t *r) {
                 AM_LOG_AUDIT(r->instance_id, AUDIT_DENY_USER_MESSAGE,
                         LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
 
-                if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE)) {
+                if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE) && ISVALID(r->token)) {
                     int audit_status = am_add_remote_audit_entry(r->instance_id, r->conf->token,
                             r->session_info.si, r->conf->audit_file_remote,
                             r->token, AUDIT_DENY_USER_MESSAGE,
