@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -1105,13 +1105,10 @@ static am_return_t validate_policy(am_request_t *r) {
             }
         }
 
-        /* pre-fetch user parameter value */
-        if (ISVALID(r->conf->userid_param) && ISVALID(r->conf->userid_param_type)) {
-            if (strcasecmp(r->conf->userid_param_type, "SESSION") == 0) {
-                r->user_temp = get_attr_value(r, r->conf->userid_param, AM_SESSION_ATTRIBUTE);
-            } else {
-                r->user_temp = get_attr_value(r, r->conf->userid_param, AM_POLICY_ATTRIBUTE);
-            }
+        /* pre-fetch user parameter value (from session data) */
+        if (ISVALID(r->conf->userid_param) && ISVALID(r->conf->userid_param_type) &&
+                strcasecmp(r->conf->userid_param_type, "SESSION") == 0) {
+            r->user_temp = get_attr_value(r, r->conf->userid_param, AM_SESSION_ATTRIBUTE);
         }
 
         AM_LIST_FOR_EACH(r->pattr, e, t) {//TODO: work on loop in 2 threads (split loop in 2; search&match in each thread)
@@ -1187,6 +1184,9 @@ static am_return_t validate_policy(am_request_t *r) {
 
                         /* set user parameter value */
                         if (ISVALID(r->conf->userid_param) && ISVALID(r->conf->userid_param_type)) {
+                            if (strcasecmp(r->conf->userid_param_type, "LDAP") == 0) {
+                                r->user_temp = get_attr_value(r, r->conf->userid_param, AM_POLICY_ATTRIBUTE);
+                            }
                             r->user = r->user_temp;
                             r->user_password = get_attr_value(r, "sunIdentityUserPassword", AM_SESSION_ATTRIBUTE);
                         }
@@ -1220,6 +1220,9 @@ static am_return_t validate_policy(am_request_t *r) {
 
                                 /* set user parameter value */
                                 if (ISVALID(r->conf->userid_param) && ISVALID(r->conf->userid_param_type)) {
+                                    if (strcasecmp(r->conf->userid_param_type, "LDAP") == 0) {
+                                        r->user_temp = get_attr_value(r, r->conf->userid_param, AM_POLICY_ATTRIBUTE);
+                                    }
                                     r->user = r->user_temp;
                                     r->user_password = get_attr_value(r, "sunIdentityUserPassword", AM_SESSION_ATTRIBUTE);
                                 }

@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -468,7 +468,7 @@ static am_status_t get_request_url(am_request_t *req) {
     IHttpContext *ctx;
     HTTP_COOKED_URL url;
     am_status_t status = AM_EINVAL;
-    
+
     if (req == NULL) {
         return status;
     }
@@ -1007,6 +1007,8 @@ class OpenAMHttpModule : public CHttpModule{
                     AM_LOG_DEBUG(site->GetSiteId(), "OpenAMHttpModule(): context user set to \"%s\"", userName);
                 }
                 prov->SetUser(httpUser);
+            } else {
+                AM_LOG_DEBUG(site->GetSiteId(), "OpenAMHttpModule(): context user is not available");
             }
         }
         return RQ_NOTIFICATION_CONTINUE;
@@ -1061,25 +1063,39 @@ static am_status_t set_user(am_request_t *rq, const char *user) {
     IHttpContext *r = (IHttpContext *) (rq != NULL ? rq->ctx : NULL);
     OpenAMHttpModule *m = rq != NULL && rq->ctx_class != NULL ?
             static_cast<OpenAMHttpModule *>(rq->ctx_class) : NULL;
-    if (m == NULL || r == NULL) return AM_EINVAL;
-    if (ISVALID(user)) {
-        size_t usz = strlen(user);
-        m->userName = (char *) alloc_request(r, usz + 1);
-        if (m->userName != NULL) {
-            memcpy(m->userName, user, usz);
-            m->userName[usz] = 0;
-        }
+    if (m == NULL || r == NULL || ISINVALID(user)) return AM_EINVAL;
+
+    m->userName = (char *) alloc_request(r, strlen(user) + 1);
+    if (m->userName != NULL) {
+        strcpy(m->userName, user);
+        AM_LOG_DEBUG(rq->instance_id, "%s creating context user \"%s\"", thisfunc, user);
+    } else {
+        AM_LOG_ERROR(rq->instance_id, "%s memory allocation error", thisfunc);
+        return AM_ENOMEM;
     }
+
     if (ISVALID(rq->user_password) && ISVALID(rq->conf->password_replay_key)) {
         char *user_passwd = NULL;
+        AM_LOG_DEBUG(rq->instance_id, "%s setting up user \"%s\" password", thisfunc, user);
         if (des_decrypt(rq->user_password, rq->conf->password_replay_key, &user_passwd) == AM_SUCCESS) {
             m->userPassword = utf8_decode(r, user_passwd, (size_t *) & m->userPasswordSize);
+        } else {
+            AM_LOG_WARNING(rq->instance_id, "%s user \"%s\" password decryption failed", thisfunc, user);
         }
         am_free(user_passwd);
         m->userPasswordCrypted = utf8_decode(r, rq->user_password, (size_t *) & m->userPasswordCryptedSize);
     }
+
     m->doLogOn = rq->conf->logon_user_enable ? TRUE : FALSE;
+    if (m->doLogOn && ISVALID(m->userPassword)) {
+        AM_LOG_DEBUG(rq->instance_id, "%s will try to logon user \"%s\"", thisfunc, user);
+    }
+
     m->showPassword = rq->conf->password_header_enable ? TRUE : FALSE;
+    if (m->showPassword && ISVALID(m->userPasswordCrypted)) {
+        AM_LOG_DEBUG(rq->instance_id,
+                "%s will try to setup encrypted password for user \"%s\" (AUTH_PASSWORD)", thisfunc, user);
+    }
     return AM_SUCCESS;
 }
 
