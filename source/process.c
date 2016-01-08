@@ -988,7 +988,7 @@ static am_return_t validate_policy(am_request_t *r) {
             session_cache_new = NULL;
             status = am_agent_policy_request(r->instance_id, service_url, r->conf->token, r->token,
                     url, am_scope_to_str(scope), r->client_ip, pattrs,
-                    &net_options, r->conf->notif_enable, &session_cache_new, &policy_cache_new);
+                    &net_options, &session_cache_new, &policy_cache_new);
             if (status == AM_SUCCESS && session_cache_new != NULL && policy_cache_new != NULL) {
                 remote = AM_TRUE;
                 break;

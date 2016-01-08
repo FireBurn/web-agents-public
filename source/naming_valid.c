@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2012 - 2015 ForgeRock AS.
+ * Copyright 2012 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -195,6 +195,7 @@ void url_validator_worker(void *arg) {
     net_options->keepalive = AM_FALSE;
     net_options->local = net_options->cert_trust = AM_TRUE;
     net_options->net_timeout = 2; /* fixed for url validator; in sec */
+    net_options->notif_enable = AM_FALSE;
 
     /* do the actual url validation */
 

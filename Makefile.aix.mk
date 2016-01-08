@@ -11,7 +11,7 @@
 # Header, with the fields enclosed by brackets [] replaced by your own identifying
 # information: "Portions copyright [year] [name of copyright owner]".
 #
-# Copyright 2014 - 2015 ForgeRock AS.
+# Copyright 2014 - 2016 ForgeRock AS.
 #
 
 ifndef	AIX_MK_INCLUDED
@@ -32,6 +32,8 @@ ifdef 64
  LDFLAGS += -q64
  CFLAGS += -q64
 endif
+
+OS_ARCH_EXT := $(shell uname -v)$(shell uname -r)
 
 $(TEST_OBJECTS): CFLAGS += -D_UINTPTR_T_DEFINED
 	

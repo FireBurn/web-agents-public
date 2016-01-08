@@ -11,7 +11,7 @@
 # Header, with the fields enclosed by brackets [] replaced by your own identifying
 # information: "Portions copyright [year] [name of copyright owner]".
 #
-# Copyright 2014 - 2015 ForgeRock AS.
+# Copyright 2014 - 2016 ForgeRock AS.
 #
 
 # make options:
@@ -134,7 +134,7 @@ ifeq ($(OS_ARCH), WINNT)
  include Makefile.windows.mk
 endif
 
-VERSION_NUM := $(shell $(ECHO) $(VERSION) | $(SED) -$(SED_ROPT) "s/^([.0-9]*)-.*/\1/g" | $(SED) -$(SED_ROPT) "s/\./\,/g")
+VERSION_NUM := $(shell $(ECHO) $(VERSION) | $(SED) "s/[^-\.0-9]*//g" | $(SED) "s/[\.-]/,/g" | $(SED) "/.*,$$/ s/$$/0/")
 
 $(OBJDIR)/%.$(OBJ): %.c
 	@$(ECHO) "[*** Compiling "$<" ***]"

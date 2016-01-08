@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -1393,7 +1393,7 @@ static void install_interactive(int argc, char **argv) {
                 /* password key cannot be preserved because we will generate a new one during installation */
                 property_map_remove_key(property_map, "com.sun.identity.agents.config.key");
 
-                /* log file location will not be preserved */
+                /* log file location will be preserved */
                 property_map_remove_key(property_map, "com.sun.identity.agents.config.local.logfile");
                 break;
             }
@@ -2362,6 +2362,7 @@ int main(int argc, char **argv) {
         }
         net_options.local = net_options.cert_trust = AM_TRUE;
         net_options.keepalive = AM_FALSE;
+        net_options.notif_enable = AM_FALSE;
         net_options.log = install_log;
 
         /* run through the cli options */

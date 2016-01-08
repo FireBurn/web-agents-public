@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #ifdef _GNU_SOURCE
@@ -290,6 +290,7 @@ void am_net_options_create(am_config_t *conf, am_net_options_t *options, void (*
     options->log = log;
     options->hostmap = NULL;
     options->hostmap_sz = 0;
+    options->notif_enable = conf->notif_enable;
 
     if (conf->hostmap_sz > 0 && conf->hostmap != NULL) {
         options->hostmap = malloc(conf->hostmap_sz * sizeof (char *));

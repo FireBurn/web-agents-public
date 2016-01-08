@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -1411,6 +1411,7 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
             }
 
             am_net_options_create(ac, &net_options, NULL);
+            net_options.notif_enable = AM_TRUE; /* agent token notifications are always enabled */
 
             memset(&r, 0, sizeof (am_request_t));
             r.conf = ac;

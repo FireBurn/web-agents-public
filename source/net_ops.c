@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -480,7 +480,7 @@ static int send_attribute_request(am_net_t *conn, char **token, char **pxml, siz
 }
 
 static int send_session_request(am_net_t *conn, char **token, const char *user_token,
-        struct am_namevalue **session_list, int notify_enable) {
+        struct am_namevalue **session_list) {
     static const char *thisfunc = "send_session_request():";
     size_t post_sz, post_data_sz, token_sz;
     char *post = NULL, *post_data = NULL, *token_in = NULL, *token_b64;
@@ -501,7 +501,7 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
 
     req_data = (struct request_data *) conn->data;
 
-    if (notify_enable) {
+    if (conn->options != NULL && conn->options->notif_enable && ISVALID(conn->options->notif_url)) {
         /* add session listener request only if notification is enabled */
         am_asprintf(&lsnr_req,
                 "<Request><![CDATA["
@@ -513,7 +513,7 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
                 "</SessionRequest>]]>"
                 "</Request>",
                 NOTNULL(token_b64),
-                (conn->options != NULL && ISVALID(conn->options->notif_url) ? conn->options->notif_url : ""),
+                conn->options->notif_url,
                 ISVALID(user_token) ? user_token : *token);
     }
 
@@ -582,12 +582,25 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
 
     if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->data)) {
         if (strstr(req_data->data, "<Exception>") != NULL) {
-            status = AM_ERROR;
-            if (strstr(req_data->data, "Invalid session ID") != NULL) {
-                status = AM_INVALID_SESSION;
-            }
-            if (strstr(req_data->data, "Application token passed in") != NULL) {
-                status = AM_INVALID_AGENT_SESSION;
+            char *temp = strdup(req_data->data);
+            if (temp != NULL) {
+                char *temp_lstnr = strstr(temp, "<AddSessionListener>");
+                if (temp_lstnr != NULL)
+                    temp_lstnr = '\0';
+                
+                /* we should care about the Exception in Session part only */
+                if (strstr(temp, "<Exception>") != NULL) {
+                    status = AM_ERROR;
+                    if (strstr(temp, "Invalid session ID") != NULL) {
+                        status = AM_INVALID_SESSION;
+                    }
+                    if (strstr(temp, "Application token passed in") != NULL) {
+                        status = AM_INVALID_AGENT_SESSION;
+                    }
+                }
+                free(temp);
+            } else {
+                status = AM_ENOMEM;
             }
         }
         if (status == AM_SUCCESS && session_list != NULL) {
@@ -939,7 +952,7 @@ int am_agent_login(unsigned long instance_id, const char *openam,
                 }
             case login_session:
                 /* send session request (PLL endpoint) */
-                status = send_session_request(conn, agent_token, NULL, session_list, 1);
+                status = send_session_request(conn, agent_token, NULL, session_list);
                 if (status != AM_SUCCESS) {
                     state = login_done;
                     break;
@@ -1083,7 +1096,7 @@ int am_agent_logout(unsigned long instance_id, const char *openam, const char *t
 int am_agent_policy_request(unsigned long instance_id, const char *openam,
         const char *token, const char *user_token, const char *req_url,
         const char *scope, const char *cip, const char *pattr,
-        am_net_options_t *options, int notify_enable, struct am_namevalue **session_list, struct am_policy_result **policy_list) {
+        am_net_options_t *options, struct am_namevalue **session_list, struct am_policy_result **policy_list) {
     static const char *thisfunc = "am_agent_policy_request():";
     am_net_t *conn = NULL;
     int status = AM_ERROR;
@@ -1130,7 +1143,7 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
         switch (state) {
             case policy_session:
                 /* send session request (PLL endpoint)  */
-                status = send_session_request(conn, &token_ptr, user_token, session_list, notify_enable);
+                status = send_session_request(conn, &token_ptr, user_token, session_list);
                 if (status != AM_SUCCESS) {
                     state = policy_done;
                     break;
