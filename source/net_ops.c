@@ -586,16 +586,24 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
             if (temp != NULL) {
                 char *temp_lstnr = strstr(temp, "<AddSessionListener>");
                 if (temp_lstnr != NULL)
-                    temp_lstnr = '\0';
-                
+                    *temp_lstnr = '\0';
+
                 /* we should care about the Exception in Session part only */
                 if (strstr(temp, "<Exception>") != NULL) {
                     status = AM_ERROR;
-                    if (strstr(temp, "Invalid session ID") != NULL) {
+                    if (strstr(temp, "Session was not obtained") != NULL) {
                         status = AM_INVALID_SESSION;
-                    }
-                    if (strstr(temp, "Application token passed in") != NULL) {
-                        status = AM_INVALID_AGENT_SESSION;
+                        /* check if thats the agent token which session was not obtained */
+                        if (strstr(temp, *token) != NULL) {
+                            status = AM_INVALID_AGENT_SESSION;
+                        }
+                    } else {
+                        if (strstr(temp, "Invalid session ID") != NULL) {
+                            status = AM_INVALID_SESSION;
+                        }
+                        if (strstr(temp, "Application token passed in") != NULL) {
+                            status = AM_INVALID_AGENT_SESSION;
+                        }
                     }
                 }
                 free(temp);
@@ -797,11 +805,19 @@ static int send_policy_request(am_net_t *conn, const char *token, const char *us
     if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->data)) {
         if (strstr(req_data->data, "<Exception>") != NULL) {
             status = AM_ERROR;
-            if (strstr(req_data->data, "Invalid session ID") != NULL) {
+            if (strstr(req_data->data, "Session was not obtained") != NULL) {
                 status = AM_INVALID_SESSION;
-            }
-            if (strstr(req_data->data, "Application token passed in") != NULL) {
-                status = AM_INVALID_AGENT_SESSION;
+                /* check if thats the agent token which session was not obtained */
+                if (strstr(req_data->data, token) != NULL) {
+                    status = AM_INVALID_AGENT_SESSION;
+                }
+            } else {
+                if (strstr(req_data->data, "Invalid session ID") != NULL) {
+                    status = AM_INVALID_SESSION;
+                }
+                if (strstr(req_data->data, "Application token passed in") != NULL) {
+                    status = AM_INVALID_AGENT_SESSION;
+                }
             }
         }
         if (status == AM_SUCCESS && policy_list != NULL) {
