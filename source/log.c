@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -1003,10 +1003,10 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
     pthread_mutex_unlock(&log->lock);
 #endif
     if (exist == AM_DONE) {
-#define AM_LOG_HEADER "\r\n\r\n\t######################################################\r\n\t# %-51s#\r\n\t# Version: %-42s#\r\n\t# %-51s#\r\n\t# Build date: %s %-27s#\r\n\t######################################################\r\n"
+#define AM_LOG_HEADER "\r\n\r\n\t######################################################\r\n\t# %-51s#\r\n\t# Version: %-42s#\r\n\t# %-51s#\r\n\t# Container: %-40s#\r\n\t# Build date: %s %-27s#\r\n\t######################################################\r\n"
 
         AM_LOG_ALWAYS(instance_id, AM_LOG_HEADER, DESCRIPTION, VERSION,
-                VERSION_VCS, __DATE__, __TIME__);
+                VERSION_VCS, CONTAINER, __DATE__, __TIME__);
 
         am_agent_init_set_value(instance_id, AM_TRUE, AM_UNKNOWN);
     }

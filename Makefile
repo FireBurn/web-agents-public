@@ -162,6 +162,7 @@ version:
 	    -e "s$(SUB)_IDENT_DATE_$(SUB)$(IDENT_DATE)$(SUB)g" \
 	    -e "s$(SUB)_BUILD_MACHINE_$(SUB)$(BUILD_MACHINE)$(SUB)g" \
 	    -e "s$(SUB)_VERSION_NUM_$(SUB)$(VERSION_NUM)$(SUB)g" \
+	    -e "s$(SUB)_CONTAINER_$(SUB)$(CONTAINER)$(SUB)g" \
 	    -e "s$(SUB)_VERSION_$(SUB)$(VERSION)$(SUB)g" < source$(PS)version.template > source$(PS)version.h
 
 clean:
@@ -179,7 +180,8 @@ test_includes:
 	$(ECHO) "};" >> $(OBJDIR)$(PS)tests$(PS)tests.h
 	$(SED) -ie "s$(SUB)\"$(SUB) $(SUB)g" $(OBJDIR)$(PS)tests$(PS)tests.h
 
-apachezip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"2.4.x"'	
+apachezip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"2.4.x"'
+apachezip: CONTAINER = Apache 2.4 $(OS_ARCH)$(OS_ARCH_EXT) $(subst _,,$(OS_BITS))	
 apachezip: clean build version apache agentadmin
 	@$(ECHO) "[***** Building Apache 2.4 agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
@@ -205,6 +207,7 @@ apache22_post:
 	-$(RMALL) source$(PS)apache$(PS)agent22.c
 
 apache22zip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"2.2.x"'
+apache22zip: CONTAINER = Apache 2.2 $(OS_ARCH)$(OS_ARCH_EXT) $(subst _,,$(OS_BITS))
 apache22zip: clean build version apache22 agentadmin
 	@$(ECHO) "[***** Building Apache 2.2 agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
@@ -224,6 +227,7 @@ apache22zip: clean build version apache22 agentadmin
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Apache_v22_$(OS_ARCH)$(OS_ARCH_EXT)$(OS_BITS)_$(VERSION).zip web_agents
 
 iiszip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"7.5, 8.x"'
+iiszip: CONTAINER = IIS 7.5, 8.x $(OS_ARCH)$(OS_ARCH_EXT) $(subst _,,$(OS_BITS))
 iiszip: clean build version iis agentadmin
 	@$(ECHO) "[***** Building IIS agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
@@ -242,6 +246,7 @@ iiszip: clean build version iis agentadmin
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a IIS_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
 
 varnishzip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"4.0.x"'
+varnishzip: CONTAINER = Varnish 4.0.x $(OS_ARCH)$(OS_ARCH_EXT) $(subst _,,$(OS_BITS))
 varnishzip: clean build version varnish agentadmin
 	@$(ECHO) "[***** Building Varnish agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
@@ -259,6 +264,7 @@ varnishzip: clean build version varnish agentadmin
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Varnish_v4_$(OS_ARCH)$(OS_ARCH_EXT)$(OS_BITS)_$(VERSION).zip web_agents
 
 varnish3zip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"3.0.x"'
+varnish3zip: CONTAINER = Varnish 3.0.x $(OS_ARCH)$(OS_ARCH_EXT) $(subst _,,$(OS_BITS))
 varnish3zip: clean build version varnish3 agentadmin
 	@$(ECHO) "[***** Building Varnish agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents

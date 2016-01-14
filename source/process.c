@@ -201,6 +201,18 @@ static am_return_t setup_request_data(am_request_t *r) {
         return AM_FAIL;
     }
 
+    /* do an early check for a session token in query parameters,
+     * remove if found (url evaluation later on 
+     * should not contain session token value; aka cookie-less mode,
+     * applies also to LARES sent as GET parameter)
+     */
+    status_token_query = get_token_from_url(r);
+    if (status_token_query == AM_SUCCESS) {
+        AM_LOG_DEBUG(r->instance_id, "%s found session token '%s' in query parameters", thisfunc, r->token);
+    } else {
+        AM_LOG_DEBUG(r->instance_id, "%s no token in query parameters", thisfunc);
+    }
+
     am_asprintf(&r->normalized_url, "%s://%s:%d%s%s", r->url.proto, r->url.host,
             r->url.port, r->url.path, r->url.query);
     if (r->normalized_url == NULL) {
@@ -295,18 +307,6 @@ static am_return_t setup_request_data(am_request_t *r) {
      * org.forgerock.agents.config.json.url[] configuration parameter values
      */
     r->is_json_url = is_json_request(r);
-
-    /* do an early check for a session token in query parameters,
-     * remove if found (url evaluation later on 
-     * should not contain session token value; aka cookie-less mode,
-     * applies also to LARES sent as GET parameter)
-     */
-    status_token_query = get_token_from_url(r);
-    if (status_token_query == AM_SUCCESS) {
-        AM_LOG_DEBUG(r->instance_id, "%s found session token '%s' in query parameters", thisfunc, r->token);
-    } else {
-        AM_LOG_DEBUG(r->instance_id, "%s no token in query parameters", thisfunc);
-    }
 
     AM_LOG_DEBUG(r->instance_id, "%s \nmethod: %s \noriginal url: %s"
             "\nproto: %s\nhost: %s\nport: %d\npath: %s\nquery: %s\ncomplete: %s\noverridden: %s"
@@ -957,16 +957,6 @@ static am_return_t validate_policy(am_request_t *r) {
     AM_LOG_DEBUG(r->instance_id, "%s get session cache status: %s",
             thisfunc, am_strerror(status));
 
-    if (status != AM_SUCCESS && r->not_enforced && r->conf->not_enforced_fetch_attr) {
-        /* in case request url is not enforced and attribute fetch is enabled
-         * but there are no cached session data for this token - quit w/o policy evaluation.
-         * 
-         * headers/cookies will be cleared in handle_exit->set_user_attributes
-         */
-        r->status = AM_SUCCESS;
-        return AM_OK;
-    }
-
     if ((status == AM_SUCCESS && cache_ts > 0) || status != AM_SUCCESS) {
         struct am_policy_result *policy_cache_new = NULL;
         struct am_namevalue *session_cache_new = NULL;
@@ -986,6 +976,7 @@ static am_return_t validate_policy(am_request_t *r) {
         do {
             policy_cache_new = NULL;
             session_cache_new = NULL;
+            
             status = am_agent_policy_request(r->instance_id, service_url, r->conf->token, r->token,
                     url, am_scope_to_str(scope), r->client_ip, pattrs,
                     &net_options, &session_cache_new, &policy_cache_new);
@@ -993,8 +984,25 @@ static am_return_t validate_policy(am_request_t *r) {
                 remote = AM_TRUE;
                 break;
             }
+            
             delete_am_policy_result_list(&policy_cache_new);
             delete_am_namevalue_list(&session_cache_new);
+            
+            if (status == AM_INVALID_SESSION && r->not_enforced && r->conf->not_enforced_fetch_attr) {
+                /* in case request url is not enforced and attribute fetch is enabled
+                 * but there is no a) cached session data for this token or 
+                 * b) remote session/policy call failed - quit w/o policy evaluation.
+                 * 
+                 * headers/cookies will be cleared in handle_exit->set_user_attributes
+                 */
+                AM_LOG_DEBUG(r->instance_id, "%s fetch attributes for not enforced url failed", thisfunc);
+                am_remove_cache_entry(r->instance_id, r->token);
+                am_net_options_delete(&net_options);
+                am_free(pattrs);
+                r->status = AM_SUCCESS;
+                return AM_OK;
+            }
+            
             AM_LOG_WARNING(r->instance_id, "%s retry %d (remote session/policy call failure: %s)",
                     thisfunc, (retry - max_retry) + 1, am_strerror(status));
 
@@ -1637,17 +1645,15 @@ static char *find_active_login_server(am_request_t *r, char add_goto_value) {
         map = r->conf->cdsso_login_map;
 
         if (ISVALID(r->conf->realm) && strcmp(r->conf->realm, "/") != 0) {
-            realm = url_encode(r->conf->realm);
+            am_asprintf(&realm, "%s?realm=%s", r->conf->agenturi, r->conf->realm);
+            agent_url = url_encode(realm);
+        } else {
+            agent_url = url_encode(r->conf->agenturi);
         }
 
-        agent_url = url_encode(r->conf->agenturi);
-
         am_asprintf(&cdsso_elements,
-                ISVALID(realm) ? "Realm=%s&RequestID=%ld&MajorVersion=1&MinorVersion=0&ProviderID=%s&IssueInstant=%s" :
-                "%sRequestID=%ld&MajorVersion=1&MinorVersion=0&ProviderID=%s&IssueInstant=%s",
-                ISVALID(realm) ? realm : "",
-                msec,
-                NOTNULL(agent_url), tsc);
+                "RequestID=%ld&MajorVersion=1&MinorVersion=0&ProviderID=%s&IssueInstant=%s",
+                msec, NOTNULL(agent_url), tsc);
 
         AM_FREE(realm, agent_url);
     } else {

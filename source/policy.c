@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -130,8 +130,8 @@ static char compare_pattern_resource(am_request_t *r, const char *ptn, const cha
                 }
             }
 
-            if (t != w) {
-                /* characters do not match */
+            if (t != w || (t == w && t == '*')) {
+                /* chars do not match or both are wildcards (we support wildcard in a resource) */
                 if (w == '-' && *(pattern + 1) == '*' && *(pattern + 2) == '-') {
                     /* one-level wildcard. save the pointers to the next 
                      * character after the wildcard (both in the resource and in 
@@ -351,17 +351,6 @@ char policy_compare_url(am_request_t *r, const char *pattern, const char *resour
             return AM_NO_MATCH;
         }
         has_wildcard = AM_TRUE;
-    }
-
-    /* validate resource */
-    if (strchr(resource, '*') != NULL) {
-        /*
-         * pattern matching algorithm forbids:
-         * - wildcard in a resource
-         */
-        AM_LOG_WARNING(instance_id, "%s invalid resource '%s'",
-                thisfunc, resource);
-        return AM_NO_MATCH;
     }
 
     if (!has_wildcard) {
