@@ -1128,9 +1128,18 @@ static am_return_t validate_policy(am_request_t *r) {
 
             if (e->scope == scope) {
                 const char *pattern = e->resource;
-                policy_status = policy_compare_url(r, pattern, url);
+                
+                if (!r->conf->policy_scope_subtree) {
+                    /* agent is running in self mode and cached entry may or may not contain 
+                     * an asterisk character - do exact string match so that
+                     * earlier stored request url does not become a pattern to match against 
+                     **/
+                    policy_status = strcmp(pattern, url) == 0 ? AM_EXACT_MATCH : AM_NO_MATCH;
+                } else {
+                    policy_status = policy_compare_url(r, pattern, url);
+                }
 
-                AM_LOG_DEBUG(r->instance_id, "%s pattern: %s, resource: %s, status: %s", thisfunc,
+                AM_LOG_DEBUG(r->instance_id, "%s cached entry: %s, resource: %s, status: %s", thisfunc,
                         pattern, url, am_policy_strerror(policy_status));
 
                 do {
