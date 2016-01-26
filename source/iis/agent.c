@@ -66,21 +66,26 @@ static char *strndup_request(IHttpContext *r, const char *string, size_t size) {
     return copy;
 }
 
-static char *utf8_encode(IHttpContext *r, const wchar_t *wstr, size_t *outlen) {
+static char *utf8_encode(IHttpContext *r, const wchar_t *wstr, int *inout_len) {
     char *tmp = NULL;
+    int in_len = inout_len != NULL ? *inout_len : -1; /* if no input length is set, assume NULL terminated string */
+
     int ret_len, out_len = wstr != NULL ?
-            WideCharToMultiByte(CP_UTF8, 0, wstr, -1, NULL, 0, NULL, NULL) : 0;
-    if (outlen) *outlen = 0;
-    if (out_len > 0) {
-        tmp = r == NULL ? (char *) malloc(out_len + 1) : (char *) alloc_request(r, out_len + 1);
-        if (tmp != NULL) {
-            memset(tmp, 0, out_len);
-            ret_len = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, tmp, (DWORD) out_len, NULL, NULL);
-            if (outlen) *outlen = ret_len - 1;
-        }
-        return tmp;
+            WideCharToMultiByte(CP_UTF8, 0, wstr, in_len, NULL, 0, NULL, NULL) : 0;
+    if (out_len == 0) {
+        return NULL;
     }
-    return NULL;
+
+    tmp = r == NULL ? (char *) calloc(1, out_len + 1) : (char *) alloc_request(r, out_len + 1);
+    if (tmp == NULL) {
+        return NULL;
+    }
+
+    ret_len = WideCharToMultiByte(CP_UTF8, 0, wstr, in_len, tmp, (DWORD) out_len, NULL, NULL);
+    if (inout_len) {
+        *inout_len = ret_len - 1;
+    }
+    return tmp;
 }
 
 static wchar_t *utf8_decode(IHttpContext *r, const char *str, size_t *outlen) {
@@ -466,7 +471,7 @@ static const char *get_server_variable(IHttpContext *ctx,
 static am_status_t get_request_url(am_request_t *req) {
     static const char *thisfunc = "get_request_url():";
     IHttpContext *ctx;
-    HTTP_COOKED_URL url;
+    int cooked_url_sz;
     am_status_t status = AM_EINVAL;
 
     if (req == NULL) {
@@ -478,21 +483,58 @@ static am_status_t get_request_url(am_request_t *req) {
         return status;
     }
 
-    url = ctx->GetRequest()->GetRawHttpRequest()->CookedUrl;
-    if (url.FullUrlLength > 0 && url.pFullUrl != NULL) {
-        size_t urlsz = 0;
-        char *url_encoded = utf8_encode(ctx, url.pFullUrl, &urlsz);
-        if (url_encoded == NULL) {
+    if ((cooked_url_sz = ctx->GetRequest()->GetRawHttpRequest()->CookedUrl.FullUrlLength) == 0 ||
+            ctx->GetRequest()->GetRawHttpRequest()->CookedUrl.pFullUrl == NULL) {
+        return status;
+    }
+
+    char *cooked_url = utf8_encode(ctx, ctx->GetRequest()->GetRawHttpRequest()->CookedUrl.pFullUrl,
+            &cooked_url_sz);
+    if (cooked_url == NULL) {
+        return AM_ENOMEM;
+    }
+
+    AM_LOG_DEBUG(req->instance_id, "%s pre-parsed request url: %s", thisfunc, cooked_url);
+    req->orig_url = cooked_url;
+    status = AM_SUCCESS;
+
+    if (ctx->GetRequest()->GetRawHttpRequest()->pRawUrl != NULL &&
+            ctx->GetRequest()->GetRawHttpRequest()->RawUrlLength > 0) {
+        int j = 0;
+        char *it = cooked_url;
+        char *query = strchr(cooked_url, '?'); /* check if CookedUrl contains a query string */
+
+        /* look up the third forward slash character and chop off everything else after it
+         * (including the slash character itself) */
+        while (*it != '\0') {
+            if (*it++ == '/' && ++j == 3) {
+                *--it = '\0';
+                break;
+            }
+        }
+
+        /* recreate the raw request url from 
+         * HTTP_REQUEST::CookedUrl value of scheme://host:port combined 
+         * with the HTTP_REQUEST::pRawUrl value (/path...) */
+        char *raw_url = (char *) alloc_request(ctx, cooked_url_sz +
+                ctx->GetRequest()->GetRawHttpRequest()->RawUrlLength + 1);
+        if (raw_url == NULL) {
             return AM_ENOMEM;
         }
 
-        char *urlc = (char *) alloc_request(ctx, urlsz + 1);
-        if (urlc != NULL) {
-            memcpy(urlc, url_encoded, urlsz);
-            req->orig_url = urlc;
-            status = AM_SUCCESS;
+        strcpy(raw_url, cooked_url);
+        strncat(raw_url, ctx->GetRequest()->GetRawHttpRequest()->pRawUrl,
+                ctx->GetRequest()->GetRawHttpRequest()->RawUrlLength);
+        /* if there was a query string in CookedUrl but pRawUrl didn't have it 
+         * (request to the DefaultDocument with a query string for example)
+         * append them here too
+         */
+        if (query != NULL && strchr(raw_url, '?') == NULL) {
+            strcat(raw_url, query);
         }
 
+        AM_LOG_DEBUG(req->instance_id, "%s reconstructed request url: %s", thisfunc, raw_url);
+        req->orig_url = raw_url;
     }
 
     if (status == AM_SUCCESS) {
