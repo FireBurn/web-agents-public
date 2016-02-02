@@ -1654,7 +1654,7 @@ static char *find_active_login_server(am_request_t *r, char add_goto_value) {
         map = r->conf->cdsso_login_map;
 
         if (ISVALID(r->conf->realm) && strcmp(r->conf->realm, "/") != 0) {
-            am_asprintf(&realm, "%s?realm=%s", r->conf->agenturi, r->conf->realm);
+            am_asprintf(&realm, "%s?Realm=%s", r->conf->agenturi, r->conf->realm);
             agent_url = url_encode(realm);
         } else {
             agent_url = url_encode(r->conf->agenturi);
