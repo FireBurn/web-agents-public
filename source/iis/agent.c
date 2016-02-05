@@ -1042,7 +1042,7 @@ class OpenAMHttpModule : public CHttpModule{
                         userPasswordCrypted, showPassword, doLogOn);
                 if (httpUser == NULL || !httpUser->GetStatus()) {
                     AM_LOG_ERROR(site->GetSiteId(), "OpenAMHttpModule(): failed (invalid Windows/AD user credentials). "
-                            "Responding with HTTP403 error (%d)", httpUser->GetStatus());
+                            "Responding with HTTP403 error (%d)", httpUser == NULL ? ERROR_OUTOFMEMORY : httpUser->GetError());
                     res->SetStatus(AM_HTTP_STATUS_403, "Forbidden");
                     return RQ_NOTIFICATION_FINISH_REQUEST;
                 } else {

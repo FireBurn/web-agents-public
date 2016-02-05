@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -79,15 +79,10 @@ static void start_element(void *userData, const char *name, const char **atts) {
 
         if (((p - atts) >> 1) == 2) {
             for (i = 0; atts[i]; i += 4) {
-                if (strcmp(atts[i + 1], "HostName") == 0 || strcmp(atts[i + 1], "Host") == 0 ||
-                        strcmp(atts[i + 1], "UserToken") == 0 || strcmp(atts[i + 1], "AuthLevel") == 0 ||
-                        strcmp(atts[i + 1], "AuthType") == 0 || strcmp(atts[i + 1], "Service") == 0 ||
-                        strcmp(atts[i + 1], "sunIdentityUserPassword") == 0) {
-                    struct am_namevalue *el = NULL;
-                    if (create_am_namevalue_node(atts[i + 1], strlen(atts[i + 1]),
-                            atts[i + 3], strlen(atts[i + 3]), &el) == 0) {
-                        AM_LIST_INSERT(ctx->list, el);
-                    }
+                struct am_namevalue *el = NULL;
+                if (create_am_namevalue_node(atts[i + 1], strlen(atts[i + 1]),
+                        atts[i + 3], strlen(atts[i + 3]), &el) == 0) {
+                    AM_LIST_INSERT(ctx->list, el);
                 }
             }
         }
