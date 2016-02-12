@@ -18,6 +18,8 @@
 #include "am.h"
 #include "utility.h"
 
+#define URL_MATCHING_STACK_SZ 64
+
 static const char *policy_fetch_scope_str[] = {
     "self",
     "subtree",
@@ -47,28 +49,26 @@ static char compare_resource(am_request_t *r, const char *pattern, const char *r
     return status;
 }
 
+typedef struct {
+    const char *p, *u;
+    enum { multilevel, onelevel, none } skip;
+
+} matching_stack_t;
+
 static am_bool_t compare_chars(am_request_t * r, char a, char b) {
     return r->conf->url_eval_case_ignore ? tolower(a) == tolower(b) : a == b;
 
 }
 
 /*
- * pattern matching with * and -*- wildcards
+ * algorithm for matcing URLs with patterns that have * and -*- as wildcards
  *
- * this one has full backtracking
+ * this has full backtracking.
  */
-am_bool_t compare_pattern_resource(am_request_t *r, const char * pattern, const char * url) {
-
-    const int stacksize = 16;
-
+static am_bool_t url_pattern_match_with_backtrack(am_request_t *r, matching_stack_t * stack, int stacksize,
+                      const char * pattern, const char * url) {
     const char *p = pattern, *u = url;
    
-    struct {
-        const char *p, *u;
-        enum { multilevel, onelevel, none } skip;
-
-    } stack [stacksize];
-
     int top = 0;
 
     stack[top].skip = none;
@@ -102,7 +102,9 @@ am_bool_t compare_pattern_resource(am_request_t *r, const char * pattern, const 
                     return AM_FALSE;
 
                 }
-                top--;
+
+                if (top-- == 0)
+                    return AM_FALSE;
 
             } while (1);
 
@@ -126,6 +128,30 @@ am_bool_t compare_pattern_resource(am_request_t *r, const char * pattern, const 
 
     }
     return *p == 0;
+
+}
+
+/*
+ * decide whether a URL matches a URL pattern using a backtracking algorithm
+ * and a stack allocated here.
+ *
+ * this uses a heap allocated stack which is large enough to allow 64 frames, which
+ * corresponds to patterns with 64 wildcard characters * or -*-. Should be large enough.
+ */
+am_bool_t compare_pattern_resource(am_request_t *r, const char * pattern, const char * url) {
+    matching_stack_t * stack = malloc(sizeof(matching_stack_t) * URL_MATCHING_STACK_SZ);
+    am_bool_t out;
+
+    if (stack) {
+        out = url_pattern_match_with_backtrack(r, stack, URL_MATCHING_STACK_SZ, pattern, url);
+        free(stack);
+
+    } else {
+        AM_LOG_ERROR(r->instance_id, "unable to allocate URL pattern matching stack");
+        out = AM_FALSE;
+
+    }
+    return out;
 
 }
 
