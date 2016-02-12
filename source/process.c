@@ -623,14 +623,26 @@ static am_return_t handle_not_enforced(am_request_t *r) {
 
                     /* regular [0]=not-enforced-url option */
 
-                    if (ISVALID(r->normalized_url_pathinfo) &&
-                            (r->conf->path_info_ignore_not_enforced || r->conf->path_info_ignore) &&
+                    if ((r->conf->path_info_ignore_not_enforced || r->conf->path_info_ignore) &&
                             !r->conf->not_enforced_regex_enable) {
 
-                        AM_LOG_DEBUG(r->instance_id, "%s validating %s ignoring path_info",
-                                thisfunc, r->normalized_url_pathinfo);
-
-                        compare_status += url_matches_pattern(r, m->value, r->normalized_url_pathinfo, AM_FALSE);
+                        if (ISVALID(r->normalized_url_pathinfo)) {
+                            AM_LOG_DEBUG(r->instance_id, "%s validating %s ignoring path_info",
+                                    thisfunc, r->normalized_url_pathinfo);
+                            compare_status += url_matches_pattern(r, m->value, r->normalized_url_pathinfo, AM_FALSE);
+                        } else {
+                            char *url_query_removed = strdup(url);
+                            if (url_query_removed != NULL) {
+                                char *qmark = strchr(url_query_removed, '?');
+                                if (qmark != NULL) {
+                                    *qmark = '\0';
+                                }
+                                AM_LOG_DEBUG(r->instance_id, "%s validating %s ignoring query attributes",
+                                        thisfunc, url_query_removed);
+                                compare_status += url_matches_pattern(r, m->value, url_query_removed, AM_FALSE);
+                                free(url_query_removed);
+                            }
+                        }
                     } else {
                         compare_status += url_matches_pattern(r, m->value, url, r->conf->not_enforced_regex_enable);
                     }
