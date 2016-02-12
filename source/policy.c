@@ -47,173 +47,86 @@ static char compare_resource(am_request_t *r, const char *pattern, const char *r
     return status;
 }
 
-static char compare_pattern_resource(am_request_t *r, const char *ptn, const char *rsc) {
-    static const char *thisfunc = "compare_pattern_resource():";
-    char t, w, status = AM_TRUE, in_one_level = AM_FALSE;
-    char *resource, *p_resource, *pattern, *p_pattern,
-            *after_last_wild = NULL, *after_last_resource = NULL;
-    unsigned int one_level_sep_count = 0;
-    char case_sensitive = (r != NULL && r->conf != NULL) ?
-            !(r->conf->url_eval_case_ignore) : AM_FALSE;
-    unsigned long instance_id = r != NULL ? r->instance_id : 0;
+static am_bool_t compare_chars(am_request_t * r, char a, char b) {
+    return r->conf->url_eval_case_ignore ? tolower(a) == tolower(b) : a == b;
 
-    p_resource = rsc == NULL ? NULL : strdup(rsc);
-    p_pattern = ptn == NULL ? NULL : strdup(ptn);
-    if (p_resource == NULL || p_pattern == NULL) {
-        AM_FREE(p_resource,p_pattern);
-        return AM_FALSE;
+}
+
+/*
+ * pattern matching with * and -*- wildcards
+ *
+ * this one has full backtracking
+ */
+am_bool_t compare_pattern_resource(am_request_t *r, const char * pattern, const char * url) {
+
+    const int stacksize = 16;
+
+    const char *p = pattern, *u = url;
+   
+    struct {
+        const char *p, *u;
+        enum { multilevel, onelevel, none } skip;
+
+    } stack [stacksize];
+
+    int top = 0;
+
+    stack[top].skip = none;
+
+#define push(a, b, s)     stack[top].p = a; stack[top].u = b; stack[top].skip = s
+#define next(a, b)        a = stack[top].p; b = ++stack[top].u
+
+    if (*p == '*') {
+        p += 1; push(p, u, multilevel);
+
+    } else if (*p == '-' && p[1] == '*' && p[2] == '-') {
+        p += 3; push(p, u, onelevel);
+
     }
-    resource = p_resource;
-    pattern = p_pattern;
 
-    /* walk the resource and the pattern strings one character at a time */
-    while (1) {
-        t = *resource;
-        w = *pattern;
-
-        if (one_level_sep_count > 1) {
-            AM_LOG_DEBUG(instance_id, "%s '%s' and '%s' did not match (one level wildcard match failure)",
-                    thisfunc, rsc, ptn);
-            status = AM_FALSE;
-            break;
-        }
-
-        /* is the resource string still valid? */
-        if (t == '\0') {
-            /* if the pattern string has additional characters by the time 
-             * processing reaches the end of the resource string, and if at least 
-             * one of those additional characters in the pattern string is not 
-             * a multi/single-level wildcard 'items', then the strings don't match
-             **/
-            if (w == '\0') {
-                break; /* x matches x */
-            }
-            if (w == '-' && *(pattern + 1) == '*' && *(pattern + 2) == '-') {
-                in_one_level = AM_TRUE;
-                one_level_sep_count = 0;
-                pattern += 3;
-                continue;
-            }
-            if (w == '*') {
-                in_one_level = AM_FALSE;
-                one_level_sep_count = 0;
-                pattern++;
-                continue; /* x* matches x or xy */
-            }
-            if (after_last_resource) {
-                /* look through the remaining resource string, from which we 
-                 * started after last wildcard
-                 */
-                if (*after_last_resource == '\0') {
-                    status = AM_FALSE;
-                    break;
-                }
-                resource = after_last_resource++;
-                pattern = after_last_wild;
-                if (in_one_level && *resource == '/') one_level_sep_count++;
-                continue;
-            }
-            status = AM_FALSE;
-            break; /* x doesn't match xy */
+    while (*u) {
+        if (compare_chars(r, *p, *u)) {
+            p++; u++;
 
         } else {
+            do {
+                if (stack[top].skip == multilevel) {
+                    if (*stack[top].u != '?')
+                        break;
 
-            /* algorithm entry */
+                } else if (stack[top].skip == onelevel) {
+                    if (*stack[top].u != '?' && *stack[top].u != '/')
+                        break;
 
-            if (!case_sensitive) {
-                /* lowercase the characters to be compared */
-                if (t >= 'A' && t <= 'Z') {
-                    t += ('a' - 'A');
-                }
-                if (w >= 'A' && w <= 'Z') {
-                    w += ('a' - 'A');
-                }
-            }
+                } else {
+                    return AM_FALSE;
 
-            if (t != w || (t == w && t == '*')) {
-                /* chars do not match or both are wildcards (we support wildcard in a resource) */
-                if (w == '-' && *(pattern + 1) == '*' && *(pattern + 2) == '-') {
-                    /* one-level wildcard. save the pointers to the next 
-                     * character after the wildcard (both in the resource and in 
-                     * the pattern strings)
-                     */
-                    in_one_level = AM_TRUE;
-                    pattern += 3;
-                    one_level_sep_count = 0;
-                    after_last_wild = pattern;
-                    after_last_resource = resource;
-                    w = *pattern;
-                    if (w == '\0') {
-                        int lc = 0, sc = char_count(after_last_resource, '/', &lc);
-                        if (!(sc == 0 || (sc == 1 && lc == '/'))) {
-                            status = AM_FALSE;
-                            /* special case where one-level wildcard is the last
-                             * item in a pattern:
-                             *  /a/b-*- should match /a/b, /a/ba or /a/bc/
-                             *   and should not match /a/b/c or /a/c
-                             *  /a/-*- will match /a/
-                             */
-                            AM_LOG_DEBUG(instance_id, "%s '%s' and '%s' did not match (one level wildcard match failure)",
-                                    thisfunc, rsc, ptn);
-                            break;
-                        }
-                        break; /* * matches x */
-                    }
-                    continue; /* *y matches xy */
                 }
-                if (w == '*') {
-                    /* multi-level wildcard. the same rule as above. */
-                    in_one_level = AM_FALSE;
-                    one_level_sep_count = 0;
-                    after_last_wild = ++pattern;
-                    after_last_resource = resource;
-                    w = *pattern;
-                    if (w == '\0') {
-                        break; /* * matches x */
-                    }
-                    continue; /* *y matches xy */
-                }
-                if (after_last_wild) {
-                    /* found a valid (earlier) saved pointer - we've encountered 
-                     * a wildcard character already. */
-                    if (after_last_wild != pattern) {
-                        pattern = after_last_wild;
-                        w = *pattern;
-                        if (!case_sensitive && w >= 'A' && w <= 'Z') {
-                            w += ('a' - 'A');
-                        }
-                        if (t == w) {
-                            /* the current char in the resource and the pattern strings match.
-                             * move to the next pattern (and the resource) character
-                             **/
-                            pattern++;
-                        } /* else: they don't match - move only to the next char 
-                           * in the resource string. restart the loop from the beginning
-                           **/
-                    }
-                    resource++;
-                    /* keep track of the one-level-wildcard separator count, 
-                     *  when in one-level wildcard processing state. 
-                     * if there are more than one '/' - break out of the loop 
-                     * with no-match
-                     */
-                    if (in_one_level && *resource == '/') one_level_sep_count++;
-                    continue; /* *ue* matches queue */
-                }
+                top--;
 
-                status = AM_FALSE;
-                break; /* x doesn't match y */
-            }
+            } while (1);
+
+            next(p, u);
+
         }
 
-        /* advance to the next character */
-        resource++;
-        pattern++;
-    }
+        if (*p == '*') {
+            if (++top == stacksize)
+                return AM_FALSE;
 
-    free(p_resource);
-    free(p_pattern);
-    return status;
+            p += 1; push(p, u, multilevel);
+
+        } else if (*p == '-' && p[1] == '*' && p[2] == '-') {
+            if (++top == stacksize)
+                return AM_FALSE;
+
+            p += 3; push(p, u, onelevel);
+
+        }
+
+    }
+    return *p == 0;
+
 }
 
 #define end_of_protocol(offsets) (offsets [0])
