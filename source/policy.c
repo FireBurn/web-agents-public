@@ -18,7 +18,7 @@
 #include "am.h"
 #include "utility.h"
 
-#define URL_MATCHING_STACK_SZ 64
+#define URL_MATCH_FRAME_MAX 32
 
 static const char *policy_fetch_scope_str[] = {
     "self",
@@ -53,7 +53,7 @@ typedef struct {
     const char *p, *u;
     enum { multilevel, onelevel, none } skip;
 
-} matching_stack_t;
+} url_match_frame_t;
 
 static am_bool_t compare_chars(am_request_t * r, char a, char b) {
     return r->conf->url_eval_case_ignore ? tolower(a) == tolower(b) : a == b;
@@ -65,22 +65,23 @@ static am_bool_t compare_chars(am_request_t * r, char a, char b) {
  *
  * this has full backtracking.
  */
-static am_bool_t url_pattern_match_with_backtrack(am_request_t *r, matching_stack_t * stack, int stacksize,
+static am_bool_t url_pattern_match_with_backtrack(am_request_t *r, url_match_frame_t * stack, int stacksize,
                       const char * pattern, const char * url) {
-    const char *p = pattern, *u = url;
-   
-    int top = 0;
+    const char           *p = pattern, *u = url;
+    url_match_frame_t    *top = stack, *const end = stack + stacksize;
 
-    stack[top].skip = none;
+#define handle_overflow              AM_LOG_ERROR(r->instance_id, "unable to match with pattern %s", pattern)
+#define push_state_with_check(s)     if (++top == end) { handle_overflow; return AM_FALSE; } top->p = p; top->u = u; top->skip = s
 
-#define push(a, b, s)     stack[top].p = a; stack[top].u = b; stack[top].skip = s
-#define next(a, b)        a = stack[top].p; b = ++stack[top].u
+    /* only frame 0 has skip set to none */
+
+    top->skip = none; 
 
     if (*p == '*') {
-        p += 1; push(p, u, multilevel);
+        p += 1; push_state_with_check(multilevel);
 
     } else if (*p == '-' && p[1] == '*' && p[2] == '-') {
-        p += 3; push(p, u, onelevel);
+        p += 3; push_state_with_check(onelevel);
 
     }
 
@@ -90,39 +91,31 @@ static am_bool_t url_pattern_match_with_backtrack(am_request_t *r, matching_stac
 
         } else {
             do {
-                if (stack[top].skip == multilevel) {
-                    if (*stack[top].u != '?')
+                if (top->skip == multilevel) {
+                    if (*top->u != '?')
                         break;
 
-                } else if (stack[top].skip == onelevel) {
-                    if (*stack[top].u != '?' && *stack[top].u != '/')
+                } else if (top->skip == onelevel) {
+                    if (*top->u != '?' && *top->u != '/')
                         break;
 
                 } else {
-                    return AM_FALSE;
+                    return AM_FALSE; /* frame 0 */
 
                 }
-
-                if (top-- == 0)
-                    return AM_FALSE;
+                top--;
 
             } while (1);
 
-            next(p, u);
+            p = top->p; u = ++top->u;
 
         }
 
         if (*p == '*') {
-            if (++top == stacksize)
-                return AM_FALSE;
-
-            p += 1; push(p, u, multilevel);
+            p += 1; push_state_with_check(multilevel);
 
         } else if (*p == '-' && p[1] == '*' && p[2] == '-') {
-            if (++top == stacksize)
-                return AM_FALSE;
-
-            p += 3; push(p, u, onelevel);
+            p += 3; push_state_with_check(onelevel);
 
         }
 
@@ -132,18 +125,18 @@ static am_bool_t url_pattern_match_with_backtrack(am_request_t *r, matching_stac
 }
 
 /*
- * decide whether a URL matches a URL pattern using a backtracking algorithm
- * and a stack allocated here.
+ * decide whether a URL matches a pattern using a backtracking algorithm and a stack
+ * allocated here.
  *
- * this uses a heap allocated stack which is large enough to allow 64 frames, which
- * corresponds to patterns with 64 wildcard characters * or -*-. Should be large enough.
+ * this uses a heap allocated stack large enough to allow 64 frames, which will suffice for
+ * patterns with 32 wildcards (* or -*-).
  */
 am_bool_t compare_pattern_resource(am_request_t *r, const char * pattern, const char * url) {
-    matching_stack_t * stack = malloc(sizeof(matching_stack_t) * URL_MATCHING_STACK_SZ);
+    url_match_frame_t * stack = malloc(sizeof(url_match_frame_t) * URL_MATCH_FRAME_MAX);
     am_bool_t out;
 
     if (stack) {
-        out = url_pattern_match_with_backtrack(r, stack, URL_MATCHING_STACK_SZ, pattern, url);
+        out = url_pattern_match_with_backtrack(r, stack, URL_MATCH_FRAME_MAX, pattern, url);
         free(stack);
 
     } else {

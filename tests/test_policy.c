@@ -26,40 +26,53 @@
 #include "log.h"
 #include "cmocka.h"
 
+static void check_normalisation(char *pattern, char *expect) {
+    char *norm = am_normalize_pattern(pattern);
+
+    if (expect) {
+        assert_string_equal(norm, expect);
+
+    } else {
+        assert_null(norm);
+
+    }
+    am_free(norm);
+}
+
 void test_pattern_normalisation(void **state) {
 
     /* simple cases */
-    assert_string_equal(am_normalize_pattern("http://a.c.b/first/second?a=b"), "http://a.c.b:80/first/second?a=b");
-    assert_string_equal(am_normalize_pattern("https://a.c.b/first/second"), "https://a.c.b:443/first/second");
-    assert_string_equal(am_normalize_pattern("https://*.com/path"), "https://*.com:443/path");
-    assert_string_equal(am_normalize_pattern("https://*.com/?a=b"), "https://*.com:443/?a=b");
+    check_normalisation("http://a.c.b/first/second?a=b", "http://a.c.b:80/first/second?a=b");
+    check_normalisation("https://a.c.b/first/second", "https://a.c.b:443/first/second");
+    check_normalisation("https://*.com/path", "https://*.com:443/path");
+    check_normalisation("https://*.com/?a=b", "https://*.com:443/?a=b");
 
     /* without path */
-    assert_string_equal(am_normalize_pattern("https://a.b.com"), "https://a.b.com:443");
-    assert_string_equal(am_normalize_pattern("https://*.com"), "https://*.com:443");
+    check_normalisation("https://a.b.com", "https://a.b.com:443");
+    check_normalisation("https://*.com", "https://*.com:443");
 
     /* without path except params */
-    assert_string_equal(am_normalize_pattern("https://a.b.c?a=b"), "https://a.b.c:443?a=b");
-    assert_string_equal(am_normalize_pattern("http://a.b.c?/*"), "http://a.b.c:80?/*");
-    assert_string_equal(am_normalize_pattern("https://a.b.c?*"), "https://a.b.c:443?*");
-    assert_string_equal(am_normalize_pattern("http://a.*.c?*"), "http://a.*.c:80?*");
+    check_normalisation("https://a.b.c?a=b", "https://a.b.c:443?a=b");
+    check_normalisation("http://a.b.c?/*", "http://a.b.c:80?/*");
+    check_normalisation("https://a.b.c?*", "https://a.b.c:443?*");
+    check_normalisation("http://a.*.c?*", "http://a.*.c:80?*");
 
     /* no path, but wildcard */
-    assert_null(am_normalize_pattern("https://*"));
-    assert_null(am_normalize_pattern("https://*?a=b"));
-    assert_null(am_normalize_pattern("https://a.b.*?a=b"));
+    check_normalisation("https://*", NULL);
+    check_normalisation("https://*?a=b", NULL);
+    check_normalisation("https://a.b.*?a=b", NULL);
 
     /* wildcard disables normalisation */
-    assert_null(am_normalize_pattern("http://a.c.b*/first/second"));
-    assert_null(am_normalize_pattern("https://*/first/second"));
-    assert_null(am_normalize_pattern("http://a.c.b*"));
+    check_normalisation("http://a.c.b*/first/second", NULL);
+    check_normalisation("https://*/first/second", NULL);
+    check_normalisation("http://a.c.b*", NULL);
 
     /* protocol not present or unrecognisable */
-    assert_null(am_normalize_pattern("htt://substr.protocol.com/first/second"));
-    assert_null(am_normalize_pattern("httpn://superstr.protocol.com/first/second"));
-    assert_null(am_normalize_pattern("httpsn://superstr.protocol.com/first/second"));
-    assert_null(am_normalize_pattern("no.protocol.com"));
-    assert_null(am_normalize_pattern("://empty.protocol.com"));
+    check_normalisation("htt://substr.protocol.com/first/second", NULL);
+    check_normalisation("httpn://superstr.protocol.com/first/second", NULL);
+    check_normalisation("httpsn://superstr.protocol.com/first/second", NULL);
+    check_normalisation("no.protocol.com", NULL);
+    check_normalisation("://empty.protocol.com", NULL);
 }
 
 static int compare_url(am_request_t *r, const char *pattern, const char *resource) {
@@ -68,7 +81,7 @@ static int compare_url(am_request_t *r, const char *pattern, const char *resourc
     return status;
 }
 
-void test_pattern_match(void **state) {
+void test_policy_compare_url(void **state) {
     am_config_t config = { .instance_id = 101, .url_eval_case_ignore = 1 };
     am_request_t r = { .conf = &config, };
 
@@ -153,13 +166,13 @@ typedef struct {
 #define expect(p, r, e) { .pattern = p, .resource = r, .expect = e }
 
 static pattern_exp_t exps[] = {
-    expect("*.c:90/-*-/z",               "http://a.b.c:90/x/y/z",              AM_FALSE),
 
+    expect("*.c:90/-*-/z",               "http://a.b.c:90/x/y/z",               AM_FALSE),
 
     expect("*://*/-*-*.html",            "http://a.b.c/path?hack.html",         AM_FALSE),
 
-    expect("http://x/cM*",               "http://x/cM-80?q",             AM_FALSE),
-    expect("*://*:*/xapp/*",             "://:///xapp/?x",               AM_FALSE),
+    expect("http://x/cM*",               "http://x/cM-80?q",                    AM_FALSE),
+    expect("*://*:*/xapp/*",             "://:///xapp/?x",                      AM_FALSE),
 
     expect("http://*/a*b",               "http://foo.bar/axbxxxxxxxxx",         AM_FALSE),
     expect("http://*/a*b",               "http://foo/bar/axbxbx",               AM_FALSE),
@@ -240,17 +253,26 @@ static pattern_exp_t exps[] = {
     expect("*://*/-*-.html",             "http://a.b.c/secret.xml?hack.html",   AM_FALSE),
     expect("*://*/*/-*-.html",           "http://a.b.c/foo/bar/secret.xml?hack.html",AM_FALSE),
     expect("*://*/-*-*.html",            "http://a.b.c/path?hack.html",         AM_FALSE),
+
+    /* degenerate cases: concatenated wildcards - don't have more of them than characters */
+
+    expect("***",                        "01",                                  AM_TRUE),
+    expect("****",                       "01",                                  AM_FALSE), 
+
+    expect("http://a.b.c:90/x/y/z?a/b",  "http://a.b.c:90/x/y/z?a/b",           AM_TRUE),
+    expect("**-*-****?***",              "http://a.b.c:90/x/y/z?a/b",           AM_TRUE),
+    expect("**-*-******",                "http://a.b.c:90/x/y/z?a/b",           AM_FALSE),
 };
 
-void test_policy_compare_url(void **state) {
+void test_compare_pattern_resource(void **state) {
     size_t len = array_len(exps);
     
     am_config_t config = { .instance_id = 101, .url_eval_case_ignore = 0 };
     am_request_t request = { .conf = &config, };
 
-    int errs = 0;
+    int i, errs = 0;
 
-    for (int i = 0; i < len; i++) {
+    for (i = 0; i < len; i++) {
         if (MATCH(&request, exps[i].pattern, exps[i].resource) !=  exps[i].expect) {
             printf("policy test error with pattern %s and URL %s: expected %d\n", exps[i].pattern, exps[i].resource, exps[i].expect);
             errs++;
