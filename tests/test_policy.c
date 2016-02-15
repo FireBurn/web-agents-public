@@ -414,7 +414,7 @@ void test_compare_pattern_resource(void **state) {
     am_timer_t t;
 
 #if defined REMOVE_DEGENERATE_PATTERNS
-    for (int i = 0; i < len; i++)
+    for (i = 0; i < len; i++)
         exps[i].pattern = simplify_degenerate_pattern(exps[i].pattern);
 #endif
 
@@ -436,7 +436,7 @@ void test_compare_pattern_resource(void **state) {
     assert_int_equal(errs, 0);
 
 #if defined REMOVE_DEGENERATE_PATTERNS
-    for (int i = 0; i < len; i++)
+    for (i = 0; i < len; i++)
         free(exps[i].pattern);
 #endif
 
