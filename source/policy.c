@@ -18,6 +18,8 @@
 #include "am.h"
 #include "utility.h"
 
+#define URL_MATCH_FRAME_MAX 32
+
 static const char *policy_fetch_scope_str[] = {
     "self",
     "subtree",
@@ -47,173 +49,108 @@ static char compare_resource(am_request_t *r, const char *pattern, const char *r
     return status;
 }
 
-static char compare_pattern_resource(am_request_t *r, const char *ptn, const char *rsc) {
-    static const char *thisfunc = "compare_pattern_resource():";
-    char t, w, status = AM_TRUE, in_one_level = AM_FALSE;
-    char *resource, *p_resource, *pattern, *p_pattern,
-            *after_last_wild = NULL, *after_last_resource = NULL;
-    unsigned int one_level_sep_count = 0;
-    char case_sensitive = (r != NULL && r->conf != NULL) ?
-            !(r->conf->url_eval_case_ignore) : AM_FALSE;
-    unsigned long instance_id = r != NULL ? r->instance_id : 0;
+typedef struct {
+    const char *p, *u;
+    enum { multilevel, onelevel, none } skip;
 
-    p_resource = rsc == NULL ? NULL : strdup(rsc);
-    p_pattern = ptn == NULL ? NULL : strdup(ptn);
-    if (p_resource == NULL || p_pattern == NULL) {
-        AM_FREE(p_resource,p_pattern);
-        return AM_FALSE;
-    }
-    resource = p_resource;
-    pattern = p_pattern;
+} url_match_frame_t;
 
-    /* walk the resource and the pattern strings one character at a time */
-    while (1) {
-        t = *resource;
-        w = *pattern;
+am_bool_t compare_chars(am_request_t * r, char a, char b) {
+    return r->conf->url_eval_case_ignore ? tolower(a) == tolower(b) : a == b;
 
-        if (one_level_sep_count > 1) {
-            AM_LOG_DEBUG(instance_id, "%s '%s' and '%s' did not match (one level wildcard match failure)",
-                    thisfunc, rsc, ptn);
-            status = AM_FALSE;
-            break;
+}
+
+/*
+ * algorithm for matcing URLs with patterns that have * and -*- as wildcards
+ *
+ * this has full backtracking.
+ */
+static am_bool_t url_pattern_match_with_backtrack(am_request_t *r, url_match_frame_t * stack, int stacksize,
+                      const char * pattern, const char * url) {
+    const char           *p = pattern, *u = url;
+    url_match_frame_t    *top = stack, *const end = stack + stacksize;
+
+#define handle_overflow              AM_LOG_ERROR(r->instance_id, "unable to match with pattern %s", pattern)
+#define push_state_with_check(s)     if (++top == end) { handle_overflow; return AM_FALSE; } top->p = p; top->u = u; top->skip = s
+
+    /* only frame 0 has skip set to none */
+
+    top->skip = none; 
+
+    while (*u) {
+        if (*p == '*') {
+            p += 1; push_state_with_check(multilevel);
+
+        } else if (*p == '-' && p[1] == '*' && p[2] == '-') {
+            p += 3; push_state_with_check(onelevel);
+
         }
 
-        /* is the resource string still valid? */
-        if (t == '\0') {
-            /* if the pattern string has additional characters by the time 
-             * processing reaches the end of the resource string, and if at least 
-             * one of those additional characters in the pattern string is not 
-             * a multi/single-level wildcard 'items', then the strings don't match
-             **/
-            if (w == '\0') {
-                break; /* x matches x */
-            }
-            if (w == '-' && *(pattern + 1) == '*' && *(pattern + 2) == '-') {
-                in_one_level = AM_TRUE;
-                one_level_sep_count = 0;
-                pattern += 3;
-                continue;
-            }
-            if (w == '*') {
-                in_one_level = AM_FALSE;
-                one_level_sep_count = 0;
-                pattern++;
-                continue; /* x* matches x or xy */
-            }
-            if (after_last_resource) {
-                /* look through the remaining resource string, from which we 
-                 * started after last wildcard
-                 */
-                if (*after_last_resource == '\0') {
-                    status = AM_FALSE;
-                    break;
-                }
-                resource = after_last_resource++;
-                pattern = after_last_wild;
-                if (in_one_level && *resource == '/') one_level_sep_count++;
-                continue;
-            }
-            status = AM_FALSE;
-            break; /* x doesn't match xy */
+        if (compare_chars(r, *p, *u)) {
+            p++; u++;
 
         } else {
+            do {
+                if (top->skip == multilevel) {
+                    if (*top->u != '?')
+                        break;
 
-            /* algorithm entry */
+                } else if (top->skip == onelevel) {
+                    if (*top->u != '?' && *top->u != '/')
+                        break;
 
-            if (!case_sensitive) {
-                /* lowercase the characters to be compared */
-                if (t >= 'A' && t <= 'Z') {
-                    t += ('a' - 'A');
-                }
-                if (w >= 'A' && w <= 'Z') {
-                    w += ('a' - 'A');
-                }
-            }
+                } else {
+                    return AM_FALSE; /* frame 0 */
 
-            if (t != w || (t == w && t == '*')) {
-                /* chars do not match or both are wildcards (we support wildcard in a resource) */
-                if (w == '-' && *(pattern + 1) == '*' && *(pattern + 2) == '-') {
-                    /* one-level wildcard. save the pointers to the next 
-                     * character after the wildcard (both in the resource and in 
-                     * the pattern strings)
-                     */
-                    in_one_level = AM_TRUE;
-                    pattern += 3;
-                    one_level_sep_count = 0;
-                    after_last_wild = pattern;
-                    after_last_resource = resource;
-                    w = *pattern;
-                    if (w == '\0') {
-                        int lc = 0, sc = char_count(after_last_resource, '/', &lc);
-                        if (!(sc == 0 || (sc == 1 && lc == '/'))) {
-                            status = AM_FALSE;
-                            /* special case where one-level wildcard is the last
-                             * item in a pattern:
-                             *  /a/b-*- should match /a/b, /a/ba or /a/bc/
-                             *   and should not match /a/b/c or /a/c
-                             *  /a/-*- will match /a/
-                             */
-                            AM_LOG_DEBUG(instance_id, "%s '%s' and '%s' did not match (one level wildcard match failure)",
-                                    thisfunc, rsc, ptn);
-                            break;
-                        }
-                        break; /* * matches x */
-                    }
-                    continue; /* *y matches xy */
                 }
-                if (w == '*') {
-                    /* multi-level wildcard. the same rule as above. */
-                    in_one_level = AM_FALSE;
-                    one_level_sep_count = 0;
-                    after_last_wild = ++pattern;
-                    after_last_resource = resource;
-                    w = *pattern;
-                    if (w == '\0') {
-                        break; /* * matches x */
-                    }
-                    continue; /* *y matches xy */
-                }
-                if (after_last_wild) {
-                    /* found a valid (earlier) saved pointer - we've encountered 
-                     * a wildcard character already. */
-                    if (after_last_wild != pattern) {
-                        pattern = after_last_wild;
-                        w = *pattern;
-                        if (!case_sensitive && w >= 'A' && w <= 'Z') {
-                            w += ('a' - 'A');
-                        }
-                        if (t == w) {
-                            /* the current char in the resource and the pattern strings match.
-                             * move to the next pattern (and the resource) character
-                             **/
-                            pattern++;
-                        } /* else: they don't match - move only to the next char 
-                           * in the resource string. restart the loop from the beginning
-                           **/
-                    }
-                    resource++;
-                    /* keep track of the one-level-wildcard separator count, 
-                     *  when in one-level wildcard processing state. 
-                     * if there are more than one '/' - break out of the loop 
-                     * with no-match
-                     */
-                    if (in_one_level && *resource == '/') one_level_sep_count++;
-                    continue; /* *ue* matches queue */
-                }
+                top--;
 
-                status = AM_FALSE;
-                break; /* x doesn't match y */
-            }
+            } while (1);
+
+            p = top->p; u = ++top->u;
+
         }
 
-        /* advance to the next character */
-        resource++;
-        pattern++;
     }
 
-    free(p_resource);
-    free(p_pattern);
-    return status;
+    while (*p)
+        if (*p == '*') {
+            p += 1; 
+
+        } else if (*p == '-' && p[1] == '*' && p[2] == '-') {
+            p += 3;
+
+        } else {
+           return AM_FALSE;
+
+        }
+
+    return AM_TRUE;
+
+}
+
+/*
+ * decide whether a URL matches a pattern using a backtracking algorithm and a stack
+ * allocated here.
+ *
+ * this uses a heap allocated stack large enough to allow 64 frames, which will suffice for
+ * patterns with 32 wildcards (* or -*-).
+ */
+am_bool_t compare_pattern_resource(am_request_t *r, const char * pattern, const char * url) {
+    url_match_frame_t *stack = malloc(sizeof(url_match_frame_t) * URL_MATCH_FRAME_MAX);
+    am_bool_t out;
+
+    if (stack) {
+        out = url_pattern_match_with_backtrack(r, stack, URL_MATCH_FRAME_MAX, pattern, url);
+        free(stack);
+
+    } else {
+        AM_LOG_ERROR(r->instance_id, "unable to allocate URL pattern matching stack");
+        out = AM_FALSE;
+
+    }
+    return out;
+
 }
 
 #define end_of_protocol(offsets) (offsets [0])
