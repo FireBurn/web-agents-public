@@ -55,7 +55,7 @@ typedef struct {
 
 } url_match_frame_t;
 
-static am_bool_t compare_chars(am_request_t * r, char a, char b) {
+am_bool_t compare_chars(am_request_t * r, char a, char b) {
     return r->conf->url_eval_case_ignore ? tolower(a) == tolower(b) : a == b;
 
 }
@@ -77,15 +77,15 @@ static am_bool_t url_pattern_match_with_backtrack(am_request_t *r, url_match_fra
 
     top->skip = none; 
 
-    if (*p == '*') {
-        p += 1; push_state_with_check(multilevel);
-
-    } else if (*p == '-' && p[1] == '*' && p[2] == '-') {
-        p += 3; push_state_with_check(onelevel);
-
-    }
-
     while (*u) {
+        if (*p == '*') {
+            p += 1; push_state_with_check(multilevel);
+
+        } else if (*p == '-' && p[1] == '*' && p[2] == '-') {
+            p += 3; push_state_with_check(onelevel);
+
+        }
+
         if (compare_chars(r, *p, *u)) {
             p++; u++;
 
@@ -111,16 +111,21 @@ static am_bool_t url_pattern_match_with_backtrack(am_request_t *r, url_match_fra
 
         }
 
+    }
+
+    while (*p)
         if (*p == '*') {
-            p += 1; push_state_with_check(multilevel);
+            p += 1; 
 
         } else if (*p == '-' && p[1] == '*' && p[2] == '-') {
-            p += 3; push_state_with_check(onelevel);
+            p += 3;
+
+        } else {
+           return AM_FALSE;
 
         }
 
-    }
-    return *p == 0;
+    return AM_TRUE;
 
 }
 
@@ -132,7 +137,7 @@ static am_bool_t url_pattern_match_with_backtrack(am_request_t *r, url_match_fra
  * patterns with 32 wildcards (* or -*-).
  */
 am_bool_t compare_pattern_resource(am_request_t *r, const char * pattern, const char * url) {
-    url_match_frame_t * stack = malloc(sizeof(url_match_frame_t) * URL_MATCH_FRAME_MAX);
+    url_match_frame_t *stack = malloc(sizeof(url_match_frame_t) * URL_MATCH_FRAME_MAX);
     am_bool_t out;
 
     if (stack) {

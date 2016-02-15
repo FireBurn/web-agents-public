@@ -149,10 +149,139 @@ void test_policy_compare_url(void **state) {
 }
 
 
-#define BACKTRACK_CASES
+#undef BACKTRACK_CASES
+#define REMOVE_DEGENERATE_PATTERNS
+#define DEGENERATE_CASES
+
 #define MATCH(r, p, u) compare_pattern_resource(r, p, u)
 
+am_bool_t compare_chars(am_request_t * r, char a, char b);
 am_bool_t compare_pattern_resource(am_request_t *r, const char * pattern, const char * url);
+
+/*
+ * this is a test facility to modify degenerate URL patterns where there is a pointless sequence of 
+ * * and/or -*- wildcards. It replaces a sequence of wildcards with the last one.
+ *
+ * these degenerate patterns are not expected in practice, and they can cause significant performance 
+ * decrease in these tests.
+ */
+static char * simplify_degenerate_pattern(const char *pattern) {
+    enum { multilevel, onelevel, none } skip;
+
+    char *base = strdup(pattern), *p, *q;
+
+    p = q = base;
+
+    while (*p) {
+        skip = none;
+
+        do {
+            if (*p == '*') {
+                skip = multilevel;
+                p += 1;
+
+            } else if (*p == '-' && p[1] == '*' && p[2] == '-') {
+                skip = onelevel;
+                p += 3;
+
+            } else {
+                break;
+
+            }
+
+        } while (1);
+
+        if (skip == multilevel) {
+           *q++ = '*';
+
+        } else if (skip == onelevel) {
+           *q++ = '-'; *q++ = '*'; *q++ = '-';
+
+        }
+        *q++ = *p++;
+
+    }
+
+    if (strlen(base) != strlen(pattern)) {
+        printf("changed %s to %s\n", pattern, base);
+
+    }
+    return base;
+
+}
+
+/*
+ * this is a 1-level backtracking algorithm which is an alternnative fast approach to matching, which can
+ * be compared to the full backtracking one in policy.c
+ *
+ * running the test_compare_pattern_resource without degenerate patterns (DEGENERATE_CASES off) is 0.5 times
+ * faster with this version, but it requires BACKTRACK_CASES off. The overhead of the backtracking implementation
+ * are deemed to be acceptable.
+ */
+static am_bool_t fast_compare_pattern_resource(am_request_t *r, const char * pattern, const char * url) {
+
+    enum { multilevel, onelevel, none } skip = none;
+
+    const char *p = pattern, *u = url;
+
+    const char *p0, *u0; /* backtrack points: p0 start of pattern, u0 start of candidate match after skipping */
+
+#define save_backtrack(s)           p0 = p; u0 = u; skip = s
+
+    while (*u) {
+        if (*p == '*') {
+            p += 1; save_backtrack(multilevel);
+
+        } else if (*p == '-' && p[1] == '*' && p[2] == '-') {
+            p += 3; save_backtrack(onelevel);
+
+        }
+
+        if (compare_chars(r, *p, *u)) {
+            p++; u++;
+
+        } else if (skip == multilevel) {
+            if (*u0 != '?') {
+                p = p0; u = ++u0;
+
+            } else {
+                return AM_FALSE;
+
+            }
+
+        } else if (skip == onelevel) {
+            if (*u0 != '?' && *u0 != '/') {
+                p = p0; u = ++u0;
+
+            } else {
+                return AM_FALSE;
+
+            }
+
+        } else {
+            return AM_FALSE;
+
+        }
+
+
+    }
+
+    while (*p)
+        if (*p == '*') {
+            p += 1;
+
+        } else if (*p == '-' && p[1] == '*' && p[2] == '-') {
+            p += 3;
+
+        } else {
+            return AM_FALSE;
+
+        }
+
+    return AM_TRUE;
+
+}
+
 
 typedef struct {
 
@@ -167,6 +296,11 @@ typedef struct {
 
 static pattern_exp_t exps[] = {
 
+    //expect("*-*-A",                      "-/a/b/-A",                            AM_TRUE),
+
+    expect("*.c:90/a/-*-",               "http://a.b.c:90/a/",                   AM_TRUE),
+    expect("*.c:90/a/b-*-",              "http://a.b.c:90/a/b",                  AM_TRUE),
+    expect("*.c:90/a/b-*-",              "http://a.b.c:90/a/b/",                AM_FALSE),
     expect("*.c:90/-*-/z",               "http://a.b.c:90/x/y/z",               AM_FALSE),
 
     expect("*://*/-*-*.html",            "http://a.b.c/path?hack.html",         AM_FALSE),
@@ -256,12 +390,15 @@ static pattern_exp_t exps[] = {
 
     /* degenerate cases: concatenated wildcards - don't have more of them than characters */
 
+#if defined DEGENERATE_CASES
     expect("***",                        "01",                                  AM_TRUE),
-    expect("****",                       "01",                                  AM_FALSE), 
+    expect("****",                       "01",                                  AM_TRUE), 
 
-    expect("http://a.b.c:90/x/y/z?a/b",  "http://a.b.c:90/x/y/z?a/b",           AM_TRUE),
     expect("**-*-****?***",              "http://a.b.c:90/x/y/z?a/b",           AM_TRUE),
     expect("**-*-******",                "http://a.b.c:90/x/y/z?a/b",           AM_FALSE),
+#endif
+
+    expect("http://a.b.c:90/x/y/z?a/b",  "http://a.b.c:90/x/y/z?a/b",           AM_TRUE),
 };
 
 void test_compare_pattern_resource(void **state) {
@@ -272,15 +409,36 @@ void test_compare_pattern_resource(void **state) {
 
     int i, errs = 0;
 
-    for (i = 0; i < len; i++) {
-        if (MATCH(&request, exps[i].pattern, exps[i].resource) !=  exps[i].expect) {
-            printf("policy test error with pattern %s and URL %s: expected %d\n", exps[i].pattern, exps[i].resource, exps[i].expect);
-            errs++;
+    int c, max_c = 1000;
+
+    am_timer_t t;
+
+#if defined REMOVE_DEGENERATE_PATTERNS
+    for (int i = 0; i < len; i++)
+        exps[i].pattern = simplify_degenerate_pattern(exps[i].pattern);
+#endif
+
+    am_timer_start(&t);
+    for (c = 0; errs == 0 && c < max_c; c++) {
+        for (i = 0; i < len; i++) {
+            if (MATCH(&request, exps[i].pattern, exps[i].resource) !=  exps[i].expect) {
+                printf("policy test error with pattern %s and URL %s: expected %d\n", exps[i].pattern, exps[i].resource, exps[i].expect);
+                errs++;
+
+            }
 
         }
 
     }
+    am_timer_stop(&t);
+    printf("test_compare_pattern_resource: %lu evals took %lf seconds\n", c*len, am_timer_elapsed(&t));
+
     assert_int_equal(errs, 0);
+
+#if defined REMOVE_DEGENERATE_PATTERNS
+    for (int i = 0; i < len; i++)
+        free(exps[i].pattern);
+#endif
 
 }
 
