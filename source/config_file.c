@@ -313,7 +313,7 @@ static void parse_config_value(unsigned long instance_id, const char *line, cons
         {
             char **value = (char **) itm;
             *value = (char *) parse_value(line, prm, type, NULL);
-            if (strstr(prm, "password") != NULL) {
+            if (strstr(prm, "password") != NULL || strstr(prm, "key") != NULL) {
                 AM_LOG_DEBUG(instance_id, "am_get_config_file() %s is set to '%s'",
                         prm, *value == NULL ? "NULL" : "********");
                 break;

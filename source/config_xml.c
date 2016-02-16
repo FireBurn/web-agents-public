@@ -102,7 +102,7 @@ static void parse_config_value(am_xml_parser_ctx_t *x, const char *prm, int type
             char **value = (char **) itm;
             *value = strndup(val, len);
             if (x->log_enable) {
-                if (strstr(prm, "password") != NULL) {
+                if (strstr(prm, "password") != NULL || strstr(prm, "key") != NULL) {
                     AM_LOG_DEBUG(x->conf->instance_id, "am_parse_config_xml() %s is set to '********'",
                             prm);
                     break;
