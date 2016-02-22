@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #ifndef CONFIG_H
@@ -235,6 +235,7 @@ typedef struct {
     int path_info_ignore;
     int path_info_ignore_not_enforced;
     int keepalive_disable;
+    int persistent_cookie_enable;
 
 } am_config_t;
 
@@ -393,5 +394,7 @@ typedef struct {
 
 #define AM_AGENTS_CONFIG_IGNORE_PATHINFO_NOT_ENFORCED "com.sun.identity.agents.config.ignore.path.info.for.not.enforced.list"
 #define AM_AGENTS_CONFIG_IGNORE_PATHINFO "com.sun.identity.agents.config.ignore.path.info"
+
+#define AM_AGENTS_CONFIG_PERSISTENT_COOKIE_ENABLE "org.forgerock.agents.config.cdsso.persistent.cookie.enable"
 
 #endif

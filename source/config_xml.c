@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -380,6 +380,8 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
 
     parse_config_value(ctx, AM_AGENTS_CONFIG_IGNORE_PATHINFO, CONF_NUMBER, NULL, &ctx->conf->path_info_ignore, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_IGNORE_PATHINFO_NOT_ENFORCED, CONF_NUMBER, NULL, &ctx->conf->path_info_ignore_not_enforced, val, len);
+    
+    parse_config_value(ctx, AM_AGENTS_CONFIG_PERSISTENT_COOKIE_ENABLE, CONF_NUMBER, NULL, &ctx->conf->persistent_cookie_enable, val, len);
 }
 
 static void end_element(void * userData, const char * name) {

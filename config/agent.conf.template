@@ -11,7 +11,7 @@
 # Header, with the fields enclosed by brackets [] replaced by your own identifying
 # information: "Portions copyright [year] [name of copyright owner]".
 #
-# Copyright 2014 - 2015 ForgeRock AS.
+# Copyright 2014 - 2016 ForgeRock AS.
 #
 
 #------------------------------------------------------------------------------
@@ -22,14 +22,12 @@
 #
 # OpenAM Policy Agent
 #
-# Version: 4.0
 
 #------------------------------------------------------------------------------
 # Bootstrap Properties
 #
 # OpenAM Policy Agent
 #
-# Version: 4.0
 
 com.sun.identity.agents.config.repository.location = centralized
 com.sun.identity.agents.config.naming.url = AM_OPENAM_URL
@@ -64,7 +62,6 @@ org.forgerock.agents.config.keepalive.disable = true
 #
 # OpenAM Policy Agent 
 #
-# Version: 4.0
 
 com.forgerock.agents.agent.invalid.url.regex =
 com.forgerock.agents.cache_control_header.enable = false
@@ -160,3 +157,4 @@ org.forgerock.agents.config.json.url =
 org.forgerock.agents.config.notenforced.ext.regex.enable =
 org.forgerock.agents.config.notenforced.ipurl =
 org.forgerock.agents.pdp.javascript.repost =
+org.forgerock.agents.config.cdsso.persistent.cookie.enable = false

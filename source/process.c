@@ -24,6 +24,7 @@
 #define COMPOSITE_ADVICE_KEY        "sunamcompositeadvice"
 #define AUDIT_ALLOW_USER_MESSAGE    "user %s (%s) was allowed access to %s"
 #define AUDIT_DENY_USER_MESSAGE     "user %s (%s) was denied access to %s"
+#define AM_SESSION_ONLY_COOKIE      "AM_SESSION_ONLY_COOKIE"
 
 enum {
     AM_SESSION_ATTRIBUTE = 0,
@@ -1393,35 +1394,39 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
             /* no value is provided - we are resetting a cookie */
             am_asprintf(&cookie, "%s;Max-Age=0;Expires=Thu, 01-Jan-1970 00:00:01 GMT", cookie);
         } else {
-            /* check if maxage option is provided, if so - use it;
-             * if not - try cookie_maxage parameter;
-             * if none of the above is provided/valid use a default 300 sec value
-             */
+            /* in case maxage is not set to AM_SESSION_ONLY_COOKIE, 
+             * add Max-Age and Expires attributes (create a persistent cookie) */
+            if (ISINVALID(maxage) || strcmp(maxage, AM_SESSION_ONLY_COOKIE) != 0) {
+                /* check if maxage option is provided, if so - use it;
+                 * if not - try cookie_maxage parameter;
+                 * if none of the above is provided/valid use a default 300 sec value
+                 */
 #define COOKIE_MAX_AGE_DEFAULT 300
 
-            errno = 0;
-            sec = ISVALID(maxage) ? strtol(maxage, NULL, AM_BASE_TEN)
-                    : r->conf->cookie_maxage > 0 ? r->conf->cookie_maxage : COOKIE_MAX_AGE_DEFAULT;
-            if (sec <= 0 || errno == ERANGE) {
-                AM_LOG_WARNING(r->instance_id, "%s failed to set max-age parameter value %s, defaulting to %d seconds",
-                        thisfunc, LOGEMPTY(maxage), COOKIE_MAX_AGE_DEFAULT);
-                sec = COOKIE_MAX_AGE_DEFAULT;
-            }
+                errno = 0;
+                sec = ISVALID(maxage) ? strtol(maxage, NULL, AM_BASE_TEN)
+                        : r->conf->cookie_maxage > 0 ? r->conf->cookie_maxage : COOKIE_MAX_AGE_DEFAULT;
+                if (sec <= 0 || errno == ERANGE) {
+                    AM_LOG_WARNING(r->instance_id, "%s failed to set max-age parameter value %s, defaulting to %d seconds",
+                            thisfunc, LOGEMPTY(maxage), COOKIE_MAX_AGE_DEFAULT);
+                    sec = COOKIE_MAX_AGE_DEFAULT;
+                }
 
-            time(&raw);
-            raw += sec;
+                time(&raw);
+                raw += sec;
 #ifdef _WIN32
-            gmtime_s(&now, &raw);
+                gmtime_s(&now, &raw);
 #endif
-            strftime(time_string, sizeof (time_string),
-                    "%a, %d-%b-%Y %H:%M:%S GMT",
+                strftime(time_string, sizeof (time_string),
+                        "%a, %d-%b-%Y %H:%M:%S GMT",
 #ifdef _WIN32
-                    &now
+                        &now
 #else
-                    gmtime_r(&raw, &now)
+                        gmtime_r(&raw, &now)
 #endif
-                    );
-            am_asprintf(&cookie, "%s;Max-Age=%d;Expires=%s", cookie, sec, time_string);
+                        );
+                am_asprintf(&cookie, "%s;Max-Age=%d;Expires=%s", cookie, sec, time_string);
+            }
         }
     }
 
@@ -1556,14 +1561,17 @@ static void set_user_attributes(am_request_t *r) {
                         "cookie header %s", thisfunc, am_strerror(rv),
                         LOGEMPTY(r->conf->cookie_name), LOGEMPTY(r->cookies));
             } else {
-                const char *timeleft = get_attr_value(r, "timeleft", AM_SESSION_ATTRIBUTE);
-                if (ISVALID(timeleft)) {
-                    long sec;
-                    errno = 0;
-                    sec = strtol(timeleft, NULL, AM_BASE_TEN);
-                    if (sec <= 0L || errno == ERANGE || sec > 86400L) {
-                        /* do not allow invalid or unreasonably high values for a session cookie */
-                        timeleft = NULL;
+                const char *timeleft = AM_SESSION_ONLY_COOKIE;
+                if (r->conf->persistent_cookie_enable) {
+                    timeleft = get_attr_value(r, "timeleft", AM_SESSION_ATTRIBUTE);
+                    if (ISVALID(timeleft)) {
+                        long sec;
+                        errno = 0;
+                        sec = strtol(timeleft, NULL, AM_BASE_TEN);
+                        if (sec <= 0L || errno == ERANGE || sec > 86400L) {
+                            /* do not allow invalid or unreasonably high values for a session cookie */
+                            timeleft = NULL;
+                        }
                     }
                 }
 
