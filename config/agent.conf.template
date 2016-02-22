@@ -22,12 +22,14 @@
 #
 # OpenAM Policy Agent
 #
+# Version: 4.0
 
 #------------------------------------------------------------------------------
 # Bootstrap Properties
 #
 # OpenAM Policy Agent
 #
+# Version: 4.0
 
 com.sun.identity.agents.config.repository.location = centralized
 com.sun.identity.agents.config.naming.url = AM_OPENAM_URL
@@ -62,6 +64,7 @@ org.forgerock.agents.config.keepalive.disable = true
 #
 # OpenAM Policy Agent 
 #
+# Version: 4.0
 
 com.forgerock.agents.agent.invalid.url.regex =
 com.forgerock.agents.cache_control_header.enable = false
