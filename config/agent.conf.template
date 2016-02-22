@@ -11,7 +11,7 @@
 # Header, with the fields enclosed by brackets [] replaced by your own identifying
 # information: "Portions copyright [year] [name of copyright owner]".
 #
-# Copyright 2014 - 2015 ForgeRock AS.
+# Copyright 2014 - 2016 ForgeRock AS.
 #
 
 #------------------------------------------------------------------------------
@@ -160,3 +160,4 @@ org.forgerock.agents.config.json.url =
 org.forgerock.agents.config.notenforced.ext.regex.enable =
 org.forgerock.agents.config.notenforced.ipurl =
 org.forgerock.agents.pdp.javascript.repost =
+org.forgerock.agents.config.cdsso.persistent.cookie.enable = false

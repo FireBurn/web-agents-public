@@ -21,7 +21,7 @@
 64=1
 # DEBUG=1
 
-VERSION := 4.0.1-RC1
+VERSION := 4.0.1-RC2
 
 ifneq ("$(PROGRAMFILES)$(ProgramFiles)","")
  OS_ARCH := WINNT

@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -575,6 +575,8 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
         
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_IGNORE_PATHINFO, CONF_NUMBER, NULL, &conf->path_info_ignore, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_IGNORE_PATHINFO_NOT_ENFORCED, CONF_NUMBER, NULL, &conf->path_info_ignore_not_enforced, NULL);
+            
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PERSISTENT_COOKIE_ENABLE, CONF_NUMBER, NULL, &conf->persistent_cookie_enable, NULL);
         }
     }
 
