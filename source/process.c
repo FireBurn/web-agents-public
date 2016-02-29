@@ -860,12 +860,24 @@ static char *create_profile_attribute_request(am_request_t *r) {
 
 /**
  * Fetch an attribute value from a cached attribute list (read either from a shared cache
- * or directly from a server 
+ * or directly from a server. 
+ * 
+ * @param r: pointer to am_request_t;
+ * @param name: attribute name;
+ * @param mask: attribute type (AM_SESSION_ATTRIBUTE, AM_RESPONSE_ATTRIBUTE or AM_POLICY_ATTRIBUTE);
+ * @param multiple: pointer to buffer to store multiple value result (if requested).
+ * 
+ * @return NULL if there is no entry; 
+ *         attribute value if a single attribute value is requested;
+ *         or multiple value buffer (multi_attr_separator separated; heap allocated).
  */
-static const char *get_attr_value(am_request_t *r, const char *name, int mask) {
+static const char *get_attr_value(am_request_t *r, const char *name, int mask, char **multiple) {
     static const char *thisfunc = "get_attr_value():";
     struct am_namevalue *e, *t;
+    char *values = NULL;
+
     if (r == NULL || !ISVALID(name)) return NULL;
+
     switch (mask) {
         case AM_SESSION_ATTRIBUTE:
         {
@@ -873,7 +885,13 @@ static const char *get_attr_value(am_request_t *r, const char *name, int mask) {
             /* session attribute search */
             AM_LIST_FOR_EACH(r->sattr, e, t) {
                 if (strcmp(e->n, name) == 0) {
-                    return e->v;
+                    if (multiple == NULL) {
+                        return e->v;
+                    }
+                    am_asprintf(&values, "%s%s%s",
+                            values != NULL ? values : "",
+                            values != NULL ? (ISVALID(r->conf->multi_attr_separator) ? r->conf->multi_attr_separator : "|") : "",
+                            e->v);
                 }
             }
         }
@@ -884,7 +902,13 @@ static const char *get_attr_value(am_request_t *r, const char *name, int mask) {
             /* policy response attribute search */
             AM_LIST_FOR_EACH(r->response_attributes, e, t) {
                 if (strcmp(e->n, name) == 0) {
-                    return e->v;
+                    if (multiple == NULL) {
+                        return e->v;
+                    }
+                    am_asprintf(&values, "%s%s%s",
+                            values != NULL ? values : "",
+                            values != NULL ? (ISVALID(r->conf->multi_attr_separator) ? r->conf->multi_attr_separator : "|") : "",
+                            e->v);
                 }
             }
         }
@@ -895,7 +919,13 @@ static const char *get_attr_value(am_request_t *r, const char *name, int mask) {
             /* policy response decision-attribute search (profile attribute)*/
             AM_LIST_FOR_EACH(r->response_decisions, e, t) {
                 if (strcmp(e->n, name) == 0) {
-                    return e->v;
+                    if (multiple == NULL) {
+                        return e->v;
+                    }
+                    am_asprintf(&values, "%s%s%s",
+                            values != NULL ? values : "",
+                            values != NULL ? (ISVALID(r->conf->multi_attr_separator) ? r->conf->multi_attr_separator : "|") : "",
+                            e->v);
                 }
             }
         }
@@ -904,6 +934,11 @@ static const char *get_attr_value(am_request_t *r, const char *name, int mask) {
             AM_LOG_DEBUG(r->instance_id, "%s unknown mask value (%d)", thisfunc, mask);
             break;
     }
+
+    if (multiple != NULL) {
+        *multiple = values;
+    }
+
     return NULL;
 }
 
@@ -1119,7 +1154,7 @@ static am_return_t validate_policy(am_request_t *r) {
 
         if (r->conf->client_ip_validate) {
             /* check if client ip read from the environment matches token ip found in the session */
-            const char *remote_ip = get_attr_value(r, "Host", AM_SESSION_ATTRIBUTE);
+            const char *remote_ip = get_attr_value(r, "Host", AM_SESSION_ATTRIBUTE, NULL);
             if (!ISVALID(r->client_ip) || !ISVALID(remote_ip) || strcmp(remote_ip, r->client_ip) != 0) {
                 r->status = AM_ACCESS_DENIED;
                 AM_LOG_WARNING(r->instance_id,
@@ -1132,7 +1167,7 @@ static am_return_t validate_policy(am_request_t *r) {
         /* pre-fetch user parameter value (from session data) */
         if (ISVALID(r->conf->userid_param) && ISVALID(r->conf->userid_param_type) &&
                 strcasecmp(r->conf->userid_param_type, "SESSION") == 0) {
-            r->user_temp = get_attr_value(r, r->conf->userid_param, AM_SESSION_ATTRIBUTE);
+            r->user_temp = get_attr_value(r, r->conf->userid_param, AM_SESSION_ATTRIBUTE, NULL);
         }
 
         AM_LIST_FOR_EACH(r->pattr, e, t) {//TODO: work on loop in 2 threads (split loop in 2; search&match in each thread)
@@ -1218,10 +1253,10 @@ static am_return_t validate_policy(am_request_t *r) {
                         /* set user parameter value */
                         if (ISVALID(r->conf->userid_param) && ISVALID(r->conf->userid_param_type)) {
                             if (strcasecmp(r->conf->userid_param_type, "LDAP") == 0) {
-                                r->user_temp = get_attr_value(r, r->conf->userid_param, AM_POLICY_ATTRIBUTE);
+                                r->user_temp = get_attr_value(r, r->conf->userid_param, AM_POLICY_ATTRIBUTE, NULL);
                             }
                             r->user = r->user_temp;
-                            r->user_password = get_attr_value(r, "sunIdentityUserPassword", AM_SESSION_ATTRIBUTE);
+                            r->user_password = get_attr_value(r, "sunIdentityUserPassword", AM_SESSION_ATTRIBUTE, NULL);
                         }
                         return AM_OK;
                     }
@@ -1254,10 +1289,10 @@ static am_return_t validate_policy(am_request_t *r) {
                                 /* set user parameter value */
                                 if (ISVALID(r->conf->userid_param) && ISVALID(r->conf->userid_param_type)) {
                                     if (strcasecmp(r->conf->userid_param_type, "LDAP") == 0) {
-                                        r->user_temp = get_attr_value(r, r->conf->userid_param, AM_POLICY_ATTRIBUTE);
+                                        r->user_temp = get_attr_value(r, r->conf->userid_param, AM_POLICY_ATTRIBUTE, NULL);
                                     }
                                     r->user = r->user_temp;
-                                    r->user_password = get_attr_value(r, "sunIdentityUserPassword", AM_SESSION_ATTRIBUTE);
+                                    r->user_password = get_attr_value(r, "sunIdentityUserPassword", AM_SESSION_ATTRIBUTE, NULL);
                                 }
 
                                 AM_LOG_DEBUG(r->instance_id, "%s method: %s, decision: allow",
@@ -1472,12 +1507,14 @@ static void do_cookie_set_type(am_request_t *r, am_config_map_t *map, int sz,
             AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): clearing %s", v->value);
             do_cookie_set_generic(r, r->conf->cookie_prefix, v->value, NULL, NULL, NULL, NULL);
         } else {
-            const char *val = get_attr_value(r, v->name, type);
+            char *val = NULL; 
+            get_attr_value(r, v->name, type, &val);
             if (ISVALID(val)) {
                 AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): setting %s: %s",
                         v->value, val);
                 do_cookie_set_generic(r, r->conf->cookie_prefix, v->value, val, NULL, NULL, NULL);
             }
+            am_free(val);
         }
     }
 }
@@ -1517,12 +1554,14 @@ static void do_header_set_type(am_request_t *r, am_config_map_t *map, int sz,
     for (i = 0; i < sz; i++) {
         am_config_map_t *v = &map[i];
         if (set_value) {
-            const char *val = get_attr_value(r, v->name, type);
+            char *val = NULL;
+            get_attr_value(r, v->name, type, &val);
             if (ISVALID(val)) {
                 r->am_set_header_in_request_f(r, v->value, val);
                 AM_LOG_DEBUG(r->instance_id, "do_header_set(): setting %s: %s",
                         v->value, val);
             }
+            am_free(val);
         } else {
             r->am_set_header_in_request_f(r, v->value, NULL);
             AM_LOG_DEBUG(r->instance_id, "do_header_set(): clearing %s", v->value);
@@ -1566,7 +1605,7 @@ static void set_user_attributes(am_request_t *r) {
             } else {
                 const char *timeleft = AM_SESSION_ONLY_COOKIE;
                 if (r->conf->persistent_cookie_enable) {
-                    timeleft = get_attr_value(r, "timeleft", AM_SESSION_ATTRIBUTE);
+                    timeleft = get_attr_value(r, "timeleft", AM_SESSION_ATTRIBUTE, NULL);
                     if (ISVALID(timeleft)) {
                         long sec;
                         errno = 0;
