@@ -555,7 +555,8 @@ static am_return_t handle_not_enforced(am_request_t *r) {
     /* access denied url is not enforced */
     if (ISVALID(r->conf->access_denied_url)) {
         int compare_status = r->conf->url_eval_case_ignore ?
-                strcasecmp(url, r->conf->access_denied_url) : strcmp(url, r->conf->access_denied_url);
+                strncasecmp(url, r->conf->access_denied_url, strlen(r->conf->access_denied_url)) :
+                strncmp(url, r->conf->access_denied_url, strlen(r->conf->access_denied_url));
         if (compare_status == 0) {
             r->not_enforced = AM_TRUE;
             if (!r->conf->not_enforced_fetch_attr) {
@@ -630,7 +631,7 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                         if (ISVALID(r->normalized_url_pathinfo)) {
                             AM_LOG_DEBUG(r->instance_id, "%s validating %s ignoring path_info",
                                     thisfunc, r->normalized_url_pathinfo);
-                            compare_status += url_matches_pattern(r, m->value, r->normalized_url_pathinfo, AM_FALSE);
+                            compare_status += url_matches_pattern(r, m->value, r->normalized_url_pathinfo, AM_FALSE);                            
                         } else {
                             char *url_query_removed = strdup(url);
                             if (url_query_removed != NULL) {
@@ -647,7 +648,7 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                     } else {
                         compare_status += url_matches_pattern(r, m->value, url, r->conf->not_enforced_regex_enable);
                     }
-
+                    
                 } else {
 
                     /* method-extended [GET,0]=not-enforced-url option */
@@ -660,6 +661,8 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                         compare_status += url_matches_pattern(r, m->value, url, r->conf->not_enforced_regex_enable);
                     }
                 }
+                
+                if (compare_status > 0 && !r->conf->not_enforced_invert) break;
             }
         }
 
