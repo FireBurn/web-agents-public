@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -2879,6 +2879,17 @@ void update_agent_configuration_normalise_map_urls(am_config_t *conf) {
                 am_free(newvalue);
                 if (remap_status != AM_SUCCESS)
                     AM_LOG_WARNING(conf->instance_id, "%s error normalising JSON URL %s (%s)", thisfunc, value, am_strerror(remap_status));
+            }
+        }
+    }
+    /* normalise skip-post URL map values */
+    for (i = 0; i < conf->skip_post_url_map_sz; i++) {
+        if ( (value = conf->skip_post_url_map[i].value) ) {
+            if ( (newvalue = am_normalize_pattern(value)) ) {
+                remap_status = remap_config_value(conf->skip_post_url_map + i, newvalue);
+                am_free(newvalue);
+                if (remap_status != AM_SUCCESS)
+                    AM_LOG_WARNING(conf->instance_id, "%s error normalising SKIP-POST URL %s (%s)", thisfunc, value, am_strerror(remap_status));
             }
         }
     }

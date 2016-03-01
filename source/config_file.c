@@ -577,6 +577,8 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_IGNORE_PATHINFO_NOT_ENFORCED, CONF_NUMBER, NULL, &conf->path_info_ignore_not_enforced, NULL);
             
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PERSISTENT_COOKIE_ENABLE, CONF_NUMBER, NULL, &conf->persistent_cookie_enable, NULL);
+            
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_SKIP_POST_URL, CONF_STRING_MAP, &conf->skip_post_url_map_sz, &conf->skip_post_url_map, NULL);
         }
     }
 
@@ -648,6 +650,7 @@ void am_config_free(am_config_t **cp) {
         AM_CONF_MAP_FREE(c->openam_logout_map_sz, c->openam_logout_map);
         AM_CONF_MAP_FREE(c->cond_login_url_sz, c->cond_login_url);
         AM_CONF_MAP_FREE(c->json_url_map_sz, c->json_url_map);
+        AM_CONF_MAP_FREE(c->skip_post_url_map_sz, c->skip_post_url_map);
 
         free(c);
         c = NULL;

@@ -736,6 +736,28 @@ static am_return_t handle_not_enforced(am_request_t *r) {
     return AM_OK;
 }
 
+static am_bool_t skip_post_request(am_request_t *request) {
+    int i, compare_status;
+    if (request->conf->skip_post_url_map_sz <= 0) {
+        return AM_FALSE;
+    }
+    for (i = 0; i < request->conf->skip_post_url_map_sz; i++) {
+        am_config_map_t *m = &(request->conf->skip_post_url_map[i]);
+        if (!ISVALID(m->value)) continue;
+
+        compare_status = policy_compare_url(request, m->value, request->overridden_url);
+        if (compare_status == AM_EXACT_MATCH || compare_status == AM_EXACT_PATTERN_MATCH) {
+            return AM_TRUE;
+        }
+
+        /* compare_status = match(request->instance_id, request->overridden_url, m->value);
+        if (compare_status == AM_SUCCESS) {
+            return AM_TRUE;
+        } */
+    }
+    return AM_FALSE;
+}
+
 static am_return_t validate_token(am_request_t *r) {
     static const char *thisfunc = "validate_token():";
     am_return_t return_status = AM_OK; /* fail only on non-recoverable error (will quit processing) */
@@ -743,7 +765,7 @@ static am_return_t validate_token(am_request_t *r) {
 
     AM_LOG_DEBUG(r->instance_id, "%s", thisfunc);
 
-    if (r->conf->cdsso_enable && r->method == AM_REQUEST_POST) {
+    if (r->conf->cdsso_enable && r->method == AM_REQUEST_POST && !skip_post_request(r)) {
         char *token_in_post = NULL;
 
         /* read post data (blocking) */

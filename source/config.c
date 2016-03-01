@@ -143,7 +143,8 @@ enum {
     AM_CONF_PATHINFO_IGNORE,
     AM_CONF_PATHINFO_IGNORE_NOTENFORCED,
     AM_CONF_KEEPALIVE_DISABLE,
-    AM_CONF_PERSISTENT_COOKIE_ENABLE
+    AM_CONF_PERSISTENT_COOKIE_ENABLE,
+    AM_CONF_SKIP_POST_URL_MAP
 };
 
 struct am_instance {
@@ -737,6 +738,14 @@ static int am_create_instance_entry_data(int h, am_config_t *c, char all) {
                 }
             }
         }
+        if (c->skip_post_url_map_sz > 0 && c->skip_post_url_map != NULL) {
+            for (i = 0; i < c->skip_post_url_map_sz; i++) {
+                am_config_map_t *v = &(c->skip_post_url_map[i]);
+                if (ISVALID(v->name) && ISVALID(v->value)) {
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_SKIP_POST_URL_MAP, c->skip_post_url_map_sz), v->name, v->value);
+                }
+            }
+        }
         if (c->audit_level > 0) {
             SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_AUDIT_LEVEL, 0), c->audit_level);
         }
@@ -1243,6 +1252,17 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 }
                 if (r->json_url_map != NULL && r->json_url_map_sz < sz) {
                     am_config_map_t *m = &r->json_url_map[r->json_url_map_sz++];
+                    m->name = malloc(i->size[0] + i->size[1] + 2);
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                }
+                break;
+            case AM_CONF_SKIP_POST_URL_MAP:
+                if (r->skip_post_url_map_sz == 0) {
+                    r->skip_post_url_map = malloc(sz * sizeof (am_config_map_t));
+                }
+                if (r->skip_post_url_map != NULL && r->skip_post_url_map_sz < sz) {
+                    am_config_map_t *m = &(r->skip_post_url_map[r->skip_post_url_map_sz++]);
                     m->name = malloc(i->size[0] + i->size[1] + 2);
                     memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
                     m->value = m->name + i->size[0] + 1;
