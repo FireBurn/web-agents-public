@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #ifndef AM_H
@@ -81,7 +81,7 @@ typedef enum {
 #endif
 
 #ifndef AM_LOG_QUEUE_SIZE
-#define AM_LOG_QUEUE_SIZE           2048 /* must be a power of two */
+#define AM_LOG_QUEUE_SIZE           16384 /* must be a power of two */
 #endif
 
 #ifndef AM_LOG_MESSAGE_SIZE

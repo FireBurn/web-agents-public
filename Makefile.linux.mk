@@ -11,13 +11,13 @@
 # Header, with the fields enclosed by brackets [] replaced by your own identifying
 # information: "Portions copyright [year] [name of copyright owner]".
 #
-# Copyright 2014 - 2015 ForgeRock AS.
+# Copyright 2014 - 2016 ForgeRock AS.
 #
 
 ifndef	LINUX_MK_INCLUDED
 LINUX_MK_INCLUDED := true
 	
-CC := gcc44
+CC := gcc
 SHARED := -shared
 
 CFLAGS  += -fPIC -pthread -D_REENTRANT -DLINUX -D_GNU_SOURCE -D_FORTIFY_SOURCE=2 -fstack-protector \

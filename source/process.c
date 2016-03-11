@@ -876,6 +876,14 @@ static char *create_profile_attribute_request(am_request_t *r) {
         am_config_map_t *v = &r->conf->profile_attr_map[i];
         am_asprintf(&val, "%s<Attribute name=\"%s\"/>", val == NULL ? "" : val, v->name);
     }
+    /* If user id parameter comes from an LDAP attribute, add it also
+     * to the list of LDAP attributes to fetch and parse.
+     */
+    if (ISVALID(r->conf->userid_param_type) && ISVALID(r->conf->userid_param) &&
+            strcasecmp(r->conf->userid_param_type, "LDAP") == 0) {
+        am_asprintf(&val, "%s<Attribute name=\"%s\"/>",
+                val == NULL ? "" : val, r->conf->userid_param);
+    }
     return val;
 }
 

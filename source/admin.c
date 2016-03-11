@@ -59,6 +59,8 @@
 
 #define RESET_INPUT_STRING(s) do { am_free(s); s = NULL; } while (0)
 
+static int exit_status = EXIT_SUCCESS;
+
 typedef void (*param_handler)(int, char **);
 
 struct command_line {
@@ -189,7 +191,7 @@ static void exit_handler(int s)
     }
     return TRUE;
 #else
-    exit(1);
+    exit(EXIT_FAILURE);
 #endif
 }
 
@@ -200,7 +202,7 @@ static char *prompt_and_read(const char *p) {
     if ((r = malloc(USER_INPUT_BUFFER_SIZE + 1)) == NULL) {
         fprintf(stderr, "error: out of memory\n");
         am_net_options_delete(&net_options);
-        exit(1);
+        exit(EXIT_FAILURE);
     }
     if (fgets(r, USER_INPUT_BUFFER_SIZE, stdin) == NULL) {
         free(r);
@@ -218,6 +220,8 @@ static void password_decrypt(int argc, char **argv) {
         char *password = strdup(argv[3]);
         if (decrypt_password(key, &password) > 0) {
             fprintf(stdout, "\nPassword value: %s\n\n", password);
+        } else {
+            exit_status = EXIT_FAILURE;
         }
         am_free(password);
     }
@@ -231,6 +235,7 @@ static void password_encrypt(int argc, char **argv) {
             fprintf(stdout, "\nEncrypted password value: %s\n\n", password);
         } else {
             fprintf(stdout, "\nError encrypting password - invalid arguments.\n\n");
+            exit_status = EXIT_FAILURE;
         }
         am_free(password);
     }
@@ -836,7 +841,7 @@ static void check_if_quit_wanted(char* input) {
         free(input);
         install_log("installation exit because user typed \"q\" for input");
         am_net_options_delete(&net_options);
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 }
 
@@ -937,7 +942,13 @@ static void find_user(char *httpd_conf_file, uid_t **uid, gid_t **gid) {
     find_conf_setting(httpd_conf_file, "\nUser", buff, sizeof (buff));
 
     if (*buff == '\0') {
-        return;
+        install_log("Unable to find the \"User\" entry in the httpd.conf file, "
+                "will try APACHE_RUN_USER environment variable");
+        p = getenv("APACHE_RUN_USER");
+        if (ISINVALID(p)) {
+            return;
+        }
+        strncpy(buff, p, sizeof (buff) - 1);
     }
 
     /* does the buffer contain a number */
@@ -956,7 +967,7 @@ static void find_user(char *httpd_conf_file, uid_t **uid, gid_t **gid) {
     }
 
     if (password_entry == NULL) {
-        install_log("Warning: Unable to find user \"%s\" specifed by \"User\" in httpd.conf", buff);
+        install_log("Warning: Unable to find user \"%s\" specified by \"User\" in httpd.conf", buff);
         return;
     }
 
@@ -998,8 +1009,13 @@ static void find_group(char *httpd_conf_file, gid_t **gid) {
     find_conf_setting(httpd_conf_file, "\nGroup", buff, sizeof (buff));
 
     if (*buff == '\0') {
-        install_log("Unable to find the \"Group\" entry in the httpd.conf file");
-        return;
+        install_log("Unable to find the \"Group\" entry in the httpd.conf file, "
+                "will try APACHE_RUN_GROUP environment variable");
+        p = getenv("APACHE_RUN_GROUP");
+        if (ISINVALID(p)) {
+            return;
+        }
+        strncpy(buff, p, sizeof (buff) - 1);
     }
 
     /* does the buffer contain a number */
@@ -1017,7 +1033,7 @@ static void find_group(char *httpd_conf_file, gid_t **gid) {
         group_entry = getgrnam(buff);
     }
     if (group_entry == NULL) {
-        install_log("Unable to find group \"%s\" specifed by \"Group\" in httpd.conf", buff);
+        install_log("Unable to find group \"%s\" specified by \"Group\" in httpd.conf", buff);
         return;
     }
     if (*gid == NULL) {
@@ -1065,16 +1081,19 @@ static void install_interactive(int argc, char **argv) {
     cons_handle = GetStdHandle(STD_INPUT_HANDLE);
     if (cons_handle == INVALID_HANDLE_VALUE) {
         fprintf(stderr, "Failed to get console handle (%d). Exiting.\n", GetLastError());
+        exit_status = EXIT_FAILURE;
         return;
     }
     if (!GetConsoleMode(cons_handle, &old_mode)) {
         fprintf(stderr, "Failed to get console mode (%d). Exiting.\n", GetLastError());
+        exit_status = EXIT_FAILURE;
         return;
     }
     new_mode = old_mode;
     new_mode |= (ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT);
     if (!SetConsoleMode(cons_handle, new_mode)) {
         fprintf(stderr, "Failed to set console mode (%d). Exiting.\n", GetLastError());
+        exit_status = EXIT_FAILURE;
         return;
     }
     SetConsoleCtrlHandler((PHANDLER_ROUTINE) exit_handler, TRUE);
@@ -1118,7 +1137,7 @@ static void install_interactive(int argc, char **argv) {
         install_log("license was not accepted");
         fprintf(stdout, "\nYou need to accept the License terms and conditions to continue.\n");
         am_net_options_delete(&net_options);
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     fprintf(stdout, "\n%s for %s Server interactive installation.\n\n", DESCRIPTION,
@@ -1143,7 +1162,7 @@ static void install_interactive(int argc, char **argv) {
                     if (input == NULL) {
                         install_log("installation exit (memory allocation error)");
                         am_net_options_delete(&net_options);
-                        exit(1);
+                        exit(EXIT_FAILURE);
                     }
                 }
 
@@ -1156,12 +1175,33 @@ static void install_interactive(int argc, char **argv) {
                         fprintf(stdout, "\nError: this server instance is already configured with %s module.\nPlease try again.\n\n", DESCRIPTION);
                         install_log("server instance %s is already configured with %s",
                                 input, DESCRIPTION);
-                    } else if (strstr(conf, "LoadModule") == NULL) {
-                        fprintf(stdout, "\nError: invalid server configuration file %s.]\nPlease try again.\n\n",
-                                input);
-                        install_log("could not locate LoadModule configuration directive in %s", input);
                     } else {
-                        strncpy(server_conf, input, sizeof(server_conf) - 1);
+                        
+                        /* check if httpd.conf file contains any LoadModule directive */
+                        if (strstr(conf, "LoadModule") == NULL) {
+                            char *lmcheck_input;
+
+                            fprintf(stdout, "\nWarning: Apache HTTP Server configuration file %s does not "
+                                    "contain any \"LoadModule\" directive.\n"
+                                    "Updating this file may result in corrupt Apache HTTP Server installation and Agent failure.\n",
+                                    input);
+                            install_log("could not locate LoadModule configuration directive in %s", input);
+
+                            lmcheck_input = prompt_and_read("\nDo you want to continue?\n"
+                                    "[ q or 'ctrl+c' to exit ]\n"
+                                    "(yes/no): [no]:");
+                            
+                            check_if_quit_wanted(lmcheck_input);
+                            if (ISINVALID(lmcheck_input) || strcasecmp(lmcheck_input, "no") == 0) {
+                                fprintf(stdout, "Exiting.\n");
+                                install_log("installation exit");
+                                AM_FREE(lmcheck_input, input);
+                                am_net_options_delete(&net_options);
+                                exit(EXIT_FAILURE);
+                            }
+                        }
+
+                        strncpy(server_conf, input, sizeof (server_conf) - 1);
                         install_log("server configuration file %s", server_conf);
                         error = AM_FALSE;
                     }
@@ -1186,6 +1226,9 @@ static void install_interactive(int argc, char **argv) {
                     uid = NULL;
                     gid = NULL;
                 }
+                
+                am_free(input);
+                input = NULL;
 
                 /**
                  * If we have a uid and gid by this stage, actually ask the user if they want us to chown the
@@ -1204,7 +1247,7 @@ static void install_interactive(int argc, char **argv) {
                     }
                 }
 #endif
-                free(input);
+                am_free(input);
                 
                 break; /* avoid fall through into IIS */
             }
@@ -1220,7 +1263,7 @@ static void install_interactive(int argc, char **argv) {
                 if (input == NULL) {
                     install_log("installation exit");
                     am_net_options_delete(&net_options);
-                    exit(1);
+                    exit(EXIT_FAILURE);
                 }
 
                 iis_status = test_module(input);
@@ -1250,7 +1293,7 @@ static void install_interactive(int argc, char **argv) {
                     if (input == NULL) {
                         install_log("installation exit (memory allocation error)");
                         am_net_options_delete(&net_options);
-                        exit(1);
+                        exit(EXIT_FAILURE);
                     }
                 }
                 if (file_exists(input)) {
@@ -1270,7 +1313,7 @@ static void install_interactive(int argc, char **argv) {
                 fprintf(stdout, "Error: unknown installation type. Exiting.\n");
                 install_log("unknown installation type");
                 am_net_options_delete(&net_options);
-                exit(1);
+                exit(EXIT_FAILURE);
             }
         }
     } while (error == AM_TRUE);
@@ -1330,9 +1373,10 @@ static void install_interactive(int argc, char **argv) {
                     
                     int c = 0;
                     
-                    if (!ISVALID(dst)) {
+                    if (dst == NULL) {
                         install_log("unable to allocate memory for naming URL list");
-                        break;
+                        am_net_options_delete(&net_options);
+                        exit(EXIT_FAILURE);
                     }
                     /* reset any user input */
                     RESET_INPUT_STRING(openam_url);
@@ -1457,7 +1501,7 @@ static void install_interactive(int argc, char **argv) {
                     install_log("installation exit because OpenAM is not running");
                     fprintf(stdout, "Exiting installation\n.");
                     am_net_options_delete(&net_options);
-                    exit(1);
+                    exit(EXIT_FAILURE);
                 }
             }
 
@@ -1520,10 +1564,10 @@ static void install_interactive(int argc, char **argv) {
                     printf("Please answer yes or no\n");
                 }
                 if (!continue_upgrade) {
-                    install_log("installation exit because apache is running");
+                    install_log("installation exit because Apache HTTP Server is running");
                     fprintf(stdout, "Exiting installation.\n");
                     am_net_options_delete(&net_options);
-                    exit(1);
+                    exit(EXIT_FAILURE);
                 }
             }
             
@@ -1644,6 +1688,7 @@ static void install_interactive(int argc, char **argv) {
             fprintf(stderr, "\nError validating OpenAM - Agent configuration.\n"
                     "See installation log %s file for more details. Exiting.\n", log_path);
             install_log("error validating OpenAM agent configuration");
+            exit_status = EXIT_FAILURE;
         } else {
             fprintf(stdout, "\nValidating... Success.\n");
             install_log("validating configuration parameters... success");
@@ -1677,12 +1722,14 @@ static void install_interactive(int argc, char **argv) {
             fprintf(stderr, "\nInstallation failed.\n"
                     "See installation log %s file for more details. Exiting.\n", log_path);
             install_log("installation error: %s", am_strerror(rv));
+            exit_status = EXIT_FAILURE;
         }
         
     } else {
         fprintf(stderr, "\nInstallation failed.\n"
                 "See installation log %s file for more details. Exiting.\n", log_path);
         install_log("installation error");
+        exit_status = EXIT_FAILURE;
     }
 
     AM_FREE(openam_url, agent_url, agent_realm, agent_user, agent_password);
@@ -1766,7 +1813,7 @@ static void install_silent(int argc, char** argv) {
         install_log("license was not accepted");
         fprintf(stdout, "\nYou need to accept the License terms and conditions to continue.\n");
         am_net_options_delete(&net_options);
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     if (argc >= 8) {
@@ -1788,7 +1835,7 @@ static void install_silent(int argc, char** argv) {
                 fprintf(stderr, "\nError reading config file %s. Exiting.\n", argv[2]);
                 install_log("exiting install because config file %s is not readable", argv[2]);
                 am_net_options_delete(&net_options);
-                exit(1);
+                exit(EXIT_FAILURE);
             }
 #if !defined(_WIN32)
             /**
@@ -1815,7 +1862,7 @@ static void install_silent(int argc, char** argv) {
             install_log("installation exit");
             am_net_options_delete(&net_options);
             AM_FREE(uid, gid);
-            exit(1);
+            exit(EXIT_FAILURE);
         }
 
         trim(agent_password, '\n');
@@ -1836,6 +1883,7 @@ static void install_silent(int argc, char** argv) {
             if (rv != AM_SUCCESS) {
                 fprintf(stderr, "\nError validating OpenAM - Agent configuration.\n");
                 install_log("error validating OpenAM agent configuration");
+                exit_status = EXIT_FAILURE;
             } else {
                 fprintf(stdout, "\nValidating... Success.\n");
                 install_log("validating configuration parameters... success");
@@ -1868,6 +1916,7 @@ static void install_silent(int argc, char** argv) {
                 fprintf(stderr, "\nInstallation failed.\n"
                         "See installation log %s file for more details. Exiting.\n", log_path);
                 install_log("installation error: %s", am_strerror(rv));
+                exit_status = EXIT_FAILURE;
             }
 
             if (property_map != NULL) {
@@ -1877,12 +1926,14 @@ static void install_silent(int argc, char** argv) {
             fprintf(stderr, "\nInstallation failed.\n"
                     "See installation log %s file for more details. Exiting.\n", log_path);
             install_log("installation error");
+            exit_status = EXIT_FAILURE;
         }
 
         AM_FREE(agent_password, uid, gid);
         am_net_shutdown();
     } else {
         fprintf(stderr, "\nInvalid arguments. Installation exit.\n");
+        exit_status = EXIT_FAILURE;
     }
     install_log("installation exit");
 }
@@ -1930,6 +1981,7 @@ static void remove_instance(int argc, char **argv) {
     if (rv <= 0) {
         fprintf(stderr, "\nError reading agent configuration.\n");
         delete_conf_entry_list(&list);
+        exit_status = EXIT_FAILURE;
         return;
     }
 
@@ -2021,6 +2073,7 @@ static void remove_instance(int argc, char **argv) {
 
     if (rv == AM_NOT_FOUND) {
         fprintf(stderr, "\nUnknown \"%s\" instance configuration.\n", LOGEMPTY(argv[2]));
+        exit_status = EXIT_FAILURE;
     }
 }
 
@@ -2226,6 +2279,9 @@ static void modify_ownership(int argc, char **argv) {
         rv = add_directory_acl(NULL, argv[3], argv[2]);
         fprintf(stdout, "\nAdding \"%s\" to \"%s\" ACLs with status: %s.\n",
                 argv[2], argv[3], am_strerror(rv));
+        if (rv != AM_SUCCESS) {
+            exit_status = EXIT_FAILURE;
+        }
     }
 }
 
@@ -2260,7 +2316,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "\nYou are running unsupported Microsoft Windows OS version.\n"
                 DESCRIPTION" supports Microsoft Windows 2008R2 or newer.\n\n");
 #endif
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
 #ifdef _WIN32
@@ -2269,7 +2325,7 @@ int main(int argc, char **argv) {
             && strcmp(argv[1], "--d") != 0
             && !IsUserAnAdmin()) {
             fprintf(stderr, "\nYou need Administrator privileges to run "DESCRIPTION" agentadmin.\n\n");
-            exit(1);
+            exit(EXIT_FAILURE);
         }
 #endif
     
@@ -2370,7 +2426,7 @@ int main(int argc, char **argv) {
             if (!strcasecmp(argv[1], params[i].option)) {
                 params[i].handler(argc, argv);
                 am_net_options_delete(&net_options);
-                return 0;
+                return exit_status;
             }
         }
     }
@@ -2410,5 +2466,5 @@ int main(int argc, char **argv) {
             " agentadmin --v\n\n", DESCRIPTION);
 
     am_net_options_delete(&net_options);
-    return 0;
+    return EXIT_SUCCESS;
 }
