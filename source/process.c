@@ -774,7 +774,8 @@ static am_return_t validate_token(am_request_t *r) {
             status = AM_SUCCESS;
         }
 
-        if (status == AM_SUCCESS && ISVALID(r->post_data)) {
+        if (status == AM_SUCCESS) {
+            status = AM_NOT_FOUND;
 
             /* if this is a LARES/SAML post, read a token from SAML assertion */
             if (r->post_data_sz > 5 && memcmp(r->post_data, "LARES=", 6) == 0) {
@@ -783,7 +784,6 @@ static am_return_t validate_token(am_request_t *r) {
                 char *clear = base64_decode(lares, &clear_sz);
                 am_free(lares);
 
-                status = AM_NOT_FOUND;
                 if (clear != NULL) {
                     struct am_namevalue *e, *t, *session_list;
                     session_list = am_parse_session_saml(r->instance_id, clear, clear_sz);
@@ -813,7 +813,6 @@ static am_return_t validate_token(am_request_t *r) {
                 if (r->am_set_post_data_f != NULL) {
                     r->am_set_post_data_f(r);
                 }
-                status = AM_NOT_FOUND;
             }
         }
 
@@ -1985,10 +1984,14 @@ static am_return_t handle_exit(am_request_t *r) {
             /* set user attributes */
             set_user_attributes(r);
 
-            if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_ALLOW)) {
+            if (!r->not_enforced && AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_ALLOW)) {
                 const char *user_name_log = ISVALID(r->user) ? r->user : r->user_temp;
-                AM_LOG_AUDIT(r->instance_id, AUDIT_ALLOW_USER_MESSAGE,
-                        LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
+
+                if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT)) {
+                    AM_LOG_AUDIT(r->instance_id, AUDIT_ALLOW_USER_MESSAGE,
+                            LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
+                }
+                
                 if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE) && ISVALID(r->token)) {
                     int audit_status = am_add_remote_audit_entry(r->instance_id, r->conf->token,
                             r->session_info.si, r->conf->audit_file_remote,
@@ -2152,12 +2155,14 @@ static am_return_t handle_exit(am_request_t *r) {
         case AM_ACCESS_DENIED:
         case AM_INVALID_FQDN_ACCESS:
 
-            if (status == AM_ACCESS_DENIED &&
+            if (status == AM_ACCESS_DENIED && !r->not_enforced &&
                     AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_DENY)) {
                 const char *user_name_log = ISVALID(r->user) ? r->user : r->user_temp;
 
-                AM_LOG_AUDIT(r->instance_id, AUDIT_DENY_USER_MESSAGE,
-                        LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
+                if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT)) {
+                    AM_LOG_AUDIT(r->instance_id, AUDIT_DENY_USER_MESSAGE,
+                            LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
+                }
 
                 if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE) && ISVALID(r->token)) {
                     int audit_status = am_add_remote_audit_entry(r->instance_id, r->conf->token,
