@@ -749,7 +749,8 @@ static am_return_t validate_token(am_request_t *r) {
             status = AM_SUCCESS;
         }
 
-        if (status == AM_SUCCESS && ISVALID(r->post_data)) {
+        if (status == AM_SUCCESS) {
+            status = AM_NOT_FOUND;
 
             /* if this is a LARES/SAML post, read a token from SAML assertion */
             if (r->post_data_sz > 5 && memcmp(r->post_data, "LARES=", 6) == 0) {
@@ -758,7 +759,6 @@ static am_return_t validate_token(am_request_t *r) {
                 char *clear = base64_decode(lares, &clear_sz);
                 am_free(lares);
 
-                status = AM_NOT_FOUND;
                 if (clear != NULL) {
                     struct am_namevalue *e, *t, *session_list;
                     session_list = am_parse_session_saml(r->instance_id, clear, clear_sz);
@@ -788,7 +788,6 @@ static am_return_t validate_token(am_request_t *r) {
                 if (r->am_set_post_data_f != NULL) {
                     r->am_set_post_data_f(r);
                 }
-                status = AM_NOT_FOUND;
             }
         }
 
