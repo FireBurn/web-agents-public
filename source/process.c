@@ -1890,8 +1890,8 @@ static am_return_t handle_exit(am_request_t *r) {
         case AM_SUCCESS:
         {
             if (r->is_logout_url) {
-                if (r->am_add_header_in_response_f != NULL &&
-                        r->conf->logout_cookie_reset_map_sz > 0) {
+                
+                if (r->conf->logout_cookie_reset_map_sz > 0) {
                     /* process logout cookie reset list (logout.cookie.reset) */
                     const char *default_domain = strchr(NOTNULL(r->conf->fqdn_default), '.');
                     if (default_domain != NULL) {
@@ -1903,6 +1903,18 @@ static am_return_t handle_exit(am_request_t *r) {
                         AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): logout resetting %s", m->value);
                         do_cookie_set_generic(r, NULL, m->value, NULL, default_domain, NULL, NULL);
                     }
+                }
+                
+                if (r->conf->cdsso_enable) {
+                    /* reset CDSSO cookie in all domains */
+                    for (i = 0; i < r->conf->cdsso_cookie_domain_map_sz; i++) {
+                        am_config_map_t *m = &r->conf->cdsso_cookie_domain_map[i];
+                        AM_LOG_DEBUG(r->instance_id, "do_cookie_set() logout resetting session cookie in %s domain",
+                                m->value);
+                        do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, m->value, NULL, NULL);
+                    }
+                    /* reset CDSSO cookie in default domain */
+                    do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, NULL, NULL, NULL);
                 }
 
                 /* reset headers/cookies */
@@ -2186,19 +2198,21 @@ static am_return_t handle_exit(am_request_t *r) {
 
             if (r->am_set_custom_response_f != NULL) {
 
-                if (status == AM_INVALID_SESSION) {
-                    /* reset LDAP cookies on invalid session */
+                if (status == AM_INVALID_SESSION || (status == AM_ACCESS_DENIED && r->conf->cdsso_enable)) {
+                    /* reset LDAP cookies */
                     do_cookie_set(r, AM_TRUE, AM_TRUE);
+
                     if (r->conf->cdsso_enable) {
-                        /* reset CDSSO cookie */
+                        /* reset CDSSO cookie in all domains */
+                        for (i = 0; i < r->conf->cdsso_cookie_domain_map_sz; i++) {
+                            am_config_map_t *m = &r->conf->cdsso_cookie_domain_map[i];
+                            AM_LOG_DEBUG(r->instance_id, "%s resetting session cookie in %s domain",
+                                    thisfunc, m->value);
+                            do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, m->value, NULL, NULL);
+                        }
+                        /* reset CDSSO cookie in default domain */
                         do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, NULL, NULL, NULL);
                     }
-                }
-
-                if (status == AM_ACCESS_DENIED && r->conf->cdsso_enable) {
-                    /* reset CDSSO and LDAP cookies on access denied */
-                    do_cookie_set(r, AM_TRUE, AM_TRUE);
-                    do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, NULL, NULL, NULL);
                 }
 
                 if (r->method == AM_REQUEST_POST && r->conf->pdp_enable &&
