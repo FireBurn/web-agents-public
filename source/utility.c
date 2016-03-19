@@ -2484,7 +2484,7 @@ int copy_file(const char *from, const char *to) {
     if (CopyFileExA(from, to_tmp, NULL, NULL, FALSE, COPY_FILE_NO_BUFFERING) != 0) {
         rv = AM_SUCCESS;
     }
-#elif defined(LINUX) || defined(AIX)
+#else
     {
         size_t content_sz = 0;
         char *content = load_file(from, &content_sz);
@@ -2502,43 +2502,7 @@ int copy_file(const char *from, const char *to) {
                 rv = AM_FILE_ERROR;
         }
     }
-#else   /* not Windows or Linux or AIX */
-    struct stat st;
-    source = open(from, O_RDONLY);
-    if (source == -1) {
-        if (local_alloc) {
-            free(to_tmp);
-        }
-        return rv;
-    }
-
-    dest = open(to_tmp, O_CREAT | O_WRONLY | O_TRUNC, 0644);
-    if (dest == -1) {
-        close(source);
-        if (local_alloc) {
-            free(to_tmp);
-        }
-        return rv;
-    }
-
-    if (fstat(source, &st) == 0) {
-#if defined(__APPLE__)
-        if (fcopyfile(source, dest, NULL, COPYFILE_ALL) != -1) {
-            rv = AM_SUCCESS;
-        }
-#else
-        /*
-         * The folowing only works on linux kernel after 2.6.33, so is disabled for linux in general
-         */
-        off_t offset = 0;
-        if (sendfile(dest, source, &offset, st.st_size) != -1) {
-            rv = AM_SUCCESS;
-        }
-#endif
-    }
-    close(source);
-    close(dest);
-#endif  /* not Windows or Linux */
+#endif 
     if (local_alloc) {
         free(to_tmp);
     }
