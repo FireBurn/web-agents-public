@@ -113,7 +113,7 @@ $(VARNISH_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/varnish/include
 $(VARNISH3_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)/varnish3/include
 $(APACHE22_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apache22/include \
 	$(COMPILEFLAG)Iextlib/$(OS_ARCH)$(OS_MARCH)/apache22/include \
-	$(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache22/include $(COMPILEFLAG)DAPACHE2
+	$(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache22$(VENDOR_EXT)/include $(COMPILEFLAG)DAPACHE2
 $(TEST_OBJECTS): CFLAGS += $(COMPILEFLAG)I.$(PS)cmocka $(COMPILEFLAG)I.$(PS)tests $(COMPILEFLAG)I.$(PS)$(OBJDIR)$(PS)tests \
 	$(COMPILEFLAG)DHAVE_SIGNAL_H
 
@@ -225,6 +225,27 @@ apache22zip: clean build version apache22 agentadmin
 	-$(CP) config$(PS)* $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)config$(PS)
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)apache22_agent$(PS)legal$(PS)
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a Apache_v22_$(OS_ARCH)$(OS_ARCH_EXT)$(OS_BITS)_$(VERSION).zip web_agents
+
+ibmhttp7zip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"2.2.x (IBM HTTP Server 7)"'
+ibmhttp7zip: VENDOR_EXT = _ibmhttp
+ibmhttp7zip: CONTAINER = $(strip IBM HTTP Server 7 $(OS_ARCH)$(OS_ARCH_EXT) $(subst _,,$(OS_BITS)))
+ibmhttp7zip: clean build version apache22 agentadmin
+	@$(ECHO) "[***** Building IBM HTTP Server 7 agent archive *****]"
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)httpserver7_agent
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)httpserver7_agent$(PS)bin
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)httpserver7_agent$(PS)lib
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)httpserver7_agent$(PS)legal
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)httpserver7_agent$(PS)instances
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)httpserver7_agent$(PS)log
+	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)httpserver7_agent$(PS)config
+	-$(CP) $(OBJDIR)$(PS)agentadmin* $(OBJDIR)$(PS)web_agents$(PS)httpserver7_agent$(PS)bin$(PS)
+	-$(CP) $(OBJDIR)$(PS)mod_openam.so $(OBJDIR)$(PS)web_agents$(PS)httpserver7_agent$(PS)lib$(PS)
+	-$(CP) $(OBJDIR)$(PS)mod_openam.dll $(OBJDIR)$(PS)web_agents$(PS)httpserver7_agent$(PS)lib$(PS)
+	-$(CP) $(OBJDIR)$(PS)mod_openam.pdb $(OBJDIR)$(PS)web_agents$(PS)httpserver7_agent$(PS)lib$(PS)
+	-$(CP) config$(PS)* $(OBJDIR)$(PS)web_agents$(PS)httpserver7_agent$(PS)config$(PS)
+	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)httpserver7_agent$(PS)legal$(PS)
+	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a IBMHTTP_v7_$(OS_ARCH)$(OS_ARCH_EXT)$(OS_BITS)_$(VERSION).zip web_agents
 
 iiszip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"7.5, 8.x"'
 iiszip: CONTAINER = $(strip IIS 7.5, 8.x $(OS_ARCH)$(OS_ARCH_EXT) $(subst _,,$(OS_BITS)))

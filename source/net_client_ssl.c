@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2015 ForgeRock AS.
+ * Copyright 2015 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -237,6 +237,9 @@ static void close_library(void *lib) {
 
 static void *load_library(const char *lib, struct ssl_func *sw) {
     char name[AM_PATH_SIZE];
+#if defined(AIX)
+    char name_098[AM_PATH_SIZE];
+#endif    
 #if !defined(_WIN32) && !defined(__APPLE__)
     int i;
     const char *name_variants[] = {"%s.so.10", "%s.so.1.0.1", "%s.so.1.0.0", "%s.so.0.9.8", NULL};
@@ -270,6 +273,17 @@ static void *load_library(const char *lib, struct ssl_func *sw) {
 #endif  
             );
 
+#if defined(AIX)
+    /* add support for OpenSSL 0.9.8 bundle in AIX */
+    snprintf(name_098, sizeof (name_098),
+#ifdef __64BIT__
+            "%s.a(%s64.so.0.9.8)"
+#else
+            "%s.a(%s.so.0.9.8)"
+#endif
+            , NOTNULL(lib), NOTNULL(lib));
+#endif     
+
 #ifdef _WIN32
     if ((lib_handle = (void *) LoadLibraryExA(name, NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)) == NULL) {
         fprintf(stderr, "init_ssl(): %s is not available (error: %d)\n", name, GetLastError());
@@ -279,7 +293,14 @@ static void *load_library(const char *lib, struct ssl_func *sw) {
 #if defined(__APPLE__)
     lib_handle = dlopen(name, RTLD_LAZY | RTLD_GLOBAL | RTLD_NODELETE);
 #else
+
+#if defined(AIX) 
+    name_variants[0] = name; /* .so.1.0.0 bundle will be the first one to check */
+    name_variants[ARRAY_SIZE(name_variants) - 1] = name_098; /* and as the last one - check for .so.0.9.8 bundle */
+#else
     name_variants[ARRAY_SIZE(name_variants) - 1] = name;
+#endif    
+        
     for (i = 0; i < ARRAY_SIZE(name_variants); i++) {
         if (strchr(name_variants[i], '%') != NULL) {
             snprintf(temp, sizeof (temp), name_variants[i], NOTNULL(lib));
