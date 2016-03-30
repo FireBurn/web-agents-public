@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -23,19 +23,24 @@ void notification_worker(void *arg) {
     static const char *thisfunc = "notification_worker():";
     struct notification_worker_data *r = (struct notification_worker_data *) arg;
     struct am_namevalue *e, *t, *session_list;
-    char *token = NULL, destroyed = 0;
-    am_bool_t policy_change_run = AM_FALSE;
-    char *agentid = NULL;
+    char *token = NULL, *agentid = NULL, *temp;
+    am_bool_t destroyed = AM_FALSE, policy_change_run = AM_FALSE;
+    size_t temp_sz = 0;
 
     if (r == NULL) return;
     if (r->post_data == NULL || r->post_data_sz == 0) {
         AM_LOG_WARNING(r->instance_id, "%s post data is not available", thisfunc);
-        am_free(r->post_data);
-        free(r);
+        AM_FREE(r->post_data, r);
         return;
     }
 
-    session_list = am_parse_session_xml(r->instance_id, r->post_data, r->post_data_sz);
+    temp = load_file(r->post_data, &temp_sz);
+    if (temp == NULL) {
+        AM_LOG_WARNING(r->instance_id, "%s failed to load post data from %s", thisfunc, r->post_data);
+        AM_FREE(r->post_data, r);
+        return;
+    }
+    session_list = am_parse_session_xml(r->instance_id, temp, temp_sz);
 
     AM_LIST_FOR_EACH(session_list, e, t) {
         /* SessionNotification */
@@ -43,7 +48,7 @@ void notification_worker(void *arg) {
             token = e->v;
         }
         if (strcmp(e->n, "state") == 0 && strcmp(e->v, "destroyed") == 0) {
-            destroyed = 1;
+            destroyed = AM_TRUE;
         }
         if (strcmp(e->n, "agentName") == 0) {
             agentid = e->v;
@@ -72,9 +77,8 @@ void notification_worker(void *arg) {
     }
 
     delete_am_namevalue_list(&session_list);
-
-    am_free(r->post_data);
-    free(r);
+    am_delete_file(r->post_data);
+    AM_FREE(r->post_data, temp, r);
 }
 
 void session_logout_worker(void *arg) {

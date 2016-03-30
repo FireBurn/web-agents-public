@@ -380,8 +380,8 @@ static am_return_t handle_notification(am_request_t *r) {
         /* set up notification_worker argument list */
         if (wd != NULL) {
             wd->instance_id = r->instance_id;
-            /* original r->post_data inside a worker might not be available already */
-            wd->post_data = r->post_data != NULL ? strdup(r->post_data) : NULL;
+            /* notification worker uses data stored in a file */
+            wd->post_data = r->post_data_fn != NULL ? strdup(r->post_data_fn) : NULL;
             wd->post_data_sz = r->post_data_sz;
         }
         status = AM_OK;
@@ -520,7 +520,7 @@ static am_return_t handle_not_enforced(am_request_t *r) {
         r->is_dummypost_url = r->not_enforced = AM_TRUE;
         r->status = AM_SUCCESS;
         free(pdp_path);
-        return AM_OK;
+        return AM_QUIT;
     }
     am_free(pdp_path);
 
@@ -589,7 +589,7 @@ static am_return_t handle_not_enforced(am_request_t *r) {
             } else {
                 char *pv = strndup(m->name, p - m->name);
                 if (pv != NULL) {
-                    char mtn = am_method_str_to_num(pv);
+                    int mtn = am_method_str_to_num(pv);
                     free(pv);
                     if (r->method == mtn) {
                         const char *l[1] = {m->value};
@@ -631,7 +631,7 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                         if (ISVALID(r->normalized_url_pathinfo)) {
                             AM_LOG_DEBUG(r->instance_id, "%s validating %s ignoring path_info",
                                     thisfunc, r->normalized_url_pathinfo);
-                            compare_status += url_matches_pattern(r, m->value, r->normalized_url_pathinfo, AM_FALSE);                            
+                            compare_status += url_matches_pattern(r, m->value, r->normalized_url_pathinfo, AM_FALSE);
                         } else {
                             char *url_query_removed = strdup(url);
                             if (url_query_removed != NULL) {
@@ -648,20 +648,20 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                     } else {
                         compare_status += url_matches_pattern(r, m->value, url, r->conf->not_enforced_regex_enable);
                     }
-                    
+
                 } else {
 
                     /* method-extended [GET,0]=not-enforced-url option */
 
                     char *pv = strndup(m->name, p - m->name);
                     if (pv != NULL) {
-                        char mtn = am_method_str_to_num(pv);
+                        int mtn = am_method_str_to_num(pv);
                         free(pv);
                         if (r->method != mtn) continue;
                         compare_status += url_matches_pattern(r, m->value, url, r->conf->not_enforced_regex_enable);
                     }
                 }
-                
+
                 if (compare_status > 0 && !r->conf->not_enforced_invert) break;
             }
         }
@@ -778,7 +778,7 @@ static am_return_t validate_token(am_request_t *r) {
             status = AM_NOT_FOUND;
 
             /* if this is a LARES/SAML post, read a token from SAML assertion */
-            if (r->post_data_sz > 5 && memcmp(r->post_data, "LARES=", 6) == 0) {
+            if (ISVALID(r->post_data) && r->post_data_sz > 5 && memcmp(r->post_data, "LARES=", 6) == 0) {
                 char *lares = url_decode(r->post_data + 6);
                 size_t clear_sz = lares != NULL ? strlen(lares) : 0;
                 char *clear = base64_decode(lares, &clear_sz);
@@ -1056,7 +1056,7 @@ static am_return_t validate_policy(am_request_t *r) {
         do {
             policy_cache_new = NULL;
             session_cache_new = NULL;
-            
+
             status = am_agent_policy_request(r->instance_id, service_url, r->conf->token, r->token,
                     url, am_scope_to_str(scope), r->client_ip, pattrs,
                     &net_options, &session_cache_new, &policy_cache_new);
@@ -1064,10 +1064,10 @@ static am_return_t validate_policy(am_request_t *r) {
                 remote = AM_TRUE;
                 break;
             }
-            
+
             delete_am_policy_result_list(&policy_cache_new);
             delete_am_namevalue_list(&session_cache_new);
-            
+
             if (status == AM_INVALID_SESSION && r->not_enforced && r->conf->not_enforced_fetch_attr) {
                 /* in case request url is not enforced and attribute fetch is enabled
                  * but there is no a) cached session data for this token or 
@@ -1082,7 +1082,7 @@ static am_return_t validate_policy(am_request_t *r) {
                 r->status = AM_SUCCESS;
                 return AM_OK;
             }
-            
+
             AM_LOG_WARNING(r->instance_id, "%s retry %d (remote session/policy call failure: %s)",
                     thisfunc, (retry - max_retry) + 1, am_strerror(status));
 
@@ -1208,7 +1208,7 @@ static am_return_t validate_policy(am_request_t *r) {
 
             if (e->scope == scope) {
                 const char *pattern = e->resource;
-                
+
                 if (!r->conf->policy_scope_subtree) {
                     /* agent is running in self mode and cached entry may or may not contain 
                      * an asterisk character - do exact string match so that
@@ -1536,7 +1536,7 @@ static void do_cookie_set_type(am_request_t *r, am_config_map_t *map, int sz,
             AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): clearing %s", v->value);
             do_cookie_set_generic(r, r->conf->cookie_prefix, v->value, NULL, NULL, NULL, NULL);
         } else {
-            char *val = NULL; 
+            char *val = NULL;
             get_attr_value(r, v->name, type, &val);
             if (ISVALID(val)) {
                 AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): setting %s: %s",
@@ -1890,7 +1890,7 @@ static am_return_t handle_exit(am_request_t *r) {
         case AM_SUCCESS:
         {
             if (r->is_logout_url) {
-                
+
                 if (r->conf->logout_cookie_reset_map_sz > 0) {
                     /* process logout cookie reset list (logout.cookie.reset) */
                     const char *default_domain = strchr(NOTNULL(r->conf->fqdn_default), '.');
@@ -1904,7 +1904,7 @@ static am_return_t handle_exit(am_request_t *r) {
                         do_cookie_set_generic(r, NULL, m->value, NULL, default_domain, NULL, NULL);
                     }
                 }
-                
+
                 if (r->conf->cdsso_enable) {
                     /* reset CDSSO cookie in all domains */
                     for (i = 0; i < r->conf->cdsso_cookie_domain_map_sz; i++) {
@@ -2011,7 +2011,7 @@ static am_return_t handle_exit(am_request_t *r) {
                     AM_LOG_AUDIT(r->instance_id, AUDIT_ALLOW_USER_MESSAGE,
                             LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
                 }
-                
+
                 if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE) && ISVALID(r->token)) {
                     int audit_status = am_add_remote_audit_entry(r->instance_id, r->conf->token,
                             r->session_info.si, r->conf->audit_file_remote,
@@ -2047,118 +2047,129 @@ static am_return_t handle_exit(am_request_t *r) {
             }
 
             if (r->is_dummypost_url) {
-                am_status_t pdp_status = AM_ERROR;
+                /* post (pdp) data reply */
+
+                am_status_t pdp_status;
+                char *data = NULL /* url\0file\0 format */, *content_type = NULL, *file;
+                size_t url_sz = 0;
+                int method = AM_REQUEST_POST;
                 const char *key = r->url.query + 1; /* skip '?' */
-                if (ISVALID(key)) {
-                    char *data = NULL /* url\0file\0 format */, *content_type = NULL;
-                    size_t url_sz = 0;
 
-                    pdp_status = am_get_pdp_cache_entry(r, key, &data, &url_sz, &content_type);
-                    if (pdp_status == AM_SUCCESS) {
-                        const char *file = data + url_sz + 1;
-                        AM_LOG_DEBUG(r->instance_id, "%s found post data preservation cache "
-                                "entry: %s, url: %s, file: %s, content type: %s",
-                                thisfunc, key, LOGEMPTY(data), LOGEMPTY(file), LOGEMPTY(content_type));
-
-                        /* reset pdp sticky-session load-balancer cookie */
-                        if (ISVALID(r->conf->pdp_sess_mode) && ISVALID(r->conf->pdp_sess_value)
-                                && strcmp(r->conf->pdp_sess_mode, "COOKIE") == 0
-                                && match(r->instance_id, r->conf->pdp_sess_value, "^(\\w+)=([^\\s]+)$") == AM_OK) {
-                            char *sess_cookie = strdup(r->conf->pdp_sess_value);
-                            if (sess_cookie != NULL) {
-                                char *eq = strchr(sess_cookie, '=');
-                                if (eq != NULL) {
-                                    *eq++ = 0;
-                                    do_cookie_set_generic(r, NULL, sess_cookie, NULL, NULL, NULL, NULL);
-                                }
-                                free(sess_cookie);
-                            } else {
-                                AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
-                            }
-                        }
-
-                        if (strcmp(file, "0") == 0) {
-                            /* empty post */
-                            r->method = AM_REQUEST_POST;
-                            r->status = AM_PDP_DONE;
-                            r->post_data_url = data;
-                            r->post_data_sz = 0;
-                            am_free(r->post_data);
-                            r->post_data = NULL;
-                            /* empty pdp does not need post data set */
-                            r->am_set_custom_response_f(r, AM_SPACE_CHAR, content_type);
-                        } else {
-                            size_t post_sz = 0;
-                            char *post = load_file(file, &post_sz);
-                            if (post != NULL) {
-                                if (r->conf->pdp_js_repost) {
-                                    /* IE10+ only */
-                                    char *repost = NULL;
-                                    am_asprintf(&repost, "<html><head><script type=\"text/javascript\">"
-                                            "function base64toBlob(b64Data, contentType, sliceSize) {contentType = contentType || '';"
-                                            "sliceSize = sliceSize || 512;var byteCharacters = atob(b64Data);var byteArrays = [];"
-                                            "for (var offset = 0; offset < byteCharacters.length; offset += sliceSize) {"
-                                            "var slice = byteCharacters.slice(offset, offset + sliceSize);"
-                                            "var byteNumbers = new Array(slice.length);"
-                                            "for (var i = 0; i < slice.length; i++) {byteNumbers[i] = slice.charCodeAt(i);}"
-                                            "var byteArray = new Uint8Array(byteNumbers);byteArrays.push(byteArray);}"
-                                            "var blob = new Blob(byteArrays, {type: contentType});"
-                                            "return blob;}"
-                                            "function sendpost() {var r = new XMLHttpRequest();r.open(\"POST\", \"%s\", true);"
-                                            "r.onreadystatechange=function(e) {var x = e.target; "
-                                            "if (x.readyState==4 && x.status === 200) {"
-                                            "document.body.innerHTML = x.responseText;"
-                                            "document.title = !x.response.pageTitle ? x.responseURL : x.response.pageTitle;"
-                                            "window.history.pushState({\"html\":x.response,\"pageTitle\":x.response.pageTitle},\"\",\"%s\");}};"
-                                            "var b = base64toBlob(\"%s\", \"%s\");r.send(b);"
-                                            "}</script></head><body onload=\"sendpost();\">"
-                                            "</body><p></p></html>",
-                                            data, data,
-                                            post,
-                                            content_type);
-                                    r->status = AM_SUCCESS;
-                                    r->am_set_custom_response_f(r, repost, "text/html");
-                                    am_free(repost);
-                                } else {
-                                    char *post_clear = base64_decode(post, &post_sz);
-                                    r->method = AM_REQUEST_POST;
-                                    r->status = AM_PDP_DONE;
-                                    r->post_data_url = data;
-                                    r->post_data_sz = post_sz;
-                                    am_free(r->post_data);
-                                    r->post_data = post_clear; /* will be released with am_request_t cleanup */
-                                    if (r->am_set_post_data_f != NULL) {
-                                        r->am_set_post_data_f(r);
-                                    } else {
-                                        AM_LOG_DEBUG(r->instance_id, "%s am_set_post_data_f is NULL",
-                                                thisfunc);
-                                    }
-                                    r->am_set_custom_response_f(r, AM_SPACE_CHAR, content_type);
-                                }
-                            } else {
-                                pdp_status = AM_EINVAL;
-                            }
-                            am_free(post);
-                        }
-
-                        /* delete cache file */
-                        if (ISVALID(file) && strcmp(file, "0") != 0) {
-                            unlink(file);
-                        }
-                        /* delete cache entry */
-                        am_remove_cache_entry(r->instance_id, key);
-
-                    } else {
-                        AM_LOG_WARNING(r->instance_id,
-                                "%s post data preservation cache entry %s is not available (%s)",
-                                thisfunc, key, am_strerror(pdp_status));
-                    }
-
-                    AM_FREE(data, content_type);
-                } else {
+                if (ISINVALID(key)) {
                     AM_LOG_WARNING(r->instance_id,
                             "%s invalid post data preservation key value", thisfunc);
+                    r->status = AM_NOT_FOUND;
+                    break;
                 }
+
+                pdp_status = am_get_pdp_cache_entry(r, key, &data, &url_sz, &content_type, &method);
+
+                if (pdp_status != AM_SUCCESS) {
+                    AM_LOG_WARNING(r->instance_id,
+                            "%s post data preservation cache entry %s is not available (%s)",
+                            thisfunc, key, am_strerror(pdp_status));
+                    AM_FREE(data, content_type);
+                    r->status = AM_NOT_FOUND;
+                    break;
+                }
+
+                file = data + url_sz + 1;
+                AM_LOG_DEBUG(r->instance_id, "%s found post data preservation cache "
+                        "entry: %s, url: %s, file: %s, content type: %s",
+                        thisfunc, key, LOGEMPTY(data), LOGEMPTY(file), LOGEMPTY(content_type));
+
+                /* reset pdp sticky-session load-balancer cookie */
+                if (ISVALID(r->conf->pdp_sess_mode) && ISVALID(r->conf->pdp_sess_value)
+                        && strcmp(r->conf->pdp_sess_mode, "COOKIE") == 0
+                        && match(r->instance_id, r->conf->pdp_sess_value, "^(\\w+)=([^\\s]+)$") == AM_OK) {
+                    char *sess_cookie = strdup(r->conf->pdp_sess_value);
+                    if (sess_cookie != NULL) {
+                        char *eq = strchr(sess_cookie, '=');
+                        if (eq != NULL) {
+                            *eq++ = 0;
+                            do_cookie_set_generic(r, NULL, sess_cookie, NULL, NULL, NULL, NULL);
+                        }
+                        free(sess_cookie);
+                    } else {
+                        AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
+                    }
+                }
+
+                if (strcmp(file, "0") == 0) {
+                    /* empty post */
+                    r->method = method;
+                    r->status = AM_PDP_DONE;
+                    r->post_data_url = data;
+                    r->post_data_sz = 0;
+                    am_free(r->post_data);
+                    r->post_data = NULL;
+                    /* empty pdp does not need post data to be set */
+                    r->am_set_custom_response_f(r, AM_SPACE_CHAR, content_type);
+                } else {
+
+                    if (r->conf->pdp_js_repost) {
+                        char *repost = NULL;
+                        size_t post_sz = 0;
+                        char *post = load_file(file, &post_sz);
+                        char *post_enc = base64_encode(post, &post_sz);
+
+                        /* IE10+ only */
+
+                        am_asprintf(&repost, "<html><head><script type=\"text/javascript\">"
+                                "function base64toBlob(b64Data, contentType, sliceSize) {contentType = contentType || '';"
+                                "sliceSize = sliceSize || 512;var byteCharacters = atob(b64Data);var byteArrays = [];"
+                                "for (var offset = 0; offset < byteCharacters.length; offset += sliceSize) {"
+                                "var slice = byteCharacters.slice(offset, offset + sliceSize);"
+                                "var byteNumbers = new Array(slice.length);"
+                                "for (var i = 0; i < slice.length; i++) {byteNumbers[i] = slice.charCodeAt(i);}"
+                                "var byteArray = new Uint8Array(byteNumbers);byteArrays.push(byteArray);}"
+                                "var blob = new Blob(byteArrays, {type: contentType});"
+                                "return blob;}"
+                                "function sendpost() {var r = new XMLHttpRequest();r.open(\"POST\", \"%s\", true);"
+                                "r.onreadystatechange=function(e) {var x = e.target; "
+                                "if (x.readyState==4 && x.status === 200) {"
+                                "document.body.innerHTML = x.responseText;"
+                                "document.title = !x.response.pageTitle ? x.responseURL : x.response.pageTitle;"
+                                "window.history.pushState({\"html\":x.response,\"pageTitle\":x.response.pageTitle},\"\",\"%s\");}};"
+                                "var b = base64toBlob(\"%s\", \"%s\");r.send(b);"
+                                "}</script></head><body onload=\"sendpost();\">"
+                                "</body><p></p></html>",
+                                data, data,
+                                NOTNULL(post_enc),
+                                content_type);
+                        r->status = AM_SUCCESS;
+                        r->am_set_custom_response_f(r, repost, "text/html");
+                        AM_FREE(post, post_enc, repost);
+
+                    } else {
+
+                        struct stat st;
+                        if (stat(file, &st) == 0) {
+                            r->method = method;
+                            r->status = AM_PDP_DONE;
+                            r->post_data_url = data;
+                            r->post_data_sz = st.st_size;
+                            am_free(r->post_data);
+                            r->post_data = NULL;
+                            am_free(r->post_data_fn);
+                            r->post_data_fn = strdup(file); /* will be released with am_request_t cleanup */
+
+                            if (r->am_set_post_data_f != NULL) {
+                                r->am_set_post_data_f(r);
+                            }
+                            r->am_set_custom_response_f(r, AM_SPACE_CHAR, content_type);
+                        } else {
+                            AM_LOG_WARNING(r->instance_id,
+                                    "%s post data preservation file %s is not available (%d)", thisfunc, file, errno);
+                            pdp_status = AM_ERROR;
+                        }
+                    }
+                }
+
+                /* delete cache entry */
+                am_remove_cache_entry(r->instance_id, key);
+
+                AM_FREE(data, content_type);
 
                 if (pdp_status != AM_SUCCESS) {
                     r->status = AM_NOT_FOUND;
@@ -2196,225 +2207,231 @@ static am_return_t handle_exit(am_request_t *r) {
                 }
             }
 
-            if (r->am_set_custom_response_f != NULL) {
+            if (r->am_set_custom_response_f == NULL) {
+                r->status = AM_ERROR;
+                break;
+            }
 
-                if (status == AM_INVALID_SESSION || (status == AM_ACCESS_DENIED && r->conf->cdsso_enable)) {
-                    /* reset LDAP cookies */
-                    do_cookie_set(r, AM_TRUE, AM_TRUE);
+            if (status == AM_INVALID_SESSION || (status == AM_ACCESS_DENIED && r->conf->cdsso_enable)) {
+                /* reset LDAP cookies */
+                do_cookie_set(r, AM_TRUE, AM_TRUE);
 
-                    if (r->conf->cdsso_enable) {
-                        /* reset CDSSO cookie in all domains */
-                        for (i = 0; i < r->conf->cdsso_cookie_domain_map_sz; i++) {
-                            am_config_map_t *m = &r->conf->cdsso_cookie_domain_map[i];
-                            AM_LOG_DEBUG(r->instance_id, "%s resetting session cookie in %s domain",
-                                    thisfunc, m->value);
-                            do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, m->value, NULL, NULL);
-                        }
-                        /* reset CDSSO cookie in default domain */
-                        do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, NULL, NULL, NULL);
+                if (r->conf->cdsso_enable) {
+                    /* reset CDSSO cookie in all domains */
+                    for (i = 0; i < r->conf->cdsso_cookie_domain_map_sz; i++) {
+                        am_config_map_t *m = &r->conf->cdsso_cookie_domain_map[i];
+                        AM_LOG_DEBUG(r->instance_id, "%s resetting session cookie in %s domain",
+                                thisfunc, m->value);
+                        do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, m->value, NULL, NULL);
                     }
+                    /* reset CDSSO cookie in default domain */
+                    do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, NULL, NULL, NULL);
+                }
+            }
+
+            if ((r->method == AM_REQUEST_POST || r->method == AM_REQUEST_PUT) &&
+                    r->conf->pdp_enable && status == AM_INVALID_SESSION) {
+                /* post data preservation */
+                am_status_t pdp_status = AM_SUCCESS;
+                char key[37];
+
+                /* check if we have access to the post data file directory */
+                if (!ISVALID(r->conf->pdp_dir) || !file_exists(r->conf->pdp_dir)) {
+                    AM_LOG_ERROR(r->instance_id,
+                            "%s post data preservation module has no access to %s directory",
+                            thisfunc, LOGEMPTY(r->conf->pdp_dir));
+                    pdp_status = AM_ERROR;
                 }
 
-                if (r->method == AM_REQUEST_POST && r->conf->pdp_enable &&
-                        status != AM_INVALID_FQDN_ACCESS) {
-                    am_status_t pdp_status = AM_SUCCESS;
-                    char key[37], *file = NULL;
-                    ssize_t wrote;
+                if (r->am_get_post_data_f == NULL) {
+                    pdp_status = AM_ERROR;
+                }
 
-                    /* post data should already be read in validate_token (with cdsso)
-                     * if not - read it here */
+                /* post data should already be read in validate_token (with cdsso)
+                 * if not - read it here (blocking) */
+                if (pdp_status == AM_SUCCESS && !r->conf->cdsso_enable) {
+                    pdp_status = r->am_get_post_data_f(r);
+                }
 
-                    /* read post data (blocking) */
-                    if (!r->conf->cdsso_enable) {
-                        if (r->am_get_post_data_f != NULL) {
-                            r->am_get_post_data_f(r);
-                        } else {
-                            pdp_status = AM_ERROR;
-                        }
-                    }
+                if (pdp_status == AM_SUCCESS && ISINVALID(r->post_data_fn) && r->post_data_sz > 0) {
+                    AM_LOG_ERROR(r->instance_id,
+                            "%s no data available for post data preservation module", thisfunc);
+                    pdp_status = AM_ERROR;
+                }
 
-                    /* check if we have an access to the post data file directory */
-                    if (!ISVALID(r->conf->pdp_dir) || !file_exists(r->conf->pdp_dir)) {
-                        AM_LOG_ERROR(r->instance_id,
-                                "%s post data preservation module has no access to %s directory",
-                                thisfunc, LOGEMPTY(r->conf->pdp_dir));
-                        pdp_status = AM_ERROR;
-                    }
+                if (pdp_status == AM_SUCCESS) {
+                    char *repost_uri = NULL, *goto_value = NULL, *goto_encoded = NULL;
+                    am_bool_t pdp_sess_mode, pdp_sess_mode_url, pdp_sess_mode_cookie;
 
-
-                    if (pdp_status == AM_SUCCESS) {
-                        char *repost_uri = NULL, *goto_value = NULL, *goto_encoded = NULL,
-                                pdp_sess_mode, pdp_sess_mode_url, pdp_sess_mode_cookie;
-                        /* generate unique post data identifier */
+                    /* get post data identifier out of pdp file name */
+                    const char *fs = ISVALID(r->post_data_fn) ? strrchr(r->post_data_fn, '/') : NULL;
+                    if (fs != NULL) {
+                        strncpy(key, fs + 1, sizeof (key) - 1);
+                    } else {
+                        /* empty post has no pdp file - key needs to be created */
                         uuid(key, sizeof (key));
-
-                        /* create a file name to store post data */
-                        am_asprintf(&file, "%s/%s", r->conf->pdp_dir, key);
-                        am_asprintf(&repost_uri, "%s%s", r->url.path, r->url.query);
-
-                        if (r->post_data_sz > 0) {
-                            size_t post_enc_sz = r->post_data_sz;
-                            char *post_enc = base64_encode(r->post_data, &post_enc_sz);
-
-                            wrote = write_file(file, post_enc, post_enc_sz);
-                            if (wrote != (ssize_t) post_enc_sz) {
-                                AM_LOG_ERROR(r->instance_id,
-                                        "%s could not write %d bytes to %s",
-                                        thisfunc, post_enc_sz, LOGEMPTY(file));
-                            }
-                            am_add_pdp_cache_entry(r, key, repost_uri, file, r->content_type);
-                        } else {
-                            am_add_pdp_cache_entry(r, key, repost_uri, "0", r->content_type);
-                        }
-
-                        /* pdp sticky session value, if set, has to be in a correct format: param=value */
-                        pdp_sess_mode = ISVALID(r->conf->pdp_sess_mode) && ISVALID(r->conf->pdp_sess_value)
-                                && match(r->instance_id, r->conf->pdp_sess_value, "^(\\w+)=([^\\s]+)$") == AM_OK;
-
-                        pdp_sess_mode_url = pdp_sess_mode && strcmp(r->conf->pdp_sess_mode, "URL") == 0;
-                        pdp_sess_mode_cookie = pdp_sess_mode && strcmp(r->conf->pdp_sess_mode, "COOKIE") == 0;
-
-                        /* create a goto value */
-                        am_asprintf(&goto_value, "%s://%s:%d%s%s"POST_PRESERVE_URI"?%s%s%s",
-                                r->url.proto, r->url.host, r->url.port,
-                                ISVALID(r->conf->pdp_uri_prefix) && r->conf->pdp_uri_prefix[0] != '/' ? "/" : "",
-                                NOTNULL(r->conf->pdp_uri_prefix),
-                                key,
-                                pdp_sess_mode_url ? "&" : "",
-                                pdp_sess_mode_url ? r->conf->pdp_sess_value : ""
-                                );
-                        goto_encoded = url_encode(goto_value);
-
-                        /* create a redirect url value */
-                        url = find_active_login_server(r, AM_FALSE);
-
-                        if (r->conf->cdsso_enable &&
-                                ISVALID(r->conf->url_redirect_param) &&
-                                strstr(url, "goto=") != NULL &&
-                                strcmp(r->conf->url_redirect_param, "goto") != 0) {
-                            am_asprintf(&url, "%s%s%s=%s",
-                                    url,
-                                    "?",
-                                    r->conf->url_redirect_param,
-                                    NOTNULL(goto_encoded));
-                        } else {
-                            am_asprintf(&url, "%s%s%s=%s",
-                                    url,
-                                    strchr(url, '?') != NULL ? "&" : "?",
-                                    ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
-                                    NOTNULL(goto_encoded));
-                        }
-
-                        if (pdp_sess_mode_cookie) {
-                            /* create pdp sticky-session load-balancer cookie */
-                            char *sess_cookie = strdup(r->conf->pdp_sess_value);
-                            if (sess_cookie != NULL) {
-                                char *eq = strchr(sess_cookie, '=');
-                                if (eq != NULL) {
-                                    *eq++ = 0;
-                                    do_cookie_set_generic(r, NULL, sess_cookie, eq, NULL, r->conf->pdp_uri_prefix, NULL);
-                                }
-                                free(sess_cookie);
-                            } else {
-                                AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
-                            }
-                        }
-
-                        AM_FREE(goto_value, goto_encoded, file, repost_uri);
                     }
 
-                } else if (status == AM_INVALID_FQDN_ACCESS) {
-                    /* if previous status was invalid fqdn access,
-                     * redirect to a valid fqdn url
-                     */
-                    const char *host = ISVALID(r->client_fqdn) ? r->client_fqdn : r->conf->fqdn_default;
-                    if (ISINVALID(host)) {
-                        /* still nothing - return http403 error
-                         * TODO: redirect to access denied page?
-                         */
-                        r->status = AM_FORBIDDEN;
-                        break;
+                    am_asprintf(&repost_uri, "%s%s", r->url.path, r->url.query);
+
+                    /* store pdp metadata in shared cache */
+                    am_add_pdp_cache_entry(r, key, repost_uri,
+                            r->post_data_sz > 0 ? r->post_data_fn : "0",
+                            r->content_type, r->method);
+
+                    if (r->am_set_post_data_filename_f != NULL) {
+                        /* IIS specific: do not remove temporary file at the end of the request processor. */
+                        r->am_set_post_data_filename_f(r, NULL);
                     }
 
-                    am_asprintf(&url, "%s://%s:%d%s%s", r->url.proto, host,
-                            r->url.port, r->url.path, r->url.query);
-                } else {
-                    /* if previous status was invalid session or if there was a policy
-                     * advice, redirect to the OpenAM login page. If not, redirect to the
-                     * configured access denied url if any 
-                     */
-                    if (status == AM_INVALID_SESSION || r->policy_advice != NULL /* || session advice? */) {
+                    /* pdp sticky session value, if set, has to be in a correct format: param=value */
+                    pdp_sess_mode = ISVALID(r->conf->pdp_sess_mode) && ISVALID(r->conf->pdp_sess_value)
+                            && match(r->instance_id, r->conf->pdp_sess_value, "^(\\w+)=([^\\s]+)$") == AM_OK;
 
-                        url = find_active_login_server(r, AM_TRUE); /* contains goto value */
+                    pdp_sess_mode_url = pdp_sess_mode && strcmp(r->conf->pdp_sess_mode, "URL") == 0;
+                    pdp_sess_mode_cookie = pdp_sess_mode && strcmp(r->conf->pdp_sess_mode, "COOKIE") == 0;
 
-                        AM_LOG_DEBUG(r->instance_id, "%s find_active_login_server value: %s", thisfunc,
-                                LOGEMPTY(url));
+                    /* create a goto value */
+                    am_asprintf(&goto_value, "%s://%s:%d%s%s"POST_PRESERVE_URI"?%s%s%s",
+                            r->url.proto, r->url.host, r->url.port,
+                            ISVALID(r->conf->pdp_uri_prefix) && r->conf->pdp_uri_prefix[0] != '/' ? "/" : "",
+                            NOTNULL(r->conf->pdp_uri_prefix),
+                            key,
+                            pdp_sess_mode_url ? "&" : "",
+                            pdp_sess_mode_url ? r->conf->pdp_sess_value : ""
+                            );
+                    goto_encoded = url_encode(goto_value);
 
-                        if (r->policy_advice != NULL) {
-                            //TODO: session advice ?
+                    /* create a redirect url value */
+                    url = find_active_login_server(r, AM_FALSE);
 
-                            char *composite_advice = NULL, *composite_advice_encoded = NULL;
-                            struct am_namevalue *e, *t;
-
-                            AM_LIST_FOR_EACH(r->policy_advice, e, t) {
-                                am_asprintf(&composite_advice,
-                                        "%s<AttributeValuePair><Attribute name=\"%s\"/><Value>%s</Value></AttributeValuePair>",
-                                        composite_advice == NULL ? "" : composite_advice,
-                                        e->n, e->v);
-                            }
-                            if (composite_advice != NULL) {
-                                am_asprintf(&composite_advice, "<Advices>%s</Advices>", composite_advice);
-                            }
-
-                            composite_advice_encoded = url_encode(composite_advice);
-                            am_free(composite_advice);
-
-                            if (!r->conf->use_redirect_for_advice) {
-                                am_asprintf(&url, "<html><head></head><body onload=\"document.postform.submit()\">"
-                                        "<form name=\"postform\" method=\"POST\" action=\"%s\">"
-                                        "<input type=\"hidden\" name=\""COMPOSITE_ADVICE_KEY"\" value=\"%s\"/>"
-                                        "</form></body></html>",
-                                        url,
-                                        NOTNULL(composite_advice_encoded));
-
-                                r->status = AM_DONE;
-                                r->am_set_custom_response_f(r, url, "text/html");
-                                free(url);
-                                am_free(composite_advice_encoded);
-                                break;
-                            } else {
-                                am_asprintf(&url, "%s&"COMPOSITE_ADVICE_KEY"=%s",
-                                        url,
-                                        NOTNULL(composite_advice_encoded));
-                            }
-                            am_free(composite_advice_encoded);
-                        }
-
-                    } else if (ISVALID(r->conf->access_denied_url)) {
-                        char *goto_encoded = url_encode(r->overridden_url);
-
-                        am_asprintf(&url, "%s%s%s=%s", r->conf->access_denied_url,
-                                strchr(r->conf->access_denied_url, '?') == NULL ? "?" : "&",
+                    if (r->conf->cdsso_enable &&
+                            ISVALID(r->conf->url_redirect_param) &&
+                            strstr(url, "goto=") != NULL &&
+                            strcmp(r->conf->url_redirect_param, "goto") != 0) {
+                        am_asprintf(&url, "%s%s%s=%s",
+                                url,
+                                "?",
+                                r->conf->url_redirect_param,
+                                NOTNULL(goto_encoded));
+                    } else {
+                        am_asprintf(&url, "%s%s%s=%s",
+                                url,
+                                strchr(url, '?') != NULL ? "&" : "?",
                                 ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
                                 NOTNULL(goto_encoded));
-
-                        am_free(goto_encoded);
-                    } else {
-                        r->status = AM_FORBIDDEN;
-                        break;
                     }
+
+                    if (pdp_sess_mode_cookie) {
+                        /* create pdp sticky-session load-balancer cookie */
+                        char *sess_cookie = strdup(r->conf->pdp_sess_value);
+                        if (sess_cookie != NULL) {
+                            char *eq = strchr(sess_cookie, '=');
+                            if (eq != NULL) {
+                                *eq++ = 0;
+                                do_cookie_set_generic(r, NULL, sess_cookie, eq, NULL, r->conf->pdp_uri_prefix, NULL);
+                            }
+                            free(sess_cookie);
+                        } else {
+                            AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
+                        }
+                    }
+
+                    AM_FREE(goto_value, goto_encoded, repost_uri);
                 }
 
-                if (url == NULL) {
-                    r->status = AM_ENOMEM;
+            } else if (status == AM_INVALID_FQDN_ACCESS) {
+                /* if previous status was invalid fqdn access,
+                 * redirect to a valid fqdn url
+                 */
+                const char *host = ISVALID(r->client_fqdn) ? r->client_fqdn : r->conf->fqdn_default;
+                if (ISINVALID(host)) {
+                    /* still nothing - return http403 error
+                     * TODO: redirect to access denied page?
+                     */
+                    r->status = AM_FORBIDDEN;
                     break;
                 }
 
-                /* set Location header and instruct the container to do a redirect */
-                r->status = AM_REDIRECT;
-                r->am_set_custom_response_f(r, url, NULL);
-                free(url);
+                am_asprintf(&url, "%s://%s:%d%s%s", r->url.proto, host,
+                        r->url.port, r->url.path, r->url.query);
+            } else {
+                /* if previous status was invalid session or if there was a policy
+                 * advice, redirect to the OpenAM login page. If not, redirect to the
+                 * configured access denied url if any 
+                 */
+                if (status == AM_INVALID_SESSION || r->policy_advice != NULL /* || session advice? */) {
+
+                    url = find_active_login_server(r, AM_TRUE); /* contains goto value */
+
+                    AM_LOG_DEBUG(r->instance_id, "%s find_active_login_server value: %s", thisfunc,
+                            LOGEMPTY(url));
+
+                    if (r->policy_advice != NULL) {
+                        //TODO: session advice ?
+
+                        char *composite_advice = NULL, *composite_advice_encoded = NULL;
+                        struct am_namevalue *e, *t;
+
+                        AM_LIST_FOR_EACH(r->policy_advice, e, t) {
+                            am_asprintf(&composite_advice,
+                                    "%s<AttributeValuePair><Attribute name=\"%s\"/><Value>%s</Value></AttributeValuePair>",
+                                    composite_advice == NULL ? "" : composite_advice,
+                                    e->n, e->v);
+                        }
+                        if (composite_advice != NULL) {
+                            am_asprintf(&composite_advice, "<Advices>%s</Advices>", composite_advice);
+                        }
+
+                        composite_advice_encoded = url_encode(composite_advice);
+                        am_free(composite_advice);
+
+                        if (!r->conf->use_redirect_for_advice) {
+                            am_asprintf(&url, "<html><head></head><body onload=\"document.postform.submit()\">"
+                                    "<form name=\"postform\" method=\"POST\" action=\"%s\">"
+                                    "<input type=\"hidden\" name=\""COMPOSITE_ADVICE_KEY"\" value=\"%s\"/>"
+                                    "</form></body></html>",
+                                    url,
+                                    NOTNULL(composite_advice_encoded));
+
+                            r->status = AM_DONE;
+                            r->am_set_custom_response_f(r, url, "text/html");
+                            free(url);
+                            am_free(composite_advice_encoded);
+                            break;
+                        } else {
+                            am_asprintf(&url, "%s&"COMPOSITE_ADVICE_KEY"=%s",
+                                    url,
+                                    NOTNULL(composite_advice_encoded));
+                        }
+                        am_free(composite_advice_encoded);
+                    }
+
+                } else if (ISVALID(r->conf->access_denied_url)) {
+                    char *goto_encoded = url_encode(r->overridden_url);
+
+                    am_asprintf(&url, "%s%s%s=%s", r->conf->access_denied_url,
+                            strchr(r->conf->access_denied_url, '?') == NULL ? "?" : "&",
+                            ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
+                            NOTNULL(goto_encoded));
+
+                    am_free(goto_encoded);
+                } else {
+                    r->status = AM_FORBIDDEN;
+                    break;
+                }
             }
+
+            if (url == NULL) {
+                r->status = AM_ENOMEM;
+                break;
+            }
+
+            /* set Location header and instruct the container to do a redirect */
+            r->status = AM_REDIRECT;
+            r->am_set_custom_response_f(r, url, NULL);
+            free(url);
+
             break;
         default:
             AM_LOG_ERROR(r->instance_id, "%s status: %s", thisfunc,

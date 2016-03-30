@@ -249,7 +249,7 @@ typedef struct am_request {
     char *overridden_url_pathinfo;
     const char *cookies;
     const char *content_type;
-    char method;
+    int method;
 
     char *token;
     struct am_session_info session_info;
@@ -269,7 +269,8 @@ typedef struct am_request {
 
     const char *client_fqdn;
 
-    char *post_data;
+    char *post_data; /* in memory */
+    char *post_data_fn; /* in file (file name) */
     size_t post_data_sz;
     const char *post_data_url;
 
@@ -283,6 +284,7 @@ typedef struct am_request {
     am_status_t(*am_get_request_url_f)(struct am_request *);
     am_status_t(*am_get_post_data_f)(struct am_request *);
     am_status_t(*am_set_post_data_f)(struct am_request *);
+    am_status_t(*am_set_post_data_filename_f)(struct am_request *, const char *);
     am_status_t(*am_set_user_f)(struct am_request *, const char *);
     am_status_t(*am_set_method_f)(struct am_request *);
     am_status_t(*am_set_header_in_request_f)(struct am_request *, const char *, const char *);
@@ -327,6 +329,7 @@ void am_config_free(am_config_t **c);
 am_config_t *am_get_config_file(unsigned long instance_id, const char *filename);
 int am_get_agent_config(unsigned long instance_id, const char *config_file, am_config_t **cnf);
 
+void uuid(char *buf, size_t buflen);
 char *base64_decode(const char *in, size_t *length);
 char *base64_encode(const void *in, size_t *length);
 void am_free(void *ptr);

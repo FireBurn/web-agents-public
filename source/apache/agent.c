@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #ifdef _WIN32
@@ -48,11 +48,13 @@ module AP_MODULE_DECLARE_DATA amagent_module;
 APLOG_USE_MODULE(amagent);
 #endif
 
-/* APLOG_INFO APLOG_ERR APLOG_WARNING APLOG_DEBUG */
-#define LOG_R(l,r,...) \
-        ap_log_rerror(APLOG_MARK,l|APLOG_NOERRNO,0,r, "%s", apr_psprintf((r)->pool, __VA_ARGS__))
-#define LOG_S(l,s,...) \
-        ap_log_error(APLOG_MARK,l|APLOG_NOERRNO,0,s, "%s", apr_psprintf((s)->process->pool, __VA_ARGS__))
+typedef struct {
+    int done_writing;
+    int output_sent;
+    int size;
+    apr_file_t *tmp_file;
+    char *output_ptr;
+} amagent_filter_ctx;
 
 typedef struct {
     char enabled;
@@ -105,15 +107,16 @@ static const char *am_set_opt(cmd_parms *c, void *cfg, const char *arg) {
 static const command_rec amagent_cmds[] = {
     AP_INIT_TAKE1("AmAgent", am_set_opt, NULL, RSRC_CONF, "Module enabled/disabled"),
     AP_INIT_TAKE1("AmAgentConf", am_set_opt, NULL, RSRC_CONF, "Module configuration file"),
-    AP_INIT_TAKE1("AmAgentId", am_set_opt, NULL, RSRC_CONF, "Module Id"),
-    { NULL }
+    AP_INIT_TAKE1("AmAgentId", am_set_opt, NULL, RSRC_CONF, "Module Id"), {
+        NULL
+    }
 };
 
 static apr_status_t amagent_cleanup(void *arg) {
     /* main process cleanup */
     server_rec *s = (server_rec *) arg;
     amagent_config_t *config = ap_get_module_config(s->module_config, &amagent_module);
-    LOG_S(APLOG_DEBUG, s, "amagent_cleanup() %d", getpid());
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "amagent_cleanup() %d", getpid());
 #ifndef _WIN32
     am_shutdown(config->agent_id);
 #endif
@@ -123,9 +126,9 @@ static apr_status_t amagent_cleanup(void *arg) {
 static void recovery_callback(void *cb_arg, char * name, int error) {
     server_rec *s = cb_arg;
     if (error) {
-        LOG_S(APLOG_ERR, s, "unable to clear shared resource: %s, error %d", name, error);
+        ap_log_error(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, s, "unable to clear shared resource: %s, error %d", name, error);
     } else {
-        LOG_S(APLOG_WARNING, s, "agent cleared shared resource: %s", name);
+        ap_log_error(APLOG_MARK, APLOG_WARNING | APLOG_NOERRNO, 0, s, "agent cleared shared resource: %s", name);
     }
 }
 
@@ -148,7 +151,7 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
     }
     apr_pool_cleanup_register(pconf, s, amagent_cleanup, apr_pool_cleanup_null);
     ap_add_version_component(pconf, MODINFO);
-    LOG_S(APLOG_DEBUG, s, "amagent_init() %d", getpid());
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "amagent_init() %d", getpid());
 
 #ifndef _WIN32
     config = ap_get_module_config(s->module_config, &amagent_module);
@@ -157,21 +160,21 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
     /* prevent agent module from being unloaded (support for restart/graceful options) */
     rv = apr_dso_load(&mod_handle, "mod_openam.so", s->process->pool);
     if (rv) {
-        LOG_S(APLOG_ERR, s, "amagent_init() failed to load agent module, error: %d", rv);
+        ap_log_error(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, s, "amagent_init() failed to load agent module, error: %d", rv);
         return APR_EINIT;
     }
 #endif
 
     /* find and clear down shared memory resources after abnormal termination */
     if (am_remove_shm_and_locks(config->agent_id, recovery_callback, s) != AM_SUCCESS) {
-        LOG_S(APLOG_ERR, s, "amagent_init() failed to recover after abnormal termination");
+        ap_log_error(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, s, "amagent_init() failed to recover after abnormal termination");
         return APR_EINIT;
     }
 
     status = am_init(config->agent_id);
     if (status != AM_SUCCESS) {
         rv = APR_EINIT;
-        LOG_S(APLOG_ERR, s, "amagent_init() status: %s", am_strerror(status));
+        ap_log_error(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, s, "amagent_init() status: %s", am_strerror(status));
     }
 #endif
     return rv;
@@ -183,7 +186,7 @@ static apr_status_t amagent_worker_cleanup(void *arg) {
 #ifdef _WIN32
     amagent_config_t *config = ap_get_module_config(s->module_config, &amagent_module);
 #endif
-    LOG_S(APLOG_DEBUG, s, "amagent_worker_cleanup() %d", getpid());
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "amagent_worker_cleanup() %d", getpid());
     am_shutdown_worker();
 #ifdef _WIN32
     am_shutdown(config->agent_id);
@@ -194,7 +197,7 @@ static apr_status_t amagent_worker_cleanup(void *arg) {
 static void amagent_worker_init(apr_pool_t *p, server_rec *s) {
     /* worker process init */
     amagent_config_t *config = ap_get_module_config(s->module_config, &amagent_module);
-    LOG_S(APLOG_DEBUG, s, "amagent_worker_init() %d", getpid());
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "amagent_worker_init() %d", getpid());
     am_init_worker(config->agent_id);
     apr_pool_cleanup_register(p, s, amagent_worker_cleanup, apr_pool_cleanup_null);
 }
@@ -331,6 +334,7 @@ static am_status_t add_header_in_response(am_request_t *rq, const char *key, con
 }
 
 static am_status_t set_custom_response(am_request_t *rq, const char *text, const char *cont_type) {
+    static const char *thisfunc = "set_custom_response():";
     request_rec *r = (request_rec *) (rq != NULL ? rq->ctx : NULL);
     am_status_t status = AM_ERROR;
 
@@ -349,10 +353,47 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
             ap_set_content_type(r, "application/json");
             switch (rq->status) {
                 case AM_PDP_DONE:
+                {
+                    apr_file_t *pdp_file;
+                    apr_size_t nbytes;
+                    apr_status_t rv;
+                    char *buf = apr_palloc(r->pool, AP_IOBUFSIZE + 1);
+                    char *a = NULL;
+                    char *temp = NULL;
+                    size_t data_sz = rq->post_data_sz;
+
+                    rv = apr_file_open(&pdp_file, rq->post_data_fn, APR_FOPEN_READ | APR_FOPEN_BINARY | APR_FOPEN_DELONCLOSE,
+                            APR_OS_DEFAULT, r->pool);
+                    if (rv == APR_SUCCESS) {
+                        while (!apr_file_eof(pdp_file)) {
+                            do {
+                                nbytes = AP_IOBUFSIZE;
+                                rv = apr_file_read(pdp_file, buf, &nbytes);
+                            } while (APR_STATUS_IS_EINTR(rv));
+                            if (nbytes == 0 || rv != APR_SUCCESS) {
+                                break;
+                            }
+                            buf[nbytes] = '\0';
+                            if (a == NULL) {
+                                a = apr_pstrdup(r->pool, buf);
+                            } else {
+                                a = apr_pstrcat(r->pool, a, buf, NULL);
+                            }
+                        }
+                        apr_file_close(pdp_file);
+                    }
+
+                    if (a != NULL) {
+                        temp = base64_encode(a, &data_sz);
+                    }
+
                     ap_rprintf(r, AM_JSON_TEMPLATE_LOCATION_DATA,
                             am_strerror(rq->status), rq->post_data_url, cont_type,
-                            NOTNULL(apr_table_get(r->notes, amagent_post_filter_name)),
+                            NOTNULL(temp),
                             am_status_value(rq->status));
+                    am_free(temp);
+                    apr_file_remove(rq->post_data_fn, r->pool);
+                }
                     break;
                 case AM_REDIRECT:
                 case AM_INTERNAL_REDIRECT:
@@ -390,28 +431,59 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
 
             /* special handler for x-www-form-urlencoded POST data */
             if (apr_strnatcasecmp(cont_type, "application/x-www-form-urlencoded") == 0) {
-                char *pair, *a, *eq, *inputs, *last = NULL;
+                char *pair, *a = NULL, *eq, *inputs, *last = NULL;
 
                 inputs = apr_pstrcat(r->pool, "", NULL);
 
-                if (ISVALID(rq->post_data)) {
-                    /* recreate x-www-form-urlencoded HTML Form data */
-                    a = apr_pstrdup(r->pool, rq->post_data);
-                    for (pair = apr_strtok(a, "&", &last); pair;
-                            pair = apr_strtok(NULL, "&", &last)) {
-                        for (eq = pair; *eq; ++eq) {
-                            if (*eq == '+') *eq = ' ';
+                if (ISVALID(rq->post_data_fn)) {
+                    apr_file_t *pdp_file;
+                    apr_size_t nbytes;
+                    apr_status_t rv;
+                    char *buf = apr_palloc(r->pool, AP_IOBUFSIZE + 1);
+
+                    rv = apr_file_open(&pdp_file, rq->post_data_fn, APR_FOPEN_READ | APR_FOPEN_BINARY | APR_FOPEN_DELONCLOSE,
+                            APR_OS_DEFAULT, r->pool);
+                    if (rv == APR_SUCCESS) {
+                        while (!apr_file_eof(pdp_file)) {
+                            do {
+                                nbytes = AP_IOBUFSIZE;
+                                rv = apr_file_read(pdp_file, buf, &nbytes);
+                            } while (APR_STATUS_IS_EINTR(rv));
+                            if (nbytes == 0 || rv != APR_SUCCESS) {
+                                break;
+                            }
+                            buf[nbytes] = '\0';
+                            if (a == NULL) {
+                                a = apr_pstrdup(r->pool, buf);
+                            } else {
+                                a = apr_pstrcat(r->pool, a, buf, NULL);
+                            }
                         }
-                        ap_unescape_url(pair);
-                        eq = strchr(pair, '=');
-                        if (eq) {
-                            *eq++ = 0;
-                            inputs = apr_pstrcat(r->pool, inputs,
-                                    "<input type=\"hidden\" name=\"", pair, "\" value=\"", eq, "\"/>", NULL);
-                        } else {
-                            inputs = apr_pstrcat(r->pool, inputs,
-                                    "<input type=\"hidden\" name=\"", pair, "\" value=\"\"/>", NULL);
+                        apr_file_close(pdp_file);
+
+                        /* recreate x-www-form-urlencoded HTML Form data */
+
+                        for (pair = apr_strtok(a, "&", &last); pair;
+                                pair = apr_strtok(NULL, "&", &last)) {
+                            for (eq = pair; *eq; ++eq) {
+                                if (*eq == '+') *eq = ' ';
+                            }
+                            ap_unescape_url(pair);
+                            eq = strchr(pair, '=');
+                            if (eq) {
+                                *eq++ = 0;
+                                inputs = apr_pstrcat(r->pool, inputs,
+                                        "<input type=\"hidden\" name=\"", pair, "\" value=\"", eq, "\"/>", NULL);
+                            } else {
+                                inputs = apr_pstrcat(r->pool, inputs,
+                                        "<input type=\"hidden\" name=\"", pair, "\" value=\"\"/>", NULL);
+                            }
                         }
+                    } else {
+                        apr_strerror(rv, buf, AP_IOBUFSIZE);
+                        AM_LOG_ERROR(rq->instance_id, "%s unable to open post preservation file: %s, %s",
+                                thisfunc, rq->post_data_fn, buf);
+                        apr_file_remove(rq->post_data_fn, r->pool);
                     }
                 }
 
@@ -420,9 +492,11 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
                 apr_table_unset(r->notes, amagent_post_filter_name);
                 ap_set_content_type(r, "text/html");
                 ap_rprintf(r, "<html><head></head><body onload=\"document.postform.submit()\">"
-                        "<form name=\"postform\" method=\"POST\" action=\"%s\">"
+                        "<form name=\"postform\" method=\"%s\" action=\"%s\">"
                         "%s"
-                        "</form></body></html>", rq->post_data_url, inputs);
+                        "</form></body></html>",
+                        am_method_num_to_str(rq->method),
+                        rq->post_data_url, inputs);
                 ap_rflush(r);
                 rq->status = AM_DONE;
                 break;
@@ -441,8 +515,8 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
             sr->path_info = r->path_info;
             sr->args = r->args;
 
-            AM_LOG_DEBUG(rq->instance_id, "set_custom_response(): issuing %s sub-request to %s (%s), status %d",
-                    sr->method, rq->post_data_url, LOGEMPTY(cont_type), sr->status);
+            AM_LOG_DEBUG(rq->instance_id, "%s issuing %s sub-request to %s (%s), status %d",
+                    thisfunc, sr->method, rq->post_data_url, LOGEMPTY(cont_type), sr->status);
 
             ap_run_sub_req(sr);
 
@@ -471,15 +545,15 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
             break;
         }
     }
-    AM_LOG_DEBUG(rq->instance_id, "set_custom_response(): status: %s (exit: %s)",
-            am_strerror(status), am_strerror(rq->status));
+    AM_LOG_DEBUG(rq->instance_id, "%s status: %s (exit: %s)",
+            thisfunc, am_strerror(status), am_strerror(rq->status));
 
     return AM_SUCCESS;
 }
 
 static char get_method_num(request_rec *r, unsigned long instance_id) {
     static const char *thisfunc = "get_method_num():";
-    char method_num = AM_REQUEST_UNKNOWN;
+    int method_num = AM_REQUEST_UNKNOWN;
     const char *mthd = ap_method_name_of(r->pool, r->method_number);
 
     AM_LOG_DEBUG(instance_id, "%s method %s (%s, %d)", thisfunc, LOGEMPTY(r->method),
@@ -525,7 +599,6 @@ static am_status_t set_method(am_request_t *rq) {
 }
 
 static am_status_t set_request_body(am_request_t *rq) {
-    static const char *thisfunc = "set_request_body():";
     request_rec *r = (request_rec *) (rq != NULL ? rq->ctx : NULL);
     am_status_t status = AM_EINVAL;
 
@@ -535,23 +608,13 @@ static am_status_t set_request_body(am_request_t *rq) {
 
     apr_table_unset(r->notes, amagent_post_filter_name);
 
-    if (ISVALID(rq->post_data) && rq->post_data_sz > 0) {
-        size_t data_sz = rq->post_data_sz;
-        char *encoded = base64_encode(rq->post_data, &data_sz);
-        if (encoded != NULL) {
-            apr_table_set(r->notes, amagent_post_filter_name, encoded);
-            AM_LOG_DEBUG(rq->instance_id, "%s preserved %d bytes", thisfunc,
-                    rq->post_data_sz);
-            /* restore the content length so that we have a
-             * match with a re-played data in the agent filter 
-             */
-            r->clength = rq->post_data_sz;
-            apr_table_set(r->headers_in, "Content-Length",
-                    apr_psprintf(r->pool, "%ld", rq->post_data_sz));
-            free(encoded);
-        }
+    if (ISVALID(rq->post_data_fn) && rq->post_data_sz > 0) {
+        apr_table_set(r->notes, amagent_post_filter_name,
+                apr_psprintf(r->pool, "%s", rq->post_data_fn));
+        r->clength = rq->post_data_sz;
+        apr_table_set(r->headers_in, "Content-Length",
+                apr_psprintf(r->pool, "%ld", rq->post_data_sz));
     }
-
     return AM_SUCCESS;
 }
 
@@ -560,9 +623,13 @@ static am_status_t get_request_body(am_request_t *rq) {
     request_rec *r;
     apr_bucket_brigade *bb;
     int eos_found = 0, read_bytes = 0;
-    apr_status_t read_status = 0;
+    am_bool_t to_file = AM_FALSE, first_run = AM_TRUE;
+    apr_status_t read_status = 0, ret;
     am_status_t status = AM_ERROR;
     char *out = NULL, *out_tmp = NULL;
+    apr_file_t *fd = NULL;
+    char *file_name = NULL;
+    char buferr[50];
 
     if (rq == NULL || rq->ctx == NULL) {
         return AM_EINVAL;
@@ -587,6 +654,7 @@ static am_status_t get_request_body(am_request_t *rq) {
 
             if (APR_BUCKET_IS_EOS(ob)) {
                 eos_found = 1;
+                status = AM_SUCCESS;
                 break;
             }
 
@@ -596,20 +664,69 @@ static am_status_t get_request_body(am_request_t *rq) {
 
             /* read data */
             apr_bucket_read(ob, &data, &data_size, APR_BLOCK_READ);
-            /* process data */
-            out_tmp = realloc(out, read_bytes + data_size + 1);
-            if (out_tmp == NULL) {
-                am_free(out);
-                status = AM_ENOMEM;
-                eos_found = 1;
-                break;
-            } else {
-                out = out_tmp;
+
+            if (first_run) {
+                to_file = data != NULL && data_size > 5 && memcmp(data, "LARES=", 6) != 0;
+                first_run = AM_FALSE;
             }
 
-            memcpy(out + read_bytes, data, data_size);
-            read_bytes += (int) data_size;
-            out[read_bytes] = 0;
+            if (to_file) {
+                apr_size_t nbytes_written;
+
+                if (fd == NULL) {
+                    char key[37];
+
+                    if (ISINVALID(rq->conf->pdp_dir)) {
+                        AM_LOG_ERROR(rq->instance_id, "%s invalid POST preservation configuration",
+                                thisfunc);
+                        status = AM_EINVAL;
+                        eos_found = 1;
+                        break;
+                    }
+
+                    uuid(key, sizeof (key));
+                    file_name = apr_psprintf(r->pool, "%s/%s", rq->conf->pdp_dir, key);
+                    ret = apr_file_open(&fd, file_name,
+                            APR_FOPEN_CREATE | APR_FOPEN_APPEND | APR_FOPEN_WRITE | APR_FOPEN_BINARY
+                            , APR_OS_DEFAULT, r->pool);
+                    if (ret != APR_SUCCESS) {
+                        apr_strerror(ret, buferr, sizeof (buferr));
+                        AM_LOG_ERROR(rq->instance_id, "%s unable to open POST preservation file: %s, %s",
+                                thisfunc, file_name, buferr);
+                        status = AM_FILE_ERROR;
+                        eos_found = 1;
+                        break;
+                    }
+                }
+
+                ret = apr_file_write_full(fd, data, data_size, &nbytes_written);
+                if (ret != APR_SUCCESS) {
+                    apr_strerror(ret, buferr, sizeof (buferr));
+                    AM_LOG_ERROR(rq->instance_id, "%s unable to write to POST preservation file: %s, %s",
+                            thisfunc, file_name, buferr);
+                    status = AM_FILE_ERROR;
+                    eos_found = 1;
+                    break;
+                }
+                read_bytes += (int) data_size;
+
+            } else {
+
+                /* process in-memory data */
+                out_tmp = realloc(out, read_bytes + data_size + 1);
+                if (out_tmp == NULL) {
+                    am_free(out);
+                    status = AM_ENOMEM;
+                    eos_found = 1;
+                    break;
+                } else {
+                    out = out_tmp;
+                }
+
+                memcpy(out + read_bytes, data, data_size);
+                read_bytes += (int) data_size;
+                out[read_bytes] = 0;
+            }
 
             ob = APR_BUCKET_NEXT(ob);
             status = AM_SUCCESS;
@@ -621,12 +738,17 @@ static am_status_t get_request_body(am_request_t *rq) {
     apr_brigade_destroy(bb);
 
     rq->post_data = out;
+    rq->post_data_fn = ISVALID(file_name) ? strdup(file_name) : NULL;
     rq->post_data_sz = read_bytes;
+
+    if (fd != NULL) {
+        apr_file_close(fd);
+    }
 
     if (status == AM_SUCCESS) {
         AM_LOG_DEBUG(rq->instance_id, "%s read %d bytes \n%s", thisfunc,
-                read_bytes, LOGEMPTY(out));
-        /* remove the content length since the body has been read */
+                read_bytes, ISVALID(out) ? out : LOGEMPTY(file_name));
+        /* remove Content-Length since the body has been read */
         r->clength = 0;
         apr_table_unset(r->headers_in, "Content-Length");
     }
@@ -652,13 +774,13 @@ static int amagent_auth_handler(request_rec *req) {
     }
 
     if (config->error != AM_SUCCESS) {
-        LOG_R(APLOG_ERR, req, "%s is not configured to handle the request "
+        ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, req, "%s is not configured to handle the request "
                 "to %s (unable to load bootstrap configuration from %s, error: %s)",
                 DESCRIPTION, req->uri, config->config, am_strerror(config->error));
         return HTTP_FORBIDDEN;
     }
 
-    LOG_R(APLOG_DEBUG, req, "amagent_auth_handler(): [%s] [%ld]", config->config, config->config_id);
+    ap_log_rerror(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, req, "amagent_auth_handler(): [%s] [%ld]", config->config, config->config_id);
 
     /* register and update instance logger configuration (for already registered
      * instances - update logging level only 
@@ -671,7 +793,7 @@ static int amagent_auth_handler(request_rec *req) {
     /* fetch agent configuration instance (from cache if available) */
     result = am_get_agent_config(config->config_id, config->config, &boot);
     if (boot == NULL || result != AM_SUCCESS) {
-        LOG_R(APLOG_ERR, req, "%s is not configured to handle the request "
+        ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, req, "%s is not configured to handle the request "
                 "to %s (unable to get agent configuration instance, configuration: %s, error: %s)",
                 DESCRIPTION, req->uri, config->config, am_strerror(result));
 
@@ -744,48 +866,109 @@ static void amagent_auth_post_insert_filter(request_rec *req) {
 
 static apr_status_t amagent_post_filter(ap_filter_t *f, apr_bucket_brigade *bucket_out,
         ap_input_mode_t emode, apr_read_type_e eblock, apr_off_t nbytes) {
+    static const char *thisfunc = "amagent_post_filter():";
     request_rec *r = f->r;
     conn_rec *c = r->connection;
-    apr_bucket *bucket;
-    apr_size_t sz;
-    char *clean;
-    const char *data = apr_table_get(r->notes, amagent_post_filter_name);
+    apr_status_t ret;
+    char buferr[50];
+    const char *file_name = apr_table_get(r->notes, amagent_post_filter_name);
 
-    do {
-        if (data == NULL) break;
+    amagent_filter_ctx *state = f->ctx;
 
-        sz = strlen(data);
-        clean = base64_decode(data, &sz);
-        if (clean == NULL) break;
+    if (ISINVALID(file_name)) {
+        return ap_get_brigade(f->next, bucket_out, emode, eblock, nbytes);
+    }
+
+    if (state == NULL) {
+        apr_finfo_t finfo;
+
+        f->ctx = state = (amagent_filter_ctx *) apr_pcalloc(r->pool, sizeof (amagent_filter_ctx));
+        if (state == NULL) {
+            ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r, "%s memory allocation error",
+                    thisfunc);
+            apr_file_remove(file_name, r->pool);
+            apr_table_unset(r->notes, amagent_post_filter_name);
+            return ap_get_brigade(f->next, bucket_out, emode, eblock, nbytes);
+        }
+
+        state->output_ptr = apr_palloc(r->pool, 4000); /* bucket limit of 4K */
+        if (state->output_ptr == NULL) {
+            ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r, "%s memory allocation error",
+                    thisfunc);
+            apr_file_remove(file_name, r->pool);
+            apr_table_unset(r->notes, amagent_post_filter_name);
+            return ap_get_brigade(f->next, bucket_out, emode, eblock, nbytes);
+        }
+
+        ret = apr_file_open(&state->tmp_file, file_name, APR_FOPEN_READ | APR_FOPEN_BINARY | APR_FOPEN_DELONCLOSE,
+                APR_OS_DEFAULT, r->pool);
+        if (ret != APR_SUCCESS) {
+            apr_strerror(ret, buferr, sizeof (buferr));
+            ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r, "%s unable to open POST preservation file: %s, %s",
+                    thisfunc, file_name, buferr);
+            apr_file_remove(file_name, r->pool);
+            apr_table_unset(r->notes, amagent_post_filter_name);
+            return ap_get_brigade(f->next, bucket_out, emode, eblock, nbytes);
+        }
+
+        ret = apr_file_info_get(&finfo, APR_FINFO_SIZE, state->tmp_file);
+        state->size = finfo.size;
+        state->output_sent = 0;
+        state->done_writing = 0;
+    }
+
+    if (state->done_writing == 1) {
+        apr_table_unset(r->notes, amagent_post_filter_name);
+        return ap_get_brigade(f->next, bucket_out, emode, eblock, nbytes);
+    }
+
+    if (state->output_sent < state->size) {
+        apr_bucket *pbktOut;
+        apr_size_t len = 4000;
+
+        if (len > (apr_size_t) nbytes) len = (apr_size_t) nbytes;
+
+        if (state->size - state->output_sent < len) len = state->size - state->output_sent;
+
+        ret = apr_file_read(state->tmp_file, state->output_ptr, &len);
+        if (ret != APR_SUCCESS) {
+            apr_strerror(ret, buferr, sizeof (buferr));
+            ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r, "%s unable to read POST preservation file: %s, %s",
+                    thisfunc, file_name, buferr);
+            apr_file_close(state->tmp_file);
+            apr_table_unset(r->notes, amagent_post_filter_name);
+            return ap_get_brigade(f->next, bucket_out, emode, eblock, nbytes);
+        }
+
+        pbktOut = apr_bucket_heap_create(state->output_ptr, len, NULL, c->bucket_alloc);
+        state->output_sent += (int) len;
+
+        APR_BRIGADE_INSERT_TAIL(bucket_out, pbktOut);
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r, "%s sent %ld bytes (%d total)",
+                thisfunc, len, state->output_sent);
+    }
+
+    /* are we done yet? */
+    if (state->output_sent == state->size) {
+        /* send an EOS bucket, we're done */
+        apr_bucket *pbktOut = apr_bucket_eos_create(c->bucket_alloc);
+        APR_BRIGADE_INSERT_TAIL(bucket_out, pbktOut);
+
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r, "%s sent EOS bucket", thisfunc);
+        state->done_writing = 1;
+
+        /* nothing left for us to do in this request */
+        ap_remove_input_filter(f);
 
         apr_table_unset(r->notes, amagent_post_filter_name);
+        apr_file_close(state->tmp_file);
+    }
 
-        LOG_R(APLOG_DEBUG, r, "amagent_post_filter(): reposting %ld bytes", sz);
-
-        bucket = apr_bucket_heap_create((const char *) clean, sz, NULL, c->bucket_alloc);
-        if (bucket == NULL) {
-            free(clean);
-            return APR_EGENERAL;
-        }
-        APR_BRIGADE_INSERT_TAIL(bucket_out, bucket);
-        free(clean);
-
-        bucket = apr_bucket_eos_create(c->bucket_alloc);
-        if (bucket == NULL) {
-            return APR_EGENERAL;
-        }
-        APR_BRIGADE_INSERT_TAIL(bucket_out, bucket);
-        ap_remove_input_filter(f);
-        return APR_SUCCESS;
-
-    } while (0);
-
-    apr_table_unset(r->notes, amagent_post_filter_name);
-    ap_remove_input_filter(f);
-    return ap_get_brigade(f->next, bucket_out, emode, eblock, nbytes);
+    return APR_SUCCESS;
 }
 
 static int amagent_preserve_url(request_rec *r) {
+    static const char *thisfunc = "amagent_preserve_url():";
     int i;
     request_rec *prev, *main;
 #define AM_REQUEST_CHAIN_LIMIT 5
@@ -826,7 +1009,13 @@ static int amagent_preserve_url(request_rec *r) {
         }
     }
 
-    apr_table_set(r->notes, amagent_preserve_url_hook_name, url);
+    if (ISINVALID(url)) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r,
+                "%s error parsing request url %s", thisfunc, LOGEMPTY(r->unparsed_uri));
+        apr_table_unset(r->notes, amagent_preserve_url_hook_name);
+    } else {
+        apr_table_set(r->notes, amagent_preserve_url_hook_name, url);
+    }
     return DECLINED;
 }
 

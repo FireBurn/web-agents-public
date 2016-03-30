@@ -40,6 +40,8 @@ static IHttpServer *server = NULL;
 static void *modctx = NULL;
 static am_status_t set_user(am_request_t *rq, const char *user);
 static am_status_t set_custom_response(am_request_t *rq, const char *text, const char *cont_type);
+static am_status_t set_request_body(am_request_t *rq);
+static am_status_t set_post_data_filename(am_request_t *rq, const char *value);
 
 static DWORD hr_to_winerror(HRESULT hr) {
     if ((hr & 0xFFFF0000) == MAKE_HRESULT(SEVERITY_ERROR, FACILITY_WIN32, 0)) {
@@ -727,54 +729,91 @@ static am_status_t set_method(am_request_t *rq) {
     return AM_SUCCESS;
 }
 
-static am_status_t set_request_body(am_request_t *rq) {
-    static const char *thisfunc = "set_request_body():";
-    IHttpContext *r = (IHttpContext *) (rq != NULL ? rq->ctx : NULL);
-    am_status_t status = AM_SUCCESS;
-    HRESULT hr = S_OK;
-    if (r == NULL) return AM_EINVAL;
-    if (ISVALID(rq->post_data) && rq->post_data_sz > 0) {
-        void *body = alloc_request(r, rq->post_data_sz);
-        if (body != NULL) {
-            memcpy(body, rq->post_data, rq->post_data_sz);
-            hr = r->GetRequest()->InsertEntityBody(body, (DWORD) rq->post_data_sz);
-            if (hr != S_OK) {
-                status = AM_ERROR;
-            }
-        } else {
-            status = AM_ENOMEM;
-        }
-    }
-    if (status != AM_SUCCESS) {
-        AM_LOG_WARNING(rq->instance_id, "%s status %s (%d)", thisfunc,
-                am_strerror(status), hr_to_winerror(hr));
-    }
-    return status;
-}
-
 static am_status_t get_request_body(am_request_t *rq) {
     static const char *thisfunc = "get_request_body():";
     IHttpContext *ctx = (IHttpContext *) (rq != NULL ? rq->ctx : NULL);
     IHttpRequest *r = ctx != NULL ? ctx->GetRequest() : NULL;
-    DWORD read_bytes = 0, rc = 1024;
+#define REQ_DATA_BUFF_SZ 1024
+    DWORD read_bytes = 0, rc = REQ_DATA_BUFF_SZ;
     HRESULT hr;
     am_status_t status = AM_ERROR;
     char *out = NULL, *out_tmp;
     void *data;
+    HANDLE fd = INVALID_HANDLE_VALUE;
+    char *file_name = NULL;
+    BOOL to_file = FALSE, first_run = TRUE;
+    DWORD fpos, wrote;
 
-    if (r == NULL) return AM_EINVAL;
+    if (r == NULL)
+        return AM_EINVAL;
+
     data = alloc_request(ctx, rc);
-    if (data == NULL) return AM_ENOMEM;
+    if (data == NULL)
+        return AM_ENOMEM;
 
-    if (r->GetRemainingEntityBytes() > 0) {
-        while (r->GetRemainingEntityBytes() != 0) {
-            hr = r->ReadEntityBody(data, rc, FALSE, &rc, NULL);
-            if (FAILED(hr)) {
-                if (ERROR_HANDLE_EOF != (hr & 0x0000FFFF)) {
-                    am_free(out);
-                    return AM_ERROR;
+
+    if (r->GetRemainingEntityBytes() == 0) {
+        status = AM_SUCCESS;
+    }
+
+    while (r->GetRemainingEntityBytes() != 0) {
+        hr = r->ReadEntityBody(data, rc, FALSE, &rc, NULL);
+        if (FAILED(hr)) {
+            if (ERROR_HANDLE_EOF != (hr & 0x0000FFFF)) {
+                am_free(out);
+                if (fd != INVALID_HANDLE_VALUE) {
+                    CloseHandle(fd);
+                }
+                return AM_ERROR;
+            }
+            break;
+        }
+
+        if (first_run) {
+            to_file = rc > 5 && memcmp(data, "LARES=", 6) != 0;
+            first_run = FALSE;
+        }
+
+        if (to_file) {
+
+            if (fd == INVALID_HANDLE_VALUE) {
+                char key[37];
+
+                if (ISINVALID(rq->conf->pdp_dir)) {
+                    AM_LOG_ERROR(rq->instance_id, "%s invalid POST preservation configuration",
+                            thisfunc);
+                    return AM_EINVAL;
+                }
+
+                file_name = (char *) alloc_request(ctx, strlen(rq->conf->pdp_dir) + strlen(key) + 2);
+                if (file_name == NULL) {
+                    return AM_ENOMEM;
+                }
+                uuid(key, sizeof (key));
+                sprintf(file_name, "%s/%s", rq->conf->pdp_dir, key);
+
+                fd = CreateFileA(file_name, FILE_GENERIC_WRITE,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE,
+                        NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                if (fd == INVALID_HANDLE_VALUE) {
+                    AM_LOG_ERROR(rq->instance_id, "%s unable to create POST preservation file: %s (%d)",
+                            thisfunc, file_name, GetLastError());
+                    return AM_FILE_ERROR;
                 }
             }
+
+            fpos = SetFilePointer(fd, 0, NULL, FILE_END);
+            if (!WriteFile(fd, data, rc, &wrote, NULL)) {
+                AM_LOG_ERROR(rq->instance_id, "%s unable to write to POST preservation file: %s (%d)",
+                        thisfunc, file_name, GetLastError());
+                CloseHandle(fd);
+                return AM_FILE_ERROR;
+            }
+            read_bytes += rc;
+
+        } else {
+
+            /* process in-memory data */
             out_tmp = (char *) realloc(out, read_bytes + rc + 1);
             if (out_tmp == NULL) {
                 am_free(out);
@@ -785,15 +824,22 @@ static am_status_t get_request_body(am_request_t *rq) {
             memcpy(out + read_bytes, data, rc);
             read_bytes += rc;
             out[read_bytes] = 0;
-            status = AM_SUCCESS;
         }
-        rq->post_data = out;
-        rq->post_data_sz = read_bytes;
+        status = AM_SUCCESS;
+        rc = REQ_DATA_BUFF_SZ;
+    }
+
+    rq->post_data = out;
+    rq->post_data_fn = ISVALID(file_name) ? strdup(file_name) : NULL;
+    rq->post_data_sz = read_bytes;
+
+    if (fd != INVALID_HANDLE_VALUE) {
+        CloseHandle(fd);
     }
 
     if (status == AM_SUCCESS) {
         AM_LOG_DEBUG(rq->instance_id, "%s read %d bytes \n%s", thisfunc,
-                read_bytes, LOGEMPTY(out));
+                read_bytes, ISVALID(out) ? out : LOGEMPTY(file_name));
         r->DeleteHeader("CONTENT_LENGTH");
     }
     return status;
@@ -875,8 +921,7 @@ static void send_custom_data(IHttpResponse *res, const char *payload, int payloa
 class OpenAMHttpModule : public CHttpModule{
     public :
 
-    OpenAMHttpModule(HANDLE elog) {
-        eventLog = elog;
+    OpenAMHttpModule() {
         doLogOn = FALSE;
         showPassword = FALSE;
         userName = NULL;
@@ -885,6 +930,10 @@ class OpenAMHttpModule : public CHttpModule{
         userPasswordSize = 0;
         userPasswordCryptedSize = 0;
         clonedContext = NULL;
+        pdp_file = INVALID_HANDLE_VALUE;
+        pdp_file_data = NULL;
+        pdp_file_map = NULL;
+        pdp_file_name = NULL;
     }
 
     REQUEST_NOTIFICATION_STATUS OnAsyncCompletion(IHttpContext * ctx, DWORD dwNotification,
@@ -916,12 +965,7 @@ class OpenAMHttpModule : public CHttpModule{
          * server/site - we are not handling this request
          **/
         hr = OpenAMStoredConfig::GetConfig(ctx, &conf);
-        if (FAILED(hr)) {
-            WriteEventLog("%s GetConfig failed for site %d", thisfunc, site->GetSiteId());
-            return RQ_NOTIFICATION_CONTINUE;
-        }
-        if (conf->IsEnabled() == FALSE) {
-            /* WriteEventLog("%s GetConfig config is not enabled for site %d", thisfunc, site->GetSiteId()); */
+        if (FAILED(hr) || conf->IsEnabled() == FALSE) {
             return RQ_NOTIFICATION_CONTINUE;
         }
 
@@ -933,7 +977,6 @@ class OpenAMHttpModule : public CHttpModule{
             am_log_register_instance(site->GetSiteId(), boot->debug_file, boot->debug_level, boot->debug,
                     boot->audit_file, boot->audit_level, boot->audit, conf->GetPath(ctx));
         } else {
-            WriteEventLog("%s GetConfig boot == NULL (%d)", thisfunc, site->GetSiteId());
             res->SetStatus(AM_HTTP_STATUS_500, "Internal Server Error");
             return RQ_NOTIFICATION_FINISH_REQUEST;
         }
@@ -944,7 +987,6 @@ class OpenAMHttpModule : public CHttpModule{
 
         rv = am_get_agent_config(site->GetSiteId(), conf->GetPath(ctx), &rq_conf);
         if (rq_conf == NULL || rv != AM_SUCCESS) {
-            WriteEventLog("%s am_get_agent_config failed (%d)", thisfunc, site->GetSiteId());
             AM_LOG_ERROR(site->GetSiteId(), "%s failed to get agent configuration instance, error: %s",
                     thisfunc, am_strerror(rv));
             res->SetStatus(AM_HTTP_STATUS_403, "Forbidden");
@@ -957,7 +999,7 @@ class OpenAMHttpModule : public CHttpModule{
         d.status = AM_ERROR;
         d.instance_id = site->GetSiteId();
         d.ctx = ctx;
-        d.ctx_class = this; /*set_user use only*/
+        d.ctx_class = this;
         d.method = am_method_str_to_num(req->GetHttpMethod());
         d.content_type = get_server_variable(ctx, d.instance_id, "CONTENT_TYPE");
         d.cookies = get_server_variable(ctx, d.instance_id, "HTTP_COOKIE");
@@ -1005,6 +1047,7 @@ class OpenAMHttpModule : public CHttpModule{
         d.am_add_header_in_response_f = add_header_in_response;
         d.am_set_cookie_f = set_cookie;
         d.am_set_custom_response_f = set_custom_response;
+        d.am_set_post_data_filename_f = set_post_data_filename;
 
         am_process_request(&d);
 
@@ -1064,32 +1107,21 @@ class OpenAMHttpModule : public CHttpModule{
         if (userPasswordCrypted != NULL && userPasswordCryptedSize > 0) {
             SecureZeroMemory((PVOID) userPasswordCrypted, userPasswordCryptedSize);
         }
+        if (pdp_file_data) {
+            UnmapViewOfFile(pdp_file_data);
+        }
+        if (pdp_file_map) {
+            CloseHandle(pdp_file_map);
+        }
+        if (pdp_file != INVALID_HANDLE_VALUE) {
+            CloseHandle(pdp_file);
+        }
+        if (pdp_file_name) {
+            DeleteFileA(pdp_file_name);
+        }
         return RQ_NOTIFICATION_CONTINUE;
     }
 
-    void WriteEventLog(const char *format, ...) {
-        va_list args;
-        va_start(args, format);
-        WriteEvent(format, args);
-        va_end(args);
-    }
-
-    void WriteEvent(const char *format, va_list argList) {
-        int count = _vscprintf(format, argList);
-        if (count > 0) {
-            char *formattedString = (char *) malloc(count + 1);
-            if (formattedString != NULL) {
-                vsprintf(formattedString, format, argList);
-                if (eventLog != NULL) {
-                    ReportEvent(eventLog, EVENTLOG_INFORMATION_TYPE, 0, 0,
-                            NULL, 1, 0, (LPCTSTR *) & formattedString, NULL);
-                }
-                free(formattedString);
-            }
-        }
-    }
-
-    HANDLE eventLog;
     char *userName;
     wchar_t *userPassword;
     DWORD userPasswordSize;
@@ -1098,7 +1130,80 @@ class OpenAMHttpModule : public CHttpModule{
     BOOL showPassword;
     BOOL doLogOn;
     IHttpContext *clonedContext;
+    HANDLE pdp_file;
+    HANDLE pdp_file_map;
+    LPVOID pdp_file_data;
+    char *pdp_file_name;
 };
+
+static am_status_t set_request_body(am_request_t *rq) {
+    static const char *thisfunc = "set_request_body():";
+    IHttpContext *r = (IHttpContext *) (rq != NULL ? rq->ctx : NULL);
+    am_status_t status = AM_SUCCESS;
+    HRESULT hr = S_OK;
+    OpenAMHttpModule *m = rq != NULL && rq->ctx_class != NULL ?
+            static_cast<OpenAMHttpModule *>(rq->ctx_class) : NULL;
+
+    if (r == NULL)
+        return AM_EINVAL;
+
+    if (ISVALID(rq->post_data_fn) && rq->post_data_sz > 0) {
+
+#define CONTENT_LENGTH_CSZ 128
+        char *value = (char *) alloc_request(r, CONTENT_LENGTH_CSZ + 1);
+        snprintf(value, CONTENT_LENGTH_CSZ, "%ld", rq->post_data_sz);
+
+        m->pdp_file = CreateFileA(rq->post_data_fn, GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
+        if (m->pdp_file == INVALID_HANDLE_VALUE) {
+            AM_LOG_ERROR(rq->instance_id, "%s unable to open POST preservation file: %s (%d)",
+                    thisfunc, rq->post_data_fn, GetLastError());
+            DeleteFileA(rq->post_data_fn);
+            return AM_FILE_ERROR;
+        }
+        /* when pdp_file_name is set (default), remove temp file in OnEndRequest */
+        m->pdp_file_name = strndup_request(r, rq->post_data_fn, strlen(rq->post_data_fn));
+
+        m->pdp_file_map = CreateFileMappingA(m->pdp_file, NULL, PAGE_READWRITE, 0, (DWORD) rq->post_data_sz, NULL);
+        if (!m->pdp_file_map) {
+            CloseHandle(m->pdp_file);
+            AM_LOG_ERROR(rq->instance_id, "%s unable to map POST preservation file: %s (%d)",
+                    thisfunc, rq->post_data_fn, GetLastError());
+            return AM_FILE_ERROR;
+        }
+
+        m->pdp_file_data = MapViewOfFile(m->pdp_file_map, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+        if (!m->pdp_file_data) {
+            CloseHandle(m->pdp_file_map);
+            CloseHandle(m->pdp_file);
+            AM_LOG_ERROR(rq->instance_id, "%s unable to map-view POST preservation file: %s (%d)",
+                    thisfunc, rq->post_data_fn, GetLastError());
+            return AM_FILE_ERROR;
+        }
+
+        hr = r->GetRequest()->InsertEntityBody(m->pdp_file_data, (DWORD) rq->post_data_sz);
+        if (hr != S_OK) {
+            status = AM_ERROR;
+        } else {
+            r->GetRequest()->SetHeader("CONTENT_LENGTH", value, (USHORT) strlen(value), TRUE);
+        }
+    }
+    if (status != AM_SUCCESS) {
+        AM_LOG_WARNING(rq->instance_id, "%s status %s (%d)", thisfunc,
+                am_strerror(status), hr_to_winerror(hr));
+    }
+    return status;
+}
+
+static am_status_t set_post_data_filename(am_request_t *rq, const char *value) {
+    IHttpContext *r = (IHttpContext *) (rq != NULL ? rq->ctx : NULL);
+    OpenAMHttpModule *m = rq != NULL && rq->ctx_class != NULL ?
+            static_cast<OpenAMHttpModule *>(rq->ctx_class) : NULL;
+    if (m == NULL || r == NULL)
+        return AM_EINVAL;
+    m->pdp_file_name = ISVALID(value) ? strndup_request(r, value, strlen(value)) : NULL;
+    return AM_SUCCESS;
+}
 
 static am_status_t set_user(am_request_t *rq, const char *user) {
     static const char *thisfunc = "set_user():";
@@ -1163,7 +1268,10 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
                 case AM_PDP_DONE:
                 {
                     size_t data_sz = rq->post_data_sz;
-                    char *temp = base64_encode(rq->post_data, &data_sz);
+                    char *temp = NULL;
+                    if (m->pdp_file_data) {
+                        temp = base64_encode(m->pdp_file_data, &data_sz);
+                    }
                     payload_sz = am_asprintf(&payload, AM_JSON_TEMPLATE_LOCATION_DATA,
                             am_strerror(rq->status), rq->post_data_url, cont_type,
                             NOTNULL(temp), AM_HTTP_STATUS_200);
@@ -1221,14 +1329,14 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
                     break;
                 }
 
-                if (ISVALID(rq->post_data)) {
+                if (m->pdp_file_data) {
                     a = (char *) alloc_request(r, rq->post_data_sz + 1);
                     if (a == NULL) {
                         AM_LOG_ERROR(rq->instance_id, "set_custom_response(): memory allocation error");
                         rq->status = AM_ERROR;
                         break;
                     }
-                    memcpy(a, rq->post_data, rq->post_data_sz);
+                    memcpy(a, m->pdp_file_data, rq->post_data_sz);
                     for (pair = strtok_s(a, "&", &last); pair;
                             pair = strtok_s(NULL, "&", &last)) {
                         UrlUnescapeA(pair, NULL, NULL, URL_UNESCAPE_INPLACE);
@@ -1266,7 +1374,7 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
                 rq->status = AM_ERROR;
                 break;
             }
-            hr = r->GetRequest()->SetHttpMethod("POST");
+            hr = r->GetRequest()->SetHttpMethod(am_method_num_to_str(rq->method));
             if (FAILED(hr)) {
                 AM_LOG_ERROR(rq->instance_id, "set_custom_response(): SetHttpMethod failed for %s (%d)",
                         LOGEMPTY(rq->post_data_url), hr_to_winerror(hr));
@@ -1290,7 +1398,7 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
                 break;
             }
 
-            hr = sr->GetRequest()->SetHttpMethod("POST");
+            hr = sr->GetRequest()->SetHttpMethod(am_method_num_to_str(rq->method));
             if (FAILED(hr)) {
                 AM_LOG_ERROR(rq->instance_id, "set_custom_response(): SetHttpMethod failed for %s (%d)",
                         LOGEMPTY(rq->post_data_url), hr_to_winerror(hr));
@@ -1325,16 +1433,17 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
             char tls[64];
             size_t tl = strlen(text);
             snprintf(tls, sizeof (tls), "%d", tl);
+            if (rq->status == AM_SUCCESS || rq->status == AM_DONE) {
+                hr = r->GetResponse()->SetStatus(AM_HTTP_STATUS_200, "OK", 0, S_OK);
+            } else {
+                r->GetResponse()->Clear();
+                am_status_value(r, rq->status);
+            }
             if (ISVALID(cont_type)) {
                 hr = r->GetResponse()->SetHeader("Content-Type", cont_type,
                         (USHORT) strlen(cont_type), TRUE);
             }
             hr = r->GetResponse()->SetHeader("Content-Length", tls, (USHORT) strlen(tls), TRUE);
-            if (rq->status == AM_SUCCESS || rq->status == AM_DONE) {
-                hr = r->GetResponse()->SetStatus(AM_HTTP_STATUS_200, "OK", 0, S_OK);
-            } else {
-                am_status_value(r, rq->status);
-            }
             dc.DataChunkType = HttpDataChunkFromMemory;
             dc.FromMemory.pBuffer = (PVOID) text;
             dc.FromMemory.BufferLength = (USHORT) tl;
@@ -1352,15 +1461,7 @@ class OpenAMHttpModuleFactory : public IHttpModuleFactory{
     public :
 
     OpenAMHttpModuleFactory() {
-        eventLog = RegisterEventSource(NULL, "IISADMIN");
         am_init_worker(AM_DEFAULT_AGENT_ID);
-    }
-
-    ~OpenAMHttpModuleFactory() {
-        if (eventLog != NULL) {
-            DeregisterEventSource(eventLog);
-            eventLog = NULL;
-        }
     }
 
     virtual HRESULT GetHttpModule(CHttpModule **mm, IModuleAllocator * ma) {
@@ -1370,7 +1471,7 @@ class OpenAMHttpModuleFactory : public IHttpModuleFactory{
             return HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER);
         }
 
-        mod = new OpenAMHttpModule(eventLog);
+        mod = new OpenAMHttpModule();
         if (mod == NULL) {
             return HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY);
         }
@@ -1386,10 +1487,6 @@ class OpenAMHttpModuleFactory : public IHttpModuleFactory{
         am_shutdown(AM_DEFAULT_AGENT_ID);
         delete this;
     }
-
-private:
-
-    HANDLE eventLog;
 };
 
 HRESULT __stdcall RegisterModule(DWORD dwServerVersion,
@@ -1415,7 +1512,7 @@ HRESULT __stdcall RegisterModule(DWORD dwServerVersion,
         }
 
         status = pModuleInfo->SetRequestNotifications(modf,
-                RQ_BEGIN_REQUEST | RQ_AUTHENTICATE_REQUEST, 0);
+                RQ_BEGIN_REQUEST | RQ_AUTHENTICATE_REQUEST | RQ_END_REQUEST, 0);
         if (FAILED(status)) {
             break;
         }

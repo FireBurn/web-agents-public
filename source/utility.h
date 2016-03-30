@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #ifndef UTILITY_H
@@ -106,8 +106,8 @@ struct am_action_decision {
     uint64_t ttl;
     struct am_namevalue *advices;
     struct am_action_decision *next;
-    char method;
-    char action; // TODO: should be am_bool_t
+    int method;
+    int action;
 };
 
 struct am_policy_result {
@@ -233,7 +233,6 @@ void xml_entity_escape(char *temp_str, size_t str_len);
 
 am_bool_t contains_ctl(const char *string);
 int char_count(const char *string, int c, int *last);
-void uuid(char *buf, size_t buflen);
 
 char file_exists(const char *fn);
 char *load_file(const char *filepath, size_t *data_sz);
@@ -261,7 +260,7 @@ int get_ttl_value(struct am_namevalue *session, const char *name, int def, int v
 
 int create_am_namevalue_node(const char *n, size_t ns, const char *v, size_t vs, struct am_namevalue **node);
 int create_am_policy_result_node(const char *resource, size_t resource_size, struct am_policy_result **node);
-int create_am_action_decision_node(am_bool_t a, char m, uint64_t ttl,
+int create_am_action_decision_node(am_bool_t a, int m, uint64_t ttl,
         struct am_action_decision **node);
 
 void *am_parse_session_xml(unsigned long instance_id, const char *xml, size_t xml_sz);
@@ -305,8 +304,8 @@ int am_get_agent_config_cache_or_local(unsigned long instance_id, const char *co
 
 am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, size_t xml_sz, char log_enable);
 
-int am_get_pdp_cache_entry(am_request_t *r, const char *key, char **data, size_t *data_sz, char **content_type);
-int am_add_pdp_cache_entry(am_request_t *r, const char *key, const char *url, const char *file, const char *content_type);
+int am_get_pdp_cache_entry(am_request_t *r, const char *key, char **data, size_t *data_sz, char **content_type, int *method);
+int am_add_pdp_cache_entry(am_request_t *r, const char *key, const char *url, const char *file, const char *content_type, int method);
 int am_add_session_policy_cache_entry(am_request_t *request, const char *key,
         struct am_policy_result *policy, struct am_namevalue *session);
 int am_get_session_policy_cache_entry(am_request_t *request, const char *key,

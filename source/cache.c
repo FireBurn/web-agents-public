@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -68,7 +68,7 @@ struct am_cache_entry_data {
     unsigned int type;
     int index;
     int scope;
-    char method;
+    int method;
     uint64_t ttl;
     size_t size[3];
     struct offset_list lh;
@@ -320,7 +320,7 @@ int am_purge_caches_to_now(unsigned long instance_id)
 /* 
  * Find PDP cache entry (key: uuid value).
  */
-int am_get_pdp_cache_entry(am_request_t *request, const char *key, char **data, size_t *data_sz, char **content_type) {
+int am_get_pdp_cache_entry(am_request_t *request, const char *key, char **data, size_t *data_sz, char **content_type, int *method) {
     static const char *thisfunc = "am_get_pdp_cache_entry():";
     int status = AM_NOT_FOUND;
     int entry_index = 0;
@@ -409,6 +409,7 @@ int am_get_pdp_cache_entry(am_request_t *request, const char *key, char **data, 
                 memcpy(*content_type, element->value + size, element->size[CONTENT_TYPE_LENGTH]);
                 (*content_type)[element->size[CONTENT_TYPE_LENGTH]] = '\0';
             }
+            *method = element->method;
             status = AM_SUCCESS;
             break;
         }
@@ -422,7 +423,7 @@ int am_get_pdp_cache_entry(am_request_t *request, const char *key, char **data, 
  * Add PDP cache entry (key: uuid value).
  */
 int am_add_pdp_cache_entry(am_request_t *request, const char *key, const char *url,
-        const char *file, const char *content_type) {
+        const char *file, const char *content_type, int method) {
     static const char *thisfunc = "am_add_pdp_cache_entry():";
     unsigned int key_hash;
     int entry_index = 0;
@@ -523,7 +524,7 @@ int am_add_pdp_cache_entry(am_request_t *request, const char *key, const char *u
     }
 
     cache_entry_data->type = AM_CACHE_PDP;
-    cache_entry_data->method = AM_REQUEST_UNKNOWN;
+    cache_entry_data->method = method;
     cache_entry_data->ttl = 0;
 
     cache_entry_data->size[URL_LENGTH] = url_length;

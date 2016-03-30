@@ -1923,7 +1923,7 @@ void am_request_free(am_request_t *r) {
     if (r != NULL) {
         AM_FREE(r->normalized_url, r->overridden_url, r->normalized_url_pathinfo,
                 r->overridden_url_pathinfo, r->token,
-                r->client_ip, r->client_host, r->post_data,
+                r->client_ip, r->client_host, r->post_data, r->post_data_fn,
                 r->session_info.s1, r->session_info.si, r->session_info.sk);
         delete_am_policy_result_list(&r->pattr);
         delete_am_namevalue_list(&r->sattr);
@@ -2467,7 +2467,7 @@ int string_replace(char **original, const char *pattern, const char *replace, si
 }
 
 int copy_file(const char *from, const char *to) {
-    int rv = AM_FILE_ERROR, source, dest;
+    int rv = AM_FILE_ERROR;
     am_bool_t local_alloc = AM_FALSE;
     char *to_tmp = NULL;
 
