@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #ifdef _WIN32
@@ -125,9 +125,7 @@ static char *get_property_value_byname(IAppHostElement* ahe, VARIANT* value, BST
     }
 
     if (type == VT_UI4) {
-        char dec[256];
-        sprintf_s(dec, sizeof (dec), "%d", value->ulVal);
-        ret = strdup(dec);
+        am_asprintf(&ret, "%d", value->ulVal);
     } else {
         UINT l = SysStringLen(value->bstrVal);
         if (l > 0) {
@@ -159,6 +157,7 @@ void list_iis_sites(int argc, char **argv) {
     VARIANT value;
     HRESULT hresult = S_OK;
     char *name, *id;
+    BOOL env_init = FALSE;
 
     fprintf(stdout, "\nIIS Server Site configuration:\n");
 
@@ -167,6 +166,7 @@ void list_iis_sites(int argc, char **argv) {
         if (FAILED(hresult)) {
             break;
         }
+        env_init = TRUE;
         hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
                 CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID*) & admin_manager);
         if (FAILED(hresult)) {
@@ -226,7 +226,9 @@ void list_iis_sites(int argc, char **argv) {
     SysFreeString(bstr_sites);
     SysFreeString(bstr_name);
     SysFreeString(bstr_id);
-    CoUninitialize();
+    if (env_init) {
+        CoUninitialize();
+    }
 }
 
 static BOOL set_property(IAppHostElement* element, BSTR name, BSTR value) {
@@ -710,6 +712,7 @@ int install_module(const char *modpath, const char *schema) {
     HRESULT hresult = S_OK;
     wchar_t *location = NULL;
     char schema_sys_file[MAX_PATH];
+    BOOL env_init = FALSE;
 
     if (GetWindowsDirectoryA(schema_sys_file, MAX_PATH) == 0) {
         fprintf(stderr, "Failed to locate Windows directory.\n");
@@ -739,6 +742,7 @@ int install_module(const char *modpath, const char *schema) {
             fprintf(stderr, "Failed to initialize COM.\n");
             break;
         }
+        env_init = TRUE;
         hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
                 CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID*) & admin_manager);
         if (FAILED(hresult)) {
@@ -779,8 +783,9 @@ int install_module(const char *modpath, const char *schema) {
         IAppHostWritableAdminManager_Release(admin_manager);
     }
     SysFreeString(module_wpath);
-    CoUninitialize();
-
+    if (env_init) {
+        CoUninitialize();
+    }
     return rv;
 }
 
@@ -788,13 +793,14 @@ int remove_module() {
     IAppHostWritableAdminManager *admin_manager = NULL;
     int rv = 0;
     HRESULT hresult = S_OK;
+    BOOL env_init = FALSE;
     do {
         hresult = CoInitializeEx(NULL, COINIT_MULTITHREADED);
         if (FAILED(hresult)) {
             fprintf(stderr, "Failed to initialize COM.\n");
             break;
         }
-
+        env_init = TRUE;
         hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
                 CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID*) & admin_manager);
         if (FAILED(hresult)) {
@@ -825,8 +831,9 @@ int remove_module() {
     if (admin_manager != NULL) {
         IAppHostWritableAdminManager_Release(admin_manager);
     }
-    CoUninitialize();
-
+    if (env_init) {
+        CoUninitialize();
+    }
     return rv;
 }
 
@@ -843,12 +850,14 @@ static char *get_site_name(const char *sid) {
     VARIANT value;
     HRESULT hresult = S_OK;
     char *name, *id, *ret = NULL;
+    BOOL env_init = FALSE;
 
     do {
         hresult = CoInitializeEx(NULL, COINIT_MULTITHREADED);
         if (FAILED(hresult)) {
             break;
         }
+        env_init = TRUE;
         hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
                 CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID*) & admin_manager);
         if (FAILED(hresult)) {
@@ -911,7 +920,9 @@ static char *get_site_name(const char *sid) {
     SysFreeString(bstr_sites);
     SysFreeString(bstr_name);
     SysFreeString(bstr_id);
-    CoUninitialize();
+    if (env_init) {
+        CoUninitialize();
+    }
     return ret;
 }
 
@@ -922,6 +933,7 @@ int enable_module(const char *siteid, const char *modconf) {
     wchar_t *config_path_w = NULL;
     wchar_t *modconf_w = NULL;
     char *config_path;
+    BOOL env_init = FALSE;
 
     if (siteid == NULL || modconf == NULL) {
         fprintf(stderr, "Invalid arguments.\n");
@@ -929,11 +941,13 @@ int enable_module(const char *siteid, const char *modconf) {
     }
 
     config_path = get_site_name(siteid);
-    if (config_path != NULL) {
-        config_path_w = utf8_decode(config_path, NULL);
-        free(config_path);
+    if (config_path == NULL) {
+        fprintf(stderr, "Unknown site id: %s.\n", siteid);
+        return rv;
     }
 
+    config_path_w = utf8_decode(config_path, NULL);
+    free(config_path);
     modconf_w = utf8_decode(modconf, NULL);
 
     do {
@@ -947,6 +961,7 @@ int enable_module(const char *siteid, const char *modconf) {
             fprintf(stderr, "Failed to initialize COM.\n");
             break;
         }
+        env_init = TRUE;
         hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
                 CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID*) & admin_manager);
         if (FAILED(hresult)) {
@@ -982,7 +997,9 @@ int enable_module(const char *siteid, const char *modconf) {
     if (admin_manager != NULL) {
         IAppHostWritableAdminManager_Release(admin_manager);
     }
-    CoUninitialize();
+    if (env_init) {
+        CoUninitialize();
+    }
     return rv;
 }
 
@@ -993,6 +1010,7 @@ int disable_module(const char *siteid, const char *modconf) {
     wchar_t *config_path_w = NULL;
     wchar_t *modconf_w = NULL;
     char *config_path;
+    BOOL env_init = FALSE;
 
     if (siteid == NULL || modconf == NULL) {
         fprintf(stderr, "Invalid arguments.\n");
@@ -1000,11 +1018,13 @@ int disable_module(const char *siteid, const char *modconf) {
     }
 
     config_path = get_site_name(siteid);
-    if (config_path != NULL) {
-        config_path_w = utf8_decode(config_path, NULL);
-        free(config_path);
+    if (config_path == NULL) {
+        fprintf(stderr, "Unknown site id: %s.\n", siteid);
+        return rv;
     }
 
+    config_path_w = utf8_decode(config_path, NULL);
+    free(config_path);
     modconf_w = utf8_decode(modconf, NULL);
 
     do {
@@ -1018,6 +1038,7 @@ int disable_module(const char *siteid, const char *modconf) {
             fprintf(stderr, "Failed to initialize COM.\n");
             break;
         }
+        env_init = TRUE;
         hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
                 CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID*) & admin_manager);
         if (FAILED(hresult)) {
@@ -1053,7 +1074,9 @@ int disable_module(const char *siteid, const char *modconf) {
     if (admin_manager != NULL) {
         IAppHostWritableAdminManager_Release(admin_manager);
     }
-    CoUninitialize();
+    if (env_init) {
+        CoUninitialize();
+    }
     return rv;
 }
 
@@ -1124,6 +1147,10 @@ static BOOL add_to_modules(IAppHostWritableAdminManager* manager, BSTR config_pa
             case ERROR_FILE_NOT_FOUND:
             {
                 char* c_str_config_path = get_site_name(siteid);
+                if (c_str_config_path == NULL) {
+                    fprintf(stderr, "AddElement failed, unknown site id: %s.\n", siteid);
+                    break;
+                }
                 fprintf(stderr, "AddElement failed, file %s: ERROR_FILE_NOT_FOUND", c_str_config_path);
                 free(c_str_config_path);
                 break;
@@ -1131,6 +1158,10 @@ static BOOL add_to_modules(IAppHostWritableAdminManager* manager, BSTR config_pa
             default:
             {
                 char* c_str_config_path = get_site_name(siteid);
+                if (c_str_config_path == NULL) {
+                    fprintf(stderr, "AddElement failed, unknown site id: %s.\n", siteid);
+                    break;
+                }
                 fprintf(stderr, "AddElement failed, file %s: %s\n",
                         c_str_config_path,
                         ErrorDescription(hresult));
@@ -1162,6 +1193,7 @@ int test_module(const char *siteid) {
     HRESULT hresult = S_OK;
     wchar_t *config_path_w = NULL;
     char *config_path;
+    BOOL env_init = FALSE;
 
     if (siteid == NULL) {
         fprintf(stderr, "Invalid arguments.\n");
@@ -1169,10 +1201,13 @@ int test_module(const char *siteid) {
     }
 
     config_path = get_site_name(siteid);
-    if (config_path != NULL) {
-        config_path_w = utf8_decode(config_path, NULL);
-        free(config_path);
+    if (config_path == NULL) {
+        fprintf(stderr, "Unknown site id: %s.\n", siteid);
+        return rv;
     }
+
+    config_path_w = utf8_decode(config_path, NULL);
+    free(config_path);
 
     do {
         if (config_path_w == NULL) {
@@ -1185,6 +1220,7 @@ int test_module(const char *siteid) {
             fprintf(stderr, "Failed to initialize COM.\n");
             break;
         }
+        env_init = TRUE;
         hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
                 CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID*) & admin_manager);
         if (FAILED(hresult)) {
@@ -1222,7 +1258,9 @@ int test_module(const char *siteid) {
     if (admin_manager != NULL) {
         IAppHostWritableAdminManager_Release(admin_manager);
     }
-    CoUninitialize();
+    if (env_init) {
+        CoUninitialize();
+    }
     return rv;
 }
 

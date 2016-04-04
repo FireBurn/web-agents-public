@@ -1267,13 +1267,16 @@ static void install_interactive(int argc, char **argv) {
                 }
 
                 iis_status = test_module(input);
-                if (iis_status == ADMIN_IIS_MOD_LOCAL) {
+                if (iis_status == ADMIN_IIS_MOD_ERROR) {
+                    fprintf(stdout, "\nError: unknown site id %s.\nPlease try again.\n\n", input);
+                    install_log("Unknown site id: %s", input);
+                } else if (iis_status == ADMIN_IIS_MOD_LOCAL) {
                     fprintf(stdout, "\nError: this server site is already configured with %s module.\nPlease try again.\n\n", DESCRIPTION);
-                    install_log("IIS server site %s is already configured with %s", NOTNULL(input), DESCRIPTION);
+                    install_log("IIS server site %s is already configured with %s", input, DESCRIPTION);
                 } else {
                     install_log("IIS server site %s is not yet configured with %s (status: %d)",
-                            NOTNULL(input), DESCRIPTION, iis_status);
-                    strncpy(server_conf, input, sizeof(server_conf) - 1);
+                            input, DESCRIPTION, iis_status);
+                    strncpy(server_conf, input, sizeof (server_conf) - 1);
                     error = AM_FALSE;
                 }
 
@@ -1903,8 +1906,24 @@ static void install_silent(int argc, char** argv) {
             property_map_t *property_map = property_map_create();
 
             if (instance_type == AM_I_APACHE || instance_type == AM_I_IIS || instance_type == AM_I_VARNISH) {
-                rv = create_agent_instance(0, argv[2], argv[3], argv[5],
-                        argv[4], argv[6], agent_password, uid, gid, property_map);
+
+                rv = AM_SUCCESS;
+                if (instance_type == AM_I_IIS) {
+                    int iis_status = test_module(argv[2]);
+                    if (iis_status == ADMIN_IIS_MOD_ERROR) {
+                        install_log("Unknown site id: %s", argv[2]);
+                        rv = AM_ERROR;
+                    } else if (iis_status == ADMIN_IIS_MOD_LOCAL) {
+                        install_log("IIS server site %s is already configured with %s", argv[2], DESCRIPTION);
+                        rv = AM_ERROR;
+                    }
+                }
+
+                if (rv == AM_SUCCESS) {
+                    rv = create_agent_instance(0, argv[2], argv[3], argv[5],
+                            argv[4], argv[6], agent_password, uid, gid, property_map);
+                }
+
             } else {
                 rv = AM_NOT_IMPLEMENTED;
             }
@@ -2143,7 +2162,7 @@ static void enable_iis_mod(int argc, char **argv) {
 static void disable_iis_mod(int argc, char **argv) {
     struct am_conf_entry *list = NULL, *e, *t;
     int rv;
-    if (argc == 3) {
+    if (argc != 3) {
         fprintf(stdout, "\nNo agent configuration specified.\n");
         return;
     }
@@ -2460,8 +2479,6 @@ int main(int argc, char **argv) {
             " agentadmin --k\n\n"
             "Encrypt password:\n"
             " agentadmin --p \"key\" \"password\"\n\n"
-            "Archive directories/files:\n"
-            " agentadmin --a archive.zip directory_or_file [directory_or_file]\n\n"
             "Build and version information:\n"
             " agentadmin --v\n\n", DESCRIPTION);
 
