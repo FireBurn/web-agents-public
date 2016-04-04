@@ -1268,10 +1268,10 @@ static void install_interactive(int argc, char **argv) {
 
                 iis_status = test_module(input);
                 if (iis_status == ADMIN_IIS_MOD_ERROR) {
-                    fprintf(stdout, "\nError: unknown site id %s.\nPlease try again.\n\n", input);
+                    fprintf(stderr, "\nError: unknown site id %s.\nPlease try again.\n\n", input);
                     install_log("Unknown site id: %s", input);
                 } else if (iis_status == ADMIN_IIS_MOD_LOCAL) {
-                    fprintf(stdout, "\nError: this server site is already configured with %s module.\nPlease try again.\n\n", DESCRIPTION);
+                    fprintf(stderr, "\nError: this server site is already configured with %s module.\nPlease try again.\n\n", DESCRIPTION);
                     install_log("IIS server site %s is already configured with %s", input, DESCRIPTION);
                 } else {
                     install_log("IIS server site %s is not yet configured with %s (status: %d)",
@@ -1912,9 +1912,11 @@ static void install_silent(int argc, char** argv) {
                     int iis_status = test_module(argv[2]);
                     if (iis_status == ADMIN_IIS_MOD_ERROR) {
                         install_log("Unknown site id: %s", argv[2]);
+                        fprintf(stderr, "\nError: unknown site id %s.\n\n", argv[2]);
                         rv = AM_ERROR;
                     } else if (iis_status == ADMIN_IIS_MOD_LOCAL) {
                         install_log("IIS server site %s is already configured with %s", argv[2], DESCRIPTION);
+                        fprintf(stderr, "\nError: this server site is already configured with %s module.\n\n", DESCRIPTION);
                         rv = AM_ERROR;
                     }
                 }
