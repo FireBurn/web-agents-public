@@ -57,6 +57,7 @@ com.forgerock.agents.config.cert.key.password = AM_SSL_PASSWORD
 com.forgerock.agents.config.ciphers = AM_SSL_CIPHERS
 com.forgerock.agents.config.hostmap =
 org.forgerock.agents.config.tls = AM_SSL_OPTIONS
+org.forgerock.agents.config.secure.channel.enable = AM_SSL_SCHANNEL
 org.forgerock.agents.config.keepalive.disable = true
 
 #------------------------------------------------------------------------------

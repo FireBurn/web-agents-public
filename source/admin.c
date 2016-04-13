@@ -55,6 +55,7 @@
 #define AM_INSTALL_SSL_CA "AM_SSL_CA"
 #define AM_INSTALL_SSL_CIPHERS "AM_SSL_CIPHERS"
 #define AM_INSTALL_SSL_OPTIONS "AM_SSL_OPTIONS"
+#define AM_INSTALL_SSL_SCHANNEL "AM_SSL_SCHANNEL"
 #define AM_INSTALL_SSL_KEY_PASSWORD "AM_SSL_PASSWORD"
 
 #define RESET_INPUT_STRING(s) do { am_free(s); s = NULL; } while (0)
@@ -138,7 +139,8 @@ static const char *ssl_variables[] = {
     AM_INSTALL_SSL_CA,
     AM_INSTALL_SSL_CIPHERS,
     AM_INSTALL_SSL_OPTIONS,
-    AM_INSTALL_SSL_KEY_PASSWORD
+    AM_INSTALL_SSL_KEY_PASSWORD,
+    AM_INSTALL_SSL_SCHANNEL
 };
 
 static void install_log(const char *format, ...) {
@@ -589,6 +591,19 @@ static int create_agent_instance(int status,
             rv = string_replace(&agent_conf_template, AM_INSTALL_SSL_OPTIONS, tmp, &agent_conf_template_sz);
             if (rv != AM_SUCCESS) {
                 install_log("failed to update %s, %s", AM_INSTALL_SSL_OPTIONS, am_strerror(rv));
+                break;
+            }
+            
+            if (net_options.secure_channel_enable) {
+                tmp = "true";
+                install_log("updating %s with %s", AM_INSTALL_SSL_SCHANNEL, tmp);
+            } else {
+                tmp = AM_SPACE_CHAR;
+                install_log("cleaning up %s", AM_INSTALL_SSL_SCHANNEL);
+            }
+            rv = string_replace(&agent_conf_template, AM_INSTALL_SSL_SCHANNEL, tmp, &agent_conf_template_sz);
+            if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_SSL_SCHANNEL, am_strerror(rv));
                 break;
             }
 
@@ -2434,6 +2449,9 @@ int main(int argc, char **argv) {
                     if (net_options.cert_key_pass != NULL) {
                         net_options.cert_key_pass_sz = strlen(net_options.cert_key_pass);
                     }
+                }
+                if (strcmp(ssl_variables[i], AM_INSTALL_SSL_SCHANNEL) == 0) {
+                    net_options.secure_channel_enable = strlen(env) > 0;
                 }
             }
         }
