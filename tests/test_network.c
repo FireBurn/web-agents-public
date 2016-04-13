@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2015 ForgeRock AS.
+ * Copyright 2015 - 2016 ForgeRock AS.
  */
 
 #include <stdio.h>
@@ -23,6 +23,7 @@
 #include "utility.h"
 #include "net_client.h"
 #include "thread.h"
+#include "list.h"
 #include "cmocka.h"
 
 void am_net_init_ssl_reset();
@@ -86,6 +87,9 @@ void test_multiple_requests(void **state) {
     const char *agent_realm = "/";
     char *agent_token = NULL;
     am_net_options_t net_options;
+    struct am_namevalue *agent_session = NULL;
+    char *profile_xml = NULL;
+    size_t profile_xml_sz = 0;
 
     memset(&net_options, 0, sizeof (am_net_options_t));
     net_options.keepalive = net_options.local = net_options.cert_trust = AM_TRUE;
@@ -94,7 +98,7 @@ void test_multiple_requests(void **state) {
     am_net_init();
 
     rv = am_agent_login(0, openam_url, agent_user, agent_password, agent_realm, &net_options,
-            &agent_token, NULL, NULL, NULL);
+            &agent_token, &profile_xml, &profile_xml_sz, &agent_session);
 
     fprintf(stderr, "LOGIN STATUS: %s\n", am_strerror(rv));
     assert_int_equal(rv, AM_SUCCESS);
@@ -111,5 +115,6 @@ void test_multiple_requests(void **state) {
     am_net_init_ssl_reset();
 
     fprintf(stderr, "TOKEN: %s\n", LOGEMPTY(agent_token));
-    am_free(agent_token);
+    AM_FREE(agent_token, profile_xml);
+    delete_am_namevalue_list(&agent_session);
 }

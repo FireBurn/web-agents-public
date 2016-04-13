@@ -209,15 +209,19 @@ static int send_authcontext_request(am_net_t *conn, const char *realm, char **to
     }
 
 #ifdef DEBUG
-    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes:\n%s", thisfunc, post_sz, post);
+    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes to %s/authservice\n%s",
+            thisfunc, post_sz, conn->url, post);
 #else
-    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes", thisfunc, post_sz);
+    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes to %s/authservice",
+            thisfunc, post_sz, conn->url);
 #endif
     if (conn->options != NULL && conn->options->log != NULL) {
 #ifdef DEBUG
-        conn->options->log("%s sending %d bytes:\n%s", thisfunc, post_sz, post);
+        conn->options->log("%s sending %d bytes to %s/authservice\n%s",
+                thisfunc, post_sz, conn->url, post);
 #else
-        conn->options->log("%s sending %d bytes", thisfunc, post_sz);
+        conn->options->log("%s sending %d bytes to %s/authservice",
+                thisfunc, post_sz, conn->url);
 #endif                
     }
 
@@ -250,6 +254,8 @@ static int send_authcontext_request(am_net_t *conn, const char *realm, char **to
         if (status == AM_SUCCESS) {
             create_cookie_header(conn, *token);
         }
+    } else {
+        status = AM_EINVAL;
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s status: %s", thisfunc, am_strerror(status));
@@ -342,15 +348,19 @@ static int send_login_request(am_net_t *conn, char **token, const char *user, co
     }
 
 #ifdef DEBUG
-    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes:\n%s", thisfunc, post_sz, post);
+    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes to %s/authservice\n%s",
+            thisfunc, post_sz, conn->url, post);
 #else
-    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes", thisfunc, post_sz);
+    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes to %s/authservice",
+            thisfunc, post_sz, conn->url);
 #endif
     if (conn->options != NULL && conn->options->log != NULL) {
 #ifdef DEBUG
-        conn->options->log("%s sending %d bytes:\n%s", thisfunc, post_sz, post);
+        conn->options->log("%s sending %d bytes to %s/authservice\n%s",
+                thisfunc, post_sz, conn->url, post);
 #else
-        conn->options->log("%s sending %d bytes", thisfunc, post_sz);
+        conn->options->log("%s sending %d bytes to %s/authservice",
+                thisfunc, post_sz, conn->url);
 #endif                
     }
 
@@ -371,7 +381,7 @@ static int send_login_request(am_net_t *conn, char **token, const char *user, co
                 conn->http_status, LOGEMPTY(req_data->data));
     }
 
-    status = AM_ERROR;
+    status = AM_EINVAL;
 
     if (ISVALID(req_data->data)) {
         char *begin = strstr(req_data->data, "LoginStatus status=\"success\" ssoToken=\"");
@@ -429,15 +439,19 @@ static int send_attribute_request(am_net_t *conn, char **token, char **pxml, siz
     }
 
 #ifdef DEBUG
-    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes:\n%s", thisfunc, post_sz, post);
+    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes to %s/identity/xml/read\n%s",
+            thisfunc, post_sz, conn->url, post);
 #else
-    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes", thisfunc, post_sz);
+    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes to %s/identity/xml/read",
+            thisfunc, post_sz, conn->url);
 #endif
     if (conn->options != NULL && conn->options->log != NULL) {
 #ifdef DEBUG
-        conn->options->log("%s sending %d bytes:\n%s", thisfunc, post_sz, post);
+        conn->options->log("%s sending %d bytes to %s/identity/xml/read\n%s",
+                thisfunc, post_sz, conn->url, post);
 #else
-        conn->options->log("%s sending %d bytes", thisfunc, post_sz);
+        conn->options->log("%s sending %d bytes to %s/identity/xml/read",
+                thisfunc, post_sz, conn->url);
 #endif                
     }
 
@@ -470,6 +484,8 @@ static int send_attribute_request(am_net_t *conn, char **token, char **pxml, siz
             }
             if (pxsz != NULL) *pxsz = req_data->data_size;
         }
+    } else {
+        status = AM_EINVAL;
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s status: %s", thisfunc, am_strerror(status));
@@ -554,15 +570,19 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
     }
 
 #ifdef DEBUG
-    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes:\n%s", thisfunc, post_sz, post);
+    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes to %s/sessionservice\n%s",
+            thisfunc, post_sz, conn->url, post);
 #else
-    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes", thisfunc, post_sz);
+    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes to %s/sessionservice",
+            thisfunc, post_sz, conn->url);
 #endif
     if (conn->options != NULL && conn->options->log != NULL) {
 #ifdef DEBUG
-        conn->options->log("%s sending %d bytes:\n%s", thisfunc, post_sz, post);
+        conn->options->log("%s sending %d bytes to %s/sessionservice\n%s",
+                thisfunc, post_sz, conn->url, post);
 #else
-        conn->options->log("%s sending %d bytes", thisfunc, post_sz);
+        conn->options->log("%s sending %d bytes to %s/sessionservice",
+                thisfunc, post_sz, conn->url);
 #endif                
     }
 
@@ -613,7 +633,12 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
         }
         if (status == AM_SUCCESS && session_list != NULL) {
             *session_list = am_parse_session_xml(conn->instance_id, req_data->data, req_data->data_size);
+            if (*session_list == NULL) {
+                status = AM_XML_ERROR;
+            }
         }
+    } else {
+        status = AM_EINVAL;
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s status: %s", thisfunc, am_strerror(status));
@@ -678,15 +703,19 @@ static int send_policychange_request(am_net_t *conn, char **token) {
     }
 
 #ifdef DEBUG
-    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes:\n%s", thisfunc, post_sz, post);
+    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes to %s/policyservice\n%s",
+            thisfunc, post_sz, conn->url, post);
 #else
-    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes", thisfunc, post_sz);
+    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes to %s/policyservice",
+            thisfunc, post_sz, conn->url);
 #endif
     if (conn->options != NULL && conn->options->log != NULL) {
 #ifdef DEBUG
-        conn->options->log("%s sending %d bytes:\n%s", thisfunc, post_sz, post);
+        conn->options->log("%s sending %d bytes to %s/policyservice\n%s",
+                thisfunc, post_sz, conn->url, post);
 #else
-        conn->options->log("%s sending %d bytes", thisfunc, post_sz);
+        conn->options->log("%s sending %d bytes to %s/policyservice",
+                thisfunc, post_sz, conn->url);
 #endif                
     }
 
@@ -776,15 +805,19 @@ static int send_policy_request(am_net_t *conn, const char *token, const char *us
     }
 
 #ifdef DEBUG
-    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes:\n%s", thisfunc, post_sz, post);
+    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes to %s/policyservice\n%s",
+            thisfunc, post_sz, conn->url, post);
 #else
-    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes", thisfunc, post_sz);
+    AM_LOG_DEBUG(conn->instance_id, "%s sending %d bytes to %s/policyservice",
+            thisfunc, post_sz, conn->url);
 #endif
     if (conn->options != NULL && conn->options->log != NULL) {
 #ifdef DEBUG
-        conn->options->log("%s sending %d bytes:\n%s", thisfunc, post_sz, post);
+        conn->options->log("%s sending %d bytes to %s/policyservice\n%s",
+                thisfunc, post_sz, conn->url, post);
 #else
-        conn->options->log("%s sending %d bytes", thisfunc, post_sz);
+        conn->options->log("%s sending %d bytes to %s/policyservice",
+                thisfunc, post_sz, conn->url);
 #endif                
     }
 
@@ -823,7 +856,12 @@ static int send_policy_request(am_net_t *conn, const char *token, const char *us
         if (status == AM_SUCCESS && policy_list != NULL) {
             *policy_list = am_parse_policy_xml(conn->instance_id, req_data->data, req_data->data_size,
                     am_scope_to_num(scope));
+            if (*policy_list == NULL) {
+                status = AM_XML_ERROR;
+            }
         }
+    } else {
+        status = AM_EINVAL;
     }
 
     AM_LOG_DEBUG(conn->instance_id, "%s status: %s", thisfunc, am_strerror(status));

@@ -73,7 +73,11 @@ typedef enum {
 #endif
 
 #ifndef AM_NET_POOL_TIMEOUT
-#define AM_NET_POOL_TIMEOUT         5 /* sec TODO: 30? */
+#define AM_NET_POOL_TIMEOUT         4 /* seconds */
+#endif
+
+#ifndef AM_NET_CONNECT_TIMEOUT
+#define AM_NET_CONNECT_TIMEOUT      4 /* seconds */
 #endif
 
 #ifndef AM_MAX_THREADS_POOL

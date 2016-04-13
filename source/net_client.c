@@ -29,8 +29,6 @@
 
 #define RECV_BUFFER_SZ 1024
 
-#define AM_NET_CONNECT_TIMEOUT 8 /* in sec */
-
 enum {
     HEADER_NONE = 0,
     HEADER_FIELD,
@@ -94,6 +92,12 @@ void net_close_ssl(am_net_t *n);
 int net_read_ssl(am_net_t *n, const char *buf, int sz);
 void net_write_ssl(am_net_t *n);
 void net_close_ssl_notify(am_net_t *n);
+#ifdef _WIN32
+void sync_connect_win(am_net_t *net);
+int wnet_write(am_net_t *net, const char *buf, int len);
+void wnet_read(am_net_t *net);
+void wnet_close_ssl(am_net_t *net);
+#endif
 
 void am_net_init() {
 #ifdef _WIN32
@@ -291,6 +295,7 @@ void am_net_options_create(am_config_t *conf, am_net_options_t *options, void (*
     options->hostmap = NULL;
     options->hostmap_sz = 0;
     options->notif_enable = conf->notif_enable;
+    options->secure_channel_enable = conf->secure_channel_enable;
 
     if (conf->hostmap_sz > 0 && conf->hostmap != NULL) {
         options->hostmap = malloc(conf->hostmap_sz * sizeof (char *));
@@ -340,14 +345,13 @@ void am_net_options_delete(am_net_options_t *options) {
  * iteratively writes to server and reads HTTP response, then closes the connection.
  */
 
-
 /**
  * poll with a timeout for server response, where the timeout includes includes system interrupts (EINTR) errors
  */
 static int poll_with_interrupt(POLLFD fds[], int nfds, int msec) {
     uint64_t start_usec, end_usec;
     int ev;
-    
+
     am_bool_t intr;
     do {
         intr = AM_FALSE;
@@ -377,25 +381,25 @@ static void sync_connect(am_net_t *n) {
     am_timer_t tmr;
     int timeout = AM_NET_CONNECT_TIMEOUT;
     char *ip_address = n->uv.host;
-    
+
     if (n->options != NULL) {
         timeout = n->options->net_timeout;
-        
+
         /* try to use com.forgerock.agents.config.hostmap property values to
          * shortcut any host name resolution.
          */
         for (i = 0; i < n->options->hostmap_sz; i++) {
             char *sep = strchr(n->options->hostmap[i], '|');
             if (sep != NULL &&
-                strncasecmp(n->options->hostmap[i], n->uv.host, sep - n->options->hostmap[i]) == 0) {
+                    strncasecmp(n->options->hostmap[i], n->uv.host, sep - n->options->hostmap[i]) == 0) {
                 ip_address = sep++;
                 AM_LOG_DEBUG(n->instance_id, "%s found host '%s' (%s) entry in "AM_AGENTS_CONFIG_HOST_MAP,
-                             thisfunc, n->uv.host, ip_address);
+                        thisfunc, n->uv.host, ip_address);
                 break;
             }
         }
     }
-    
+
     memset(&hints, 0, sizeof (struct addrinfo));
     hints.ai_flags = AI_NUMERICSERV;
     hints.ai_family = AF_UNSPEC;
@@ -412,9 +416,9 @@ static void sync_connect(am_net_t *n) {
             hints.ai_flags |= AI_NUMERICHOST;
         }
     }
-    
+
     snprintf(port, sizeof (port), "%d", n->uv.port);
-    
+
     am_timer_start(&tmr);
     if ((err = getaddrinfo(ip_address, port, &hints, &n->ra)) != 0) {
         n->error = AM_EHOSTUNREACH;
@@ -422,23 +426,23 @@ static void sync_connect(am_net_t *n) {
         am_timer_report(n->instance_id, &tmr, "getaddrinfo");
         return;
     }
-    
+
     am_timer_stop(&tmr);
     am_timer_report(n->instance_id, &tmr, "getaddrinfo");
-    
+
     for (rp = n->ra; rp != NULL; rp = rp->ai_next) {
-        
+
         if (rp->ai_family != AF_INET && rp->ai_family != AF_INET6 &&
-            rp->ai_socktype != SOCK_STREAM && rp->ai_protocol != IPPROTO_TCP) continue;
-        
+                rp->ai_socktype != SOCK_STREAM && rp->ai_protocol != IPPROTO_TCP) continue;
+
         if ((n->sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol)) == INVALID_SOCKET) {
             AM_LOG_ERROR(n->instance_id,
-                         "%s cannot create socket while connecting to %s:%d",
-                         thisfunc, n->uv.host, n->uv.port);
+                    "%s cannot create socket while connecting to %s:%d",
+                    thisfunc, n->uv.host, n->uv.port);
             net_log_error(n->instance_id, net_error());
             continue;
         }
-        
+
         if (setsockopt(n->sock, IPPROTO_TCP, TCP_NODELAY, (void *) &on, sizeof (on)) < 0) {
             net_log_error(n->instance_id, net_error());
         }
@@ -454,21 +458,29 @@ static void sync_connect(am_net_t *n) {
             n->error = AM_EPERM;
             continue;
         }
-        
+
         err = connect(n->sock, rp->ai_addr, (SOCKLEN_T) rp->ai_addrlen);
         if (err == 0) {
             AM_LOG_DEBUG(n->instance_id, "%s connected to %s:%d (%s)",
-                         thisfunc, n->uv.host, n->uv.port,
-                         rp->ai_family == AF_INET ? "IPv4" : "IPv6");
+                    thisfunc, n->uv.host, n->uv.port,
+                    rp->ai_family == AF_INET ? "IPv4" : "IPv6");
             n->error = 0;
             if (n->uv.ssl) {
+#ifdef _WIN32
+                if (n->options == NULL || !n->options->secure_channel_enable) {
+                    net_connect_ssl(n);
+                } else {
+                    n->ssl.error = AM_SUCCESS;
+                }
+#else
                 net_connect_ssl(n);
+#endif
                 if (n->ssl.error != AM_SUCCESS) {
                     AM_LOG_ERROR(n->instance_id,
-                                 "%s SSL/TLS connection to %s:%d (%s) failed (%s)",
-                                 thisfunc, n->uv.host, n->uv.port,
-                                 rp->ai_family == AF_INET ? "IPv4" : "IPv6",
-                                 am_strerror(n->ssl.error));
+                            "%s SSL/TLS connection to %s:%d (%s) failed (%s)",
+                            thisfunc, n->uv.host, n->uv.port,
+                            rp->ai_family == AF_INET ? "IPv4" : "IPv6",
+                            am_strerror(n->ssl.error));
                     net_close_socket(n->sock);
                     n->sock = INVALID_SOCKET;
                     n->error = n->ssl.error;
@@ -478,14 +490,14 @@ static void sync_connect(am_net_t *n) {
             /* success */
             return;
         }
-        
+
         if (err == INVALID_SOCKET && net_in_progress(net_error())) {
             POLLFD fds[1];
             memset(fds, 0, sizeof (fds));
             fds[0].fd = n->sock;
             fds[0].events = connect_ev;
             fds[0].revents = 0;
-            
+
             err = sockpoll(fds, 1, timeout > 0 ? timeout * 1000 : -1);
             if (err > 0 && fds[0].revents & connected_ev) {
                 int pe = 0;
@@ -493,18 +505,26 @@ static void sync_connect(am_net_t *n) {
                 err = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (char *) &pe, &pe_sz);
                 if (err == 0 && pe == 0) {
                     AM_LOG_DEBUG(n->instance_id, "%s connected to %s:%d (%s)",
-                                 thisfunc, n->uv.host, n->uv.port,
-                                 rp->ai_family == AF_INET ? "IPv4" : "IPv6");
-                    
+                            thisfunc, n->uv.host, n->uv.port,
+                            rp->ai_family == AF_INET ? "IPv4" : "IPv6");
+
                     n->error = 0;
                     if (n->uv.ssl) {
+#ifdef _WIN32
+                        if (n->options == NULL || !n->options->secure_channel_enable) {
+                            net_connect_ssl(n);
+                        } else {
+                            n->ssl.error = AM_SUCCESS;
+                        }
+#else
                         net_connect_ssl(n);
+#endif
                         if (n->ssl.error != AM_SUCCESS) {
                             AM_LOG_ERROR(n->instance_id,
-                                         "%s SSL/TLS connection to %s:%d (%s) failed (%s)",
-                                         thisfunc, n->uv.host, n->uv.port,
-                                         rp->ai_family == AF_INET ? "IPv4" : "IPv6",
-                                         am_strerror(n->ssl.error));
+                                    "%s SSL/TLS connection to %s:%d (%s) failed (%s)",
+                                    thisfunc, n->uv.host, n->uv.port,
+                                    rp->ai_family == AF_INET ? "IPv4" : "IPv6",
+                                    am_strerror(n->ssl.error));
                             net_close_socket(n->sock);
                             n->sock = INVALID_SOCKET;
                             n->error = n->ssl.error;
@@ -518,9 +538,9 @@ static void sync_connect(am_net_t *n) {
                 n->error = AM_ECONNREFUSED;
             } else if (err == 0) {
                 AM_LOG_WARNING(n->instance_id,
-                               "%s timeout connecting to %s:%d (%s)",
-                               thisfunc, n->uv.host, n->uv.port,
-                               rp->ai_family == AF_INET ? "IPv4" : "IPv6");
+                        "%s timeout connecting to %s:%d (%s)",
+                        thisfunc, n->uv.host, n->uv.port,
+                        rp->ai_family == AF_INET ? "IPv4" : "IPv6");
                 n->error = AM_ETIMEDOUT;
             } else {
                 int pe = 0;
@@ -530,7 +550,7 @@ static void sync_connect(am_net_t *n) {
                 break;
             }
         }
-        
+
         net_close_socket(n->sock);
         n->sock = INVALID_SOCKET;
     }
@@ -546,109 +566,128 @@ int am_net_sync_connect(am_net_t *n) {
         /* fatal - must not happen */
         return AM_EINVAL;
     }
-    
+
     n->error = AM_ENOTSTARTED;
     n->sock = INVALID_SOCKET;
     n->ssl.request_data = NULL;
     n->ssl.ssl_handle = NULL;
     n->ssl.ssl_context = NULL;
     n->ssl.on = AM_FALSE;
-    
+
     if (n->url == NULL) {
         return AM_EINVAL;
     }
-    
+
     if (parse_url(n->url, &n->uv) != 0) {
         AM_LOG_ERROR(n->instance_id,
-                     "%s failed to parse url %s", LOGEMPTY(n->url));
+                "%s failed to parse url %s", LOGEMPTY(n->url));
         return n->uv.error;
     }
-    
+
     /* allocate memory for http_parser and initialize it */
     n->hs = calloc(1, sizeof (http_parser_settings));
     if (n->hs == NULL) {
         AM_LOG_ERROR(n->instance_id, "%s memory allocation error", thisfunc);
         return AM_ENOMEM;
     }
-    
+
     n->hp = calloc(1, sizeof (http_parser));
     if (n->hp == NULL) {
         AM_LOG_ERROR(n->instance_id, "%s memory allocation error", thisfunc);
         return AM_ENOMEM;
     }
-    
+
     n->hs->on_header_field = on_header_field_cb;
     n->hs->on_header_value = on_header_value_cb;
     n->hs->on_headers_complete = on_headers_complete_cb;
     n->hs->on_body = on_body_cb;
     n->hs->on_message_complete = on_message_complete_cb;
-    
+
     http_parser_init(n->hp, HTTP_RESPONSE);
     n->hp->data = n;
-    
+
     sync_connect(n);
+#ifdef _WIN32
+    if (n->options != NULL && n->options->secure_channel_enable) {
+        sync_connect_win(n);
+    }
+#endif
     return n->error;
 }
 
 /**
  * write data to remote server
  */
-int am_net_write(am_net_t *n, const char *data, size_t data_sz) {
+static int am_net_write_internal(am_net_t *n, const char *data, size_t data_sz) {
     int status = 0, sent = 0, flags = 0;
     int er = 0, error = 0;
     SOCKLEN_T errlen = sizeof (error);
-    if (n != NULL && data != NULL && data_sz > 0) {
-        
-        size_t len = data_sz;
-        const char *buf = data;
-        if (n->error != 0) {
-            return n->error;
+    size_t len = data_sz;
+    const char *buf = data;
+    if (n->error != 0) {
+        return n->error;
+    }
+    if (n->ssl.on) {
+        n->ssl.request_data_sz = 0;
+        am_free(n->ssl.request_data);
+        n->ssl.request_data = malloc(data_sz);
+        if (n->ssl.request_data == NULL) {
+            return AM_ENOMEM;
         }
-        if (n->ssl.on) {
-            n->ssl.request_data_sz = 0;
-            am_free(n->ssl.request_data);
-            n->ssl.request_data = malloc(data_sz);
-            if (n->ssl.request_data == NULL) {
-                return AM_ENOMEM;
-            }
-            memcpy(n->ssl.request_data, data, data_sz);
-            n->ssl.request_data_sz = data_sz;
-            net_write_ssl(n);
-        } else {
+        memcpy(n->ssl.request_data, data, data_sz);
+        n->ssl.request_data_sz = data_sz;
+        net_write_ssl(n);
+    } else {
 #ifdef MSG_NOSIGNAL
-            flags |= MSG_NOSIGNAL;
+        flags |= MSG_NOSIGNAL;
 #endif
-            er = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (void *) &error, &errlen);
-            while (sent < (int) len) {
-                int rv = send(n->sock, buf + sent, (int) len - sent, flags);
-                if (rv < 0) {
-                    if (net_in_progress(net_error())) {
-                        POLLFD fds[1];
-                        memset(fds, 0, sizeof (fds));
-                        fds[0].fd = n->sock;
-                        fds[0].events = connect_ev;
-                        fds[0].revents = 0;
-                        if (sockpoll(fds, 1, -1) == -1) {
-                            break;
-                        }
-                        continue;
+        er = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (void *) &error, &errlen);
+        while (sent < (int) len) {
+            int rv = send(n->sock, buf + sent, (int) len - sent, flags);
+            if (rv < 0) {
+                if (net_in_progress(net_error())) {
+                    POLLFD fds[1];
+                    memset(fds, 0, sizeof (fds));
+                    fds[0].fd = n->sock;
+                    fds[0].events = connect_ev;
+                    fds[0].revents = 0;
+                    if (sockpoll(fds, 1, -1) == -1) {
+                        break;
                     }
-                    break;
+                    continue;
                 }
-                if (rv == 0) {
-                    break;
-                }
-                sent += rv;
+                break;
             }
+            if (rv == 0) {
+                break;
+            }
+            sent += rv;
         }
     }
     return status;
 }
 
+int am_net_write(am_net_t *n, const char *data, size_t data_sz) {
+    if (n == NULL || data == NULL || data_sz == 0) return AM_EINVAL;
+#ifdef _WIN32
+    if (n->options != NULL && n->options->secure_channel_enable) {
+        int status;
+        if (n->error != 0) {
+            return n->error;
+        }
+        status = wnet_write(n, data, (int) data_sz);
+        return status > 0 ? AM_SUCCESS : status;
+    }
+    return am_net_write_internal(n, data, data_sz);
+#else
+    return am_net_write_internal(n, data, data_sz);
+#endif
+}
+
 /**
  * receive and parse http message, returning when message http message is complete
  */
-void am_net_sync_recv(am_net_t *n, int timeout_secs) {
+static void am_net_sync_recv_internal(am_net_t *n, int timeout_secs) {
     int ev = 0;
     int poll_msec = timeout_secs * 1000;
     POLLFD fds[1];
@@ -666,18 +705,18 @@ void am_net_sync_recv(am_net_t *n, int timeout_secs) {
 
     memset(fds, 0, sizeof (fds));
     n->reset_complete(n->data);
-    
+
     while (ev != -1) {
         fds[0].fd = n->sock;
         fds[0].events = read_ev;
         fds[0].revents = 0;
-        
+
         ev = poll_with_interrupt(fds, 1, poll_msec);
         if (ev == 0) {
             /* timeout */
             AM_LOG_WARNING(n->instance_id,
-                           "%s timeout waiting for a response from a server", "am_net_sync_recv()");
-            
+                    "am_net_sync_recv(): timeout waiting for a response from a server");
+
             n->error = AM_ETIMEDOUT;
             break;
         }
@@ -731,6 +770,18 @@ void am_net_sync_recv(am_net_t *n, int timeout_secs) {
     AM_FREE(buffer);
 }
 
+void am_net_sync_recv(am_net_t *n, int timeout_secs) {
+#ifdef _WIN32
+    if (n->options != NULL && n->options->secure_channel_enable) {
+        wnet_read(n);
+        return;
+    }
+    am_net_sync_recv_internal(n, timeout_secs);
+#else
+    am_net_sync_recv_internal(n, timeout_secs);
+#endif
+}
+
 /**
  * close connection and clear resources
  */
@@ -739,24 +790,31 @@ int am_net_close(am_net_t *n) {
     if (n == NULL) {
         return AM_EINVAL;
     }
-    
+
     /* close ssl/socket */
+#ifdef _WIN32
+    if (n->options != NULL && n->options->secure_channel_enable) {
+        wnet_close_ssl(n);
+        am_free(n->ssl.ssl_handle);
+        n->ssl.ssl_handle = NULL;
+    }
+#endif
     net_close_ssl(n);
     net_close_socket(n->sock);
     n->sock = INVALID_SOCKET;
-    
+
     if (n->ra != NULL) {
         freeaddrinfo(n->ra);
     }
     n->ra = NULL;
-    
+
     AM_FREE(n->req_headers);
     n->req_headers = NULL;
-    
+
     AM_FREE(n->hs, n->hp);
     n->hs = NULL;
     n->hp = NULL;
-    
+
     for (i = 0; i < n->num_headers; i++) {
         char *field = n->header_fields[i];
         char *value = n->header_values[i];
@@ -768,6 +826,3 @@ int am_net_close(am_net_t *n) {
     n->num_headers = n->num_header_values = 0;
     return AM_SUCCESS;
 }
-
-
-

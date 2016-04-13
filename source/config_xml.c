@@ -382,7 +382,7 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
     parse_config_value(ctx, AM_AGENTS_CONFIG_IGNORE_PATHINFO_NOT_ENFORCED, CONF_NUMBER, NULL, &ctx->conf->path_info_ignore_not_enforced, val, len);
     
     parse_config_value(ctx, AM_AGENTS_CONFIG_PERSISTENT_COOKIE_ENABLE, CONF_NUMBER, NULL, &ctx->conf->persistent_cookie_enable, val, len);
-    
+    parse_config_value(ctx, AM_AGENTS_CONFIG_SCHANNEL_ENABLE, CONF_NUMBER, NULL, &ctx->conf->secure_channel_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_SKIP_POST_URL, CONF_STRING_MAP, &ctx->conf->skip_post_url_map_sz, &ctx->conf->skip_post_url_map, val, len);
 }
 
@@ -433,7 +433,7 @@ static void end_element(void * userData, const char * name) {
     
     parse_config_value(ctx, AM_AGENTS_CONFIG_LB_ENABLE, CONF_NUMBER, NULL, &ctx->conf->lb_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_KEEPALIVE_DISABLE, CONF_NUMBER, NULL, &ctx->conf->keepalive_disable, val, len);
-
+    
     /* other options */
 
     if (strcmp(ctx->current_name, "com.sun.identity.agents.config.freeformproperties") != 0) {
@@ -576,6 +576,8 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
             r->ts = time(NULL);
         }
         XML_ParserFree(parser);
+    } else {
+        xctx.status = AM_EINVAL;
     }
 
     if (xctx.status != AM_SUCCESS) {

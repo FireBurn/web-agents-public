@@ -656,7 +656,7 @@ int perform_logging(unsigned long instance_id, int level) {
 
     /* If the instance id is zero, we are either running a test case, or installing something */
     if (instance_id == 0) {
-        return AM_FALSE;
+        return AM_TRUE;
     }
 
     /* We simply cannot log if the shared memory segment is not initialised */

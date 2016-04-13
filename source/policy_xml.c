@@ -348,6 +348,8 @@ void *am_parse_policy_xml(unsigned long instance_id, const char *xml, size_t xml
             r = xctx.list;
         }
         XML_ParserFree(parser);
+    } else {
+        xctx.status = AM_EINVAL;
     }
 
     if (xctx.status != AM_SUCCESS) {

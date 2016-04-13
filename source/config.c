@@ -144,7 +144,8 @@ enum {
     AM_CONF_PATHINFO_IGNORE_NOTENFORCED,
     AM_CONF_KEEPALIVE_DISABLE,
     AM_CONF_PERSISTENT_COOKIE_ENABLE,
-    AM_CONF_SKIP_POST_URL_MAP
+    AM_CONF_SKIP_POST_URL_MAP,
+    AM_CONF_SCHANNEL_ENABLE
 };
 
 struct am_instance {
@@ -506,6 +507,9 @@ static int am_create_instance_entry_data(int h, am_config_t *c, char all) {
         }
         if (c->persistent_cookie_enable > 0) {
             SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_PERSISTENT_COOKIE_ENABLE, 0), c->persistent_cookie_enable);
+        }
+        if (c->secure_channel_enable > 0) {
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_SCHANNEL_ENABLE, 0), c->secure_channel_enable);
         }
         if (c->sso_only > 0) {
             SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_SSO_ONLY, 0), c->sso_only);
@@ -990,6 +994,9 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
             case AM_CONF_PERSISTENT_COOKIE_ENABLE:
                 r->persistent_cookie_enable = i->num_value;
                 break;
+            case AM_CONF_SCHANNEL_ENABLE:
+                r->secure_channel_enable = i->num_value;
+                break;
             case AM_CONF_SSO_ONLY:
                 r->sso_only = i->num_value;
                 break;
@@ -1369,6 +1376,7 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
                 bc->audit_level = cf->audit_level;
                 bc->audit = cf->audit;
                 cf->keepalive_disable = bc->keepalive_disable;
+                cf->secure_channel_enable = bc->secure_channel_enable;
 
                 ret = am_create_instance_entry_data(hdr_offset, bc, AM_CONF_BOOT); /* store bootstrap properties */
                 ret = am_create_instance_entry_data(hdr_offset, cf, AM_CONF_REMOTE);

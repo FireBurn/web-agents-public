@@ -193,6 +193,8 @@ void *am_parse_session_xml(unsigned long instance_id, const char *xml, size_t xm
             r = xctx.list;
         }
         XML_ParserFree(parser);
+    } else {
+        xctx.status = AM_EINVAL;
     }
 
     if (xctx.status != AM_SUCCESS) {

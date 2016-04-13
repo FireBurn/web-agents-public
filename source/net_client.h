@@ -29,6 +29,7 @@ typedef struct {
     int cert_trust;
     int hostmap_sz;
     int notif_enable;
+    int secure_channel_enable;
     char *notif_url;
     char *server_id;
     char *ciphers;
