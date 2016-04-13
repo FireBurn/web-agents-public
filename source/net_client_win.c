@@ -669,6 +669,7 @@ void wnet_read(am_net_t *net) {
     }
 
     if (net->uv.ssl && !n->connected) {
+        free(buf);
         AM_LOG_ERROR(net->instance_id, "%s SSL/TLS not connected", thisfunc);
         net->error = AM_ENOSSL;
         return;
