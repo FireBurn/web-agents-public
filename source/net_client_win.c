@@ -31,6 +31,7 @@
 
 #define INITIAL_BUFFER_SIZE   4096
 #define FREE_BUFFER_SIZE      1024
+#define CERT_NAME_LEN         512
 
 #define net_log_error(i,e) \
     do {\
@@ -326,17 +327,13 @@ static int net_write_ssl(am_net_t *net, const char *buf, int len) {
                 ret = AM_EFAULT;
                 AM_LOG_ERROR(net->instance_id, "%s error writing encrypted data to socket",
                         thisfunc);
-                break;
             }
-        } else {
-            AM_LOG_ERROR(net->instance_id, "%s data encryption failed (0x%lx)",
-                    thisfunc, sspi_ret);
-            if (sspi_ret == SEC_E_INSUFFICIENT_MEMORY)
-                ret = AM_ENOMEM;
-            else
-                ret = AM_EFAULT;
             break;
         }
+
+        AM_LOG_ERROR(net->instance_id, "%s data encryption failed (0x%lx)",
+                thisfunc, sspi_ret);
+        ret = sspi_ret == SEC_E_INSUFFICIENT_MEMORY ? AM_ENOMEM : AM_EFAULT;
     } while (0);
 
     AM_FREE(data);
@@ -367,6 +364,7 @@ static int net_client_handshake_loop(am_net_t *net, int initial) {
     SecBuffer inbuf[2];
     SecBufferDesc inbuf_desc;
     int i, ret = 0, read_data = initial;
+    unsigned char *tmp;
 
 #define HANDSHAKE_CLEANUP_RETURN(s) do {\
     int j;\
@@ -406,11 +404,14 @@ static int net_client_handshake_loop(am_net_t *net, int initial) {
     while (1) {
         if (n->enc_buf_size - n->enc_buf_offset < FREE_BUFFER_SIZE) {
             n->enc_buf_size = n->enc_buf_offset + FREE_BUFFER_SIZE;
-            n->enc_buf = realloc(n->enc_buf, n->enc_buf_size);
-            if (n->enc_buf == NULL) {
+            tmp = realloc(n->enc_buf, n->enc_buf_size);
+            if (tmp == NULL) {
+                am_free(n->enc_buf);
+                n->enc_buf = NULL;
                 n->enc_buf_size = n->enc_buf_offset = 0;
                 HANDSHAKE_CLEANUP_RETURN(AM_ENOMEM);
             }
+            n->enc_buf = tmp;
         }
 
         if (read_data) {
@@ -525,6 +526,7 @@ static int net_read_ssl(am_net_t *net, char *buf, int len) {
     unsigned int size;
     int ret = 0;
     unsigned int min_enc_buf_size = len + FREE_BUFFER_SIZE;
+    unsigned char *tmp;
 
     /* if we've got some data already, put that in the buffer */
     if (n->dec_buf_offset > 0 || n->sspi_close_notify) {
@@ -537,11 +539,14 @@ static int net_read_ssl(am_net_t *net, char *buf, int len) {
             n->enc_buf_size = n->enc_buf_offset + FREE_BUFFER_SIZE;
             if (n->enc_buf_size < min_enc_buf_size)
                 n->enc_buf_size = min_enc_buf_size;
-            n->enc_buf = realloc(n->enc_buf, n->enc_buf_size);
-            if (n->enc_buf == NULL) {
+            tmp = realloc(n->enc_buf, n->enc_buf_size);
+            if (tmp == NULL) {
+                am_free(n->enc_buf);
+                n->enc_buf = NULL;
                 n->enc_buf_size = n->enc_buf_offset = 0;
                 return AM_ENOMEM;
             }
+            n->enc_buf = tmp;
         }
 
         ret = net_read(net, n->enc_buf + n->enc_buf_offset,
@@ -582,11 +587,14 @@ static int net_read_ssl(am_net_t *net, char *buf, int len) {
                         n->dec_buf_size = n->dec_buf_offset + size;
                         if (n->dec_buf_size < (unsigned int) len)
                             n->dec_buf_size = len;
-                        n->dec_buf = realloc(n->dec_buf, n->dec_buf_size);
-                        if (n->dec_buf == NULL) {
+                        tmp = realloc(n->dec_buf, n->dec_buf_size);
+                        if (tmp == NULL) {
+                            am_free(n->dec_buf);
+                            n->dec_buf = NULL;
                             n->dec_buf_size = n->dec_buf_offset = 0;
                             return AM_ENOMEM;
                         }
+                        n->dec_buf = tmp;
                     }
 
                     /* copy decrypted data to buffer */
@@ -664,17 +672,17 @@ void wnet_read(am_net_t *net) {
     long available = 0;
     int rv, ssl_pending;
 #define NET_READ_BUFFER_LEN 1024
-    char *buf = malloc(NET_READ_BUFFER_LEN);
+    char *buf;
 
-    if (buf == NULL) {
-        net->error = AM_ENOMEM;
+    if (net->uv.ssl && !n->connected) {
+        AM_LOG_ERROR(net->instance_id, "%s SSL/TLS not connected", thisfunc);
+        net->error = AM_ENOSSL;
         return;
     }
 
-    if (net->uv.ssl && !n->connected) {
-        free(buf);
-        AM_LOG_ERROR(net->instance_id, "%s SSL/TLS not connected", thisfunc);
-        net->error = AM_ENOSSL;
+    buf = malloc(NET_READ_BUFFER_LEN);
+    if (buf == NULL) {
+        net->error = AM_ENOMEM;
         return;
     }
 
@@ -756,9 +764,16 @@ static PCCERT_CONTEXT net_ssl_init_creds(am_net_t *net, const char *cert_file, c
     static const char *thisfunc = "net_ssl_init_creds():";
     struct win_net *n = (struct win_net *) net->ssl.ssl_handle;
     PCCERT_CONTEXT cert_ctxt = NULL;
-    char name[256];
+    char *name;
+    DWORD size = 0;
+    PBYTE friendly_name;
+    wchar_t *cert_name_w;
 
-    if (cert_file != NULL && cert_pass != NULL) {
+    if (ISINVALID(cert_file) && ISINVALID(cert_pass)) {
+        return NULL;
+    }
+
+    if (ISVALID(cert_pass)) {
         CRYPT_DATA_BLOB blob;
         DWORD prop_id = CERT_KEY_PROV_INFO_PROP_ID;
         FILE_STANDARD_INFO finfo;
@@ -808,88 +823,99 @@ static PCCERT_CONTEXT net_ssl_init_creds(am_net_t *net, const char *cert_file, c
                 return NULL;
             }
 
-            if (CertGetNameStringA(cert_ctxt, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, NULL, name, sizeof (name))) {
-                AM_LOG_DEBUG(net->instance_id, "%s found certificate \"%s\"", name);
+            name = malloc(CERT_NAME_LEN + 1);
+            if (name != NULL) {
+                if (CertGetNameStringA(cert_ctxt, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, NULL, name, CERT_NAME_LEN)) {
+                    AM_LOG_DEBUG(net->instance_id, "%s found certificate \"%s\"", name);
+                }
+                free(name);
             }
         }
 
         UnmapViewOfFile(blob.pbData);
         CloseHandle(filemap);
         CloseHandle(file);
+        return cert_ctxt;
+    }
 
-    } else if (cert_file != NULL) {
-        DWORD size = 0;
-        PBYTE friendly_name;
+    /* look for certificate in a system keystore (certificate friendly name specified in cert_file value) */
 
-        /* look for certifiate in system keystore */
+    cert_name_w = from_utf8(cert_file);
+    if (cert_name_w == NULL) {
+        return NULL;
+    }
 
-        wchar_t *cert_name_w = from_utf8(cert_file);
-        if (cert_name_w == NULL) {
-            return NULL;
-        }
-
-        n->cert_store = CertOpenStore(CERT_STORE_PROV_SYSTEM, 0, (HCRYPTPROV) NULL,
-                CERT_SYSTEM_STORE_LOCAL_MACHINE | CERT_STORE_READONLY_FLAG, L"MY");
-        if (n->cert_store == NULL) {
-            free(cert_name_w);
-            return NULL;
-        }
-
-        while ((cert_ctxt = CertEnumCertificatesInStore(n->cert_store, cert_ctxt)) != NULL) {
-            if (!CertGetCertificateContextProperty(cert_ctxt, CERT_FRIENDLY_NAME_PROP_ID,
-                    NULL, &size)) {
-                continue;
-            }
-
-            friendly_name = malloc(size);
-            if (friendly_name == NULL) {
-                CertFreeCertificateContext(cert_ctxt);
-                cert_ctxt = NULL;
-                break;
-            }
-            if (!CertGetCertificateContextProperty(cert_ctxt, CERT_FRIENDLY_NAME_PROP_ID,
-                    friendly_name, &size)) {
-                free(friendly_name);
-                continue;
-            }
-
-            if (_wcsicmp(cert_name_w, (const wchar_t *) friendly_name) == 0) {
-                free(friendly_name);
-                break;
-            }
-            free(friendly_name);
-        }
+    n->cert_store = CertOpenStore(CERT_STORE_PROV_SYSTEM, 0, (HCRYPTPROV) NULL,
+            CERT_SYSTEM_STORE_LOCAL_MACHINE | CERT_STORE_READONLY_FLAG, L"MY");
+    if (n->cert_store == NULL) {
         free(cert_name_w);
+        return NULL;
+    }
 
-        if (cert_ctxt == NULL) {
-            AM_LOG_WARNING(net->instance_id, "%s unable to locate certificate by friendly name \"%s\"",
-                    thisfunc, cert_file);
-            return NULL;
+    while ((cert_ctxt = CertEnumCertificatesInStore(n->cert_store, cert_ctxt)) != NULL) {
+        if (!CertGetCertificateContextProperty(cert_ctxt, CERT_FRIENDLY_NAME_PROP_ID,
+                NULL, &size)) {
+            continue;
         }
 
-        if (!CertGetCertificateContextProperty(cert_ctxt, CERT_KEY_PROV_INFO_PROP_ID, NULL, &size)) {
-            AM_LOG_WARNING(net->instance_id, "%s unable to locate corresponding private key", thisfunc);
+        friendly_name = malloc(size);
+        if (friendly_name == NULL) {
             CertFreeCertificateContext(cert_ctxt);
-            return NULL;
+            cert_ctxt = NULL;
+            break;
+        }
+        if (!CertGetCertificateContextProperty(cert_ctxt, CERT_FRIENDLY_NAME_PROP_ID,
+                friendly_name, &size)) {
+            free(friendly_name);
+            continue;
         }
 
-        if (CertGetNameStringA(cert_ctxt, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, NULL, name, sizeof (name))) {
+        if (_wcsicmp(cert_name_w, (const wchar_t *) friendly_name) == 0) {
+            free(friendly_name);
+            break;
+        }
+        free(friendly_name);
+    }
+    free(cert_name_w);
+
+    if (cert_ctxt == NULL) {
+        AM_LOG_WARNING(net->instance_id, "%s unable to locate certificate by friendly name \"%s\"",
+                thisfunc, cert_file);
+        return NULL;
+    }
+
+    if (!CertGetCertificateContextProperty(cert_ctxt, CERT_KEY_PROV_INFO_PROP_ID, NULL, &size)) {
+        AM_LOG_WARNING(net->instance_id, "%s unable to locate corresponding private key", thisfunc);
+        CertFreeCertificateContext(cert_ctxt);
+        return NULL;
+    }
+
+    name = malloc(CERT_NAME_LEN + 1);
+    if (name != NULL) {
+        if (CertGetNameStringA(cert_ctxt, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, NULL, name, CERT_NAME_LEN)) {
             AM_LOG_DEBUG(net->instance_id, "%s found certificate \"%s\" (friendly name: \"%s\")", name, cert_file);
         }
+        free(name);
     }
     return cert_ctxt;
 }
 
 static void net_display_cert_chain(am_net_t *net, PCCERT_CONTEXT cert_ctxt) {
     static const char *thisfunc = "net_display_cert_chain():";
-    char name[512];
+    char *name;
     PCCERT_CONTEXT current_cert;
     PCCERT_CONTEXT issuer_cert;
     DWORD verify_flags;
     const char *time_valid = NULL;
 
+    name = malloc(CERT_NAME_LEN + 1);
+    if (name == NULL) {
+        AM_LOG_ERROR(net->instance_id, "%s memory allocation error", thisfunc);
+        return;
+    }
+
     if (!CertNameToStr(cert_ctxt->dwCertEncodingType, &cert_ctxt->pCertInfo->Subject,
-            CERT_X500_NAME_STR | CERT_NAME_STR_NO_PLUS_FLAG, name, sizeof (name))) {
+            CERT_X500_NAME_STR | CERT_NAME_STR_NO_PLUS_FLAG, name, CERT_NAME_LEN)) {
         AM_LOG_ERROR(net->instance_id, "%s error 0x%x building subject name", thisfunc, GetLastError());
     }
     switch (CertVerifyTimeValidity(NULL, cert_ctxt->pCertInfo)) {
@@ -899,11 +925,13 @@ static void net_display_cert_chain(am_net_t *net, PCCERT_CONTEXT cert_ctxt) {
             break;
         case 0: time_valid = "valid";
             break;
+        default: time_valid = "can't validate certificate time";
+            break;
     }
     AM_LOG_DEBUG(net->instance_id, "%s server cert subject: \"%s\" (%s)", thisfunc, name, LOGEMPTY(time_valid));
 
     if (!CertNameToStr(cert_ctxt->dwCertEncodingType, &cert_ctxt->pCertInfo->Issuer,
-            CERT_X500_NAME_STR | CERT_NAME_STR_NO_PLUS_FLAG, name, sizeof (name))) {
+            CERT_X500_NAME_STR | CERT_NAME_STR_NO_PLUS_FLAG, name, CERT_NAME_LEN)) {
         AM_LOG_ERROR(net->instance_id, "%s error 0x%x building issuer name", thisfunc, GetLastError());
     }
     AM_LOG_DEBUG(net->instance_id, "%s server cert issuer: \"%s\"", thisfunc, name);
@@ -921,13 +949,13 @@ static void net_display_cert_chain(am_net_t *net, PCCERT_CONTEXT cert_ctxt) {
         }
 
         if (!CertNameToStr(issuer_cert->dwCertEncodingType, &issuer_cert->pCertInfo->Subject,
-                CERT_X500_NAME_STR | CERT_NAME_STR_NO_PLUS_FLAG, name, sizeof (name))) {
+                CERT_X500_NAME_STR | CERT_NAME_STR_NO_PLUS_FLAG, name, CERT_NAME_LEN)) {
             AM_LOG_ERROR(net->instance_id, "%s error 0x%x building subject name", thisfunc, GetLastError());
         }
         AM_LOG_DEBUG(net->instance_id, "%s CA subject: \"%s\"", thisfunc, name);
 
         if (!CertNameToStr(issuer_cert->dwCertEncodingType, &issuer_cert->pCertInfo->Issuer,
-                CERT_X500_NAME_STR | CERT_NAME_STR_NO_PLUS_FLAG, name, sizeof (name))) {
+                CERT_X500_NAME_STR | CERT_NAME_STR_NO_PLUS_FLAG, name, CERT_NAME_LEN)) {
             AM_LOG_ERROR(net->instance_id, "%s error 0x%x building issuer name", thisfunc, GetLastError());
         }
         AM_LOG_DEBUG(net->instance_id, "%s CA issuer: \"%s\"", thisfunc, name);
@@ -938,6 +966,7 @@ static void net_display_cert_chain(am_net_t *net, PCCERT_CONTEXT cert_ctxt) {
         current_cert = issuer_cert;
         issuer_cert = NULL;
     }
+    free(name);
 }
 
 static const char *net_cert_verify_status(DWORD status) {
@@ -996,16 +1025,16 @@ static DWORD net_verify_server_certificate(am_net_t *net, PCCERT_CONTEXT server_
             ZeroMemory(&policy_para, sizeof (policy_para));
             policy_para.cbSize = sizeof (policy_para);
             policy_para.pvExtraPolicyPara = &https_policy;
-            if (!CertVerifyCertificateChainPolicy(CERT_CHAIN_POLICY_SSL, chain_context, &policy_para, &policy_status)) {
+            if (CertVerifyCertificateChainPolicy(CERT_CHAIN_POLICY_SSL, chain_context, &policy_para, &policy_status)) {
+                if (policy_status.dwError) {
+                    status = policy_status.dwError;
+                    AM_LOG_ERROR(net->instance_id, "%s error \"%s\" (0x%lx)", thisfunc, net_cert_verify_status(status), status);
+                } else {
+                    AM_LOG_DEBUG(net->instance_id, "%s verification succeeded", thisfunc);
+                }
+            } else {
                 status = GetLastError();
                 AM_LOG_ERROR(net->instance_id, "%s CertVerifyCertificateChainPolicy failed 0x%lx", thisfunc, status);
-            }
-
-            if (policy_status.dwError) {
-                status = policy_status.dwError;
-                AM_LOG_ERROR(net->instance_id, "%s error \"%s\" (0x%lx)", thisfunc, net_cert_verify_status(status), status);
-            } else {
-                AM_LOG_DEBUG(net->instance_id, "%s verification succeeded", thisfunc);
             }
 
             if (https_policy.pwszServerName) {
