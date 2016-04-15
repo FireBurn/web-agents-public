@@ -85,7 +85,7 @@ static long net_data_avail(am_net_t *n) {
 }
 
 static int net_ssl_pending(struct win_net *n) {
-    return n->dec_buf_offset < 0 ? 0 : n->dec_buf_offset;
+    return n->dec_buf_offset;
 }
 
 static wchar_t *from_utf8(const char *string) {
@@ -134,7 +134,8 @@ static int net_write(am_net_t *net, const char *buf, int len) {
                 if (rv == WSA_WAIT_EVENT_0 + 1) {
                     AM_LOG_DEBUG(net->instance_id, "%s socket aborted", thisfunc);
                     return -1;
-                } else if (rv != WSA_WAIT_EVENT_0) {
+                }
+                if (rv != WSA_WAIT_EVENT_0) {
                     AM_LOG_DEBUG(net->instance_id, "%s socket timed out", thisfunc);
                     return -1;
                 }
@@ -149,7 +150,7 @@ static int net_write(am_net_t *net, const char *buf, int len) {
                     return 0;
                 }
 
-                if ((events.lNetworkEvents & FD_WRITE) != FD_WRITE) {
+                if (events.lNetworkEvents & FD_WRITE) {
                     continue;
                 }
 
@@ -158,6 +159,7 @@ static int net_write(am_net_t *net, const char *buf, int len) {
                     return -1;
                 }
             }
+            AM_LOG_DEBUG(net->instance_id, "%s socket write error %d", thisfunc, error);
             break;
         }
         if (rv == 0) {
@@ -247,7 +249,8 @@ static int net_read(am_net_t *net, char *buf, int len) {
         if (rv == WSA_WAIT_EVENT_0 + 1) {
             AM_LOG_DEBUG(net->instance_id, "%s socket aborted", thisfunc);
             return -1;
-        } else if (rv != WSA_WAIT_EVENT_0) {
+        }
+        if (rv != WSA_WAIT_EVENT_0) {
             AM_LOG_DEBUG(net->instance_id, "%s socket timed out", thisfunc);
             return -1;
         }

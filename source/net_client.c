@@ -400,6 +400,9 @@ static void sync_connect(am_net_t *n) {
         }
     }
 
+    /* set up hints for getaddrinfo to ease address resolution in case 
+     * we are running with IP address 
+     */
     memset(&hints, 0, sizeof (struct addrinfo));
     hints.ai_flags = AI_NUMERICSERV;
     hints.ai_family = AF_UNSPEC;
@@ -419,6 +422,7 @@ static void sync_connect(am_net_t *n) {
 
     snprintf(port, sizeof (port), "%d", n->uv.port);
 
+    /* do network address and service translation */
     am_timer_start(&tmr);
     if ((err = getaddrinfo(ip_address, port, &hints, &n->ra)) != 0) {
         n->error = AM_EHOSTUNREACH;
@@ -430,6 +434,7 @@ static void sync_connect(am_net_t *n) {
     am_timer_stop(&tmr);
     am_timer_report(n->instance_id, &tmr, "getaddrinfo");
 
+    /* run through resulting addrinfo list to see if we can connect to */
     for (rp = n->ra; rp != NULL; rp = rp->ai_next) {
 
         if (rp->ai_family != AF_INET && rp->ai_family != AF_INET6 &&
@@ -461,11 +466,13 @@ static void sync_connect(am_net_t *n) {
 
         err = connect(n->sock, rp->ai_addr, (SOCKLEN_T) rp->ai_addrlen);
         if (err == 0) {
+            /* success - we got connection */
             AM_LOG_DEBUG(n->instance_id, "%s connected to %s:%d (%s)",
                     thisfunc, n->uv.host, n->uv.port,
                     rp->ai_family == AF_INET ? "IPv4" : "IPv6");
             n->error = 0;
             if (n->uv.ssl) {
+                /* socket should be talking over ssl/tls - wire it up */
 #ifdef _WIN32
                 if (n->options == NULL || !n->options->secure_channel_enable) {
                     net_connect_ssl(n);
@@ -491,6 +498,7 @@ static void sync_connect(am_net_t *n) {
             return;
         }
 
+        /* non blocking socket - poll it and try again */
         if (err == INVALID_SOCKET && net_in_progress(net_error())) {
             POLLFD fds[1];
             memset(fds, 0, sizeof (fds));
@@ -502,6 +510,7 @@ static void sync_connect(am_net_t *n) {
             if (err > 0 && fds[0].revents & connected_ev) {
                 int pe = 0;
                 SOCKLEN_T pe_sz = sizeof (pe);
+                /* double check for any so_errors */
                 err = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (char *) &pe, &pe_sz);
                 if (err == 0 && pe == 0) {
                     AM_LOG_DEBUG(n->instance_id, "%s connected to %s:%d (%s)",
