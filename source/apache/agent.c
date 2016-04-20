@@ -362,7 +362,7 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
                     char *temp = NULL;
                     size_t data_sz = rq->post_data_sz;
 
-                    rv = apr_file_open(&pdp_file, rq->post_data_fn, APR_FOPEN_READ | APR_FOPEN_BINARY | APR_FOPEN_DELONCLOSE,
+                    rv = apr_file_open(&pdp_file, rq->post_data_fn, APR_FOPEN_READ | APR_FOPEN_BINARY,
                             APR_OS_DEFAULT, r->pool);
                     if (rv == APR_SUCCESS) {
                         while (!apr_file_eof(pdp_file)) {
@@ -441,7 +441,7 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
                     apr_status_t rv;
                     char *buf = apr_palloc(r->pool, AP_IOBUFSIZE + 1);
 
-                    rv = apr_file_open(&pdp_file, rq->post_data_fn, APR_FOPEN_READ | APR_FOPEN_BINARY | APR_FOPEN_DELONCLOSE,
+                    rv = apr_file_open(&pdp_file, rq->post_data_fn, APR_FOPEN_READ | APR_FOPEN_BINARY,
                             APR_OS_DEFAULT, r->pool);
                     if (rv == APR_SUCCESS) {
                         while (!apr_file_eof(pdp_file)) {
@@ -460,6 +460,7 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
                             }
                         }
                         apr_file_close(pdp_file);
+                        apr_file_remove(rq->post_data_fn, r->pool);
 
                         /* recreate x-www-form-urlencoded HTML Form data */
 
@@ -900,7 +901,7 @@ static apr_status_t amagent_post_filter(ap_filter_t *f, apr_bucket_brigade *buck
             return ap_get_brigade(f->next, bucket_out, emode, eblock, nbytes);
         }
 
-        ret = apr_file_open(&state->tmp_file, file_name, APR_FOPEN_READ | APR_FOPEN_BINARY | APR_FOPEN_DELONCLOSE,
+        ret = apr_file_open(&state->tmp_file, file_name, APR_FOPEN_READ | APR_FOPEN_BINARY,
                 APR_OS_DEFAULT, r->pool);
         if (ret != APR_SUCCESS) {
             apr_strerror(ret, buferr, sizeof (buferr));
@@ -918,6 +919,7 @@ static apr_status_t amagent_post_filter(ap_filter_t *f, apr_bucket_brigade *buck
     }
 
     if (state->done_writing == 1) {
+        apr_file_remove(file_name, r->pool);
         apr_table_unset(r->notes, amagent_post_filter_name);
         return ap_get_brigade(f->next, bucket_out, emode, eblock, nbytes);
     }
@@ -936,6 +938,7 @@ static apr_status_t amagent_post_filter(ap_filter_t *f, apr_bucket_brigade *buck
             ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r, "%s unable to read POST preservation file: %s, %s",
                     thisfunc, file_name, buferr);
             apr_file_close(state->tmp_file);
+            apr_file_remove(file_name, r->pool);
             apr_table_unset(r->notes, amagent_post_filter_name);
             return ap_get_brigade(f->next, bucket_out, emode, eblock, nbytes);
         }
@@ -960,8 +963,9 @@ static apr_status_t amagent_post_filter(ap_filter_t *f, apr_bucket_brigade *buck
         /* nothing left for us to do in this request */
         ap_remove_input_filter(f);
 
-        apr_table_unset(r->notes, amagent_post_filter_name);
         apr_file_close(state->tmp_file);
+        apr_file_remove(file_name, r->pool);
+        apr_table_unset(r->notes, amagent_post_filter_name);
     }
 
     return APR_SUCCESS;
