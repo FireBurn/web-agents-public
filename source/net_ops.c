@@ -30,6 +30,11 @@ struct request_data {
     am_bool_t message_complete;
 };
 
+void net_connect_ssl(am_net_t *n);
+#ifdef _WIN32
+void sync_connect_win(am_net_t *n);
+#endif
+
 static void on_agent_request_data_cb(void *udata, const char *data, size_t data_sz, int status) {
     struct request_data *ld = (struct request_data *) udata;
     if (ld->data == NULL) {
@@ -873,6 +878,11 @@ static int send_policy_request(am_net_t *conn, const char *token, const char *us
 
 static int do_net_connect(am_net_t *conn, struct request_data *req_data,
         unsigned long instance_id, const char *openam, am_net_options_t *options) {
+    static const char *thisfunc = "do_net_connect():";
+    int status;
+    char *proxy_url = NULL, *proxy_connect = NULL, *proxy_auth = NULL;
+    struct url am_url;
+
     conn->options = options;
     conn->instance_id = instance_id;
     conn->url = openam;
@@ -886,7 +896,95 @@ static int do_net_connect(am_net_t *conn, struct request_data *req_data,
     conn->reset_complete = reset_complete_cb;
     conn->is_complete = is_complete;
 
-    return am_net_sync_connect(conn);
+    if (ISINVALID(conn->options->proxy_host)) {
+        return am_net_sync_connect(conn);
+    }
+
+    /* proxy mode */
+
+    status = parse_url(openam, &am_url);
+    if (status != AM_SUCCESS) {
+        return status;
+    }
+
+    /* create proxy connection (dummy) url */
+    am_asprintf(&proxy_url, "http://%s:%d/", conn->options->proxy_host, conn->options->proxy_port);
+    conn->url = proxy_url;
+    conn->proxy = AM_PROXY_CONNECTING;
+
+    /* open connection to proxy server */
+    status = am_net_sync_connect(conn);
+    if (status != AM_SUCCESS) {
+        AM_FREE(proxy_url);
+        return status;
+    }
+
+    /* create Proxy-Authorization header */
+    if (ISVALID(conn->options->proxy_user) && ISVALID(conn->options->proxy_password)) {
+        char *proxy_auth_user_pass = NULL, *proxy_auth_user_pass_b64;
+        size_t proxy_auth_user_pass_sz;
+
+        proxy_auth_user_pass_sz = am_asprintf(&proxy_auth_user_pass, "%s:%s",
+                conn->options->proxy_user, conn->options->proxy_password);
+
+        proxy_auth_user_pass_b64 = base64_encode(proxy_auth_user_pass, &proxy_auth_user_pass_sz);
+
+        am_asprintf(&proxy_auth, "Proxy-Authorization: Basic %s\r\n",
+                NOTNULL(proxy_auth_user_pass_b64));
+        AM_FREE(proxy_auth_user_pass, proxy_auth_user_pass_b64);
+    }
+
+    am_asprintf(&proxy_connect, "CONNECT %s:%d HTTP/1.1\r\n%s\r\n",
+            am_url.host, am_url.port, NOTNULL(proxy_auth));
+
+    status = am_net_write(conn, proxy_connect, strlen(proxy_connect));
+    if (status != AM_SUCCESS) {
+        AM_FREE(proxy_url, proxy_connect, proxy_auth);
+        return status;
+    }
+
+    am_net_sync_recv(conn, AM_NET_POOL_TIMEOUT);
+
+    if (conn->http_status == 200 && conn->proxy == AM_PROXY_CONNECTED) {
+
+        /* reset url to the original request url */
+        conn->url = openam;
+        memcpy(&conn->uv, &am_url, sizeof (struct url));
+        conn->error = 0;
+
+        /* if the original request url requires SSL connection, upgrade a socket */
+        if (conn->uv.ssl) {
+#ifdef _WIN32
+            if (conn->options == NULL || !conn->options->secure_channel_enable) {
+                net_connect_ssl(conn);
+            } else {
+                sync_connect_win(conn);
+                conn->ssl.error = conn->error;
+            }
+#else
+            net_connect_ssl(conn);
+#endif
+            if (conn->ssl.error != AM_SUCCESS) {
+                AM_LOG_ERROR(conn->instance_id,
+                        "%s SSL/TLS connection through proxy to %s:%d failed (%s)",
+                        thisfunc, conn->uv.host, conn->uv.port,
+                        am_strerror(conn->ssl.error));
+                status = conn->error = conn->ssl.error;
+            }
+        }
+    } else {
+        AM_LOG_ERROR(conn->instance_id,
+                "%s unable to establish proxy connection to %s (%s)",
+                thisfunc, openam, LOGEMPTY(req_data->data));
+        status = AM_EHOSTUNREACH;
+    }
+
+    conn->proxy = AM_PROXY_NONE;
+    reset_complete_cb(req_data);
+    AM_FREE(req_data->data, proxy_url, proxy_connect, proxy_auth);
+    req_data->data = NULL;
+    req_data->data_size = 0;
+    return status;
 }
 
 int am_agent_login(unsigned long instance_id, const char *openam,

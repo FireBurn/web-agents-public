@@ -21,7 +21,8 @@
 #include "thread.h"
 
 typedef struct {
-    size_t cert_key_pass_sz;
+    int cert_key_pass_sz;
+    int proxy_password_sz;
     int local;
     int lb_enable;
     int net_timeout;
@@ -30,6 +31,10 @@ typedef struct {
     int hostmap_sz;
     int notif_enable;
     int secure_channel_enable;
+    int proxy_port;
+    char *proxy_host;
+    char *proxy_user;
+    char *proxy_password;
     char *notif_url;
     char *server_id;
     char *ciphers;
@@ -80,6 +85,12 @@ typedef struct {
     int num_header_values;
     unsigned int http_status;
 
+    enum {
+        AM_PROXY_NONE = 0,
+        AM_PROXY_CONNECTING,
+        AM_PROXY_CONNECTED
+    } proxy;
+
     struct addrinfo *ra;
 
     void *data;
@@ -89,7 +100,7 @@ typedef struct {
     void (*on_close)(void *udata, int status);
 
     void (*reset_complete)(void *udata);
-    am_bool_t (*is_complete)(void *udata);
+    am_bool_t(*is_complete)(void *udata);
     int error;
 } am_net_t;
 

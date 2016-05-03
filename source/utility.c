@@ -1888,7 +1888,7 @@ int encrypt_password(const char *key, char **password) {
 
 void decrypt_agent_passwords(am_config_t *r) {
     char *pass;
-    size_t pass_sz;
+    int pass_sz;
 
     if (r == NULL || !ISVALID(r->key)) {
         return;
@@ -1914,6 +1914,18 @@ void decrypt_agent_passwords(am_config_t *r) {
             r->cert_key_pass_sz = pass_sz;
         } else {
             AM_LOG_WARNING(r->instance_id, "failed to decrypt certificate key password");
+            am_free(pass);
+        }
+    }
+    
+    if (ISVALID(r->proxy_password)) {
+        pass = strdup(r->proxy_password);
+        if (pass != NULL && (pass_sz = decrypt_password(r->key, &pass)) > 0) {
+            free(r->proxy_password);
+            r->proxy_password = pass;
+            r->proxy_password_sz = pass_sz;
+        } else {
+            AM_LOG_WARNING(r->instance_id, "failed to decrypt proxy password");
             am_free(pass);
         }
     }

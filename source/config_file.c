@@ -464,6 +464,11 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_KEEPALIVE_DISABLE, CONF_NUMBER, NULL, &conf->keepalive_disable, NULL);
         
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_SCHANNEL_ENABLE, CONF_NUMBER, NULL, &conf->secure_channel_enable, NULL);
+        
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PROXY_HOST, CONF_STRING, NULL, &conf->proxy_host, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PROXY_PORT, CONF_NUMBER, NULL, &conf->proxy_port, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PROXY_USER, CONF_STRING, NULL, &conf->proxy_user, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PROXY_PASSWORD, CONF_STRING, NULL, &conf->proxy_password, NULL);
 
         if (conf->local) { /* do read other options in case configuration is local */
 
@@ -622,6 +627,9 @@ void am_config_free(am_config_t **cp) {
         if (ISVALID(c->cert_key_pass) && c->cert_key_pass_sz > 0) {
             am_secure_zero_memory(c->cert_key_pass, c->cert_key_pass_sz);
         }
+        if (ISVALID(c->proxy_password) && c->proxy_password_sz > 0) {
+            am_secure_zero_memory(c->proxy_password, c->proxy_password_sz);
+        }
 
         AM_FREE(c->token, c->config, c->pdp_dir, c->realm, c->user, c->pass,
                 c->key, c->debug_file, c->audit_file, c->cert_key_file,
@@ -632,7 +640,8 @@ void am_config_free(am_config_t **cp) {
                 c->password_replay_key, c->url_redirect_param, c->client_ip_header,
                 c->client_hostname_header, c->url_check_regex, c->multi_attr_separator,
                 c->pdp_sess_mode, c->pdp_sess_value, c->pdp_uri_prefix, c->logout_url_regex,
-                c->audit_file_remote, c->audit_file_disposition, c->unauthenticated_user);
+                c->audit_file_remote, c->audit_file_disposition, c->unauthenticated_user,
+                c->proxy_host, c->proxy_user, c->proxy_password);
 
         AM_CONF_FREE(c->naming_url_sz, c->naming_url);
         AM_CONF_FREE(c->hostmap_sz, c->hostmap);

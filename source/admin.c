@@ -57,6 +57,10 @@
 #define AM_INSTALL_SSL_OPTIONS "AM_SSL_OPTIONS"
 #define AM_INSTALL_SSL_SCHANNEL "AM_SSL_SCHANNEL"
 #define AM_INSTALL_SSL_KEY_PASSWORD "AM_SSL_PASSWORD"
+#define AM_INSTALL_PROXY_HOST "AM_PROXY_HOST"
+#define AM_INSTALL_PROXY_PORT "AM_PROXY_PORT"
+#define AM_INSTALL_PROXY_USER "AM_PROXY_USER"
+#define AM_INSTALL_PROXY_PASSWORD "AM_PROXY_PASSWORD"
 
 #define RESET_INPUT_STRING(s) do { am_free(s); s = NULL; } while (0)
 
@@ -125,10 +129,6 @@ static const char* agent_4x_obsolete_properties [] =
     "com.sun.identity.agents.config.receive.timeout",
     "com.sun.identity.agents.config.tcp.nodelay.enable",
     
-    "com.sun.identity.agents.config.forward.proxy.host",
-    "com.sun.identity.agents.config.forward.proxy.port",
-    "com.sun.identity.agents.config.forward.proxy.user",
-    "com.sun.identity.agents.config.forward.proxy.password",
     "com.sun.identity.agents.config.profilename",
     0
 };
@@ -140,7 +140,11 @@ static const char *ssl_variables[] = {
     AM_INSTALL_SSL_CIPHERS,
     AM_INSTALL_SSL_OPTIONS,
     AM_INSTALL_SSL_KEY_PASSWORD,
-    AM_INSTALL_SSL_SCHANNEL
+    AM_INSTALL_SSL_SCHANNEL,
+    AM_INSTALL_PROXY_HOST,
+    AM_INSTALL_PROXY_PORT,
+    AM_INSTALL_PROXY_USER,
+    AM_INSTALL_PROXY_PASSWORD
 };
 
 static void install_log(const char *format, ...) {
@@ -622,6 +626,76 @@ static int create_agent_instance(int status,
                     }
                 }
                 am_free(password);
+                password = NULL;
+                if (rv != AM_SUCCESS) {
+                    break;
+                }
+            } else {
+                install_log("cleaning up %s", AM_INSTALL_SSL_KEY_PASSWORD);
+                rv = string_replace(&agent_conf_template, AM_INSTALL_SSL_KEY_PASSWORD, AM_SPACE_CHAR, &agent_conf_template_sz);
+                if (rv != AM_SUCCESS) {
+                    install_log("failed to update %s, %s", AM_INSTALL_SSL_KEY_PASSWORD, am_strerror(rv));
+                    break;
+                }
+            }
+            
+            /* update forward-proxy configuration */
+            if (ISVALID(net_options.proxy_host)) {
+                tmp = net_options.proxy_host;
+                install_log("updating %s with %s", AM_INSTALL_PROXY_HOST, tmp);
+            } else {
+                tmp = AM_SPACE_CHAR;
+                install_log("cleaning up %s", AM_INSTALL_PROXY_HOST);
+            }
+            rv = string_replace(&agent_conf_template, AM_INSTALL_PROXY_HOST, tmp, &agent_conf_template_sz);
+            if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_PROXY_HOST, am_strerror(rv));
+                break;
+            }
+
+            if (ISVALID(net_options.proxy_user)) {
+                tmp = net_options.proxy_user;
+                install_log("updating %s with %s", AM_INSTALL_PROXY_USER, tmp);
+            } else {
+                tmp = AM_SPACE_CHAR;
+                install_log("cleaning up %s", AM_INSTALL_PROXY_USER);
+            }
+            rv = string_replace(&agent_conf_template, AM_INSTALL_PROXY_USER, tmp, &agent_conf_template_sz);
+            if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_PROXY_USER, am_strerror(rv));
+                break;
+            }
+
+            if (net_options.proxy_port) {
+                char port_string[32];
+                snprintf(port_string, sizeof (port_string), "%d", net_options.proxy_port);
+                tmp = port_string;
+                install_log("updating %s with %s", AM_INSTALL_PROXY_PORT, tmp);
+            } else {
+                tmp = AM_SPACE_CHAR;
+                install_log("cleaning up %s", AM_INSTALL_PROXY_PORT);
+            }
+            rv = string_replace(&agent_conf_template, AM_INSTALL_PROXY_PORT, tmp, &agent_conf_template_sz);
+            if (rv != AM_SUCCESS) {
+                install_log("failed to update %s, %s", AM_INSTALL_PROXY_PORT, am_strerror(rv));
+                break;
+            }
+            
+            if (ISVALID(net_options.proxy_password)) {
+                password = strdup(net_options.proxy_password);
+                if (password == NULL) {
+                    rv = AM_ENOMEM;
+                    break;
+                }
+
+                if (encrypt_password(encoded, &password) > 0) {
+                    install_log("updating %s with %s", AM_INSTALL_PROXY_PASSWORD, password);
+                    rv = string_replace(&agent_conf_template, AM_INSTALL_PROXY_PASSWORD, password, &agent_conf_template_sz);
+                    if (rv != AM_SUCCESS) {
+                        install_log("failed to update %s, %s", AM_INSTALL_PROXY_PASSWORD, am_strerror(rv));
+                    }
+                }
+                am_free(password);
                 am_free(encoded);
                 encoded = NULL;
                 password = NULL;
@@ -630,10 +704,10 @@ static int create_agent_instance(int status,
                 }
             } else {
                 am_free(encoded);
-                install_log("cleaning up %s", AM_INSTALL_SSL_KEY_PASSWORD);
-                rv = string_replace(&agent_conf_template, AM_INSTALL_SSL_KEY_PASSWORD, AM_SPACE_CHAR, &agent_conf_template_sz);
+                install_log("cleaning up %s", AM_INSTALL_PROXY_PASSWORD);
+                rv = string_replace(&agent_conf_template, AM_INSTALL_PROXY_PASSWORD, AM_SPACE_CHAR, &agent_conf_template_sz);
                 if (rv != AM_SUCCESS) {
-                    install_log("failed to update %s, %s", AM_INSTALL_SSL_KEY_PASSWORD, am_strerror(rv));
+                    install_log("failed to update %s, %s", AM_INSTALL_PROXY_PASSWORD, am_strerror(rv));
                     break;
                 }
             }
@@ -2447,11 +2521,26 @@ int main(int argc, char **argv) {
                 if (strcmp(ssl_variables[i], AM_INSTALL_SSL_KEY_PASSWORD) == 0) {
                     net_options.cert_key_pass = strdup(env);
                     if (net_options.cert_key_pass != NULL) {
-                        net_options.cert_key_pass_sz = strlen(net_options.cert_key_pass);
+                        net_options.cert_key_pass_sz = (int) strlen(net_options.cert_key_pass);
                     }
                 }
                 if (strcmp(ssl_variables[i], AM_INSTALL_SSL_SCHANNEL) == 0) {
                     net_options.secure_channel_enable = strlen(env) > 0;
+                }
+                if (strcmp(ssl_variables[i], AM_INSTALL_PROXY_HOST) == 0) {
+                    net_options.proxy_host = strdup(env);
+                }
+                if (strcmp(ssl_variables[i], AM_INSTALL_PROXY_PORT) == 0) {
+                    net_options.proxy_port = (int) strtol(env, NULL, 10);
+                }
+                if (strcmp(ssl_variables[i], AM_INSTALL_PROXY_PASSWORD) == 0) {
+                    net_options.proxy_password = strdup(env);
+                    if (net_options.proxy_password != NULL) {
+                        net_options.proxy_password_sz = (int) strlen(net_options.proxy_password);
+                    }
+                }
+                if (strcmp(ssl_variables[i], AM_INSTALL_PROXY_USER) == 0) {
+                    net_options.proxy_user = strdup(env);
                 }
             }
         }

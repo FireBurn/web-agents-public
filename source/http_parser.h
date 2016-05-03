@@ -26,7 +26,7 @@ extern "C" {
 
 /* Also update SONAME in the Makefile whenever you change these. */
 #define HTTP_PARSER_VERSION_MAJOR 2
-#define HTTP_PARSER_VERSION_MINOR 5
+#define HTTP_PARSER_VERSION_MINOR 7
 #define HTTP_PARSER_VERSION_PATCH 0
 
 #include <sys/types.h>
@@ -77,6 +77,11 @@ typedef struct http_parser_settings http_parser_settings;
  * HEAD request which may contain 'Content-Length' or 'Transfer-Encoding:
  * chunked' headers that indicate the presence of a body.
  *
+ * Returning `2` from on_headers_complete will tell parser that it should not
+ * expect neither a body nor any futher responses on this connection. This is
+ * useful for handling responses to a CONNECT request which may not contain
+ * `Upgrade` or `Connection: upgrade` headers.
+ *
  * http_data_cb does not return data chunks. It will be called arbitrarily
  * many times for each string. E.G. you might get 10 callbacks for "on_url"
  * each providing just a few characters more data.
@@ -124,6 +129,9 @@ typedef int (*http_cb) (http_parser*);
   XX(29, PURGE,       PURGE)        \
   /* CalDAV */                      \
   XX(30, MKCALENDAR,  MKCALENDAR)   \
+  /* RFC-2068, section 19.6.1.2 */  \
+  XX(31, LINK,        LINK)         \
+  XX(32, UNLINK,      UNLINK)       \
 
 enum http_method
   {
@@ -145,11 +153,12 @@ enum flags
   , F_TRAILING              = 1 << 4
   , F_UPGRADE               = 1 << 5
   , F_SKIPBODY              = 1 << 6
+  , F_CONTENTLENGTH         = 1 << 7
   };
 
 
 /* Map for errno-related constants
- * 
+ *
  * The provided argument should be a macro that takes 2 arguments.
  */
 #define HTTP_ERRNO_MAP(XX)                                           \
@@ -187,6 +196,8 @@ enum flags
   XX(INVALID_HEADER_TOKEN, "invalid character in header")            \
   XX(INVALID_CONTENT_LENGTH,                                         \
      "invalid character in content-length header")                   \
+  XX(UNEXPECTED_CONTENT_LENGTH,                                      \
+     "unexpected content-length header")                             \
   XX(INVALID_CHUNK_SIZE,                                             \
      "invalid character in chunk size header")                       \
   XX(INVALID_CONSTANT, "invalid constant string")                    \
@@ -211,10 +222,11 @@ enum http_errno {
 struct http_parser {
   /** PRIVATE **/
   unsigned int type : 2;         /* enum http_parser_type */
-  unsigned int flags : 7;        /* F_* values from 'flags' enum; semi-public */
+  unsigned int flags : 8;        /* F_* values from 'flags' enum; semi-public */
   unsigned int state : 7;        /* enum state from http_parser.c */
-  unsigned int header_state : 8; /* enum header_state from http_parser.c */
-  unsigned int index : 8;        /* index into current matcher */
+  unsigned int header_state : 7; /* enum header_state from http_parser.c */
+  unsigned int index : 7;        /* index into current matcher */
+  unsigned int lenient_http_headers : 1;
 
   uint32_t nread;          /* # bytes read in various scenarios */
   uint64_t content_length; /* # bytes in body (0 if no Content-Length header) */
@@ -329,6 +341,9 @@ const char *http_errno_name(enum http_errno err);
 
 /* Return a string description of the given error */
 const char *http_errno_description(enum http_errno err);
+
+/* Initialize all http_parser_url members to 0 */
+void http_parser_url_init(struct http_parser_url *u);
 
 /* Parse a URL; return nonzero on failure */
 int http_parser_parse_url(const char *buf, size_t buflen,

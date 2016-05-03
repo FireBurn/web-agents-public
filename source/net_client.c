@@ -180,6 +180,15 @@ static int set_nonblocking(am_net_t *n, int cmd) {
 #define POLLFD struct pollfd
 #endif
 
+static int on_status_cb(http_parser *parser, const char *at, size_t length) {
+    am_net_t *n = (am_net_t *) parser->data;
+    if (n->proxy == AM_PROXY_CONNECTING && ISVALID(at) &&
+            strncasecmp(at, "Connection established", length) == 0) {
+        n->proxy = AM_PROXY_CONNECTED;
+    }
+    return 0;
+}
+
 static int on_body_cb(http_parser *parser, const char *at, size_t length) {
     am_net_t *n = (am_net_t *) parser->data;
     if (n->on_data) n->on_data(n->data, at, length, 0);
@@ -264,6 +273,11 @@ static int on_headers_complete_cb(http_parser *parser) {
         n->num_headers = n->num_header_values = 0;
     }
     n->header_state = HEADER_NONE;
+    if (n->proxy == AM_PROXY_CONNECTED) {
+        /* Special case for http_parser, handling responses to a CONNECT request, 
+         * that it should not expect neither a body nor any further responses on this connection */
+        return 2;
+    }
     return 0;
 }
 
@@ -296,6 +310,11 @@ void am_net_options_create(am_config_t *conf, am_net_options_t *options, void (*
     options->hostmap_sz = 0;
     options->notif_enable = conf->notif_enable;
     options->secure_channel_enable = conf->secure_channel_enable;
+    options->proxy_port = conf->proxy_port;
+    options->proxy_host = ISVALID(conf->proxy_host) ? strdup(conf->proxy_host) : NULL;
+    options->proxy_user = ISVALID(conf->proxy_user) ? strdup(conf->proxy_user) : NULL;
+    options->proxy_password = ISVALID(conf->proxy_password) ? strndup(conf->proxy_password, conf->proxy_password_sz) : NULL;
+    options->proxy_password_sz = conf->proxy_password_sz;
 
     if (conf->hostmap_sz > 0 && conf->hostmap != NULL) {
         options->hostmap = malloc(conf->hostmap_sz * sizeof (char *));
@@ -313,10 +332,15 @@ void am_net_options_delete(am_net_options_t *options) {
     if (options == NULL) return;
 
     AM_FREE(options->ciphers, options->cert_ca_file, options->server_id, options->notif_url,
-            options->cert_file, options->cert_key_file, options->tls_opts);
+            options->cert_file, options->cert_key_file, options->tls_opts, options->proxy_host,
+            options->proxy_user);
     if (options->cert_key_pass != NULL) {
         am_secure_zero_memory(options->cert_key_pass, options->cert_key_pass_sz);
         free(options->cert_key_pass);
+    }
+    if (options->proxy_password != NULL) {
+        am_secure_zero_memory(options->proxy_password, options->proxy_password_sz);
+        free(options->proxy_password);
     }
     options->notif_url = NULL;
     options->ciphers = NULL;
@@ -328,6 +352,10 @@ void am_net_options_delete(am_net_options_t *options) {
     options->cert_key_pass = NULL;
     options->cert_key_pass_sz = 0;
     options->log = NULL;
+    options->proxy_host = NULL;
+    options->proxy_user = NULL;
+    options->proxy_password = NULL;
+    options->proxy_password_sz = 0;
 
     if (options->hostmap != NULL) {
         for (i = 0; i < options->hostmap_sz; i++) {
@@ -606,6 +634,7 @@ int am_net_sync_connect(am_net_t *n) {
         return AM_ENOMEM;
     }
 
+    n->hs->on_status = on_status_cb;
     n->hs->on_header_field = on_header_field_cb;
     n->hs->on_header_value = on_header_value_cb;
     n->hs->on_headers_complete = on_headers_complete_cb;
@@ -617,7 +646,7 @@ int am_net_sync_connect(am_net_t *n) {
 
     sync_connect(n);
 #ifdef _WIN32
-    if (n->options != NULL && n->options->secure_channel_enable) {
+    if (n->uv.ssl && n->options != NULL && n->options->secure_channel_enable) {
         sync_connect_win(n);
     }
 #endif
@@ -679,7 +708,7 @@ static int am_net_write_internal(am_net_t *n, const char *data, size_t data_sz) 
 int am_net_write(am_net_t *n, const char *data, size_t data_sz) {
     if (n == NULL || data == NULL || data_sz == 0) return AM_EINVAL;
 #ifdef _WIN32
-    if (n->options != NULL && n->options->secure_channel_enable) {
+    if (n->uv.ssl && n->options != NULL && n->options->secure_channel_enable) {
         int status;
         if (n->error != 0) {
             return n->error;
@@ -781,7 +810,7 @@ static void am_net_sync_recv_internal(am_net_t *n, int timeout_secs) {
 
 void am_net_sync_recv(am_net_t *n, int timeout_secs) {
 #ifdef _WIN32
-    if (n->options != NULL && n->options->secure_channel_enable) {
+    if (n->uv.ssl && n->options != NULL && n->options->secure_channel_enable) {
         wnet_read(n);
         return;
     }
@@ -802,7 +831,7 @@ int am_net_close(am_net_t *n) {
 
     /* close ssl/socket */
 #ifdef _WIN32
-    if (n->options != NULL && n->options->secure_channel_enable) {
+    if (n->uv.ssl && n->options != NULL && n->options->secure_channel_enable) {
         wnet_close_ssl(n);
         am_free(n->ssl.ssl_handle);
         n->ssl.ssl_handle = NULL;

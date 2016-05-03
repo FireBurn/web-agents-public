@@ -180,7 +180,7 @@ static void parse_config_value(am_xml_parser_ctx_t *x, const char *prm, int type
                 *value |= AM_LOG_LEVEL_AUDIT_DENY;
             } else if (strncasecmp(val, "LOG_DENY", len) == 0) {
                 *value |= AM_LOG_LEVEL_AUDIT_DENY;
-            } 
+            }
             if (x->log_enable) {
                 AM_LOG_DEBUG(x->conf->instance_id, "am_parse_config_xml() %s is set to '%d'",
                         prm, *value);
@@ -374,13 +374,13 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
     parse_config_value(ctx, AM_AGENTS_CONFIG_AUDIT_REMOTE_FILE, CONF_STRING, NULL, &ctx->conf->audit_file_remote, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_AUDIT_DISPOSITION, CONF_STRING, NULL, &ctx->conf->audit_file_disposition, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_AUDIT_LEVEL, CONF_AUDIT_LEVEL, NULL, &ctx->conf->audit_level, val, len);
-    
+
     parse_config_value(ctx, AM_AGENTS_CONFIG_ANONYMOUS_USER_ENABLE, CONF_NUMBER, NULL, &ctx->conf->anon_remote_user_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_ANONYMOUS_USER_ID, CONF_STRING, NULL, &ctx->conf->unauthenticated_user, val, len);
 
     parse_config_value(ctx, AM_AGENTS_CONFIG_IGNORE_PATHINFO, CONF_NUMBER, NULL, &ctx->conf->path_info_ignore, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_IGNORE_PATHINFO_NOT_ENFORCED, CONF_NUMBER, NULL, &ctx->conf->path_info_ignore_not_enforced, val, len);
-    
+
     parse_config_value(ctx, AM_AGENTS_CONFIG_PERSISTENT_COOKIE_ENABLE, CONF_NUMBER, NULL, &ctx->conf->persistent_cookie_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_SCHANNEL_ENABLE, CONF_NUMBER, NULL, &ctx->conf->secure_channel_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_SKIP_POST_URL, CONF_STRING_MAP, &ctx->conf->skip_post_url_map_sz, &ctx->conf->skip_post_url_map, val, len);
@@ -430,10 +430,15 @@ static void end_element(void * userData, const char * name) {
 
     parse_config_value(ctx, AM_AGENTS_CONFIG_RETRY_MAX, CONF_NUMBER, NULL, &ctx->conf->retry_max, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_RETRY_WAIT, CONF_NUMBER, NULL, &ctx->conf->retry_wait, val, len);
-    
+
     parse_config_value(ctx, AM_AGENTS_CONFIG_LB_ENABLE, CONF_NUMBER, NULL, &ctx->conf->lb_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_KEEPALIVE_DISABLE, CONF_NUMBER, NULL, &ctx->conf->keepalive_disable, val, len);
     
+    parse_config_value(ctx, AM_AGENTS_CONFIG_PROXY_HOST, CONF_STRING, NULL, &ctx->conf->proxy_host, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_PROXY_PORT, CONF_NUMBER, NULL, &ctx->conf->proxy_port, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_PROXY_USER, CONF_STRING, NULL, &ctx->conf->proxy_user, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_PROXY_PASSWORD, CONF_STRING, NULL, &ctx->conf->proxy_password, val, len);
+
     /* other options */
 
     if (strcmp(ctx->current_name, "com.sun.identity.agents.config.freeformproperties") != 0) {
@@ -591,6 +596,6 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
     update_agent_configuration_audit(r);
     update_agent_configuration_normalise_map_urls(r);
     update_agent_configuration_reorder_map_values(r);
-    
+
     return r;
 }

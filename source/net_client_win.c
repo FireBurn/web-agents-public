@@ -1053,8 +1053,8 @@ static DWORD net_verify_server_certificate(am_net_t *net, PCCERT_CONTEXT server_
     return status;
 }
 
-static int net_connect_ssl(am_net_t *net) {
-    static const char *thisfunc = "net_connect_ssl():";
+static int net_connect_ssl_win(am_net_t *net) {
+    static const char *thisfunc = "net_connect_ssl_win():";
     struct win_net *n = (struct win_net *) net->ssl.ssl_handle;
     SECURITY_STATUS sspi_ret;
     SCHANNEL_CRED schannel_cred;
@@ -1187,7 +1187,7 @@ void sync_connect_win(am_net_t *net) {
     net->error = AM_SUCCESS;
 
     if (net->uv.ssl) {
-        net->error = net_connect_ssl(net);
+        net->error = net_connect_ssl_win(net);
     }
 
     if (net->error == AM_SUCCESS) {

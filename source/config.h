@@ -59,7 +59,7 @@ typedef struct {
     char *realm; /* agent profile info */
     char *user;
     char *pass;
-    size_t pass_sz;
+    int pass_sz;
     char *key;
 
     /* debug and audit logging */
@@ -75,7 +75,7 @@ typedef struct {
 
     char *cert_key_file;
     char *cert_key_pass;
-    size_t cert_key_pass_sz;
+    int cert_key_pass_sz;
     char *cert_file;
     char *cert_ca_file;
     char *ciphers;
@@ -228,20 +228,25 @@ typedef struct {
 
     int json_url_map_sz;
     am_config_map_t *json_url_map;
-    
+
     int anon_remote_user_enable;
     char *unauthenticated_user;
-    
+
     int path_info_ignore;
     int path_info_ignore_not_enforced;
     int keepalive_disable;
     int persistent_cookie_enable;
-    
+
     int skip_post_url_map_sz;
     am_config_map_t *skip_post_url_map;
-    
+
     int secure_channel_enable;
 
+    int proxy_port;
+    char *proxy_host;
+    char *proxy_user;
+    char *proxy_password;
+    int proxy_password_sz;
 } am_config_t;
 
 /* bootstrap options */
@@ -345,7 +350,7 @@ typedef struct {
 #define AM_AGENTS_CONFIG_LOGOUT_REGEX_ENABLE "org.forgerock.agents.config.logout.regex.enable"
 #define AM_AGENTS_CONFIG_LOGOUT_URL_REGEX "com.forgerock.agents.agent.logout.url.regex"
 #define AM_AGENTS_CONFIG_LOGOUT_REDIRECT_DISABLE "com.forgerock.agents.config.logout.redirect.disable"
-        
+
 #define AM_AGENTS_CONFIG_POLICY_SCOPE "com.sun.identity.agents.config.fetch.from.root.resource"
 
 #define AM_AGENTS_CONFIG_RESOLVE_CLIENT_HOST "com.sun.identity.agents.config.get.client.host.name"
@@ -404,5 +409,10 @@ typedef struct {
 
 #define AM_AGENTS_CONFIG_SKIP_POST_URL "org.forgerock.agents.config.skip.post.url"
 #define AM_AGENTS_CONFIG_SCHANNEL_ENABLE "org.forgerock.agents.config.secure.channel.enable"
+
+#define AM_AGENTS_CONFIG_PROXY_HOST "com.sun.identity.agents.config.forward.proxy.host"
+#define AM_AGENTS_CONFIG_PROXY_PORT "com.sun.identity.agents.config.forward.proxy.port"
+#define AM_AGENTS_CONFIG_PROXY_USER "com.sun.identity.agents.config.forward.proxy.user"
+#define AM_AGENTS_CONFIG_PROXY_PASSWORD "com.sun.identity.agents.config.forward.proxy.password"
 
 #endif
