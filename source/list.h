@@ -11,14 +11,14 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #ifndef LIST_H
 #define LIST_H
 
 struct offset_list {
-    unsigned int prev, next;
+    uint32_t prev, next;
 };
 
 #ifdef _WIN32
@@ -63,7 +63,7 @@ struct offset_list {
 #define AM_OFFSET_LIST_INSERT(base,el,head,typ) \
     do {\
         struct offset_list *dl = (head);\
-        unsigned int eo = AM_GET_OFFSET(base, (el));\
+        uint32_t eo = AM_GET_OFFSET(base, (el));\
         if (dl->next == 0 && dl->next == dl->prev) {\
             dl->next = dl->prev = eo;\
         } else {\

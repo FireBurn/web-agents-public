@@ -17,8 +17,6 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <time.h>
-
 struct am_session_info {
     char *si;
     char *sk;
@@ -43,7 +41,7 @@ typedef struct am_config_map {
     } while (0)
 
 typedef struct {
-    time_t ts;
+    uint64_t ts;
     unsigned long instance_id;
     char *token;
     char *config;

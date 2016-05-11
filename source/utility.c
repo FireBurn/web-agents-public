@@ -149,8 +149,8 @@ void am_secure_zero_memory(void *v, size_t sz) {
 #endif
 }
 
-size_t page_size(size_t size) {
-    size_t p_size = 0;
+uint64_t page_size(uint64_t size) {
+    unsigned int p_size;
 #ifdef _WIN32
     SYSTEM_INFO si;
     GetSystemInfo(&si);

@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include <stdio.h>
@@ -289,7 +289,7 @@ void test_session_notification_on_policy_cache(void **state) {
 
     char * buffer = NULL;
     struct am_policy_result * result;
-    time_t ets;
+    uint64_t ets;
     struct am_policy_result * r = NULL;
     struct am_namevalue * session = NULL;
     
@@ -439,7 +439,7 @@ void test_resource_notification_on_policy_cache(void **state) {
     
     char * buffer = NULL;
     /* when the worker has finished, the session result list should be unchanged, but policy cache entry removed */
-    time_t ets;
+    uint64_t ets;
     struct am_policy_result * r = NULL;
     struct am_namevalue * session = NULL;
     struct am_policy_result * p;

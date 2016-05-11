@@ -157,7 +157,7 @@ struct am_instance {
 };
 
 struct am_instance_entry {
-    time_t ts;
+    uint64_t ts;
     unsigned long instance_id;
     char token[AM_MAX_TOKEN_LENGTH];
     char name[AM_HASH_TABLE_KEY_SIZE]; /* agent id */
@@ -167,9 +167,9 @@ struct am_instance_entry {
 };
 
 struct am_instance_entry_data {
-    long type; /* low byte: type; high byte: optional map/list size */
-    int num_value;
-    size_t size[2];
+    uint32_t type; /* low byte: type; high byte: optional map/list size */
+    int32_t num_value;
+    uint64_t size[2];
     struct offset_list lh;
     char value[1]; /* format: key\0value\0 */
 };
@@ -333,7 +333,7 @@ void remove_agent_instance_byname(const char *name) {
         AM_OFFSET_LIST_INSERT(shm->pool, x, HEADER_FROM_OFFSET(shm, hdr_offset), struct am_instance_entry_data);\
     } while(0)
 
-static int am_create_instance_entry_data(int h, am_config_t *c, char all) {
+static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
     int i;
 
     if (all == AM_CONF_ALL || all == AM_CONF_BOOT) {
@@ -1328,7 +1328,7 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
     struct am_instance_entry *c;
     int ret;
     struct am_instance *instance_data;
-    int hdr_offset;
+    uint32_t hdr_offset;
 
     if (bc == NULL) return AM_EINVAL;
 

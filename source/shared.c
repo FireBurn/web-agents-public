@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -23,19 +23,19 @@
 #define AM_ALIGN(size) (((size) + (AM_ALIGNMENT-1)) & ~(AM_ALIGNMENT-1))
 
 struct mem_chunk {
-    size_t size;
-    size_t usize;
-    char used;
+    uint64_t size;
+    uint64_t usize;
+    uint8_t used;
     struct offset_list lh;
 };
 #define CHUNK_HEADER_SIZE AM_ALIGN(sizeof(struct mem_chunk))
 
 struct mem_pool {
-    size_t size;
-    size_t max_size;
-    size_t user_offset;
-    int open;
-    int freelist_hdrs[3];
+    uint64_t size;
+    uint64_t max_size;
+    uint32_t user_offset;
+    int32_t open;
+    int32_t freelist_hdrs[3];
     struct offset_list lh; /* first, last */
 };
 #define SIZEOF_mem_pool AM_ALIGN(sizeof(struct mem_pool))
@@ -44,7 +44,7 @@ struct mem_pool {
  * part of freelist chain that appears in unallocated mem_chunks
  */
 struct freelist {
-    int prev, next;
+    int32_t prev, next;
 };
 
 #define FREELIST_END -1
@@ -59,7 +59,7 @@ static void initialise_freelist(struct mem_pool *pool) {
 /**
  * get freelist header for a given size
  */
-static int get_freelist_hdr_for(size_t size) {
+static int32_t get_freelist_hdr_for(uint64_t size) {
     if (size < 64)
         return 0;
     if (size < 1024)
@@ -70,18 +70,17 @@ static int get_freelist_hdr_for(size_t size) {
 /**
  * verify freelists struture
  */
-static size_t verify_freelists(struct mem_pool *pool, char *action) {
-    size_t size = 0;
+static uint64_t verify_freelists(struct mem_pool *pool, char *action) {
+    uint64_t size = 0;
     int hdr_offset = 0;
     while (hdr_offset < 3) {
-        int prev = FREELIST_END;
-        unsigned i;
+        int32_t i, prev = FREELIST_END;
         for (i = pool->freelist_hdrs[hdr_offset]; i != FREELIST_END; i = FREELIST_FROM_CHUNK(AM_GET_POINTER(pool, i))->next) {
             struct mem_chunk * chunk = AM_GET_POINTER(pool, i);
             struct freelist *fl = FREELIST_FROM_CHUNK(chunk);
             if (fl->prev != prev)
                 fprintf(stderr, "freelist diagnostic: error in list %d: %s\n", hdr_offset, action);
-            
+
             size += chunk->size;
             prev = i;
         }
@@ -95,32 +94,32 @@ static size_t verify_freelists(struct mem_pool *pool, char *action) {
  */
 static void am_shm_freelist_info(am_shm_t * am, char * action) {
     struct mem_pool *pool = (struct mem_pool *) am->pool;
-    int hdr_offset = 0;
-    size_t free_sz;
+    int32_t hdr_offset = 0;
+    uint64_t free_sz;
 
     fprintf(stdout, "%s\n", action);
     while (hdr_offset < 3) {
-        unsigned i;
+        int32_t i;
         fprintf(stdout, "-----------freelist %d\n", hdr_offset);
         for (i = pool->freelist_hdrs[hdr_offset]; i != FREELIST_END; i = FREELIST_FROM_CHUNK(AM_GET_POINTER(pool, i))->next) {
             struct mem_chunk * chunk = AM_GET_POINTER(pool, i);
             struct freelist *fl = FREELIST_FROM_CHUNK(chunk);
-            fprintf(stdout, "\tchunk %u [%lu] (%d,%d)\n", i, (unsigned long)chunk->size, fl->prev, fl->next);
+            fprintf(stdout, "\tchunk %u [%llu] (%d,%d)\n", i, chunk->size, fl->prev, fl->next);
         }
         fprintf(stdout, "-----------\n");
         hdr_offset++;
     }
     free_sz = verify_freelists(pool, action);
-    fprintf(stdout, "free size %lu\n", (unsigned long)free_sz);
+    fprintf(stdout, "free size %llu\n", free_sz);
 }
 
 /**
  * add chunk to freelist
  */
 static void add_to_freelist(struct mem_pool *pool, struct mem_chunk *chunk) {
-    int hdr_offset = get_freelist_hdr_for(chunk->size);
+    int32_t hdr_offset = get_freelist_hdr_for(chunk->size);
     struct freelist *fl = FREELIST_FROM_CHUNK(chunk);
-    
+
 #ifdef FREELIST_DEBUG
     verify_freelists(pool, "add (before)");
 #endif 
@@ -139,7 +138,7 @@ static void add_to_freelist(struct mem_pool *pool, struct mem_chunk *chunk) {
  * unlink chunk from free list
  */
 static void remove_from_freelist(struct mem_pool *pool, struct mem_chunk *chunk) {
-    int hdr_offset = get_freelist_hdr_for(chunk->size);
+    int32_t hdr_offset = get_freelist_hdr_for(chunk->size);
     struct freelist *fl = FREELIST_FROM_CHUNK(chunk);
 
 #ifdef FREELIST_DEBUG
@@ -161,10 +160,10 @@ static void remove_from_freelist(struct mem_pool *pool, struct mem_chunk *chunk)
 /**
  * scan freelists for large enough chunk
  */
-static struct mem_chunk *get_free_chunk_for_size(struct mem_pool *pool, size_t size) {
-    int hdr_offset = get_freelist_hdr_for(size);
+static struct mem_chunk *get_free_chunk_for_size(struct mem_pool *pool, uint64_t size) {
+    int32_t hdr_offset = get_freelist_hdr_for(size);
     while (hdr_offset < 3) {
-        unsigned i;
+        int32_t i;
         for (i = pool->freelist_hdrs[hdr_offset]; i != FREELIST_END; i = FREELIST_FROM_CHUNK(AM_GET_POINTER(pool, i))->next) {
             struct mem_chunk * chunk = AM_GET_POINTER(pool, i);
             if (size <= chunk->size)
@@ -178,11 +177,11 @@ static struct mem_chunk *get_free_chunk_for_size(struct mem_pool *pool, size_t s
 /**
  * get the max pool size for shared memory
  */
-size_t am_shm_max_pool_size() {
+uint64_t am_shm_max_pool_size() {
     char *env = getenv(AM_SHARED_MAX_SIZE_VAR);
     if (ISVALID(env)) {
         char *endp = NULL;
-        unsigned long v = strtoul(env, &endp, 0);
+        uint64_t v = strtoull(env, &endp, 0);
         if (env < endp && *endp == '\0' && 0 < v && v < AM_SHARED_MAX_SIZE) {
             /* whole string is digits (dec, hex or octal) not 0 and less than our hard max */
             return v;
@@ -194,10 +193,11 @@ size_t am_shm_max_pool_size() {
 int am_shm_lock(am_shm_t *am) {
     int rv = AM_SUCCESS;
 #ifdef _WIN32
+    uint64_t global_size;
     SECURITY_DESCRIPTOR sec_descr;
     SECURITY_ATTRIBUTES sec_attr, *sec = NULL;
 #endif
-    
+
     /* once we enter the critical section, check if any other process hasn't 
      * re-mapped our segment somewhere else (compare local_size to global_size which
      * will differ after successful am_shm_resize)
@@ -209,16 +209,16 @@ int am_shm_lock(am_shm_t *am) {
     } while (am->error == WAIT_ABANDONED);
 
     if (am->error == WAIT_FAILED) return AM_ERROR;
-    
+
     if (am->local_size != *(am->global_size)) {
-        
+
         if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
                 SetSecurityDescriptorDacl(&sec_descr, TRUE, (PACL) NULL, FALSE)) {
             sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
             sec_attr.lpSecurityDescriptor = &sec_descr;
             sec_attr.bInheritHandle = TRUE;
             sec = &sec_attr;
-        } 
+        }
 
         if (UnmapViewOfFile(am->pool) == 0) {
             am->error = GetLastError();
@@ -228,7 +228,9 @@ int am_shm_lock(am_shm_t *am) {
             am->error = GetLastError();
             return AM_EFAULT;
         }
-        am->h[2] = CreateFileMappingA(am->h[1], sec, PAGE_READWRITE, 0, (DWORD) *(am->global_size), NULL);
+        global_size = *(am->global_size);
+        am->h[2] = CreateFileMappingA(am->h[1], sec, PAGE_READWRITE,
+                (DWORD) ((global_size >> 32) & 0xFFFFFFFFul), (DWORD) (global_size & 0xFFFFFFFFul), NULL);
         am->error = GetLastError();
         if (am->h[2] == NULL) {
             return AM_EFAULT;
@@ -302,8 +304,8 @@ void am_shm_destroy(am_shm_t* am) {
  * @param am The shared memory area handle to destroy.
  */
 void am_shm_shutdown(am_shm_t *am) {
-    int open = -1;
-    size_t size = 0;
+    int32_t open = -1;
+    uint64_t size = 0;
 
     if (am == NULL || am_shm_lock(am) != AM_SUCCESS) {
         return;
@@ -345,14 +347,14 @@ void am_shm_shutdown(am_shm_t *am) {
     }
     if (open == 0) {
         shm_unlink(am->name[1]);
-        munmap(am->lock, sizeof(pthread_mutex_t));
-        munmap(am->global_size, sizeof(size_t));
+        munmap(am->lock, sizeof (pthread_mutex_t));
+        munmap(am->global_size, sizeof (uint64_t));
     }
 #endif
     free(am);
 }
 
-void am_shm_set_user_offset(am_shm_t *am, size_t off) {
+void am_shm_set_user_offset(am_shm_t *am, unsigned int off) {
     if (am != NULL && am->pool != NULL) {
         ((struct mem_pool *) am->pool)->user_offset = off;
     }
@@ -368,9 +370,9 @@ void *am_shm_get_user_pointer(am_shm_t *am) {
     return NULL;
 }
 
-am_shm_t *am_shm_create(const char *name, size_t usize) {
+am_shm_t *am_shm_create(const char *name, uint64_t usize) {
     struct mem_pool *pool = NULL;
-    size_t size, max_size;
+    uint64_t size, max_size;
     char opened = AM_FALSE;
     void *area = NULL;
     am_shm_t *ret = NULL;
@@ -386,31 +388,31 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
     int error = 0;
 #endif
 
-    ret = calloc(1, sizeof(am_shm_t));
+    ret = calloc(1, sizeof (am_shm_t));
     if (ret == NULL) return NULL;
 
 #ifdef _WIN32
     if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR) caller, &hm) &&
-            GetModuleFileNameA(hm, dll_path, sizeof(dll_path) - 1) > 0) {
+            GetModuleFileNameA(hm, dll_path, sizeof (dll_path) - 1) > 0) {
         PathRemoveFileSpecA(dll_path);
         strcat(dll_path, FILE_PATH_SEP);
-        snprintf(ret->name[0], sizeof(ret->name[0]),
+        snprintf(ret->name[0], sizeof (ret->name[0]),
                 AM_GLOBAL_PREFIX"%s_l", name); /* mutex/semaphore */
-        snprintf(ret->name[1], sizeof(ret->name[1]),
+        snprintf(ret->name[1], sizeof (ret->name[1]),
                 AM_GLOBAL_PREFIX"%s_s", name); /* shared memory name */
-        snprintf(ret->name[2], sizeof(ret->name[2]),
+        snprintf(ret->name[2], sizeof (ret->name[2]),
                 "%s.."FILE_PATH_SEP"log"FILE_PATH_SEP"%s_f", dll_path, name); /* shared memory file name */
-        snprintf(ret->name[3], sizeof(ret->name[3]),
+        snprintf(ret->name[3], sizeof (ret->name[3]),
                 AM_GLOBAL_PREFIX"%s_sz", name); /* shared memory name for global_size */
     } else {
         ret->error = AM_NOT_FOUND;
         return ret;
     }
 #else
-    snprintf(ret->name[0], sizeof(ret->name[0]),
+    snprintf(ret->name[0], sizeof (ret->name[0]),
             "/%s_l", name); /* mutex/semaphore */
-    snprintf(ret->name[1], sizeof(ret->name[1]),
+    snprintf(ret->name[1], sizeof (ret->name[1]),
 #ifdef __sun
             "/%s_s"
 #else
@@ -434,8 +436,8 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         sec_attr.lpSecurityDescriptor = &sec_descr;
         sec_attr.bInheritHandle = TRUE;
         sec = &sec_attr;
-    } 
-    
+    }
+
     ret->h[0] = CreateMutexA(sec, TRUE, ret->name[0]);
     error = GetLastError();
     if (ret->h[0] != NULL && error == ERROR_ALREADY_EXISTS) {
@@ -475,13 +477,15 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
     }
 
     if (!opened) {
-        ret->h[2] = CreateFileMappingA(ret->h[1], sec, PAGE_READWRITE, 0, (DWORD) size, ret->name[1]);
+        ret->h[2] = CreateFileMappingA(ret->h[1], sec, PAGE_READWRITE,
+                (DWORD) ((size >> 32) & 0xFFFFFFFFul), (DWORD) (size & 0xFFFFFFFFul), ret->name[1]);
         error = GetLastError();
     } else {
         ret->h[2] = OpenFileMappingA(FILE_MAP_READ | FILE_MAP_WRITE, TRUE, ret->name[1]);
         error = GetLastError();
         if (ret->h[2] == NULL && error == ERROR_FILE_NOT_FOUND) {
-            ret->h[2] = CreateFileMappingA(ret->h[1], sec, PAGE_READWRITE, 0, (DWORD) size, ret->name[1]);
+            ret->h[2] = CreateFileMappingA(ret->h[1], sec, PAGE_READWRITE,
+                    (DWORD) ((size >> 32) & 0xFFFFFFFFul), (DWORD) (size & 0xFFFFFFFFul), ret->name[1]);
             error = GetLastError();
         }
     }
@@ -505,7 +509,8 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         return ret;
     }
 
-    ret->h[3] = CreateFileMappingA(INVALID_HANDLE_VALUE, sec, PAGE_READWRITE, 0, (DWORD) sizeof(size_t), ret->name[3]);
+    ret->h[3] = CreateFileMappingA(INVALID_HANDLE_VALUE, sec, PAGE_READWRITE,
+            0, (DWORD) sizeof (uint64_t), ret->name[3]);
     if (ret->h[3] == NULL) {
         ret->error = GetLastError();
         CloseHandle(ret->h[0]);
@@ -528,7 +533,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
 
 #else
 
-    ret->lock = mmap(NULL, sizeof(pthread_mutex_t),
+    ret->lock = mmap(NULL, sizeof (pthread_mutex_t),
             PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
     if (ret->lock == MAP_FAILED) {
         ret->error = errno;
@@ -556,7 +561,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         pthread_mutexattr_destroy(&attr);
     }
 
-    ret->global_size = mmap(NULL, sizeof(size_t),
+    ret->global_size = mmap(NULL, sizeof (uint64_t),
             PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
     if (ret->global_size == MAP_FAILED) {
         ret->error = errno;
@@ -570,7 +575,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
     ret->fd = shm_open(ret->name[1], O_CREAT | O_EXCL | O_RDWR, 0666);
     error = errno;
     if (ret->fd == -1 && error != EEXIST) {
-        munmap(ret->lock, sizeof(pthread_mutex_t));
+        munmap(ret->lock, sizeof (pthread_mutex_t));
         ret->error = error;
         am_shm_unlock(ret);
         return ret;
@@ -579,7 +584,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         ret->fd = shm_open(ret->name[1], O_RDWR, 0666);
         error = errno;
         if (ret->fd == -1) {
-            munmap(ret->lock, sizeof(pthread_mutex_t));
+            munmap(ret->lock, sizeof (pthread_mutex_t));
             ret->error = error;
             am_shm_unlock(ret);
             return ret;
@@ -646,7 +651,7 @@ am_shm_t *am_shm_create(const char *name, size_t usize) {
         e->lh.next = e->lh.prev = 0;
         /* update head prev/next pointers */
         pool->lh.next = pool->lh.prev = AM_GET_OFFSET(pool, e);
-        
+
         add_to_freelist(pool, e);
     } else {
         pool->open++;
@@ -677,8 +682,8 @@ static BOOL resize_file(HANDLE file, size_t new_size) {
 
 #endif
 
-static int am_shm_extend(am_shm_t *am, size_t usize) {
-    size_t size, osize;
+static int am_shm_extend(am_shm_t *am, uint64_t usize) {
+    uint64_t size, osize;
     struct mem_pool *pool;
     int rv = AM_SUCCESS;
 #ifdef _WIN32
@@ -722,7 +727,8 @@ static int am_shm_extend(am_shm_t *am, size_t usize) {
     if (resize_file(am->h[1], size) == FALSE) {
         return AM_ERROR;
     }
-    am->h[2] = CreateFileMappingA(am->h[1], sec, PAGE_READWRITE, 0, (DWORD) size, NULL);
+    am->h[2] = CreateFileMappingA(am->h[1], sec, PAGE_READWRITE,
+            (DWORD) ((size >> 32) & 0xFFFFFFFFul), (DWORD) (size & 0xFFFFFFFFul), NULL);
     am->error = GetLastError();
     if (am->h[2] == NULL) {
         return AM_ERROR;
@@ -789,11 +795,11 @@ static int am_shm_extend(am_shm_t *am, size_t usize) {
  * if the required usize cannot be allocated, it will try to resize the memory pool. It is
  * unable to resize the pool on OS X
  */
-void *am_shm_alloc_with_gc(am_shm_t *am, size_t usize, int (* gc)(unsigned long), unsigned long id) {
+void *am_shm_alloc_with_gc(am_shm_t *am, uint64_t usize, int (* gc)(unsigned long), unsigned long id) {
     struct mem_pool *pool;
     struct mem_chunk *cmin, *n;
     void *ret = NULL;
-    size_t size, s;
+    uint64_t size, s;
 
     if (usize == 0 || am == NULL ||
             am->pool == NULL || am_shm_lock(am) != AM_SUCCESS) {
@@ -854,7 +860,7 @@ void *am_shm_alloc_with_gc(am_shm_t *am, size_t usize, int (* gc)(unsigned long)
                 return am_shm_alloc(am, usize);
             }
         }
-        
+
 #ifdef __APPLE__
         am->error = AM_EOPNOTSUPP;
 #else
@@ -880,13 +886,12 @@ void *am_shm_alloc_with_gc(am_shm_t *am, size_t usize, int (* gc)(unsigned long)
 /*
  * This allocator will not call a garbage collector before resize
  */
-void *am_shm_alloc(am_shm_t *am, size_t usize) {
+void *am_shm_alloc(am_shm_t *am, uint64_t usize) {
     return am_shm_alloc_with_gc(am, usize, NULL, 0ul);
 }
 
-
 void am_shm_free(am_shm_t *am, void *ptr) {
-    size_t size;
+    uint64_t size;
     struct mem_pool *pool;
     struct mem_chunk *e, *f;
 
@@ -911,7 +916,7 @@ void am_shm_free(am_shm_t *am, void *ptr) {
         f = (struct mem_chunk *) AM_GET_POINTER(pool, e->lh.next);
         if (f->used == 0) {
             remove_from_freelist(pool, f);
-            
+
             size += f->size;
             e->lh.next = f->lh.next;
             if (f->lh.next == 0) {
@@ -925,7 +930,7 @@ void am_shm_free(am_shm_t *am, void *ptr) {
         f = (struct mem_chunk *) AM_GET_POINTER(pool, e->lh.prev);
         if (f->used == 0) {
             remove_from_freelist(pool, f);
-            
+
             size += f->size;
             f->lh.next = e->lh.next;
             if (e->lh.next == 0) {
@@ -948,8 +953,8 @@ void am_shm_free(am_shm_t *am, void *ptr) {
     am_shm_unlock(am);
 }
 
-void *am_shm_realloc(am_shm_t *am, void *ptr, size_t usize) {
-    size_t size;
+void *am_shm_realloc(am_shm_t *am, void *ptr, uint64_t usize) {
+    uint64_t size;
     struct mem_chunk *e;
     void *vp;
 
@@ -978,7 +983,7 @@ void *am_shm_realloc(am_shm_t *am, void *ptr, size_t usize) {
 }
 
 void am_shm_info(am_shm_t *am) {
-    int i = 0;
+    int32_t i = 0;
     struct mem_pool *pool;
     struct mem_chunk *e, *t, *head;
 
@@ -986,13 +991,13 @@ void am_shm_info(am_shm_t *am) {
     pool = (struct mem_pool *) am->pool;
 
     fprintf(stdout, "\n");
-    fprintf(stdout, "AREA   (size: %ld bytes) ", pool->size);
+    fprintf(stdout, "AREA   (size: %llu bytes) ", pool->size);
 
     head = (struct mem_chunk *) AM_GET_POINTER(pool, pool->lh.prev);
     fprintf(stdout, "             HEAD   [P:%d][N:%d]\n", pool->lh.prev, pool->lh.next);
 
     AM_OFFSET_LIST_FOR_EACH(pool, head, e, t, struct mem_chunk) {
-        fprintf(stdout, "CHUNK #%03d: %s  (size: %ld, user: %ld bytes) [P:%d][O:%d][N:%d]\n",
+        fprintf(stdout, "CHUNK #%03d: %s  (size: %llu, user: %llu bytes) [P:%d][O:%d][N:%d]\n",
                 ++i, e->used ? "used" : "free",
                 e->size, e->usize, e->lh.prev,
                 AM_GET_OFFSET(pool, e), e->lh.next);

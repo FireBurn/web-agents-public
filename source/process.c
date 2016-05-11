@@ -979,7 +979,7 @@ static am_return_t validate_policy(am_request_t *r) {
     struct am_namevalue *session_cache = NULL;
     char is_valid = AM_FALSE, remote = AM_FALSE;
     int status = AM_ERROR, policy_status = AM_NO_MATCH, entry_status = r->status;
-    time_t cache_ts = 0;
+    uint64_t cache_ts = 0;
 
     char *pattrs = NULL;
     const char *url = ISVALID(r->overridden_url_pathinfo) && r->conf->path_info_ignore ?
@@ -1298,7 +1298,7 @@ static am_return_t validate_policy(am_request_t *r) {
 
                     AM_LIST_FOR_EACH(e->action_decisions, ae, at) {
 
-                        /* time_t ts = ae->ttl;
+                        /* uint64_t ts = ae->ttl;
                         if (difftime(time(NULL), ts) >= 0) {
                             char tsu[32];
                             struct tm until;

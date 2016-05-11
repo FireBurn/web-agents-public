@@ -115,7 +115,7 @@ $(APACHE22_OUT_OBJS): CFLAGS += $(COMPILEFLAG)Iextlib/$(OS_ARCH)_$(OS_MARCH)/apa
 	$(COMPILEFLAG)Iextlib/$(OS_ARCH)$(OS_MARCH)/apache22/include \
 	$(COMPILEFLAG)Iextlib/$(OS_ARCH)/apache22$(VENDOR_EXT)/include $(COMPILEFLAG)DAPACHE2
 $(TEST_OBJECTS): CFLAGS += $(COMPILEFLAG)I.$(PS)cmocka $(COMPILEFLAG)I.$(PS)tests $(COMPILEFLAG)I.$(PS)$(OBJDIR)$(PS)tests \
-	$(COMPILEFLAG)DHAVE_SIGNAL_H
+	$(COMPILEFLAG)DHAVE_SIGNAL_H $(COMPILEFLAG)DUNIT_TEST
 
 ifeq ($(OS_ARCH), Linux)
  include Makefile.linux.mk
@@ -139,7 +139,7 @@ VERSION_NUM := $(shell $(ECHO) $(VERSION) | $(SED) "s/[^-\.0-9]*//g" | $(SED) "s
 $(OBJDIR)/%.$(OBJ): %.c
 	@$(ECHO) "[*** Compiling "$<" ***]"
 	$(CC) $(CFLAGS) $< $(COMPILEOPTS)
-	
+
 .DEFAULT_GOAL := all
 
 all: apachezip
@@ -150,8 +150,15 @@ build:
 	$(MKDIR) $(OBJDIR)$(PS)zlib
 	$(MKDIR) $(OBJDIR)$(PS)cmocka
 	$(MKDIR) $(OBJDIR)$(PS)tests
+	$(MKDIR) $(OBJDIR)$(PS)dist
+	$(MKDIR) $(OBJDIR)$(PS)64
+	$(MKDIR) $(OBJDIR)$(PS)64$(PS)expat
+	$(MKDIR) $(OBJDIR)$(PS)64$(PS)pcre
+	$(MKDIR) $(OBJDIR)$(PS)64$(PS)zlib
+	$(MKDIR) $(OBJDIR)$(PS)64$(PS)source
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)apache
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)iis
+	$(MKDIR) $(OBJDIR)$(PS)64$(PS)source$(PS)iis
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)varnish
 	$(MKDIR) $(OBJDIR)$(PS)source$(PS)varnish3
 
@@ -248,8 +255,8 @@ ibmhttp7zip: clean build version apache22 agentadmin
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a IBMHTTP_v7_$(OS_ARCH)$(OS_ARCH_EXT)$(OS_BITS)_$(VERSION).zip web_agents
 
 iiszip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"7.5, 8.x"'
-iiszip: CONTAINER = $(strip IIS 7.5, 8.x $(OS_ARCH)$(OS_ARCH_EXT) $(subst _,,$(OS_BITS)))
-iiszip: clean build version iis agentadmin
+iiszip: CONTAINER = $(strip IIS 7.5, 8.x $(OS_ARCH)$(OS_ARCH_EXT) 32\/64bit)
+iiszip: clean build version iis
 	@$(ECHO) "[***** Building IIS agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)iis_agent
@@ -259,12 +266,11 @@ iiszip: clean build version iis agentadmin
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)instances
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)log
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)config
-	-$(CP) $(OBJDIR)$(PS)agentadmin* $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)bin$(PS)
-	-$(CP) $(OBJDIR)$(PS)mod_iis_openam.dll $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)lib$(PS)
-	-$(CP) $(OBJDIR)$(PS)mod_iis_openam.pdb $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)lib$(PS)
+	-$(CP) $(OBJDIR)$(PS)dist$(PS)agentadmin* $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)bin$(PS)
+	-$(CP) $(OBJDIR)$(PS)dist$(PS)mod_iis_openam* $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)lib$(PS)
 	-$(CP) config$(PS)* $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)config$(PS)
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)legal$(PS)
-	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a IIS_$(OS_ARCH)$(OS_BITS)_$(VERSION).zip web_agents
+	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a IIS_$(OS_ARCH)_$(VERSION).zip web_agents
 
 varnishzip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"4.0.x"'
 varnishzip: CONTAINER = $(strip Varnish 4.0.x $(OS_ARCH)$(OS_ARCH_EXT) $(subst _,,$(OS_BITS)))

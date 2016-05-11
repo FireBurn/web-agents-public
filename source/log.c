@@ -29,11 +29,11 @@ static sem_t *ic_sem = NULL;
 
 struct am_shared_log {
     void *area;
-    size_t area_size;
+    uint64_t area_size;
     char area_file_name[AM_PATH_SIZE];
 #ifdef _WIN32
     HANDLE area_file_id;
-    int reader_pid;
+    int32_t reader_pid;
     HANDLE reader_thr;
 #else
     int area_file_id;
@@ -60,12 +60,12 @@ static struct am_shared_log_lock_s am_log_lck = {NULL, NULL, NULL, NULL};
 #endif
 
 struct am_log {
-    volatile unsigned int in;
-    volatile unsigned int out;
-    volatile unsigned int read_count;
-    volatile unsigned int write_count;
-    unsigned int bucket_count;
-    unsigned int bucket_size;
+    volatile uint32_t in;
+    volatile uint32_t out;
+    volatile uint32_t read_count;
+    volatile uint32_t write_count;
+    uint32_t bucket_count;
+    uint32_t bucket_size;
 #ifndef _WIN32
     pthread_mutex_t lock;
     pthread_mutex_t exit;
@@ -75,45 +75,45 @@ struct am_log {
 
     struct log_bucket {
         char data[AM_LOG_MESSAGE_SIZE];
-        size_t size;
+        uint64_t size;
         unsigned long instance_id;
-        int level;
+        int32_t level;
         volatile char ready_to_read;
     } bucket[AM_LOG_QUEUE_SIZE];
 
     struct log_files {
-        int used;
+        int32_t used;
         unsigned long instance_id;
         char name_debug[AM_PATH_SIZE];
         char name_audit[AM_PATH_SIZE];
-        int owner;
-        int fd_debug;
-        int fd_audit;
-        int max_size_debug;
-        int max_size_audit;
-        int level_debug;
-        int level_audit;
-        time_t created_debug;
-        time_t created_audit;
+        int32_t owner;
+        int32_t fd_debug;
+        int32_t fd_audit;
+        int32_t max_size_debug;
+        int32_t max_size_audit;
+        int32_t level_debug;
+        int32_t level_audit;
+        uint64_t created_debug;
+        uint64_t created_audit;
 #ifndef _WIN32
         ino_t node_debug;
         ino_t node_audit;
 #endif
     } files[AM_MAX_INSTANCES];
 
-    int owner; /* current log reader process id */
+    int32_t owner; /* current log reader process id */
 
     struct valid_url {
         unsigned long instance_id;
-        time_t last;
-        int url_index;
-        int running;
+        uint64_t last;
+        int32_t url_index;
+        int32_t running;
         char config_path[AM_PATH_SIZE];
     } valid[AM_MAX_INSTANCES];
 
     struct instance_init {
         unsigned long instance_id;
-        int in_progress;
+        int32_t in_progress;
     } init[AM_MAX_INSTANCES];
 };
 
@@ -150,8 +150,8 @@ static void rename_file(const char *file_name) {
 
 /*****************************************************************************************/
 
-static am_bool_t should_rotate_time(time_t ct) {
-    time_t ts = ct;
+static am_bool_t should_rotate_time(uint64_t ct) {
+    uint64_t ts = ct;
     ts += 86400; /* once in 24 hours */
     if (difftime(time(NULL), ts) >= 0) {
         return AM_TRUE;
@@ -163,10 +163,10 @@ static am_bool_t should_rotate_time(time_t ct) {
 
 static void *am_log_worker(void *arg) {
     struct am_log *log = AM_LOG();
-    int i, level, is_audit;
-    unsigned int index;
+    int32_t i, level, is_audit;
+    uint32_t index;
     char *data;
-    size_t data_sz;
+    uint64_t data_sz;
     unsigned long instance_id;
     struct stat st;
     struct log_files *f;
@@ -288,10 +288,10 @@ static void *am_log_worker(void *arg) {
                 fprintf(stderr, "am_log_worker() failed to open audit file %s: error: %d\n", f->name_audit, errno);
                 f->fd_debug = f->fd_audit = -1;
             } else {
-                int file_handle = is_audit ? f->fd_audit : f->fd_debug;
+                int32_t file_handle = is_audit ? f->fd_audit : f->fd_debug;
                 char *file_name = is_audit ? f->name_audit : f->name_debug;
-                int max_size = is_audit ? f->max_size_audit : f->max_size_debug;
-                time_t file_created = is_audit ? f->created_audit : f->created_debug;
+                int32_t max_size = is_audit ? f->max_size_audit : f->max_size_debug;
+                uint64_t file_created = is_audit ? f->created_audit : f->created_debug;
 #ifdef _WIN32
                 int wrote;
 #else 
@@ -483,7 +483,8 @@ void am_log_init(int id, int status) {
     }
 
     am_log_handle->area_file_id = CreateFileMappingA(INVALID_HANDLE_VALUE, sec, PAGE_READWRITE,
-            0, (DWORD) am_log_handle->area_size, am_log_handle->area_file_name);
+            (DWORD) ((am_log_handle->area_size >> 32) & 0xFFFFFFFFul), (DWORD) (am_log_handle->area_size & 0xFFFFFFFFul),
+            am_log_handle->area_file_name);
 
     if (am_log_handle->area_file_id == NULL) {
         return;
@@ -651,12 +652,16 @@ void am_log_init_worker(int id, int status) {
 int perform_logging(unsigned long instance_id, int level) {
     int i;
     struct am_log *log = AM_LOG();
-    int log_level = AM_LOG_LEVEL_NONE;
-    int audit_level = AM_LOG_LEVEL_NONE;
+    int32_t log_level = AM_LOG_LEVEL_NONE;
+    int32_t audit_level = AM_LOG_LEVEL_NONE;
 
     /* If the instance id is zero, we are either running a test case, or installing something */
     if (instance_id == 0) {
+#ifdef UNIT_TEST
         return AM_TRUE;
+#else
+        return AM_FALSE;
+#endif
     }
 
     /* We simply cannot log if the shared memory segment is not initialised */
@@ -733,7 +738,7 @@ int perform_logging(unsigned long instance_id, int level) {
 void am_log_write(unsigned long instance_id, int level, const char* header, int header_sz, const char *format, ...) {
     struct am_log *log = AM_LOG();
     va_list args;
-    unsigned int index;
+    uint32_t index;
 
     /**
      * An instance id of zero indicates that we are running in unit test mode, shared memory is not
@@ -812,7 +817,7 @@ void am_log_write(unsigned long instance_id, int level, const char* header, int 
 void am_log_shutdown(int id) {
     static const char *thisfunc = "am_log_shutdown():";
     int i;
-    int pid = getpid();
+    int32_t pid = getpid();
     struct am_log *log = AM_LOG();
 
     if (log == NULL) {
@@ -903,28 +908,6 @@ void am_log_shutdown(int id) {
 
     free(am_log_handle);
     am_log_handle = NULL;
-}
-
-int am_log_get_current_owner() {
-    int rv = 0;
-    struct am_log *log = AM_LOG();
-
-    if (log == NULL) {
-        return rv;
-    }
-
-#ifdef _WIN32
-    WaitForSingleObject(am_log_lck.lock, INFINITE);
-#else
-    pthread_mutex_lock(&log->lock);
-#endif
-    rv = log->owner;
-#ifdef _WIN32
-    ReleaseMutex(am_log_lck.lock);
-#else
-    pthread_mutex_unlock(&log->lock);
-#endif
-    return rv;
 }
 
 /***************************************************************************/

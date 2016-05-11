@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include <stdio.h>
@@ -311,7 +311,7 @@ void test_policy_cache_simple(void **state) {
     am_request_t request;
     char* buffer = NULL;
     struct am_policy_result * result;
-    time_t ets;
+    uint64_t ets;
     struct am_policy_result * r = NULL;
     struct am_namevalue * session = NULL;
     
@@ -387,7 +387,7 @@ static int test_cache_with_seed(int seed, int test_size, am_request_t * request,
     /* read them all back */
     srand(seed);
     for(i = 0; i < capacity; i++) {
-        time_t ets;
+        uint64_t ets;
         struct am_policy_result * r = NULL;
         struct am_namevalue * session = NULL;
         
@@ -426,7 +426,7 @@ static void test_cache_keys(int test_size, char** keys, am_request_t* request, s
     
     /* read them all back */
     for(i = 0; i < test_size; i++) {
-        time_t ets;
+        uint64_t ets;
         struct am_policy_result * r = NULL;
         struct am_namevalue * session = NULL;
         
@@ -604,7 +604,7 @@ void test_policy_cache_with_many_different_entries_single_session(void **state) 
      * Check we can retrieve the URLs above from the cache via the same session id
      */
     for (i = 0; i < sizeof(urls)/sizeof(urls[0]); i++) {
-        time_t ets;
+        uint64_t ets;
         struct am_policy_result * r = NULL;
         struct am_policy_result * result = NULL;
         struct am_namevalue * session = NULL;

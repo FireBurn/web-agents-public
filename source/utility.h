@@ -76,15 +76,15 @@ enum {
 /* shared memory area handle */
 
 typedef struct {
-    size_t local_size;
-    size_t *global_size;
+    uint64_t local_size;
+    uint64_t *global_size;
 #ifdef _WIN32
     HANDLE h[4]; /* 0: mutex, 1: file, 2: file mapping, 3: file mapping (for global_size) */
-    DWORD error;
+    int32_t error;
 #else
-    int fd;
+    int32_t fd;
     void *lock;
-    int error;
+    int32_t error;
 #endif
     void *pool;
     char init;
@@ -111,7 +111,7 @@ struct am_action_decision {
 };
 
 struct am_policy_result {
-    time_t created;
+    uint64_t created;
     int index;
     int scope;
     char *resource;
@@ -143,7 +143,7 @@ struct audit_worker_data {
 
 struct url_validator_worker_data {
     unsigned long instance_id;
-    time_t last;
+    uint64_t last;
     int url_index;
     int running;
     char *config_path;
@@ -182,16 +182,16 @@ size_t am_bin_path(char* buffer, size_t len);
 
 int string_replace(char **original, const char *pattern, const char *replace, size_t *sz);
 
-size_t am_shm_max_pool_size();
+uint64_t am_shm_max_pool_size();
 void am_shm_unlock(am_shm_t *);
 int am_shm_lock(am_shm_t *);
-am_shm_t *am_shm_create(const char *, size_t);
+am_shm_t *am_shm_create(const char *, uint64_t);
 void am_shm_shutdown(am_shm_t *);
-void *am_shm_alloc(am_shm_t *am, size_t usize);
-void *am_shm_alloc_with_gc(am_shm_t *am, size_t usize, int (*gc)(unsigned long), unsigned long instance_id);
+void *am_shm_alloc(am_shm_t *am, uint64_t usize);
+void *am_shm_alloc_with_gc(am_shm_t *am, uint64_t usize, int (*gc)(unsigned long), unsigned long instance_id);
 void am_shm_free(am_shm_t *am, void *ptr);
-void *am_shm_realloc(am_shm_t *am, void *ptr, size_t size);
-void am_shm_set_user_offset(am_shm_t *r, size_t s);
+void *am_shm_realloc(am_shm_t *am, void *ptr, uint64_t size);
+void am_shm_set_user_offset(am_shm_t *r, unsigned int s);
 void *am_shm_get_user_pointer(am_shm_t *am);
 void am_shm_info(am_shm_t *);
 void am_shm_destroy(am_shm_t* am);
@@ -204,7 +204,7 @@ int encrypt_password(const char *key, char **password);
 void decrypt_agent_passwords(am_config_t *r);
 
 char is_big_endian();
-size_t page_size(size_t size);
+uint64_t page_size(uint64_t size);
 am_return_t match(unsigned long instance_id, const char *subject, const char *pattern);
 char *match_group(pcre *x, int capture_groups, const char *subject, size_t *len);
 int gzip_deflate(const char *uncompressed, size_t *uncompressed_sz, char **compressed);
@@ -309,7 +309,7 @@ int am_add_pdp_cache_entry(am_request_t *r, const char *key, const char *url, co
 int am_add_session_policy_cache_entry(am_request_t *request, const char *key,
         struct am_policy_result *policy, struct am_namevalue *session);
 int am_get_session_policy_cache_entry(am_request_t *request, const char *key,
-        struct am_policy_result **policy, struct am_namevalue **session, time_t *ts);
+        struct am_policy_result **policy, struct am_namevalue **session, uint64_t *ts);
 
 int am_get_cache_entry(unsigned long instance_id, int valid, const char *key);
 int am_add_cache_entry(unsigned long instance_id, const char *key);

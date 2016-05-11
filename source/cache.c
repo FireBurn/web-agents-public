@@ -65,27 +65,27 @@ enum {
 #define NAME_VALUE_UNUSED   2
 
 struct am_cache_entry_data {
-    unsigned int type;
-    int index;
-    int scope;
-    int method;
+    uint32_t type;
+    int32_t index;
+    int32_t scope;
+    int32_t method;
     uint64_t ttl;
-    size_t size[3];
+    uint64_t size[3];
     struct offset_list lh;
     char value[1]; /* format: value\0value\0value\0 */
 };
 
 struct am_cache_entry {
-    unsigned int key_offset; /* shm offset for separately allocated key */
-    time_t ts; /* create timestamp */
-    int valid; /* entry is valid, in sec */
+    uint32_t key_offset; /* shm offset for separately allocated key */
+    uint64_t ts; /* create timestamp */
+    int32_t valid; /* entry is valid, in sec */
     unsigned long instance_id;
     struct offset_list data;
     struct offset_list lh; /* collisions */
 };
 
 struct am_cache {
-    size_t count;
+    uint64_t count;
     struct offset_list table[AM_HASH_TABLE_SIZE]; /* first,last */
 };
 
@@ -99,7 +99,7 @@ am_shm_t* get_cache(void) {
 }
 
 int am_cache_init(int id) {
-    size_t size;
+    uint64_t size;
     if (cache != NULL) return AM_SUCCESS;
 #ifdef __APPLE__
     size = AM_SHARED_MAX_SIZE;
@@ -117,7 +117,7 @@ int am_cache_init(int id) {
     }
 
     if (cache->init) {
-        size_t i;
+        int i;
         struct am_cache *cache_data = (struct am_cache *) am_shm_alloc(cache, sizeof(struct am_cache));
         if (cache_data == NULL) {
             return AM_ENOMEM;
@@ -352,13 +352,13 @@ int am_get_pdp_cache_entry(am_request_t *request, const char *key, char **data, 
     }
 
     if (request->conf->pdp_cache_valid > 0) {
-        time_t ts = cache_entry->ts;
+        uint64_t ts = cache_entry->ts;
         ts += request->conf->pdp_cache_valid;
         if (difftime(time(NULL), ts) >= 0) {
             char tsc[32], tsu[32];
             struct tm created, until;
-            localtime_r(&cache_entry->ts, &created);
-            localtime_r(&ts, &until);
+            localtime_r((const time_t *) &cache_entry->ts, &created);
+            localtime_r((const time_t *) &ts, &until);
             strftime(tsc, sizeof(tsc), AM_CACHE_TIMEFORMAT, &created);
             strftime(tsu, sizeof(tsu), AM_CACHE_TIMEFORMAT, &until);
             AM_LOG_WARNING(request->instance_id, "%s data for a key (%s) is obsolete (created: %s, valid until: %s)",
@@ -594,7 +594,7 @@ int am_remove_cache_entry(unsigned long instance_id, const char *key) {
  * Find session/policy response cache entry (key: session token).
  */
 int am_get_session_policy_cache_entry(am_request_t *request, const char *key,
-        struct am_policy_result **policy, struct am_namevalue **session, time_t *ets) {
+        struct am_policy_result **policy, struct am_namevalue **session, uint64_t *ets) {
 
     static const char *thisfunc = "am_get_session_policy_cache_entry():";
     int i = -1, entry_index, status = AM_NOT_FOUND;
@@ -630,13 +630,13 @@ int am_get_session_policy_cache_entry(am_request_t *request, const char *key,
     }
 
     if (cache_entry->valid > 0) {
-        time_t ts = cache_entry->ts;
+        uint64_t ts = cache_entry->ts;
         ts += cache_entry->valid;
         if (difftime(time(NULL), ts) >= 0) {
             char tsc[32], tsu[32];
             struct tm created, until;
-            localtime_r(&cache_entry->ts, &created);
-            localtime_r(&ts, &until);
+            localtime_r((const time_t *) &cache_entry->ts, &created);
+            localtime_r((const time_t *) &ts, &until);
             strftime(tsc, sizeof(tsc), AM_CACHE_TIMEFORMAT, &created);
             strftime(tsu, sizeof(tsu), AM_CACHE_TIMEFORMAT, &until);
             AM_LOG_WARNING(request->instance_id, "%s data for a key (%s) is obsolete (created: %s, valid until: %s)",
@@ -940,7 +940,7 @@ int am_add_session_policy_cache_entry(am_request_t *request, const char *key,
     struct am_cache_entry *cache_entry;
     struct am_cache *cache_data;
 
-    int cache_entry_offset;
+    uint32_t cache_entry_offset;
     int lock_status;
     size_t key_sz;
     char *cache_entry_key;
@@ -1101,11 +1101,11 @@ int am_get_policy_cache_entry(am_request_t *request, const char *key, time_t ref
     }
 
     if (cache_entry->valid > 0) {
-        time_t ts = cache_entry->ts;
+        uint64_t ts = cache_entry->ts;
         ts += cache_entry->valid;
         if (difftime(time(NULL), ts) >= 0) {
-            localtime_r(&cache_entry->ts, &created);
-            localtime_r(&ts, &until);
+            localtime_r((const time_t *) &cache_entry->ts, &created);
+            localtime_r((const time_t *) &ts, &until);
             strftime(tsc, sizeof(tsc), AM_CACHE_TIMEFORMAT, &created);
             strftime(tsu, sizeof(tsu), AM_CACHE_TIMEFORMAT, &until);
             AM_LOG_WARNING(request->instance_id, "%s data for a key (%s) is obsolete (created: %s, valid until: %s)",
@@ -1121,7 +1121,7 @@ int am_get_policy_cache_entry(am_request_t *request, const char *key, time_t ref
     }
 
     if (reference > 0 && difftime(cache_entry->ts, reference) >= 0) {
-        localtime_r(&cache_entry->ts, &created);
+        localtime_r((const time_t *) &cache_entry->ts, &created);
         localtime_r(&reference, &until);
         strftime(tsc, sizeof(tsc), AM_CACHE_TIMEFORMAT, &created);
         strftime(tsu, sizeof(tsu), AM_CACHE_TIMEFORMAT, &until);
@@ -1148,7 +1148,7 @@ int am_add_policy_cache_entry(am_request_t *r, const char *key, int valid) {
     struct am_cache *cache_data;
     int lock_status;
     size_t key_sz;
-    unsigned int cache_entry_offset;
+    uint32_t cache_entry_offset;
     char *cache_entry_key;
 
     if (ISINVALID(key)) {

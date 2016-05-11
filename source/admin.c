@@ -23,6 +23,7 @@
 #include "zip.h"
 
 #ifdef _WIN32
+#include <objbase.h>
 #include <shlobj.h>
 #define LIB_FILE_EXT "dll"
 #define APACHE_DEFAULT_CONF_FILE "c:\\Apache\\conf\\httpd.conf"
@@ -65,6 +66,7 @@
 #define RESET_INPUT_STRING(s) do { am_free(s); s = NULL; } while (0)
 
 static int exit_status = EXIT_SUCCESS;
+static am_bool_t win_init = AM_FALSE;
 
 typedef void (*param_handler)(int, char **);
 
@@ -794,16 +796,16 @@ static int create_agent_instance(int status,
         case AM_I_IIS: {
             if (rv == AM_SUCCESS && (status == ADMIN_IIS_MOD_NONE || status == ADMIN_IIS_MOD_ERROR)) {
                 char schema_file[AM_URI_SIZE];
-                char lib_file[AM_URI_SIZE];
+                char lib_file_prefix[AM_URI_SIZE];
                 snprintf(schema_file, sizeof (schema_file),
                         "%s.."FILE_PATH_SEP"config"FILE_PATH_SEP"mod_iis_openam_schema.xml",
                         app_path);
-                snprintf(lib_file, sizeof (lib_file),
-                        "%s.."FILE_PATH_SEP"lib"FILE_PATH_SEP"mod_iis_openam."LIB_FILE_EXT,
-                        app_path);
+                /* install_module will use this prefix to add both 32 and 64 bit module versions */
+                snprintf(lib_file_prefix, sizeof (lib_file_prefix),
+                        "%s.."FILE_PATH_SEP"lib"FILE_PATH_SEP"mod_iis_openam_", app_path);
 
-                /* need to add module to global configuration first */
-                if (install_module(lib_file, schema_file) == 0) {
+                /* need to add modules to global configuration first */
+                if (install_module(lib_file_prefix, schema_file) == 0) {
                     rv = AM_ERROR;
                 } else {
                     install_log("webserver site global configuration updated");
@@ -2395,6 +2397,16 @@ static void modify_ownership(int argc, char **argv) {
     }
 }
 
+#ifdef _WIN32
+
+static void admin_atexit() {
+    if (win_init) {
+        CoUninitialize();
+    }
+}
+
+#endif
+
 int main(int argc, char **argv) {
     int i;
     char tm[64];
@@ -2434,9 +2446,16 @@ int main(int argc, char **argv) {
             && strcmp(argv[1], "--k") != 0 && strcmp(argv[1], "--p") != 0
             && strcmp(argv[1], "--d") != 0
             && !IsUserAnAdmin()) {
-            fprintf(stderr, "\nYou need Administrator privileges to run "DESCRIPTION" agentadmin.\n\n");
-            exit(EXIT_FAILURE);
-        }
+        fprintf(stderr, "\nYou need Administrator privileges to run "DESCRIPTION" agentadmin.\n\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (FAILED(CoInitializeEx(NULL, COINIT_MULTITHREADED))) {
+        fprintf(stderr, "\nFailed to initialize COM.\n\n");
+        exit(EXIT_FAILURE);
+    }
+    win_init = AM_TRUE;
+    atexit(admin_atexit);
 #endif
     
     if (argc > 1) {
@@ -2485,7 +2504,12 @@ int main(int argc, char **argv) {
             instance_type = AM_I_APACHE;
         }
         snprintf(instance_type_mod, sizeof (instance_type_mod),
-                "%s.."FILE_PATH_SEP"lib"FILE_PATH_SEP"mod_iis_openam."LIB_FILE_EXT, app_path);
+                "%s.."FILE_PATH_SEP"lib"FILE_PATH_SEP"mod_iis_openam_32."LIB_FILE_EXT, app_path);
+        if (file_exists(instance_type_mod)) {
+            instance_type = AM_I_IIS;
+        }
+        snprintf(instance_type_mod, sizeof (instance_type_mod),
+                "%s.."FILE_PATH_SEP"lib"FILE_PATH_SEP"mod_iis_openam_64."LIB_FILE_EXT, app_path);
         if (file_exists(instance_type_mod)) {
             instance_type = AM_I_IIS;
         }
