@@ -623,7 +623,8 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
                             status = AM_INVALID_AGENT_SESSION;
                         }
                     } else {
-                        if (strstr(temp, "Invalid session ID") != NULL) {
+                        if (strstr(temp, "Invalid session ID") != NULL ||
+                                strstr(temp, "User's SSO token is invalid") != NULL) {
                             status = AM_INVALID_SESSION;
                         }
                         if (strstr(temp, "Application token passed in") != NULL) {
@@ -850,7 +851,8 @@ static int send_policy_request(am_net_t *conn, const char *token, const char *us
                     status = AM_INVALID_AGENT_SESSION;
                 }
             } else {
-                if (strstr(req_data->data, "Invalid session ID") != NULL) {
+                if (strstr(req_data->data, "Invalid session ID") != NULL ||
+                        strstr(req_data->data, "User's SSO token is invalid") != NULL) {
                     status = AM_INVALID_SESSION;
                 }
                 if (strstr(req_data->data, "Application token passed in") != NULL) {

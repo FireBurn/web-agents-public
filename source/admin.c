@@ -2399,7 +2399,7 @@ static void modify_ownership(int argc, char **argv) {
 
 #ifdef _WIN32
 
-static void admin_atexit() {
+static void admin_atexit(void) {
     if (win_init) {
         CoUninitialize();
     }
