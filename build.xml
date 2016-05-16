@@ -198,8 +198,17 @@
         <property name="containername" value="ibmhttp7zip"/>
         <antcall target="gmake" inheritRefs="true"/>
     </target>
+    
+    <target name="check.build.iis">
+        <condition property="build.iis">
+            <and>
+                <os family="windows"/>
+                <equals arg1="${build.type}" arg2="64"/>
+            </and>
+        </condition>
+    </target>
 
-    <target name="iis7">
+    <target name="iis7" depends="check.build.iis" if="build.iis">
         <echo message="Dispatch to IIS7"/>
         <property name="containername" value="iiszip"/>
        <antcall target="gmake" inheritRefs="true"/>
