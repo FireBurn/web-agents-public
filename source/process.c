@@ -999,12 +999,16 @@ static am_return_t validate_policy(am_request_t *r) {
             r->status = AM_SUCCESS;
             return AM_OK;
         }
-        scope = AM_SCOPE_RESPONSE_ATTRIBUTE_ONLY;
+        if (r->conf->profile_attr_fetch && !r->conf->response_attr_fetch) {
+            scope = AM_SCOPE_RESPONSE_ATTRIBUTE_ONLY;
+        }
     }
 
     if (r->conf->sso_only) {
         /* sso_only mode is interested only in user attributes (ignoring policy result) */
-        scope = AM_SCOPE_RESPONSE_ATTRIBUTE_ONLY;
+        if (r->conf->profile_attr_fetch && !r->conf->response_attr_fetch) {
+            scope = AM_SCOPE_RESPONSE_ATTRIBUTE_ONLY;
+        }
         AM_LOG_DEBUG(r->instance_id, "%s running in sso-only mode", thisfunc);
     }
 
@@ -1268,7 +1272,7 @@ static am_return_t validate_policy(am_request_t *r) {
                     struct am_action_decision *ae, *at;
 
                     if (((r->not_enforced && (r->conf->not_enforced_fetch_attr || r->is_dummypost_url))
-                            || r->conf->sso_only) && e->scope == AM_SCOPE_RESPONSE_ATTRIBUTE_ONLY) {
+                            || r->conf->sso_only)) {
                         /* allow, in case this is a) not-enforced url and attribute fetch is enabled or this is a dummypost_url
                          * or b) agent is running in sso-only mode (ignoring policy result) */
                         AM_LOG_DEBUG(r->instance_id,
