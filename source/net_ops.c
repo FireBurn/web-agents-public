@@ -172,6 +172,37 @@ static void create_cookie_header(am_net_t *conn, const char *token) {
     }
 }
 
+static int parse_exception(const char *data, const char *apptoken) {
+    int status = AM_ERROR;
+    if (ISINVALID(data)) {
+        return status;
+    }
+    if (strstr(data, "<Exception>") == NULL) {
+        return AM_SUCCESS;
+    }
+    if (strstr(data, "Session was not obtained") != NULL) {
+        status = AM_INVALID_SESSION;
+        /* check if that's the agent token for which session was not obtained */
+        if (ISVALID(apptoken) && strstr(data, apptoken) != NULL) {
+            status = AM_INVALID_AGENT_SESSION;
+        }
+        return status;
+    }
+    if (strstr(data, "Application token passed in") != NULL) {
+        return AM_INVALID_AGENT_SESSION;
+    }
+    if (strstr(data, "Invalid session ID") != NULL ||
+            strstr(data, "User's SSO token is invalid") != NULL ||
+            strstr(data, "Invalid sessionid format") != NULL) {
+        status = AM_INVALID_SESSION;
+        /* check if that's the agent token which session was invalid */
+        if (ISVALID(apptoken) && strstr(data, apptoken) != NULL) {
+            status = AM_INVALID_AGENT_SESSION;
+        }
+    }
+    return status;
+}
+
 static int send_authcontext_request(am_net_t *conn, const char *realm, char **token) {
     static const char *thisfunc = "send_authcontext_request():";
     size_t post_sz, post_data_sz;
@@ -609,29 +640,12 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
         if (strstr(req_data->data, "<Exception>") != NULL) {
             char *temp = strdup(req_data->data);
             if (temp != NULL) {
+                /* we should care about the Exception in Session part only */
                 char *temp_lstnr = strstr(temp, "<AddSessionListener>");
                 if (temp_lstnr != NULL)
                     *temp_lstnr = '\0';
 
-                /* we should care about the Exception in Session part only */
-                if (strstr(temp, "<Exception>") != NULL) {
-                    status = AM_ERROR;
-                    if (strstr(temp, "Session was not obtained") != NULL) {
-                        status = AM_INVALID_SESSION;
-                        /* check if thats the agent token which session was not obtained */
-                        if (strstr(temp, *token) != NULL) {
-                            status = AM_INVALID_AGENT_SESSION;
-                        }
-                    } else {
-                        if (strstr(temp, "Invalid session ID") != NULL ||
-                                strstr(temp, "User's SSO token is invalid") != NULL) {
-                            status = AM_INVALID_SESSION;
-                        }
-                        if (strstr(temp, "Application token passed in") != NULL) {
-                            status = AM_INVALID_AGENT_SESSION;
-                        }
-                    }
-                }
+                status = parse_exception(temp, *token);
                 free(temp);
             } else {
                 status = AM_ENOMEM;
@@ -841,25 +855,8 @@ static int send_policy_request(am_net_t *conn, const char *token, const char *us
                 conn->http_status, LOGEMPTY(req_data->data));
     }
 
-    if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->data)) {
-        if (strstr(req_data->data, "<Exception>") != NULL) {
-            status = AM_ERROR;
-            if (strstr(req_data->data, "Session was not obtained") != NULL) {
-                status = AM_INVALID_SESSION;
-                /* check if thats the agent token which session was not obtained */
-                if (strstr(req_data->data, token) != NULL) {
-                    status = AM_INVALID_AGENT_SESSION;
-                }
-            } else {
-                if (strstr(req_data->data, "Invalid session ID") != NULL ||
-                        strstr(req_data->data, "User's SSO token is invalid") != NULL) {
-                    status = AM_INVALID_SESSION;
-                }
-                if (strstr(req_data->data, "Application token passed in") != NULL) {
-                    status = AM_INVALID_AGENT_SESSION;
-                }
-            }
-        }
+    if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->data)) {        
+        status = parse_exception(req_data->data, token);
         if (status == AM_SUCCESS && policy_list != NULL) {
             *policy_list = am_parse_policy_xml(conn->instance_id, req_data->data, req_data->data_size,
                     am_scope_to_num(scope));
