@@ -172,7 +172,7 @@ static void create_cookie_header(am_net_t *conn, const char *token) {
     }
 }
 
-static int parse_exception(const char *data, const char *apptoken) {
+static int parse_exception(const char *data, const char *apptoken, const char *usertoken) {
     int status = AM_ERROR;
     if (ISINVALID(data)) {
         return status;
@@ -198,6 +198,15 @@ static int parse_exception(const char *data, const char *apptoken) {
         /* check if that's the agent token which session was invalid */
         if (ISVALID(apptoken) && strstr(data, apptoken) != NULL) {
             status = AM_INVALID_AGENT_SESSION;
+        }
+    }
+    if (status == AM_ERROR) {
+        /* last resort - try to locate token itself, no matter what exception string is */
+        if (ISVALID(apptoken) && strstr(data, apptoken) != NULL) {
+            return AM_INVALID_AGENT_SESSION;
+        }
+        if (ISVALID(usertoken) && strstr(data, usertoken) != NULL) {
+            return AM_INVALID_SESSION;
         }
     }
     return status;
@@ -645,7 +654,7 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
                 if (temp_lstnr != NULL)
                     *temp_lstnr = '\0';
 
-                status = parse_exception(temp, *token);
+                status = parse_exception(temp, *token, user_token);
                 free(temp);
             } else {
                 status = AM_ENOMEM;
@@ -856,7 +865,7 @@ static int send_policy_request(am_net_t *conn, const char *token, const char *us
     }
 
     if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->data)) {        
-        status = parse_exception(req_data->data, token);
+        status = parse_exception(req_data->data, token, user_token);
         if (status == AM_SUCCESS && policy_list != NULL) {
             *policy_list = am_parse_policy_xml(conn->instance_id, req_data->data, req_data->data_size,
                     am_scope_to_num(scope));
