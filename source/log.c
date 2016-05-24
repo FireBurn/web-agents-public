@@ -266,8 +266,8 @@ static void *am_log_worker(void *arg) {
                 }
 
 #else
-                f->fd_debug = open(f->name_debug, O_CREAT | O_WRONLY | O_APPEND, S_IWUSR | S_IRUSR);
-                f->fd_audit = open(f->name_audit, O_CREAT | O_WRONLY | O_APPEND, S_IWUSR | S_IRUSR);
+                f->fd_debug = open(f->name_debug, O_CREAT | O_WRONLY | O_APPEND, S_IWUSR | S_IRUSR | S_IRGRP);
+                f->fd_audit = open(f->name_audit, O_CREAT | O_WRONLY | O_APPEND, S_IWUSR | S_IRUSR | S_IRGRP);
                 if (f->fd_debug != -1 && stat(f->name_debug, &st) == 0) {
                     f->node_debug = st.st_ino;
                     f->created_debug = st.st_ctime;
@@ -386,12 +386,12 @@ static void *am_log_worker(void *arg) {
                 if (stat(file_name, &st) != 0 || st.st_ino != file_inode) {
                     close(file_handle);
                     if (is_audit) {
-                        f->fd_audit = open(f->name_audit, O_CREAT | O_WRONLY | O_APPEND, S_IWUSR | S_IRUSR);
+                        f->fd_audit = open(f->name_audit, O_CREAT | O_WRONLY | O_APPEND, S_IWUSR | S_IRUSR | S_IRGRP);
                         f->node_audit = st.st_ino;
                         f->created_audit = st.st_ctime;
                         f->owner = getpid();
                     } else {
-                        f->fd_debug = open(f->name_debug, O_CREAT | O_WRONLY | O_APPEND, S_IWUSR | S_IRUSR);
+                        f->fd_debug = open(f->name_debug, O_CREAT | O_WRONLY | O_APPEND, S_IWUSR | S_IRUSR | S_IRGRP);
                         f->node_debug = st.st_ino;
                         f->created_debug = st.st_ctime;
                         f->owner = getpid();
