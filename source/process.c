@@ -1374,6 +1374,42 @@ static am_return_t validate_policy(am_request_t *r) {
     return AM_OK;
 }
 
+void encode_header_value(char **val) {
+    am_bool_t encode = AM_FALSE;
+    char *it, *res;
+    size_t sz;
+
+    if (val == NULL || ISINVALID((it = *val))) return;
+
+    /* RFC 2616 Section 4.2
+     * The content of a header field may only be the OCTETs making up the 
+     * field-value and consisting of either TEXT or combinations of token, 
+     * separators, and quoted-string.
+     *  
+     * TEXT MAY contain characters from character sets other than 
+     * ISO-8859-1 only when encoded according to the rules of RFC 2047."
+     */
+    while (*it) {
+        /* ISO/IEC-8859-1 range check */
+        unsigned char ch = *it++;
+        if ((ch >= 0x20 && ch <= 0x7E) || (ch >= 0xA0 && ch <= 0xFF))
+            continue;
+        encode = AM_TRUE;
+        break;
+    }
+    if (!encode) return;
+
+    sz = strlen(*val);
+    res = base64_encode(*val, &sz);
+    if (res == NULL) return;
+
+    free(*val);
+    *val = NULL;
+    /* format value according to RFC 2047 */
+    am_asprintf(val, "=?UTF-8?B?%s?=", res);
+    free(res);
+}
+
 /**
  * Build and set "Set-Cookie" HTTP header value
  * 
@@ -1590,6 +1626,7 @@ static void do_header_set_type(am_request_t *r, am_config_map_t *map, int sz,
             char *val = NULL;
             get_attr_value(r, v->name, type, &val);
             if (ISVALID(val)) {
+                encode_header_value(&val);
                 r->am_set_header_in_request_f(r, v->value, val);
                 AM_LOG_DEBUG(r->instance_id, "do_header_set(): setting %s: %s",
                         v->value, val);

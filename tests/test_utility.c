@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2015 ForgeRock AS.
+ * Copyright 2015 - 2016 ForgeRock AS.
  */
 
 #include <stdio.h>
@@ -877,4 +877,23 @@ void test_url_encoding(void **state) {
     agent4_encoded = url_encode(agent3_input2);
     assert_string_equal(agent3_output2, agent4_encoded);
     free(agent4_encoded);
+}
+
+void encode_header_value(char **val);
+
+void test_header_value_encoding(void **state) {
+    const char *value1 = "-_.!~*'();/?:@&=+$,%#abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ]";
+    const char *value2 = "aā bcdef";
+    const char *value2_encoded = "=?UTF-8?B?YcSBIGJjZGVm?=";
+
+    char *val = strdup(value1);
+
+    encode_header_value(&val);
+    assert_string_equal(value1, val);
+    free(val);
+
+    val = strdup(value2);
+    encode_header_value(&val);
+    assert_string_equal(value2_encoded, val);
+    free(val);
 }
