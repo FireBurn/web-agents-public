@@ -280,7 +280,9 @@ void remove_agent_instance_byname(const char *name) {
     AM_OFFSET_LIST_FOR_EACH(conf->pool, h, e, t, struct am_instance_entry) {
         if (strcasecmp(e->name, name) == 0) {
             am_remove_cache_entry(e->instance_id, e->token); /* delete cached agent session data */
-            am_agent_init_set_value(e->instance_id, AM_TRUE, AM_FALSE); /* set this instance to 'unconfigured' */
+            am_agent_instance_init_lock();
+            am_agent_init_set_value(e->instance_id, AM_FALSE); /* set this instance to 'unconfigured' */
+            am_agent_instance_init_unlock();
             if (delete_instance_entry(e) == AM_SUCCESS) { /* remove cached configuration data */
                 am_shm_free(conf, e);
             }
@@ -1463,7 +1465,7 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
             am_shm_unlock(conf);
             am_agent_instance_init_lock();
 
-            in_progress = am_agent_init_get_value(instance_id, AM_FALSE);
+            in_progress = am_agent_init_get_value(instance_id);
 
             AM_LOG_DEBUG(instance_id, "%s agent configuration fetch in progress: %d",
                     thisfunc, in_progress);
@@ -1476,11 +1478,11 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
                 continue;
             }
 
-            am_agent_init_set_value(instance_id, AM_FALSE, AM_TRUE); /* configuration fetch in progress */
+            am_agent_init_set_value(instance_id, AM_TRUE); /* configuration fetch in progress */
 
             ac = am_get_config_file(instance_id, config_file);
             if (ac == NULL) {
-                am_agent_init_set_value(instance_id, AM_FALSE, AM_FALSE);
+                am_agent_init_set_value(instance_id, AM_FALSE);
                 am_agent_instance_init_unlock();
                 AM_LOG_ERROR(instance_id, "%s failed to load instance bootstrap %ld data",
                         thisfunc, instance_id);
@@ -1537,7 +1539,7 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
             agent_session = NULL;
 
             if (should_retry) {
-                am_agent_init_set_value(instance_id, AM_FALSE, AM_FALSE);
+                am_agent_init_set_value(instance_id, AM_FALSE);
                 am_agent_instance_init_unlock();
                 sleep(retry_wait);
                 continue;

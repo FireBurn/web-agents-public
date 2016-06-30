@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #ifndef PLATFORM_H
@@ -41,7 +41,7 @@
 #define snprintf            sprintf_s
 #endif
 #define mkdir(a,b)          _mkdir(a)
-#define getpid              _getpid
+#define getpid              GetCurrentProcessId
 #define strcasecmp          _stricmp 
 #define strncasecmp         _strnicmp
 #define unlink              _unlink 

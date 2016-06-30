@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #ifndef THREAD_H
@@ -41,11 +41,13 @@ typedef pthread_t am_thread_t;
 
 typedef struct {
 #ifdef _WIN32
-    HANDLE e;
+    HANDLE event;
 #else
-    volatile char e;
-    pthread_mutex_t m;
-    pthread_cond_t c;
+    volatile int event;
+    volatile int count;
+    pthread_mutex_t *mutex;
+    pthread_cond_t *condv;
+    int allocated;
 #endif
 } am_event_t;
 
@@ -76,6 +78,7 @@ typedef struct {
 } am_timer_event_t;
 
 am_event_t *create_event();
+am_event_t *create_named_event(const char *name, void **addr);
 int wait_for_event(am_event_t *e, int timeout);
 void set_event(am_event_t *e);
 void close_event(am_event_t **e);

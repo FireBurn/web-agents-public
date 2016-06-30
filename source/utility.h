@@ -291,14 +291,10 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
 
 void remove_agent_instance_byname(const char *name);
 
-void am_agent_init_set_value(unsigned long instance_id, char lock, int val);
-int am_agent_init_get_value(unsigned long instance_id, char lock);
-int am_agent_instance_init_init(int id);
+void am_agent_init_set_value(unsigned long instance_id, int val);
+int am_agent_init_get_value(unsigned long instance_id);
 void am_agent_instance_init_lock();
 void am_agent_instance_init_unlock();
-void am_agent_instance_init_release(int id, char unlink);
-
-void am_agent_init_set_value(unsigned long instance_id, char lock, int val);
 
 int am_get_agent_config_cache_or_local(unsigned long instance_id, const char *config_file, am_config_t **cnf);
 

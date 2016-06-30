@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -38,7 +38,7 @@ struct am_callback_args {
 
 #ifdef _WIN32
 static INIT_ONCE worker_pool_initialized = INIT_ONCE_STATIC_INIT;
-static TP_CALLBACK_ENVIRON worker_env;
+static PTP_CALLBACK_ENVIRON worker_env = NULL;
 static PTP_POOL worker_pool = NULL;
 static PTP_CLEANUP_GROUP worker_pool_cleanup = NULL;
 #else
@@ -249,17 +249,24 @@ create_threadpool(
     SetThreadpoolThreadMaximum(worker_pool, AM_MAX_THREADS_POOL);
     SetThreadpoolThreadMinimum(worker_pool, AM_MIN_THREADS_POOL);
 
-    InitializeThreadpoolEnvironment(&worker_env);
-    SetThreadpoolCallbackPool(&worker_env, worker_pool);
-    worker_pool_cleanup = CreateThreadpoolCleanupGroup();
-    if (worker_pool_cleanup == NULL) {
-        DestroyThreadpoolEnvironment(&worker_env);
+    worker_env = LocalAlloc(LPTR, sizeof (TP_CALLBACK_ENVIRON));
+    if (worker_env == NULL) {
         CloseThreadpool(worker_pool);
         worker_pool = NULL;
         return FALSE;
-    } else {
-        SetThreadpoolCallbackCleanupGroup(&worker_env, worker_pool_cleanup, NULL);
     }
+    InitializeThreadpoolEnvironment(worker_env);
+    SetThreadpoolCallbackPool(worker_env, worker_pool);
+    worker_pool_cleanup = CreateThreadpoolCleanupGroup();
+    if (worker_pool_cleanup == NULL) {
+        DestroyThreadpoolEnvironment(worker_env);
+        LocalFree(worker_env);
+        CloseThreadpool(worker_pool);
+        worker_pool = NULL;
+        worker_env = NULL;
+        return FALSE;
+    }
+    SetThreadpoolCallbackCleanupGroup(worker_env, worker_pool_cleanup, NULL);
     return TRUE;
 
 #else
@@ -367,12 +374,17 @@ static void CALLBACK worker_dispatch_callback(PTP_CALLBACK_INSTANCE instance, vo
 int am_worker_dispatch(void (*worker_f)(void *), void *arg) {
 #ifdef _WIN32
     BOOL status = FALSE;
-    struct am_callback_args *cb_arg =
-            (struct am_callback_args *) malloc(sizeof (struct am_callback_args));
+    struct am_callback_args *cb_arg;
+
+    if (worker_pool == NULL || worker_env == NULL) {
+        return AM_ENOTSTARTED;
+    }
+
+    cb_arg = (struct am_callback_args *) malloc(sizeof (struct am_callback_args));
     if (cb_arg != NULL) {
         cb_arg->args = arg;
         cb_arg->callback = worker_f;
-        status = TrySubmitThreadpoolCallback(worker_dispatch_callback, cb_arg, &worker_env);
+        status = TrySubmitThreadpoolCallback(worker_dispatch_callback, cb_arg, worker_env);
     }
     return status == FALSE ? AM_ENOMEM : AM_SUCCESS;
 #else
@@ -472,12 +484,20 @@ static void worker_pool_shutdown(struct am_threadpool **threadpool) {
 /* Shut down thread pool in worker/child process */
 void am_worker_pool_shutdown() {
 #ifdef _WIN32
-    CloseThreadpoolCleanupGroupMembers(worker_pool_cleanup, TRUE, NULL);
-    CloseThreadpoolCleanupGroup(worker_pool_cleanup);
-    DestroyThreadpoolEnvironment(&worker_env);
-    CloseThreadpool(worker_pool);
+    if (worker_pool_cleanup != NULL) {
+        CloseThreadpoolCleanupGroupMembers(worker_pool_cleanup, FALSE, NULL);
+        CloseThreadpoolCleanupGroup(worker_pool_cleanup);
+    }
+    if (worker_env != NULL) {
+        DestroyThreadpoolEnvironment(worker_env);
+        LocalFree(worker_env);
+    }
+    if (worker_pool != NULL) {
+        CloseThreadpool(worker_pool);
+    }
     worker_pool_cleanup = NULL;
     worker_pool = NULL;
+    worker_env = NULL;
 #else
     worker_pool_shutdown(&worker_pool);
 #endif
@@ -497,15 +517,82 @@ am_event_t *create_event() {
     am_event_t *e = malloc(sizeof (am_event_t));
     if (e != NULL) {
 #ifdef _WIN32
-        e->e = CreateEventA(NULL, FALSE, FALSE, NULL);
+        e->event = CreateEventA(NULL, FALSE, FALSE, NULL);
 #else
         pthread_mutexattr_t a;
+        e->mutex = malloc(sizeof (pthread_mutex_t));
+        e->condv = malloc(sizeof (pthread_cond_t));
+        if (e->mutex == NULL || e->condv == NULL) {
+            AM_FREE(e->mutex, e->condv, e);
+            return NULL;
+        }
+        e->allocated = AM_TRUE;
         pthread_mutexattr_init(&a);
         pthread_mutexattr_settype(&a, PTHREAD_MUTEX_RECURSIVE);
-        pthread_mutex_init(&e->m, &a);
-        pthread_cond_init(&e->c, NULL);
-        e->e = 0;
+        pthread_mutex_init(e->mutex, &a);
+        pthread_cond_init(e->condv, NULL);
+        e->event = 0;
+        e->count = 0;
         pthread_mutexattr_destroy(&a);
+#endif
+    }
+    return e;
+}
+
+#ifndef _WIN32
+
+static void named_event_mutex_init(pthread_mutex_t *mutex) {
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(mutex, &attr);
+    pthread_mutexattr_destroy(&attr);
+}
+
+static void named_event_cond_init(pthread_cond_t *cvar) {
+    pthread_condattr_t attr;
+    pthread_condattr_init(&attr);
+    pthread_condattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+    pthread_cond_init(cvar, &attr);
+    pthread_condattr_destroy(&attr);
+}
+
+#endif
+
+am_event_t *create_named_event(const char *name, void **addr) {
+    am_event_t *e = malloc(sizeof (am_event_t));
+    if (e != NULL) {
+#ifdef _WIN32
+        SECURITY_DESCRIPTOR sec_descr;
+        SECURITY_ATTRIBUTES sec_attr, *sec = NULL;
+        if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
+                SetSecurityDescriptorDacl(&sec_descr, TRUE, (PACL) NULL, FALSE)) {
+            sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
+            sec_attr.lpSecurityDescriptor = &sec_descr;
+            sec_attr.bInheritHandle = TRUE;
+            sec = &sec_attr;
+        }
+        e->event = CreateEventA(sec, FALSE, FALSE, name);
+        if (e->event == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
+            e->event = OpenEventA(SYNCHRONIZE, FALSE, name);
+        }
+        if (e->event == NULL) {
+            free(e);
+            e = NULL;
+        }
+#else
+        e->mutex = addr[0];
+        e->condv = addr[1];
+        if (e->mutex == NULL || e->condv == NULL) {
+            free(e);
+            return NULL;
+        }
+        e->allocated = AM_FALSE;
+        named_event_mutex_init(e->mutex);
+        named_event_cond_init(e->condv);
+        e->event = 0;
+        e->count = 0;
 #endif
     }
     return e;
@@ -514,12 +601,13 @@ am_event_t *create_event() {
 void set_event(am_event_t *e) {
     if (e != NULL) {
 #ifdef _WIN32
-        SetEvent(e->e);
+        SetEvent(e->event);
 #else
-        pthread_mutex_lock(&e->m);
-        e->e = 1;
-        pthread_cond_broadcast(&e->c);
-        pthread_mutex_unlock(&e->m);
+        pthread_mutex_lock(e->mutex);
+        e->event = 1;
+        ++(e->count);
+        pthread_cond_broadcast(e->condv);
+        pthread_mutex_unlock(e->mutex);
 #endif
     }
 }
@@ -528,15 +616,16 @@ int wait_for_event(am_event_t *e, int timeout) {
     int r = 0;
     if (e != NULL) {
 #ifdef _WIN32
-        DWORD rv = WaitForSingleObject(e->e, timeout > 0 ? timeout : INFINITE);
+        DWORD rv = WaitForSingleObject(e->event, timeout > 0 ? timeout : INFINITE);
         if (rv != WAIT_OBJECT_0) {
             r = AM_ETIMEDOUT;
         }
 #else
-        pthread_mutex_lock(&e->m);
-        while (!e->e) {
+        pthread_mutex_lock(e->mutex);
+        int count = e->count;
+        while (!e->event && e->count == count) {
             if (timeout <= 0) {
-                pthread_cond_wait(&e->c, &e->m);
+                pthread_cond_wait(e->condv, e->mutex);
             } else {
                 struct timeval now = {0, 0};
                 struct timespec ts = {0, 0};
@@ -548,17 +637,17 @@ int wait_for_event(am_event_t *e, int timeout) {
                 tv_sec_from_nsec = ts.tv_nsec / 1000000000L;
                 ts.tv_sec += tv_sec_from_nsec;
                 ts.tv_nsec -= (tv_sec_from_nsec * 1000000000L);
-                if (pthread_cond_timedwait(&e->c, &e->m, &ts) == ETIMEDOUT) {
+                if (pthread_cond_timedwait(e->condv, e->mutex, &ts) == ETIMEDOUT) {
                     r = AM_ETIMEDOUT;
                     break;
                 }
             }
         }
         if (r == 0) {
-            /* resets the event state to nonsignaled after a single waiting thread has been released */
-            e->e = 0;
+            /* reset event state to nonsignaled after a single waiting thread has been released */
+            e->event = 0;
         }
-        pthread_mutex_unlock(&e->m);
+        pthread_mutex_unlock(e->mutex);
 #endif
     }
     return r;
@@ -569,10 +658,12 @@ void close_event(am_event_t **e) {
     if (event != NULL) {
         set_event(event);
 #ifdef _WIN32
-        CloseHandle(event->e);
+        CloseHandle(event->event);
 #else
-        pthread_mutex_destroy(&event->m);
-        pthread_cond_destroy(&event->c);
+        pthread_mutex_destroy(event->mutex);
+        pthread_cond_destroy(event->condv);
+        if (event->allocated)
+            AM_FREE(event->mutex, event->condv);
 #endif
         free(event);
         *e = NULL;
