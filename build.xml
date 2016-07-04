@@ -93,8 +93,8 @@
 
     <condition property="build.os" value="MacOSX">
         <and>
-              <os family="mac"/>
-              <os family="unix"/>
+            <os family="mac"/>
+            <os family="unix"/>
         </and>
     </condition>
 
@@ -148,12 +148,15 @@
         <delete dir="${prd.nightly.dist.dir}"/>
     </target>
 
-    <target name="all_Linux">
+    <target name="all_Linux"> 
         <antcall target="apache22" />
         <antcall target="postNightlyBuildStep" inheritRefs="true"/>
         <antcall target="apache24" />
         <antcall target="postNightlyBuildStep" inheritRefs="true"/>
-   <!-- <antcall target="varnish" /> -->
+        <antcall target="varnish" />
+        <antcall target="postNightlyBuildStep" inheritRefs="true"/>
+        <antcall target="varnish3" />
+        <antcall target="postNightlyBuildStep" inheritRefs="true"/>
     </target>
 
     <target name="all_AIX">
@@ -190,9 +193,9 @@
     <target name="apache24">
         <echo message="Dispatch to Apache 24"/>
         <property name="containername" value="apachezip"/>
-       <antcall target="gmake" inheritRefs="true"/>
+        <antcall target="gmake" inheritRefs="true"/>
     </target>
-    
+
     <target name="httpserver7">
         <echo message="Dispatch to IBM HTTP Server 7"/>
         <property name="containername" value="ibmhttp7zip"/>
@@ -211,7 +214,7 @@
     <target name="iis7" depends="check.build.iis" if="build.iis">
         <echo message="Dispatch to IIS7"/>
         <property name="containername" value="iiszip"/>
-       <antcall target="gmake" inheritRefs="true"/>
+        <antcall target="gmake" inheritRefs="true"/>
     </target>
 
     <target name="check.build.varnish">
@@ -224,8 +227,14 @@
     </target>
 
     <target name="varnish" depends="check.build.varnish" if="build.varnish">
-        <echo message="Dispatch to Varnish"/>
-        <property name="containername" value="varnish"/>
+        <echo message="Dispatch to Varnish4"/>
+        <property name="containername" value="varnishzip"/>
+        <antcall target="gmake" inheritRefs="true"/>
+    </target>
+    
+    <target name="varnish3" depends="check.build.varnish" if="build.varnish">
+        <echo message="Dispatch to Varnish3"/>
+        <property name="containername" value="varnish3zip"/>
         <antcall target="gmake" inheritRefs="true"/>
     </target>
 
@@ -250,7 +259,9 @@
         </echo>
         <echo file="${prd.nightly.dist.dir}/webagents/${nightly.date}/Apache-v2.4-${build.os}-${build.type}-build_date.js" append="false">var apache_v24_${build.os}${build.type.suffix}_build_date = "${nightly.date}";
         </echo>
-        <echo file="${prd.nightly.dist.dir}/webagents/${nightly.date}/Varnish-v3.0.3-${build.os}-${build.type}-build_date.js" append="false">var varnish_v303_${build.os}${build.type.suffix}_build_date = "${nightly.date}";
+        <echo file="${prd.nightly.dist.dir}/webagents/${nightly.date}/Varnish-v3-${build.os}-${build.type}-build_date.js" append="false">var varnish_v3_${build.os}${build.type.suffix}_build_date = "${nightly.date}";
+        </echo>
+        <echo file="${prd.nightly.dist.dir}/webagents/${nightly.date}/Varnish-v4-${build.os}-${build.type}-build_date.js" append="false">var varnish_v4_${build.os}${build.type.suffix}_build_date = "${nightly.date}";
         </echo>
         <antcall target="all_Linux" inheritRefs="true"/>
     </target>
@@ -311,7 +322,8 @@
         <echo message=" apache24        : builds the Apache Web Server 2.4.x agent"/>
         <echo message=" httpserver7     : builds the IBM HTTP Server 7 agent"/>
         <echo message=" iis7            : builds the Microsoft Internet Information Services 7 agent"/>
-        <echo message=" varnish         : builds the Varnish Cache Server 3.0.3 agent"/>
+        <echo message=" varnish         : builds the Varnish Cache Server 4.1.x agent"/>
+        <echo message=" varnish3        : builds the Varnish Cache Server 3.0.7 agent"/>
         <echo message=" usage           : displays this usage message"/>
         <echo message=" "/>
         <echo message=" To run a target, issue the following command:"/>
