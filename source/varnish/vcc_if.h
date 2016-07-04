@@ -11,11 +11,11 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2015 ForgeRock AS.
+ * Copyright 2015 - 2016 ForgeRock AS.
  */
 
-struct VCL_conf;
 struct vmod_priv;
+extern const struct vmod_data Vmod_am_Data;
 
 VCL_VOID vmod_init(VRT_CTX, struct vmod_priv *, VCL_STRING);
 VCL_BOOL vmod_authenticate(VRT_CTX, struct vmod_priv *);
@@ -23,4 +23,7 @@ VCL_VOID vmod_done(VRT_CTX, struct vmod_priv *);
 VCL_VOID vmod_ok(VRT_CTX, struct vmod_priv *);
 VCL_VOID vmod_cleanup(VRT_CTX, struct vmod_priv *);
 VCL_VOID vmod_request_cleanup(VRT_CTX, struct vmod_priv *);
-int init_function(struct vmod_priv *, const struct VCL_conf *);
+
+#ifdef VCL_MET_MAX
+vmod_event_f event_function;
+#endif

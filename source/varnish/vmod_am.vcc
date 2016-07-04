@@ -1,5 +1,5 @@
 $Module am 3
-$Init init_function
+$Event event_function
 $Function VOID init(PRIV_VCL, STRING)
 $Function BOOL authenticate(PRIV_VCL)
 $Function VOID done(PRIV_VCL)

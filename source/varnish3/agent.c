@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2015 ForgeRock AS.
+ * Copyright 2015 - 2016 ForgeRock AS.
  */
 
 #include <stdlib.h>
@@ -64,7 +64,7 @@ struct request {
     int inauth;
     struct header *headers;
     char *body;
-    char *notes;
+    size_t body_sz;
     struct request *next;
 };
 
@@ -72,11 +72,35 @@ static pthread_mutex_t init_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_once_t thread_once = PTHREAD_ONCE_INIT;
 static pthread_key_t thread_key;
 static volatile int n_init = 0;
-static const size_t min_stack_sz = 128 * 1024;
 
 char *url_decode(const char *str);
+char *load_file(const char *filepath, size_t *data_sz);
 
-void vmod_init(struct sess *ctx, struct vmod_priv *priv, const char *conf) {
+int get_extended_stack_enabled() {
+    char *env = getenv("AM_EXT_STACK_ENABLED");
+    if (ISVALID(env)) {
+        char *endp = NULL;
+        int v = strtol(env, &endp, 0);
+        if (env < endp && *endp == '\0' && 0 < v) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int get_stack_size(int id) {
+    char *env = getenv("AM_EXT_STACK_SIZE");
+    if (ISVALID(getenv("AM_EXT_STACK_ENABLED")) && ISVALID(env)) {
+        char *endp = NULL;
+        int v = strtol(env, &endp, 0);
+        if (env < endp && *endp == '\0' && 0 < v) {
+            return v;
+        }
+    }
+    return 0x40000; /* defaults to 256K */
+}
+
+void vmod_init_wp(struct sess *ctx, struct vmod_priv *priv, const char *conf) {
     am_config_t *boot;
     struct agent_instance *settings = (struct agent_instance *) priv->priv;
     pthread_mutex_lock(&init_mutex);
@@ -92,12 +116,6 @@ void vmod_init(struct sess *ctx, struct vmod_priv *priv, const char *conf) {
         if (params->wthread_stacksize > 0) {
             fprintf(stderr, "am_vmod_init current thread pool stack size limit is %d bytes\n",
                     params->wthread_stacksize);
-            /*if (params->wthread_stacksize < min_stack_sz) {
-                fprintf(stderr, "am_vmod_init failed. minimum stack size required %ld, configured %ld bytes. "
-                        "Consider adjusting thread_pool_stack parameter value\n",
-                        min_stack_sz, cache_param->wthread_stacksize);
-                break;
-            }*/
         }
 
         if (params->sess_workspace > 0) {
@@ -381,9 +399,10 @@ static am_status_t set_method(am_request_t *ar) {
     return AM_SUCCESS;
 }
 
-static void store_custom_response(struct request *r, int status, const char *data) {
+static void store_custom_response(struct request *r, int status, char *data, size_t data_sz) {
     r->status = status;
-    r->body = data != NULL ? strdup(data) : NULL;
+    r->body = data;
+    r->body_sz = data_sz;
 }
 
 static int am_status_value(am_status_t v) {
@@ -431,13 +450,23 @@ static am_status_t set_custom_response(am_request_t *ar, const char *text, const
             AM_ADD_HEADER_RESP_SYNTH(req, H_Content_Type, "application/json");
             switch (ar->status) {
                 case AM_PDP_DONE:
-                    am_asprintf(&req->body, AM_JSON_TEMPLATE_LOCATION_DATA,
+                {
+                    char *temp = NULL;
+                    if (ISVALID(ar->post_data_fn)) {
+                        size_t data_sz = ar->post_data_sz;
+                        char *data = load_file(ar->post_data_fn, &data_sz);
+                        temp = base64_encode(data, &data_sz);
+                        am_free(data);
+                    }
+                    req->body_sz = am_asprintf(&req->body, AM_JSON_TEMPLATE_LOCATION_DATA,
                             am_strerror(ar->status), ar->post_data_url, cont_type,
-                            NOTNULL(req->notes), am_status_value(ar->status));
+                            NOTNULL(temp), am_status_value(ar->status));
+                    am_free(temp);
+                }
                     break;
                 case AM_REDIRECT:
                 case AM_INTERNAL_REDIRECT:
-                    am_asprintf(&req->body, AM_JSON_TEMPLATE_LOCATION,
+                    req->body_sz = am_asprintf(&req->body, AM_JSON_TEMPLATE_LOCATION,
                             am_strerror(ar->status), text, am_status_value(ar->status));
                     break;
                 default:
@@ -464,18 +493,18 @@ static am_status_t set_custom_response(am_request_t *ar, const char *text, const
                         "<form name=\"postform\" method=\"POST\" action=\"%s\">", ar->post_data_url);
                 if (form == NULL) {
                     AM_LOG_ERROR(ar->instance_id, "set_custom_response(): memory allocation error");
-                    ar->status = AM_ERROR;
+                    ar->status = AM_ENOMEM;
                     break;
                 }
 
-                if (ISVALID(ar->post_data)) {
-                    a = calloc(1, ar->post_data_sz + 1);
+                if (ISVALID(ar->post_data_fn)) {
+                    a = load_file(ar->post_data_fn, NULL);
                     if (a == NULL) {
-                        AM_LOG_ERROR(ar->instance_id, "set_custom_response(): memory allocation error");
-                        ar->status = AM_ERROR;
+                        AM_LOG_ERROR(ar->instance_id,
+                                "set_custom_response(): unable to open post preservation file %s", ar->post_data_fn);
+                        ar->status = AM_FILE_ERROR;
                         break;
                     }
-                    memcpy(a, ar->post_data, ar->post_data_sz);
                     for (pair = strtok_r(a, "&", &last); pair;
                             pair = strtok_r(NULL, "&", &last)) {
                         char *values = url_decode(pair);
@@ -494,30 +523,42 @@ static am_status_t set_custom_response(am_request_t *ar, const char *text, const
                             free(values);
                         }
                     }
+                    free(a);
                 }
                 form_sz = am_asprintf(&form, "%s</form></body></html>", form);
                 if (form == NULL) {
                     AM_LOG_ERROR(ar->instance_id, "set_custom_response(): memory allocation error");
-                    ar->status = AM_ERROR;
+                    ar->status = AM_ENOMEM;
                     break;
                 }
 
                 AM_ADD_HEADER_RESP_SYNTH(req, H_Content_Type, "text/html");
                 AM_ADD_HEADER_RESP_SYNTH(req, H_Content_Length, VRT_INT_string(req->ctx, form_sz));
-                store_custom_response(req, am_status_value(ar->status), form);
-
-                am_free(form);
+                store_custom_response(req, am_status_value(ar->status), form, form_sz);
                 break;
             }
 
-
+            /* all other content types are replied directly in synt response */
+            AM_ADD_HEADER_RESP_SYNTH(req, H_Content_Type, cont_type);
+            AM_ADD_HEADER_RESP_SYNTH(req, H_Content_Length, VRT_INT_string(req->ctx, ar->post_data_sz));
+            if (ISVALID(ar->post_data_fn)) {
+                char *data = load_file(ar->post_data_fn, NULL);
+                if (data == NULL) {
+                    AM_LOG_ERROR(ar->instance_id,
+                            "set_custom_response(): unable to open post preservation file %s", ar->post_data_fn);
+                    ar->status = AM_FILE_ERROR;
+                    break;
+                }
+                memcpy(data, ar->post_data, ar->post_data_sz);
+                store_custom_response(req, am_status_value(ar->status), data, ar->post_data_sz);
+            }
             break;
         }
         case AM_INTERNAL_REDIRECT:
         case AM_REDIRECT:
         {
             AM_ADD_HEADER_RESP_DELIVER(req, H_Location, text);
-            store_custom_response(req, am_status_value(status), NULL);
+            store_custom_response(req, am_status_value(status), NULL, 0);
             break;
         }
         default:
@@ -526,7 +567,7 @@ static am_status_t set_custom_response(am_request_t *ar, const char *text, const
                 AM_ADD_HEADER_RESP_SYNTH(req, H_Content_Type, cont_type);
             }
             AM_ADD_HEADER_RESP_SYNTH(req, H_Content_Length, VRT_INT_string(req->ctx, strlen(text)));
-            store_custom_response(req, am_status_value(status), text);
+            store_custom_response(req, am_status_value(status), strdup(text), strlen(text));
             break;
         }
     }
@@ -538,46 +579,116 @@ static am_status_t set_custom_response(am_request_t *ar, const char *text, const
 static am_status_t get_request_body(am_request_t *ar) {
     static const char *thisfunc = "get_request_body():";
     struct request *req = (struct request *) ar->ctx;
-    size_t content_length;
+    size_t content_length, wrote, total_read = 0;
     const char *content_length_s;
-    char *body;
-    size_t total_read = 0;
+    char *body, *tmp, *file_name = NULL;
     int bytes_read;
-    char buf[AM_URI_SIZE];
+    char *buf;
+    FILE *fd = NULL;
+    am_bool_t to_file = AM_FALSE, first_run = AM_TRUE;
 
     if (req == NULL || req->ctx == NULL) return AM_EINVAL;
 
     content_length_s = get_request_header(req->ctx, HTTP_HDR_CONTENT_LENGTH);
-    errno = 0;
-    content_length = content_length_s ? strtoul(content_length_s, NULL, 10) : 0;
-    if (content_length == 0 || errno == ERANGE) {
-        AM_LOG_WARNING(ar->instance_id, "%s post data is empty", thisfunc);
+    if (ISINVALID(content_length_s)) {
+        AM_LOG_WARNING(ar->instance_id, "%s missing Content-Length header", thisfunc);
         return AM_NOT_FOUND;
     }
 
-    body = malloc(content_length + 1);
-    if (body == NULL) {
+    errno = 0;
+    content_length = strtoul(content_length_s, NULL, 10);
+    if (content_length == 0) {
+        if (errno == ERANGE) {
+            AM_LOG_WARNING(ar->instance_id, "%s invalid Content-Length header value %s",
+                    thisfunc, content_length_s);
+            return AM_NOT_FOUND;
+        }
+
+        ar->post_data = ar->post_data_fn = NULL;
+        ar->post_data_sz = 0;
+        return AM_SUCCESS;
+    }
+
+#define REQ_DATA_BUFF_SZ 1024
+    buf = WS_Alloc(req->ctx->ws, REQ_DATA_BUFF_SZ + 1);
+    if (buf == NULL) {
         AM_LOG_ERROR(ar->instance_id, "%s memory allocation failure", thisfunc);
         return AM_ENOMEM;
     }
 
     while (content_length) {
         bytes_read = HTC_Read(req->ctx->wrk, req->ctx->htc, buf,
-                content_length > sizeof (buf) ? sizeof (buf) : content_length);
+                content_length > REQ_DATA_BUFF_SZ ? REQ_DATA_BUFF_SZ : content_length);
         if (bytes_read <= 0) {
             free(body);
             AM_LOG_ERROR(ar->instance_id, "%s HTC_Read failure", thisfunc);
             return AM_ERROR;
         }
 
+        if (first_run) {
+            to_file = bytes_read > 5 && memcmp(buf, "LARES=", 6) != 0;
+            first_run = AM_FALSE;
+        }
+
         content_length -= bytes_read;
-        memcpy(body + total_read, buf, bytes_read);
-        total_read += bytes_read;
+
+        if (to_file) {
+
+            if (fd == NULL) {
+                char key[37];
+
+                if (ISINVALID(ar->conf->pdp_dir)) {
+                    AM_LOG_ERROR(ar->instance_id, "%s invalid POST preservation configuration",
+                            thisfunc);
+                    return AM_EINVAL;
+                }
+
+                uuid(key, sizeof (key));
+                file_name = WS_Printf(req->ctx->ws, "%s/%s", ar->conf->pdp_dir, key);
+                if (file_name == NULL) {
+                    return AM_ENOMEM;
+                }
+
+                fd = fopen(file_name, "a");
+                if (fd == NULL) {
+                    AM_LOG_ERROR(ar->instance_id, "%s unable to open POST preservation file: %s (%d)",
+                            thisfunc, file_name, errno);
+                    return AM_FILE_ERROR;
+                }
+            }
+
+            wrote = fwrite(buf, 1, bytes_read, fd);
+            if (ferror(fd)) {
+                fclose(fd);
+                AM_LOG_ERROR(ar->instance_id, "%s unable to write to POST preservation file: %s",
+                        thisfunc, file_name);
+                return AM_FILE_ERROR;
+            }
+            total_read += bytes_read;
+
+        } else {
+            tmp = realloc(body, total_read + bytes_read + 1);
+            if (tmp == NULL) {
+                am_free(body);
+                AM_LOG_ERROR(ar->instance_id, "%s memory allocation failure", thisfunc);
+                return AM_ENOMEM;
+            }
+            body = tmp;
+            memcpy(body + total_read, buf, bytes_read);
+            total_read += bytes_read;
+            body[total_read] = '\0';
+        }
     }
 
-    body[total_read] = '\0';
+    if (fd != NULL) {
+        fclose(fd);
+    }
+
     ar->post_data = body;
+    ar->post_data_fn = ISVALID(file_name) ? strdup(file_name) : NULL;
     ar->post_data_sz = total_read;
+    AM_LOG_DEBUG(ar->instance_id, "%s read %d bytes \n%s",
+            thisfunc, total_read, ISVALID(body) ? body : LOGEMPTY(file_name));
     return AM_SUCCESS;
 }
 
@@ -587,18 +698,14 @@ static am_status_t set_request_body(am_request_t *ar) {
     if (req == NULL) return AM_EINVAL;
 
     if (ISVALID(ar->post_data) && ar->post_data_sz > 0) {
-        size_t data_sz = ar->post_data_sz;
-        char *encoded = base64_encode(ar->post_data, &data_sz);
-        if (encoded != NULL) {
-            req->notes = encoded;
-            AM_LOG_DEBUG(ar->instance_id, "%s preserved %d bytes", thisfunc,
-                    ar->post_data_sz);
-        }
+        AM_ADD_HEADER_RESP_SYNTH(req, H_Content_Length, VRT_INT_string(req->ctx, ar->post_data_sz));
+        AM_LOG_DEBUG(ar->instance_id, "%s preserved %d bytes", thisfunc,
+                ar->post_data_sz);
     }
     return AM_SUCCESS;
 }
 
-unsigned int vmod_authenticate(struct sess *ctx, struct vmod_priv *priv) {
+unsigned int vmod_authenticate_wp(struct sess *ctx, struct vmod_priv *priv) {
     unsigned int result = 0;
     int status;
     am_request_t am_request;
@@ -688,14 +795,14 @@ static struct http *get_sess_http(struct sess *ctx, enum gethdr_e where) {
     }
 }
 
-void vmod_cleanup(struct sess *ctx, struct vmod_priv *priv) {
+void vmod_cleanup_wp(struct sess *ctx, struct vmod_priv *priv) {
     static const char *thisfunc = "vmod_cleanup():";
     struct request *request_list = pthread_getspecific(thread_key);
     VSL(SLT_Debug, 0, "%s xid: %d", thisfunc, ctx->xid);
     delete_request_list(&request_list);
 }
 
-void vmod_request_cleanup(struct sess *ctx, struct vmod_priv *priv) {
+void vmod_request_cleanup_wp(struct sess *ctx, struct vmod_priv *priv) {
     static const char *thisfunc = "vmod_request_cleanup():";
     struct request *e, *t, *tmp;
     struct request *request_list = pthread_getspecific(thread_key);
@@ -708,11 +815,7 @@ void vmod_request_cleanup(struct sess *ctx, struct vmod_priv *priv) {
         if (e->xid == ctx->xid) {
             VSL(SLT_Debug, 0, "%s removing request %d (%p)",
                     thisfunc, e->xid, THREAD_ID);
-            e->headers = NULL; /* headers are WS allocated */
             am_free(e->body);
-            e->body = NULL;
-            am_free(e->notes);
-            e->notes = NULL;
             /* remove request from the list */
             if (request_list == e) {
                 request_list = e->next;
@@ -727,12 +830,28 @@ void vmod_request_cleanup(struct sess *ctx, struct vmod_priv *priv) {
                 }
             }
             free(e);
+            e = NULL;
             break;
         }
     }
 }
 
-void vmod_done(struct sess *ctx, struct vmod_priv *priv) {
+static void synth_page(const struct sess *sp, const char *str, int len) {
+    struct vsb *vsb;
+    CHECK_OBJ_NOTNULL(sp, SESS_MAGIC);
+    if (sp->step != STP_ERROR) {
+        return;
+    }
+    CHECK_OBJ_NOTNULL(sp->obj, OBJECT_MAGIC);
+    vsb = SMS_Makesynth(sp->obj);
+    AN(vsb);
+    VSB_bcat(vsb, str, len);
+    SMS_Finish(sp->obj);
+    http_Unset(sp->obj->http, H_Content_Length);
+    http_PrintfHeader(sp->wrk, sp->fd, sp->obj->http, "Content-Length: %d", sp->obj->len);
+}
+
+void vmod_done_wp(struct sess *ctx, struct vmod_priv *priv) {
     static const char *thisfunc = "vmod_done():";
     struct http *hp;
     struct header *h, *t;
@@ -759,11 +878,11 @@ void vmod_done(struct sess *ctx, struct vmod_priv *priv) {
     }
 
     if (ISVALID(req->body)) {
-        VRT_synth_page(ctx, 0, req->body, vrt_magic_string_end);
+        synth_page(ctx, req->body, req->body_sz);
     }
 }
 
-void vmod_ok(struct sess *ctx, struct vmod_priv *priv) {
+void vmod_ok_wp(struct sess *ctx, struct vmod_priv *priv) {
     static const char *thisfunc = "vmod_ok():";
     int status;
     struct http *hp;
@@ -807,7 +926,7 @@ void vmod_ok(struct sess *ctx, struct vmod_priv *priv) {
             http_SetHeader(ctx->wrk, ctx->fd, hp, h->value);
         }
     }
-    vmod_request_cleanup(ctx, priv);
+    vmod_request_cleanup_wp(ctx, priv);
 }
 
 static void cleanup_key(void *value) {
@@ -833,7 +952,7 @@ static void init_cleanup(void *priv) {
     pthread_mutex_unlock(&init_mutex);
 }
 
-int init_function(struct vmod_priv *priv, const struct VCL_conf *conf) {
+int init_function_wp(struct vmod_priv *priv, const struct VCL_conf *conf) {
     struct agent_instance *settings;
     pthread_once(&thread_once, make_key);
     pthread_mutex_lock(&init_mutex);

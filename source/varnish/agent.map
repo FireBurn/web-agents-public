@@ -6,7 +6,7 @@
             vmod_ok;
             vmod_cleanup;
             vmod_request_cleanup;
-            init_function;
+            event_function;
             Vmod_am_Data;
     local:
             *;

@@ -11,10 +11,11 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2015 ForgeRock AS.
+ * Copyright 2015 - 2016 ForgeRock AS.
  */
 
 #include "config.h"
+#include "vcl.h"
 #include "vrt.h"
 #include "vcc_if.h"
 #include "vmod_abi.h"
@@ -33,7 +34,7 @@ struct Vmod_am_Func {
     td_am_ok *ok;
     td_am_cleanup *cleanup;
     td_am_request_cleanup *request_cleanup;
-    vmod_init_f *_init;
+    vmod_event_f *_event;
 };
 
 static const struct Vmod_am_Func Vmod_Func = {
@@ -43,7 +44,7 @@ static const struct Vmod_am_Func Vmod_Func = {
     vmod_ok,
     vmod_cleanup,
     vmod_request_cleanup,
-    init_function,
+    event_function,
 };
 
 static const char Vmod_Proto[] =
@@ -70,7 +71,7 @@ static const char Vmod_Proto[] =
         "	td_am_request_cleanup		*request_cleanup;\n"
         "\n"
         "	/* Init/Fini */\n"
-        "	vmod_init_f	*_init;\n"
+        "	vmod_event_f	*_event;\n"
         "};\n"
         "static struct Vmod_am_Func Vmod_am_Func;";
 
@@ -112,11 +113,9 @@ static const char * const Vmod_Spec[] = {
     "PRIV_VCL\0"
     "\0",
 
-    "INIT\0Vmod_am_Func._init",
+    "$EVENT\0Vmod_am_Func._event",
     0
 };
-
-extern const struct vmod_data Vmod_am_Data;
 
 const struct vmod_data Vmod_am_Data = {
     .vrt_major = VRT_MAJOR_VERSION,
@@ -127,5 +126,5 @@ const struct vmod_data Vmod_am_Data = {
     .proto = Vmod_Proto,
     .spec = Vmod_Spec,
     .abi = VMOD_ABI_Version,
-    .file_id = "IHBOKZULFNRKJPROXGHDQR@DQCQXIQLA",
+    .file_id = "YKCVRZPYSUXUJDBAXGHB@OXGGYDTHAFC",
 };

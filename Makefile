@@ -81,7 +81,9 @@ APACHE_SOURCES := source/apache/agent.c
 APACHE22_SOURCES := source/apache/agent22.c
 IIS_SOURCES := source/iis/agent.c
 VARNISH_SOURCES := source/varnish/agent.c source/varnish/vcc_if.c
+VARNISH_ASM_SOURCES := source/varnish/remap_64.s
 VARNISH3_SOURCES := source/varnish3/agent.c source/varnish3/vcc_if.c
+VARNISH3_ASM_SOURCES := source/varnish3/remap_64.s
 ADMIN_SOURCES := source/admin.c source/admin_iis.c
 SOURCES := $(filter-out $(ADMIN_SOURCES), $(wildcard source/*.c)) $(wildcard expat/*.c) $(wildcard pcre/*.c) $(wildcard zlib/*.c)
 OBJECTS := $(SOURCES:.c=.$(OBJ))
@@ -96,7 +98,9 @@ IIS_OBJECTS := $(IIS_SOURCES:.c=.$(OBJ))
 IIS_OUT_OBJS := $(addprefix $(OBJDIR)/,$(IIS_OBJECTS))
 VARNISH_OBJECTS := $(VARNISH_SOURCES:.c=.$(OBJ))
 VARNISH_OUT_OBJS := $(addprefix $(OBJDIR)/,$(VARNISH_OBJECTS))
+VARNISH_ASM_OBJS := $(addprefix $(OBJDIR)/,$(VARNISH_ASM_SOURCES:.s=.$(OBJ)))
 VARNISH3_OBJECTS := $(VARNISH3_SOURCES:.c=.$(OBJ))
+VARNISH3_ASM_OBJS := $(addprefix $(OBJDIR)/,$(VARNISH3_ASM_SOURCES:.s=.$(OBJ)))
 VARNISH3_OUT_OBJS := $(addprefix $(OBJDIR)/,$(VARNISH3_OBJECTS))
 ifdef TESTS
  TEST_FILES := $(addprefix tests/,$(addsuffix .c,$(TESTS)))
@@ -140,6 +144,10 @@ $(OBJDIR)/%.$(OBJ): %.c
 	@$(ECHO) "[*** Compiling "$<" ***]"
 	$(CC) $(CFLAGS) $< $(COMPILEOPTS)
 
+$(OBJDIR)/%.$(OBJ): %.s
+	@$(ECHO) "[*** Compiling "$<" ***]"
+	$(CC) $(CFLAGS) $< $(COMPILEOPTS)
+	
 .DEFAULT_GOAL := all
 
 all: apachezip
@@ -272,8 +280,8 @@ iiszip: clean build version iis
 	-$(CP) legal$(PS)* $(OBJDIR)$(PS)web_agents$(PS)iis_agent$(PS)legal$(PS)
 	$(CD) $(OBJDIR) && $(EXEC)agentadmin --a IIS_$(OS_ARCH)_$(VERSION).zip web_agents
 
-varnishzip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"4.0.x"'
-varnishzip: CONTAINER = $(strip Varnish 4.0.x $(OS_ARCH)$(OS_ARCH_EXT) $(subst _,,$(OS_BITS)))
+varnishzip: CFLAGS += $(COMPILEFLAG)DSERVER_VERSION='"4.1.x"'
+varnishzip: CONTAINER = $(strip Varnish 4.1.x $(OS_ARCH)$(OS_ARCH_EXT) $(subst _,,$(OS_BITS)))
 varnishzip: clean build version varnish agentadmin
 	@$(ECHO) "[***** Building Varnish agent archive *****]"
 	-$(MKDIR) $(OBJDIR)$(PS)web_agents
