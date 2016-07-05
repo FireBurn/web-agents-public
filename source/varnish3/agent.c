@@ -455,6 +455,7 @@ static am_status_t set_custom_response(am_request_t *ar, const char *text, const
                     if (ISVALID(ar->post_data_fn)) {
                         size_t data_sz = ar->post_data_sz;
                         char *data = load_file(ar->post_data_fn, &data_sz);
+                        unlink(ar->post_data_fn);
                         temp = base64_encode(data, &data_sz);
                         am_free(data);
                     }
@@ -499,6 +500,7 @@ static am_status_t set_custom_response(am_request_t *ar, const char *text, const
 
                 if (ISVALID(ar->post_data_fn)) {
                     a = load_file(ar->post_data_fn, NULL);
+                    unlink(ar->post_data_fn);
                     if (a == NULL) {
                         AM_LOG_ERROR(ar->instance_id,
                                 "set_custom_response(): unable to open post preservation file %s", ar->post_data_fn);
@@ -543,13 +545,13 @@ static am_status_t set_custom_response(am_request_t *ar, const char *text, const
             AM_ADD_HEADER_RESP_SYNTH(req, H_Content_Length, VRT_INT_string(req->ctx, ar->post_data_sz));
             if (ISVALID(ar->post_data_fn)) {
                 char *data = load_file(ar->post_data_fn, NULL);
+                unlink(ar->post_data_fn);
                 if (data == NULL) {
                     AM_LOG_ERROR(ar->instance_id,
                             "set_custom_response(): unable to open post preservation file %s", ar->post_data_fn);
                     ar->status = AM_FILE_ERROR;
                     break;
                 }
-                memcpy(data, ar->post_data, ar->post_data_sz);
                 store_custom_response(req, am_status_value(ar->status), data, ar->post_data_sz);
             }
             break;
@@ -581,7 +583,7 @@ static am_status_t get_request_body(am_request_t *ar) {
     struct request *req = (struct request *) ar->ctx;
     size_t content_length, wrote, total_read = 0;
     const char *content_length_s;
-    char *body, *tmp, *file_name = NULL;
+    char *body = NULL, *tmp, *file_name = NULL;
     int bytes_read;
     char *buf;
     FILE *fd = NULL;
@@ -620,7 +622,6 @@ static am_status_t get_request_body(am_request_t *ar) {
         bytes_read = HTC_Read(req->ctx->wrk, req->ctx->htc, buf,
                 content_length > REQ_DATA_BUFF_SZ ? REQ_DATA_BUFF_SZ : content_length);
         if (bytes_read <= 0) {
-            free(body);
             AM_LOG_ERROR(ar->instance_id, "%s HTC_Read failure", thisfunc);
             return AM_ERROR;
         }
@@ -660,6 +661,7 @@ static am_status_t get_request_body(am_request_t *ar) {
             wrote = fwrite(buf, 1, bytes_read, fd);
             if (ferror(fd)) {
                 fclose(fd);
+                unlink(file_name);
                 AM_LOG_ERROR(ar->instance_id, "%s unable to write to POST preservation file: %s",
                         thisfunc, file_name);
                 return AM_FILE_ERROR;
@@ -697,7 +699,7 @@ static am_status_t set_request_body(am_request_t *ar) {
     struct request *req = (struct request *) ar->ctx;
     if (req == NULL) return AM_EINVAL;
 
-    if (ISVALID(ar->post_data) && ar->post_data_sz > 0) {
+    if (ISVALID(ar->post_data_fn) && ar->post_data_sz > 0) {
         AM_ADD_HEADER_RESP_SYNTH(req, H_Content_Length, VRT_INT_string(req->ctx, ar->post_data_sz));
         AM_LOG_DEBUG(ar->instance_id, "%s preserved %d bytes", thisfunc,
                 ar->post_data_sz);
