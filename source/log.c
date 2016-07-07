@@ -193,6 +193,9 @@ static void log_mutex_unlock(int type) {
 
 static struct log_block *get_write_block() {
     for (;;) {
+        if (log_handle == NULL || log_handle->area == NULL ||
+                AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
+            return NULL;
         /* check if there is a room to expand the cursor */
         uint32_t index = log_handle->area->write_start;
         struct log_block *block = log_handle->area->blocks + index;
@@ -212,9 +215,12 @@ static struct log_block *get_write_block() {
 
 static struct log_block *get_read_block() {
     for (;;) {
+        if (log_handle == NULL || log_handle->area == NULL ||
+                AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
+            return NULL;
         uint32_t index = log_handle->area->read_start;
         struct log_block *block = log_handle->area->blocks + index;
-        if (block->next == log_handle->area->write_end) {
+        if (index == log_handle->area->write_end) {
             if (wait_for_event(log_handle->log_buffer_filled, LOG_READ_TIMEOUT) == 0)
                 continue;
             return NULL;
@@ -409,9 +415,6 @@ static void log_buffer_read() {
 static void *am_log_worker(void *arg) {
     for (;;) {
         if (log_handle == NULL || log_handle->area == NULL) {
-#ifdef _WIN32
-            ExitThread(0);
-#endif
             return NULL;
         }
         if (AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
@@ -419,16 +422,13 @@ static void *am_log_worker(void *arg) {
         log_buffer_read();
     }
     AM_ATOMIC_SWAP_32(&log_handle->area->owner, 0);
-#ifdef _WIN32
-    ExitThread(0);
-#endif
     return NULL;
 }
 
 am_bool_t is_process_running(unsigned long pid) {
 #ifdef _WIN32
     HANDLE proc;
-    DWORD status;
+    DWORD status, exitcode = 0;
     if (pid == 0)
         return AM_TRUE;
     if (pid < 0)
@@ -439,9 +439,12 @@ am_bool_t is_process_running(unsigned long pid) {
         return AM_TRUE;
     if (proc == NULL)
         return AM_FALSE;
+    status = GetExitCodeProcess(proc, &exitcode);
     CloseHandle(proc);
-#endif
+    return exitcode == STILL_ACTIVE;
+#else
     return AM_TRUE;
+#endif
 }
 
 static void log_worker_register() {
@@ -827,17 +830,20 @@ void am_log_shutdown(int id) {
     if (log_handle == NULL || log_handle->area == NULL) {
         return;
     }
-
-    if (AM_ATOMIC_ADD_32(&log_handle->area->owner, 0) == pid)
+    
+    if (AM_ATOMIC_ADD_32(&log_handle->area->owner, 0) == pid) {
         AM_ATOMIC_SWAP_32(&log_handle->area->stop, 1);
-
-    AM_THREAD_JOIN(log_handle->worker);
+        AM_THREAD_JOIN(log_handle->worker);
+#ifdef _WIN32
+        CloseHandle(log_handle->worker);
+#endif
+        AM_ATOMIC_SWAP_32(&log_handle->area->owner, 0);
+    }
 
     close_event(&log_handle->log_buffer_available);
     close_event(&log_handle->log_buffer_filled);
 
 #ifdef _WIN32
-    CloseHandle(log_handle->worker);
     UnmapViewOfFile(log_handle->area);
     CloseHandle(log_handle->mapping);
 #else
@@ -870,8 +876,6 @@ void am_log_shutdown(int id) {
             log_handle->mutex[LOG_INIT_MUTEX], log_handle);
     log_handle = NULL;
 }
-
-/***************************************************************************/
 
 void am_log_register_instance(unsigned long instance_id, const char *debug_log, int log_level, int log_size,
         const char *audit_log, int audit_level, int audit_size, const char *config_file) {

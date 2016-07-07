@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2015 ForgeRock AS.
+ * Copyright 2015 - 2016 ForgeRock AS.
  */
 
 #include <stdio.h>
@@ -169,6 +169,7 @@ void test_logging(void **state) {
     // log_procedure(&range);
     test_threaded_logging(instance, NTHREADS, NLOGS);
 
+    am_shutdown_worker();
     am_shutdown(instance);
 
     verify_file("temp-debug.log", NTHREADS * NLOGS);

@@ -517,7 +517,7 @@ am_event_t *create_event() {
     am_event_t *e = malloc(sizeof (am_event_t));
     if (e != NULL) {
 #ifdef _WIN32
-        e->event = CreateEventA(NULL, FALSE, FALSE, NULL);
+        e->event = CreateEventA(NULL, TRUE, FALSE, NULL);
 #else
         pthread_mutexattr_t a;
         e->mutex = malloc(sizeof (pthread_mutex_t));
@@ -573,7 +573,7 @@ am_event_t *create_named_event(const char *name, void **addr) {
             sec_attr.bInheritHandle = TRUE;
             sec = &sec_attr;
         }
-        e->event = CreateEventA(sec, FALSE, FALSE, name);
+        e->event = CreateEventA(sec, TRUE, FALSE, name);
         if (e->event == NULL && GetLastError() == ERROR_ACCESS_DENIED) {
             e->event = OpenEventA(SYNCHRONIZE, FALSE, name);
         }
@@ -617,9 +617,11 @@ int wait_for_event(am_event_t *e, int timeout) {
     if (e != NULL) {
 #ifdef _WIN32
         DWORD rv = WaitForSingleObject(e->event, timeout > 0 ? timeout : INFINITE);
-        if (rv != WAIT_OBJECT_0) {
-            r = AM_ETIMEDOUT;
+        if (rv == WAIT_OBJECT_0) {
+            ResetEvent(e->event);
+            return r;
         }
+        r = AM_ETIMEDOUT;
 #else
         pthread_mutex_lock(e->mutex);
         int count = e->count;

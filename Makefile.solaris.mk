@@ -11,7 +11,7 @@
 # Header, with the fields enclosed by brackets [] replaced by your own identifying
 # information: "Portions copyright [year] [name of copyright owner]".
 #
-# Copyright 2014 - 2015 ForgeRock AS.
+# Copyright 2014 - 2016 ForgeRock AS.
 #
 
 ifndef	SOLARIS_MK_INCLUDED
@@ -76,6 +76,7 @@ agentadmin: $(OUT_OBJS) $(ADMIN_OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" binary ***]"
 	${CC} $(LDFLAGS) $(OUT_OBJS) $(ADMIN_OUT_OBJS) -o build/agentadmin
 
+tests: CFLAGS += $(COMPILEFLAG)DUNIT_TEST
 tests: clean build version test_includes $(OUT_OBJS) $(TEST_OBJECTS) 
 	@$(ECHO) "[***** Building "$@" binary *****]"
 	${CC} $(LDFLAGS) $(OUT_OBJS) $(TEST_OBJECTS) -o build$(PS)test

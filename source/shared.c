@@ -392,9 +392,13 @@ am_shm_t *am_shm_create(const char *name, uint64_t usize) {
     if (ret == NULL) return NULL;
 
 #ifdef _WIN32
+#ifdef UNIT_TEST
+    if (GetModuleFileNameA(NULL, dll_path, sizeof (dll_path) - 1) > 0) {
+#else
     if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR) caller, &hm) &&
             GetModuleFileNameA(hm, dll_path, sizeof (dll_path) - 1) > 0) {
+#endif
         PathRemoveFileSpecA(dll_path);
         strcat(dll_path, FILE_PATH_SEP);
         snprintf(ret->name[0], sizeof (ret->name[0]),
@@ -402,7 +406,12 @@ am_shm_t *am_shm_create(const char *name, uint64_t usize) {
         snprintf(ret->name[1], sizeof (ret->name[1]),
                 AM_GLOBAL_PREFIX"%s_s", name); /* shared memory name */
         snprintf(ret->name[2], sizeof (ret->name[2]),
-                "%s.."FILE_PATH_SEP"log"FILE_PATH_SEP"%s_f", dll_path, name); /* shared memory file name */
+#ifdef UNIT_TEST
+                "%s"FILE_PATH_SEP"%s_f",
+#else
+                "%s.."FILE_PATH_SEP"log"FILE_PATH_SEP"%s_f",
+#endif
+                dll_path, name); /* shared memory file name */
         snprintf(ret->name[3], sizeof (ret->name[3]),
                 AM_GLOBAL_PREFIX"%s_sz", name); /* shared memory name for global_size */
     } else {

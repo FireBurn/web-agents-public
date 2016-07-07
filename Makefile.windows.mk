@@ -177,6 +177,7 @@ agentadmin_iis: $(OUT_OBJS) $(ADMIN_OUT_OBJS)
 	$(CP) $(OBJDIR)$(PS)agentadmin.pdb $(OBJDIR)$(PS)dist
 	$(CP) $(OBJDIR)$(PS)agentadmin.exe $(OBJDIR)$(PS)dist
 
+tests: CFLAGS += $(COMPILEFLAG)DUNIT_TEST
 tests: clean build version test_includes $(OUT_OBJS) $(TEST_OBJECTS) 
 	@$(ECHO) "[***** Building "$@" binary *****]"
 	-$(RMALL) $(OBJDIR)$(PS)version.*
