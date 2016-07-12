@@ -47,7 +47,14 @@ void notification_worker(void *arg) {
         if (strcmp(e->n, "sid") == 0) {
             token = e->v;
         }
-        if (strcmp(e->n, "state") == 0 && strcmp(e->v, "destroyed") == 0) {
+        if (strcmp(e->n, "state") == 0 &&
+                (strcmp(e->v, "destroyed") == 0 || strcmp(e->v, "valid") == 0)) {
+            /* state = destroyed:
+             *  agent will remove token from its cache;
+             * state = valid:
+             *  agent will also remove token from its cache, but just to let 
+             *  it to be refreshed with the next call to SessionService
+             */
             destroyed = AM_TRUE;
         }
         if (strcmp(e->n, "agentName") == 0) {
