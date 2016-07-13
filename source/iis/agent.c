@@ -1483,7 +1483,6 @@ class OpenAMHttpModuleFactory : public IHttpModuleFactory{
     }
 
     virtual void Terminate() {
-        am_shutdown_worker();
         am_shutdown(AM_DEFAULT_AGENT_ID);
         delete this;
     }

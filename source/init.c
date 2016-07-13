@@ -32,13 +32,13 @@ int am_init(int id) {
     int rv = AM_SUCCESS;
 #ifndef _WIN32
     am_net_init();
+    am_worker_pool_init_main();
     am_log_init(id);
     am_configuration_init(id);
     am_audit_init(id);
     am_audit_processor_init();
     am_url_validator_init();
     rv = am_cache_init(id);
-    am_worker_pool_init_main();
 #endif
     return rv;
 }
@@ -47,12 +47,14 @@ int am_init_worker(int id) {
     int rv = AM_SUCCESS;
 #ifdef _WIN32
     am_net_init();
+    am_worker_pool_init();
     am_log_init(id);
     am_configuration_init(id);
     am_audit_init(id);
     rv = am_cache_init(id);
-#endif
+#else
     am_worker_pool_init();
+#endif
     return rv;
 }
 
@@ -60,12 +62,14 @@ int am_shutdown(int id) {
     am_url_validator_shutdown();
     am_audit_processor_shutdown();
     am_audit_shutdown();
+#ifdef _WIN32
+    am_worker_pool_shutdown();
+#else
+    am_worker_pool_shutdown_main();
+#endif
     am_cache_shutdown();
     am_configuration_shutdown();
     am_log_shutdown(id);
-#ifndef _WIN32
-    am_worker_pool_shutdown_main();
-#endif
     am_net_shutdown();
     return 0;
 }
@@ -142,7 +146,7 @@ am_status_t am_remove_shm_and_locks(int id, void (*log_cb)(void *arg, char *name
     if (!(get_shm_name(AM_CONFIG_SHM_NAME, id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg))) {
         status = AM_ERROR;
     }
-    
+
     if (!(get_shm_name(AM_LOG_SHM_NAME, id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg))) {
         status = AM_ERROR;
     }

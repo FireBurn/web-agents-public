@@ -519,48 +519,32 @@ am_event_t *create_event() {
 #ifdef _WIN32
         e->event = CreateEventA(NULL, TRUE, FALSE, NULL);
 #else
-        pthread_mutexattr_t a;
-        e->mutex = malloc(sizeof (pthread_mutex_t));
-        e->condv = malloc(sizeof (pthread_cond_t));
-        if (e->mutex == NULL || e->condv == NULL) {
-            AM_FREE(e->mutex, e->condv, e);
+#ifdef __APPLE__
+        e->sem = malloc(sizeof (semaphore_t));
+#else
+        e->sem = malloc(sizeof (sem_t));
+#endif   
+        if (e->sem == NULL) {
+            free(e);
+            return NULL;
+        }
+#ifdef __APPLE__
+        e->status = semaphore_create(mach_task_self(), e->sem, SYNC_POLICY_FIFO, 0);
+        if (e->status != KERN_SUCCESS) {
+#else
+        e->status = sem_init(e->sem, 0, 0);
+        if (e->status == -1) {
+#endif   
+            AM_FREE(e->sem, e);
             return NULL;
         }
         e->allocated = AM_TRUE;
-        pthread_mutexattr_init(&a);
-        pthread_mutexattr_settype(&a, PTHREAD_MUTEX_RECURSIVE);
-        pthread_mutex_init(e->mutex, &a);
-        pthread_cond_init(e->condv, NULL);
-        e->event = 0;
-        e->count = 0;
-        pthread_mutexattr_destroy(&a);
 #endif
     }
     return e;
 }
 
-#ifndef _WIN32
-
-static void named_event_mutex_init(pthread_mutex_t *mutex) {
-    pthread_mutexattr_t attr;
-    pthread_mutexattr_init(&attr);
-    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
-    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init(mutex, &attr);
-    pthread_mutexattr_destroy(&attr);
-}
-
-static void named_event_cond_init(pthread_cond_t *cvar) {
-    pthread_condattr_t attr;
-    pthread_condattr_init(&attr);
-    pthread_condattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
-    pthread_cond_init(cvar, &attr);
-    pthread_condattr_destroy(&attr);
-}
-
-#endif
-
-am_event_t *create_named_event(const char *name, void **addr) {
+am_event_t *create_named_event(const char *name, void *sem) {
     am_event_t *e = malloc(sizeof (am_event_t));
     if (e != NULL) {
 #ifdef _WIN32
@@ -582,17 +566,26 @@ am_event_t *create_named_event(const char *name, void **addr) {
             e = NULL;
         }
 #else
-        e->mutex = addr[0];
-        e->condv = addr[1];
-        if (e->mutex == NULL || e->condv == NULL) {
+#ifdef __APPLE__
+        e->sem = (semaphore_t *) sem;
+#else
+        e->sem = (sem_t *) sem;
+#endif
+        if (e->sem == NULL) {
+            free(e);
+            return NULL;
+        }
+#ifdef __APPLE__
+        e->status = semaphore_create(mach_task_self(), e->sem, SYNC_POLICY_FIFO, 0);
+        if (e->status != KERN_SUCCESS) {
+#else
+        e->status = sem_init(e->sem, 1, 0);
+        if (e->status == -1) {
+#endif
             free(e);
             return NULL;
         }
         e->allocated = AM_FALSE;
-        named_event_mutex_init(e->mutex);
-        named_event_cond_init(e->condv);
-        e->event = 0;
-        e->count = 0;
 #endif
     }
     return e;
@@ -603,14 +596,33 @@ void set_event(am_event_t *e) {
 #ifdef _WIN32
         SetEvent(e->event);
 #else
-        pthread_mutex_lock(e->mutex);
-        e->event = 1;
-        ++(e->count);
-        pthread_cond_broadcast(e->condv);
-        pthread_mutex_unlock(e->mutex);
+#ifdef __APPLE__
+        e->status = semaphore_signal(*e->sem);
+#else
+        e->status = sem_post(e->sem);
+#endif
 #endif
     }
 }
+
+#if !defined(_WIN32) && !defined(__APPLE__)
+
+static inline int sem_wait_nointr(sem_t *sem) {
+    while (sem_wait(sem)) {
+        if (errno == EINTR) errno = 0;
+        else return -1;
+    }
+    return 0;
+}
+
+static inline int sem_timedwait_nointr(sem_t *sem, const struct timespec *abs_timeout) {
+    while (sem_timedwait(sem, abs_timeout)) {
+        if (errno == EINTR) errno = 0;
+        else return -1;
+    }
+    return 0;
+}
+#endif
 
 int wait_for_event(am_event_t *e, int timeout) {
     int r = 0;
@@ -623,33 +635,43 @@ int wait_for_event(am_event_t *e, int timeout) {
         }
         r = AM_ETIMEDOUT;
 #else
-        pthread_mutex_lock(e->mutex);
-        int count = e->count;
-        while (!e->event && e->count == count) {
-            if (timeout <= 0) {
-                pthread_cond_wait(e->condv, e->mutex);
-            } else {
-                struct timeval now = {0, 0};
-                struct timespec ts = {0, 0};
-                long tv_sec_from_nsec;
-                gettimeofday(&now, NULL);
-                ts.tv_sec = now.tv_sec;
-                ts.tv_nsec = now.tv_usec * 1000;
-                ts.tv_nsec += timeout * 1000000;
-                tv_sec_from_nsec = ts.tv_nsec / 1000000000L;
-                ts.tv_sec += tv_sec_from_nsec;
-                ts.tv_nsec -= (tv_sec_from_nsec * 1000000000L);
-                if (pthread_cond_timedwait(e->condv, e->mutex, &ts) == ETIMEDOUT) {
-                    r = AM_ETIMEDOUT;
-                    break;
-                }
+        if (timeout <= 0) {
+#ifdef __APPLE__
+            e->status = semaphore_wait(*e->sem);
+#else
+            e->status = sem_wait_nointr(e->sem);
+#endif  
+        } else {
+
+#define timespecadd(vvp, uvp) do { \
+        (vvp)->tv_sec += (uvp)->tv_sec; \
+        (vvp)->tv_nsec += (uvp)->tv_nsec; \
+        if ((vvp)->tv_nsec >= 1000000000) { \
+            (vvp)->tv_sec++; \
+            (vvp)->tv_nsec -= 1000000000; \
+        } \
+    } while (0)
+
+#ifdef __APPLE__
+            const unsigned sec = timeout / 1000;
+            const int nsec = ((int) timeout - (sec * 1000)) * 1000000;
+            const mach_timespec_t t = {sec, nsec};
+            e->status = semaphore_timedwait(*e->sem, t);
+            if (e->status == KERN_OPERATION_TIMED_OUT) {
+                r = AM_ETIMEDOUT;
             }
+#else
+            struct timespec start, end;
+            am_clock_gettime(&start);
+            end.tv_sec = timeout / 1000;
+            end.tv_nsec = timeout % 1000 * 1000000;
+            timespecadd(&end, &start);
+            e->status = sem_timedwait_nointr(e->sem, &end);
+            if (errno == ETIMEDOUT) {
+                r = AM_ETIMEDOUT;
+            }
+#endif
         }
-        if (r == 0) {
-            /* reset event state to nonsignaled after a single waiting thread has been released */
-            e->event = 0;
-        }
-        pthread_mutex_unlock(e->mutex);
 #endif
     }
     return r;
@@ -658,14 +680,16 @@ int wait_for_event(am_event_t *e, int timeout) {
 void close_event(am_event_t **e) {
     am_event_t *event = e != NULL ? *e : NULL;
     if (event != NULL) {
-        set_event(event);
 #ifdef _WIN32
         CloseHandle(event->event);
 #else
-        pthread_mutex_destroy(event->mutex);
-        pthread_cond_destroy(event->condv);
+#ifdef __APPLE__
+        event->status = semaphore_destroy(mach_task_self(), *event->sem);
+#else
+        event->status = sem_destroy(event->sem);
+#endif   
         if (event->allocated)
-            AM_FREE(event->mutex, event->condv);
+            free(event->sem);
 #endif
         free(event);
         *e = NULL;
@@ -848,11 +872,11 @@ static void *timer_event_loop(void *args) {
 #endif
 
     while (1) {
-        if (wait_for_event(e->exit_ev, 1000) != AM_ETIMEDOUT) {
-            break;
+        if (wait_for_event(e->exit_ev, 1000) == 0) {
+            continue;
         }
+        break;
     }
-
 #endif
     return NULL;
 }

@@ -43,11 +43,13 @@ typedef struct {
 #ifdef _WIN32
     HANDLE event;
 #else
-    volatile int event;
-    volatile int count;
-    pthread_mutex_t *mutex;
-    pthread_cond_t *condv;
+#ifdef __APPLE__
+    semaphore_t *sem;
+#else
+    sem_t *sem;
+#endif
     int allocated;
+    int status;
 #endif
 } am_event_t;
 
@@ -78,7 +80,7 @@ typedef struct {
 } am_timer_event_t;
 
 am_event_t *create_event();
-am_event_t *create_named_event(const char *name, void **addr);
+am_event_t *create_named_event(const char *name, void *sm);
 int wait_for_event(am_event_t *e, int timeout);
 void set_event(am_event_t *e);
 void close_event(am_event_t **e);

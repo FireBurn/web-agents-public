@@ -82,8 +82,7 @@ struct log_buffer {
     volatile uint32_t lock[3];
 
 #ifndef _WIN32
-    pthread_mutex_t mutex_ev[2];
-    pthread_cond_t cond_ev[2];
+    sem_t sem[2];
 #endif
 
     struct log_files {
@@ -91,19 +90,10 @@ struct log_buffer {
         unsigned long instance_id;
         char name_debug[AM_PATH_SIZE];
         char name_audit[AM_PATH_SIZE];
-        int32_t owner;
-        int32_t fd_debug;
-        int32_t fd_audit;
         int32_t max_size_debug;
         int32_t max_size_audit;
         int32_t level_debug;
         int32_t level_audit;
-        uint64_t created_debug;
-        uint64_t created_audit;
-#ifndef _WIN32
-        ino_t node_debug;
-        ino_t node_audit;
-#endif
     } files[AM_MAX_INSTANCES];
 
     struct valid_url {
@@ -124,6 +114,14 @@ struct log_mutex {
     int32_t pid;
     uint32_t count;
     am_mutex_t lock;
+};
+
+struct log_file {
+    unsigned long instance_id;
+    int32_t file_debug;
+    int32_t file_audit;
+    uint64_t created_debug;
+    uint64_t created_audit;
 };
 
 static struct am_shared_log {
@@ -241,51 +239,70 @@ static am_bool_t should_rotate_time(uint64_t ct) {
 #define fsync _commit
 #define file_open(name) _open(name, _O_CREAT | _O_WRONLY | _O_APPEND | _O_BINARY, _S_IREAD | _S_IWRITE)
 #define file_close _close
-#define file_stat _stat64
+#define file_fstat _fstat64
 #define file_stat_struct struct __stat64
 #define file_access(name) _access(name, 0)
 #else
 #define file_open(name) open(name, O_CREAT | O_WRONLY | O_APPEND, S_IWUSR | S_IRUSR | S_IRGRP)
 #define file_close close
-#define file_stat stat
+#define file_fstat fstat
 #define file_stat_struct struct stat
-#define file_access(name) access(tmp, F_OK)
+#define file_access(name) access(name, F_OK)
 #endif
 
 static void log_file_write(const char *data, unsigned int data_sz,
-        unsigned long instance_id, struct log_files *f, am_bool_t is_audit) {
+        struct log_files *f, struct log_file *file_cache, am_bool_t is_audit) {
     file_stat_struct st;
-    uint64_t wr, file_created;
+    uint64_t wr, file_created, fsize;
     int32_t file_handle, max_size;
-    char *file_name;
+    const char *file_name;
+    int status;
 
-    if (f == NULL || ISINVALID(data) || !data_sz || !instance_id) return;
+    if (f == NULL || ISINVALID(data) || !data_sz || file_cache == NULL) return;
 
-    file_handle = is_audit ? f->fd_audit : f->fd_debug;
     file_name = is_audit ? f->name_audit : f->name_debug;
     max_size = is_audit ? f->max_size_audit : f->max_size_debug;
-    file_created = is_audit ? f->created_audit : f->created_debug;
+    file_created = is_audit ? file_cache->created_audit : file_cache->created_debug;
+    file_handle = is_audit ? file_cache->file_audit : file_cache->file_debug;
 
     if (ISINVALID(file_name)) {
         fprintf(stderr, "log_file_write(): invalid file name\n");
         return;
     }
-    /* log file is not opened yet, do it now */
+
     if (file_handle == -1) {
+        /* this is a new file - try to open/create one */
         file_handle = file_open(file_name);
-        if (file_stat(file_name, &st) == 0) {
-            file_created = st.st_ctime;
-            if (is_audit) {
-                f->created_audit = file_created;
-            } else {
-                f->created_debug = file_created;
-            }
-            f->owner = getpid();
+#ifdef _WIN32
+        if (file_handle != -1) {
+            file_created = time(NULL);
         }
+#endif
     }
-    if (file_handle == -1) {
-        fprintf(stderr, "log_file_write(): failed to open log file %s: error: %d\n", file_name, errno);
+    status = errno;
+    if (file_handle == -1 || file_fstat(file_handle, &st) != 0) {
+        fprintf(stderr, "log_file_write(): failed to open log file %s: (error: %d/%d)\n",
+                file_name, status, errno);
+        if (file_handle != -1) {
+            file_close(file_handle);
+        }
+        if (is_audit) {
+            file_cache->file_audit = -1;
+        } else {
+            file_cache->file_debug = -1;
+        }
         return;
+    }
+
+    fsize = st.st_size;
+#ifndef _WIN32
+    file_created = st.st_ctime;
+#endif
+    /* store file ctime in local cache entry */
+    if (is_audit) {
+        file_cache->created_audit = file_created;
+    } else {
+        file_cache->created_debug = file_created;
     }
 
     wr = write(file_handle, data, data_sz);
@@ -297,20 +314,10 @@ static void log_file_write(const char *data, unsigned int data_sz,
 #endif
             );
     fsync(file_handle);
-
-    if (file_stat(file_name, &st) != 0) {
-        file_close(file_handle);
-        if (is_audit) {
-            f->fd_audit = -1;
-        } else {
-            f->fd_debug = -1;
-        }
-        fprintf(stderr, "log_file_write(): failed to stat log file %s: error: %d\n", file_name, errno);
-        return;
-    }
+    fsize += wr;
 
     /* rotate file if size exceeds max (configured) value or it is set to rotate once a day */
-    if ((max_size > 0 && (st.st_size + 1024) > max_size) ||
+    if ((max_size > 0 && (fsize + 1024) > max_size) ||
             (max_size == -1 && should_rotate_time(file_created))) {
         unsigned int idx = 1;
         char *tmp = malloc(AM_PATH_SIZE + 1);
@@ -325,16 +332,17 @@ static void log_file_write(const char *data, unsigned int data_sz,
                 SetFilePointer(fh, 0, NULL, FILE_BEGIN);
                 SetEndOfFile(fh);
                 if (is_audit) {
-                    f->created_audit = time(NULL);
+                    file_cache->created_audit = time(NULL);
                 } else {
-                    f->created_debug = time(NULL);
+                    file_cache->created_debug = time(NULL);
                 }
-                f->owner = getpid();
             } else {
                 fprintf(stderr, "log_file_write(): could not rotate log file %s (error: %d)\n",
                         file_name, GetLastError());
             }
 #else
+            file_close(file_handle);
+            file_handle = -1;
             if (rename(file_name, tmp) != 0) {
                 fprintf(stderr, "log_file_write(): could not rotate log file %s (error: %d)\n",
                         file_name, errno);
@@ -343,44 +351,47 @@ static void log_file_write(const char *data, unsigned int data_sz,
             free(tmp);
         }
     }
-
-#ifdef _WIN32
-    file_close(file_handle);
+    /* preserve file descriptor in local cache entry */
     if (is_audit) {
-        f->fd_audit = -1;
+        file_cache->file_audit = file_handle;
     } else {
-        f->fd_debug = -1;
+        file_cache->file_debug = file_handle;
     }
-#else
-    if (st.st_ino != (is_audit ? f->node_audit : f->node_debug)) {
-        file_close(file_handle);
-        file_handle = file_open(file_name);
-        if (is_audit) {
-            f->node_audit = st.st_ino;
-            f->created_audit = st.st_ctime;
-        } else {
-            f->node_debug = st.st_ino;
-            f->created_debug = st.st_ctime;
-        }
-        f->owner = getpid();
-    }
-    if (is_audit) {
-        f->fd_audit = file_handle;
-    } else {
-        f->fd_debug = file_handle;
-    }
-#endif
 }
 
-static void log_buffer_read() {
+static struct log_file *get_cached_file(struct log_file *fc, unsigned long instance_id) {
+    int i;
+    /* lookup local-cached entry */
+    for (i = 0; i < AM_MAX_INSTANCES; i++) {
+        struct log_file *file = &fc[i];
+        if (file->instance_id == instance_id)
+            return file;
+    }
+    /* cache does not contain an entry yet, create one now */
+    for (i = 0; i < AM_MAX_INSTANCES; i++) {
+        struct log_file *file = &fc[i];
+        if (file->instance_id == 0) {
+            file->instance_id = instance_id;
+            return file;
+        }
+    }
+    return NULL;
+}
+
+static void log_buffer_read(struct log_file *fc) {
     int i;
     struct log_files *file = NULL;
+    struct log_file *file_cache;
     /* get log block to read from */
     struct log_block *block = get_read_block();
     if (block == NULL)
         return;
 
-    /* lookup file descriptor for the instance id */
+    file_cache = get_cached_file(fc, block->instance_id);
+    if (file_cache == NULL)
+        return;
+
+    /* lookup file data for an instance id */
     for (i = 0; i < AM_MAX_INSTANCES; i++) {
         file = &log_handle->area->files[i];
         if (file->used && file->instance_id == block->instance_id) {
@@ -389,12 +400,15 @@ static void log_buffer_read() {
     }
 
     /* do the actual file write op */
-    log_file_write(block->data, (unsigned int) block->size, block->instance_id, file,
+    log_file_write(block->data, (unsigned int) block->size, file, file_cache,
             (block->level & AM_LOG_LEVEL_AUDIT) != 0);
 
     /* set done flag for this block */
     block->done_read = 1;
     for (;;) {
+        if (log_handle == NULL || log_handle->area == NULL ||
+                AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
+            break;
         /* try and get the right to move the cursor */
         uint32_t index = log_handle->area->read_end;
         block = log_handle->area->blocks + index;
@@ -412,16 +426,43 @@ static void log_buffer_read() {
     }
 }
 
+static void log_file_cache_close(struct log_file *fc) {
+    int i;
+    for (i = 0; i < AM_MAX_INSTANCES; i++) {
+        struct log_file *file = &fc[i];
+        if (file->file_audit != -1)
+            file_close(file->file_audit);
+        if (file->file_debug != -1)
+            file_close(file->file_debug);
+    }
+}
+
 static void *am_log_worker(void *arg) {
+    int i;
+    struct log_file *fc = malloc(sizeof (struct log_file) * AM_MAX_INSTANCES);
+    if (fc == NULL)
+        return NULL;
+    /* local cache of open file descriptors */
+    for (i = 0; i < AM_MAX_INSTANCES; i++) {
+        struct log_file *file = &fc[i];
+        file->instance_id = 0;
+        file->created_debug = file->created_audit = 0;
+        file->file_debug = file->file_audit = -1;
+    }
+    /* log file writer loop */
     for (;;) {
         if (log_handle == NULL || log_handle->area == NULL) {
+            log_file_cache_close(fc);
+            free(fc);
             return NULL;
         }
         if (AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
             break;
-        log_buffer_read();
+        log_buffer_read(fc);
     }
     AM_ATOMIC_SWAP_32(&log_handle->area->owner, 0);
+    log_file_cache_close(fc);
+    free(fc);
     return NULL;
 }
 
@@ -630,19 +671,8 @@ void am_log_init(int id) {
         memset(log_handle->area, 0, sizeof (struct log_buffer));
 
 #ifndef _WIN32
-        void *ev_avail[2] = {NULL, NULL};
-        void *ev_fill[2] = {NULL, NULL};
-
-        /* process-shared mutex/condvar needs to be stored in shm segment */
-        ev_avail[0] = &log_handle->area->mutex_ev[0];
-        ev_avail[1] = &log_handle->area->cond_ev[0];
-        ev_fill[0] = &log_handle->area->mutex_ev[1];
-        ev_fill[1] = &log_handle->area->cond_ev[1];
-
-        log_handle->log_buffer_available = create_named_event(get_global_name(AM_LOG_EVENT_AVAILABLE, id),
-                ev_avail);
-        log_handle->log_buffer_filled = create_named_event(get_global_name(AM_LOG_EVENT_FILL, id),
-                ev_fill);
+        log_handle->log_buffer_available = create_named_event(NULL, &log_handle->area->sem[0]);
+        log_handle->log_buffer_filled = create_named_event(NULL, &log_handle->area->sem[1]);
 #endif
 
         /* create a double circular linked list */
@@ -665,7 +695,6 @@ void am_log_init(int id) {
 
         for (i = 0; i < AM_MAX_INSTANCES; i++) {
             struct log_files *f = &log_handle->area->files[i];
-            f->fd_audit = f->fd_debug = -1;
             f->used = AM_FALSE;
             f->instance_id = 0;
             f->level_debug = f->level_audit = AM_LOG_LEVEL_NONE;
@@ -805,6 +834,9 @@ void am_log_write(unsigned long instance_id, int level, const char* header, int 
     /* set done flag for this block */
     block->done_write = 1;
     for (;;) {
+        if (log_handle == NULL || log_handle->area == NULL ||
+                AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
+            break;
         /* try and get the right to move the cursor */
         uint32_t index = log_handle->area->write_end;
         block = log_handle->area->blocks + index;
@@ -825,13 +857,11 @@ void am_log_write(unsigned long instance_id, int level, const char* header, int 
 }
 
 void am_log_shutdown(int id) {
-    int i;
-    int32_t pid = getpid();
     if (log_handle == NULL || log_handle->area == NULL) {
         return;
     }
-    
-    if (AM_ATOMIC_ADD_32(&log_handle->area->owner, 0) == pid) {
+
+    if (AM_ATOMIC_ADD_32(&log_handle->area->owner, 0) == getpid()) {
         AM_ATOMIC_SWAP_32(&log_handle->area->stop, 1);
         AM_THREAD_JOIN(log_handle->worker);
 #ifdef _WIN32
@@ -840,30 +870,13 @@ void am_log_shutdown(int id) {
         AM_ATOMIC_SWAP_32(&log_handle->area->owner, 0);
     }
 
-    close_event(&log_handle->log_buffer_available);
     close_event(&log_handle->log_buffer_filled);
+    close_event(&log_handle->log_buffer_available);
 
 #ifdef _WIN32
     UnmapViewOfFile(log_handle->area);
     CloseHandle(log_handle->mapping);
 #else
-    /* close log file(s) */
-    for (i = 0; i < AM_MAX_INSTANCES; i++) {
-        struct log_files *f = &log_handle->area->files[i];
-        if (f->fd_debug != -1) {
-            close(f->fd_debug);
-            f->fd_debug = -1;
-        }
-        if (f->fd_audit != -1) {
-            close(f->fd_audit);
-            f->fd_audit = -1;
-        }
-        f->used = AM_FALSE;
-        f->instance_id = 0;
-        f->level_debug = f->level_audit = AM_LOG_LEVEL_NONE;
-        f->max_size_debug = f->max_size_audit = 0;
-    }
-
     munmap(log_handle->area, log_handle->area_size);
     close(log_handle->mapping);
     shm_unlink(get_global_name(AM_LOG_SHM_NAME_INT, id));
@@ -915,8 +928,6 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
                 f->max_size_audit = audit_size > 0 && audit_size < DEFAULT_LOG_SIZE ? DEFAULT_LOG_SIZE : audit_size;
                 f->level_debug = log_level;
                 f->level_audit = audit_level;
-                f->created_debug = f->created_audit = 0;
-                f->owner = 0;
                 exist = AM_DONE;
                 break;
             }

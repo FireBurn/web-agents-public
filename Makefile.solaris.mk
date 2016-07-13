@@ -47,7 +47,7 @@ $(TEST_OBJECTS): CFLAGS += -D_UINTPTR_T_DEFINED
 
 LDFLAGS += -i -z ignore -z lazyload -z nodefs -z combreloc -z origin -R'$$ORIGIN/../lib' -R'$$ORIGIN' \
 	-lc -lsocket -lnsl -ldl -lrt -lsendfile -lresolv
-LDFLAGS_SO = -z nodelete
+LDFLAGS_SO =
 
 libopenam: $(OUT_OBJS)
 	@$(ECHO) "[*** Creating "$@" shared library ***]"

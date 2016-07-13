@@ -138,7 +138,6 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
     int status;
     apr_status_t rv = APR_SUCCESS;
     void *data = NULL;
-    apr_dso_handle_t *mod_handle = NULL;
     amagent_config_t *config;
 
 #define AMAGENT_INIT_ONCE "AMAGENT_INIT_ONCE"
@@ -155,15 +154,6 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
 
 #ifndef _WIN32
     config = ap_get_module_config(s->module_config, &amagent_module);
-
-#ifdef __APPLE__
-    /* prevent agent module from being unloaded (support for restart/graceful options) */
-    rv = apr_dso_load(&mod_handle, "mod_openam.so", s->process->pool);
-    if (rv) {
-        ap_log_error(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, s, "amagent_init() failed to load agent module, error: %d", rv);
-        return APR_EINIT;
-    }
-#endif
 
     /* find and clear down shared memory resources after abnormal termination */
     if (am_remove_shm_and_locks(config->agent_id, recovery_callback, s) != AM_SUCCESS) {
