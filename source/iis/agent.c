@@ -85,7 +85,7 @@ static char *utf8_encode(IHttpContext *r, const wchar_t *wstr, int *inout_len) {
 
     ret_len = WideCharToMultiByte(CP_UTF8, 0, wstr, in_len, tmp, (DWORD) out_len, NULL, NULL);
     if (inout_len) {
-        *inout_len = ret_len - 1;
+        *inout_len = ret_len;
     }
     return tmp;
 }
@@ -489,6 +489,9 @@ static am_status_t get_request_url(am_request_t *req) {
             ctx->GetRequest()->GetRawHttpRequest()->CookedUrl.pFullUrl == NULL) {
         return status;
     }
+
+    /* convert the length of pFullUrl (FullUrlLength) in bytes to the number of wide characters */
+    cooked_url_sz /= sizeof (wchar_t);
 
     char *cooked_url = utf8_encode(ctx, ctx->GetRequest()->GetRawHttpRequest()->CookedUrl.pFullUrl,
             &cooked_url_sz);
