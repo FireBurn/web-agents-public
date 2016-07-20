@@ -299,7 +299,7 @@ static int net_write_ssl(am_net_t *net, const char *buf, int len) {
     }
 
     /* limit how much data we can consume */
-    len = min((unsigned int) len, n->sizes.cbMaximumMessage);
+    len = MIN((unsigned int) len, n->sizes.cbMaximumMessage);
 
     data_size = n->sizes.cbHeader + len + n->sizes.cbTrailer;
     data = malloc(data_size);
@@ -341,7 +341,7 @@ static int net_write_ssl(am_net_t *net, const char *buf, int len) {
 }
 
 static int net_read_ssl_cleanup(struct win_net *n, char *buf, int len, int ret) {
-    int size = min((unsigned int) len, n->dec_buf_offset);
+    int size = MIN((unsigned int) len, n->dec_buf_offset);
     int rv = ret;
     if (size) {
         memcpy(buf, n->dec_buf, size);
@@ -669,9 +669,8 @@ int wnet_write(am_net_t *net, const char *buf, int len) {
 void wnet_read(am_net_t *net) {
     static const char *thisfunc = "wnet_read():";
     struct win_net *n = (struct win_net *) net->ssl.ssl_handle;
-    long available = 0;
-    int rv, ssl_pending;
-#define NET_READ_BUFFER_LEN 1024
+    const unsigned int read_buf_sz = MAX(n->dec_buf_size, INITIAL_BUFFER_SIZE);
+    int rv;
     char *buf;
 
     if (net->uv.ssl && !n->connected) {
@@ -679,8 +678,7 @@ void wnet_read(am_net_t *net) {
         net->error = AM_ENOSSL;
         return;
     }
-
-    buf = malloc(NET_READ_BUFFER_LEN);
+    buf = malloc(read_buf_sz);
     if (buf == NULL) {
         net->error = AM_ENOMEM;
         return;
@@ -690,8 +688,8 @@ void wnet_read(am_net_t *net) {
 
     do {
         rv = net->uv.ssl && n->connected ?
-                net_read_ssl(net, buf, NET_READ_BUFFER_LEN) :
-                net_read(net, buf, NET_READ_BUFFER_LEN);
+                net_read_ssl(net, buf, read_buf_sz) :
+                net_read(net, buf, read_buf_sz);
         if (rv == AM_EAGAIN) continue;
         if (rv < 0) {
             if (net->on_close) net->on_close(net->data, 0);
@@ -699,16 +697,8 @@ void wnet_read(am_net_t *net) {
         }
 
         http_parser_execute(net->hp, net->hs, buf, rv);
-        if (rv == 0) {
+        if (rv == 0 || (net_ssl_pending(n) <= 0 && net_data_avail(net) <= 0)) {
             if (!net->is_complete(net->data)) continue;
-            if (net->on_close) net->on_close(net->data, 0);
-            break;
-        }
-
-        ssl_pending = net_ssl_pending(n);
-        available = net_data_avail(net);
-
-        if (ssl_pending <= 0 && available <= 0) {
             if (net->on_close) net->on_close(net->data, 0);
             break;
         }
