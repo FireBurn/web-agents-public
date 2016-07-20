@@ -2812,10 +2812,14 @@ am_status_t remap_config_value(am_config_map_t * mapping, char *newvalue) {
 
 void update_agent_configuration_normalise_map_urls(am_config_t *conf) {
     static const char *thisfunc = "update_agent_configuration_normalise_map_urls()";
-    
+
     int i;
     char *value, *newvalue;
     am_status_t remap_status;
+
+    if (conf == NULL) {
+        return;
+    }
     
     /* normalise not enforced map values if they are not regular expressions */
     if (!conf->not_enforced_regex_enable) {
@@ -2887,6 +2891,9 @@ static int config_map_name_compare(const void *a, const void *b) {
 }
 
 void update_agent_configuration_reorder_map_values(am_config_t *conf) {
+    if (conf == NULL) {
+        return;
+    }
     if (conf->login_url_sz > 1 && conf->login_url != NULL) {
         qsort(conf->login_url, conf->login_url_sz,
                 sizeof (am_config_map_t), config_map_name_compare);
