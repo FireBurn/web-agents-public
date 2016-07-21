@@ -149,7 +149,8 @@ enum {
     AM_CONF_PROXY_HOST,
     AM_CONF_PROXY_PORT,
     AM_CONF_PROXY_USER,
-    AM_CONF_PROXY_PASSWORD
+    AM_CONF_PROXY_PASSWORD,
+    AM_CONF_CDSSO_DENY_CLEANUP_DISABLE
 };
 
 struct am_instance {
@@ -631,6 +632,9 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
         }
         if (c->cdsso_enable > 0) {
             SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_CDSSO, 0), c->cdsso_enable);
+        }
+        if (c->cdsso_deny_cleanup_disable > 0) {
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_CDSSO_DENY_CLEANUP_DISABLE, 0), c->cdsso_deny_cleanup_disable);
         }
         if (c->cdsso_login_map_sz > 0 && c->cdsso_login_map != NULL) {
             for (i = 0; i < c->cdsso_login_map_sz; i++) {
@@ -1144,6 +1148,9 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 break;
             case AM_CONF_CDSSO:
                 r->cdsso_enable = i->num_value;
+                break;
+            case AM_CONF_CDSSO_DENY_CLEANUP_DISABLE:
+                r->cdsso_deny_cleanup_disable = i->num_value;
                 break;
             case AM_CONF_CDSSO_LOGIN_MAP:
                 if (r->cdsso_login_map_sz == 0) {

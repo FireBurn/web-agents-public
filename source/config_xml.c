@@ -321,6 +321,7 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
     parse_config_value(ctx, AM_AGENTS_CONFIG_CDSSO_ENABLE, CONF_NUMBER, NULL, &ctx->conf->cdsso_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_CDSSO_LOGIN, CONF_STRING_MAP, &ctx->conf->cdsso_login_map_sz, &ctx->conf->cdsso_login_map, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_CDSSO_DOMAIN, CONF_STRING_MAP, &ctx->conf->cdsso_cookie_domain_map_sz, &ctx->conf->cdsso_cookie_domain_map, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_CDSSO_DENY_CLEANUP_DISABLE, CONF_NUMBER, NULL, &ctx->conf->cdsso_deny_cleanup_disable, val, len);
 
     parse_config_value(ctx, AM_AGENTS_CONFIG_LOGOUT_URL, CONF_STRING_MAP, &ctx->conf->openam_logout_map_sz, &ctx->conf->openam_logout_map, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_APP_LOGOUT_URL, CONF_STRING_MAP, &ctx->conf->logout_map_sz, &ctx->conf->logout_map, val, len);
@@ -433,7 +434,7 @@ static void end_element(void * userData, const char * name) {
 
     parse_config_value(ctx, AM_AGENTS_CONFIG_LB_ENABLE, CONF_NUMBER, NULL, &ctx->conf->lb_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_KEEPALIVE_DISABLE, CONF_NUMBER, NULL, &ctx->conf->keepalive_disable, val, len);
-    
+
     parse_config_value(ctx, AM_AGENTS_CONFIG_PROXY_HOST, CONF_STRING, NULL, &ctx->conf->proxy_host, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_PROXY_PORT, CONF_NUMBER, NULL, &ctx->conf->proxy_port, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_PROXY_USER, CONF_STRING, NULL, &ctx->conf->proxy_user, val, len);

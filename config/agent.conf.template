@@ -99,6 +99,7 @@ com.sun.identity.agents.config.audit.accesstype =
 com.sun.identity.agents.config.cdsso.cdcservlet.url[0] = AM_OPENAM_URL/cdcservlet
 com.sun.identity.agents.config.cdsso.cookie.domain[0] =
 com.sun.identity.agents.config.cdsso.enable = false
+org.forgerock.agents.config.cdsso.deny.cleanup.disable =
 com.sun.identity.agents.config.client.hostname.header =
 com.sun.identity.agents.config.client.ip.header = 
 com.sun.identity.agents.config.client.ip.validation.enable = false

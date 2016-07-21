@@ -2257,7 +2257,8 @@ static am_return_t handle_exit(am_request_t *r) {
                 /* reset LDAP cookies */
                 do_cookie_set(r, AM_TRUE, AM_TRUE);
 
-                if (r->conf->cdsso_enable) {
+                if (r->conf->cdsso_enable &&
+                        (status == AM_INVALID_SESSION || !r->conf->cdsso_deny_cleanup_disable)) {
                     /* reset CDSSO cookie in all domains */
                     for (i = 0; i < r->conf->cdsso_cookie_domain_map_sz; i++) {
                         am_config_map_t *m = &r->conf->cdsso_cookie_domain_map[i];

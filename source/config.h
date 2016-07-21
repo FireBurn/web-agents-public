@@ -179,6 +179,7 @@ typedef struct {
     am_config_map_t *cdsso_login_map;
     int cdsso_cookie_domain_map_sz;
     am_config_map_t *cdsso_cookie_domain_map;
+    int cdsso_deny_cleanup_disable;
 
     int logout_cookie_reset_map_sz;
     am_config_map_t *logout_cookie_reset_map;
@@ -342,6 +343,7 @@ typedef struct {
 #define AM_AGENTS_CONFIG_CDSSO_ENABLE "com.sun.identity.agents.config.cdsso.enable"
 #define AM_AGENTS_CONFIG_CDSSO_LOGIN "com.sun.identity.agents.config.cdsso.cdcservlet.url"
 #define AM_AGENTS_CONFIG_CDSSO_DOMAIN "com.sun.identity.agents.config.cdsso.cookie.domain"
+#define AM_AGENTS_CONFIG_CDSSO_DENY_CLEANUP_DISABLE "org.forgerock.agents.config.cdsso.deny.cleanup.disable"
 
 #define AM_AGENTS_CONFIG_LOGOUT_URL "com.sun.identity.agents.config.logout.url"
 #define AM_AGENTS_CONFIG_APP_LOGOUT_URL "com.sun.identity.agents.config.agent.logout.url"

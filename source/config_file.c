@@ -524,6 +524,7 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CDSSO_ENABLE, CONF_NUMBER, NULL, &conf->cdsso_enable, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CDSSO_LOGIN, CONF_STRING_MAP, &conf->cdsso_login_map_sz, &conf->cdsso_login_map, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CDSSO_DOMAIN, CONF_STRING_MAP, &conf->cdsso_cookie_domain_map_sz, &conf->cdsso_cookie_domain_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_CDSSO_DENY_CLEANUP_DISABLE, CONF_NUMBER, NULL, &conf->cdsso_deny_cleanup_disable, NULL);
 
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LOGOUT_URL, CONF_STRING_MAP, &conf->openam_logout_map_sz, &conf->openam_logout_map, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_APP_LOGOUT_URL, CONF_STRING_MAP, &conf->logout_map_sz, &conf->logout_map, NULL);
