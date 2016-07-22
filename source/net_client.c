@@ -47,6 +47,7 @@ static short connected_ev = POLLOUT;
 static short read_ev = POLLIN | POLLNVAL | POLLERR | POLLHUP;
 static short read_avail_ev = POLLIN | POLLHUP;
 #endif
+static am_bool_t openssl_init = AM_TRUE;
 
 #ifdef _WIN32
 #define net_log_error(i,e) \
@@ -103,15 +104,23 @@ void am_net_init() {
 #ifdef _WIN32
     WSADATA w;
     WSAStartup(MAKEWORD(2, 2), &w);
+    char *env = getenv("AM_SSL_SCHANNEL");
+    if (ISINVALID(env) || !strcmp(env, "1") || !strcasecmp(env, "on") || !strcasecmp(env, "true")) {
+        openssl_init = AM_FALSE;
+    }
 #endif
-    net_init_ssl();
+    if (openssl_init) {
+        net_init_ssl();
+    }
 }
 
 void am_net_shutdown() {
 #ifdef _WIN32
     WSACleanup();
 #endif
-    net_shutdown_ssl();
+    if (openssl_init) {
+        net_shutdown_ssl();
+    }
 }
 
 static int net_error() {
@@ -309,7 +318,7 @@ void am_net_options_create(am_config_t *conf, am_net_options_t *options, void (*
     options->hostmap = NULL;
     options->hostmap_sz = 0;
     options->notif_enable = conf->notif_enable;
-    options->secure_channel_enable = conf->secure_channel_enable;
+    options->secure_channel_disable = conf->secure_channel_disable;
     options->proxy_port = conf->proxy_port;
     options->proxy_host = ISVALID(conf->proxy_host) ? strdup(conf->proxy_host) : NULL;
     options->proxy_user = ISVALID(conf->proxy_user) ? strdup(conf->proxy_user) : NULL;
@@ -502,7 +511,7 @@ static void sync_connect(am_net_t *n) {
             if (n->uv.ssl) {
                 /* socket should be talking over ssl/tls - wire it up */
 #ifdef _WIN32
-                if (n->options == NULL || !n->options->secure_channel_enable) {
+                if (n->options == NULL || n->options->secure_channel_disable) {
                     net_connect_ssl(n);
                 } else {
                     n->ssl.error = AM_SUCCESS;
@@ -548,7 +557,7 @@ static void sync_connect(am_net_t *n) {
                     n->error = 0;
                     if (n->uv.ssl) {
 #ifdef _WIN32
-                        if (n->options == NULL || !n->options->secure_channel_enable) {
+                        if (n->options == NULL || n->options->secure_channel_disable) {
                             net_connect_ssl(n);
                         } else {
                             n->ssl.error = AM_SUCCESS;
@@ -646,7 +655,7 @@ int am_net_sync_connect(am_net_t *n) {
 
     sync_connect(n);
 #ifdef _WIN32
-    if (n->uv.ssl && n->options != NULL && n->options->secure_channel_enable) {
+    if (n->uv.ssl && n->options != NULL && !n->options->secure_channel_disable) {
         sync_connect_win(n);
     }
 #endif
@@ -708,7 +717,7 @@ static int am_net_write_internal(am_net_t *n, const char *data, size_t data_sz) 
 int am_net_write(am_net_t *n, const char *data, size_t data_sz) {
     if (n == NULL || data == NULL || data_sz == 0) return AM_EINVAL;
 #ifdef _WIN32
-    if (n->uv.ssl && n->options != NULL && n->options->secure_channel_enable) {
+    if (n->uv.ssl && n->options != NULL && !n->options->secure_channel_disable) {
         int status;
         if (n->error != 0) {
             return n->error;
@@ -810,7 +819,7 @@ static void am_net_sync_recv_internal(am_net_t *n, int timeout_secs) {
 
 void am_net_sync_recv(am_net_t *n, int timeout_secs) {
 #ifdef _WIN32
-    if (n->uv.ssl && n->options != NULL && n->options->secure_channel_enable) {
+    if (n->uv.ssl && n->options != NULL && !n->options->secure_channel_disable) {
         wnet_read(n);
         return;
     }
@@ -831,7 +840,7 @@ int am_net_close(am_net_t *n) {
 
     /* close ssl/socket */
 #ifdef _WIN32
-    if (n->uv.ssl && n->options != NULL && n->options->secure_channel_enable) {
+    if (n->uv.ssl && n->options != NULL && !n->options->secure_channel_disable) {
         wnet_close_ssl(n);
         am_free(n->ssl.ssl_handle);
         n->ssl.ssl_handle = NULL;

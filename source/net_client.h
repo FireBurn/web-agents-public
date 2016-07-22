@@ -30,7 +30,7 @@ typedef struct {
     int cert_trust;
     int hostmap_sz;
     int notif_enable;
-    int secure_channel_enable;
+    int secure_channel_disable;
     int proxy_port;
     char *proxy_host;
     char *proxy_user;

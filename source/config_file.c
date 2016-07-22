@@ -463,7 +463,7 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_LB_ENABLE, CONF_NUMBER, NULL, &conf->lb_enable, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_KEEPALIVE_DISABLE, CONF_NUMBER, NULL, &conf->keepalive_disable, NULL);
         
-        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_SCHANNEL_ENABLE, CONF_NUMBER, NULL, &conf->secure_channel_enable, NULL);
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_SCHANNEL_DISABLE, CONF_NUMBER, NULL, &conf->secure_channel_disable, NULL);
         
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PROXY_HOST, CONF_STRING, NULL, &conf->proxy_host, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PROXY_PORT, CONF_NUMBER, NULL, &conf->proxy_port, NULL);

@@ -241,7 +241,7 @@ typedef struct {
     int skip_post_url_map_sz;
     am_config_map_t *skip_post_url_map;
 
-    int secure_channel_enable;
+    int secure_channel_disable;
 
     int proxy_port;
     char *proxy_host;
@@ -410,7 +410,7 @@ typedef struct {
 #define AM_AGENTS_CONFIG_PERSISTENT_COOKIE_ENABLE "org.forgerock.agents.config.cdsso.persistent.cookie.enable"
 
 #define AM_AGENTS_CONFIG_SKIP_POST_URL "org.forgerock.agents.config.skip.post.url"
-#define AM_AGENTS_CONFIG_SCHANNEL_ENABLE "org.forgerock.agents.config.secure.channel.enable"
+#define AM_AGENTS_CONFIG_SCHANNEL_DISABLE "org.forgerock.agents.config.secure.channel.disable"
 
 #define AM_AGENTS_CONFIG_PROXY_HOST "com.sun.identity.agents.config.forward.proxy.host"
 #define AM_AGENTS_CONFIG_PROXY_PORT "com.sun.identity.agents.config.forward.proxy.port"

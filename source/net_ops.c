@@ -963,7 +963,7 @@ static int do_net_connect(am_net_t *conn, struct request_data *req_data,
         /* if the original request url requires SSL connection, upgrade a socket */
         if (conn->uv.ssl) {
 #ifdef _WIN32
-            if (conn->options == NULL || !conn->options->secure_channel_enable) {
+            if (conn->options == NULL || conn->options->secure_channel_disable) {
                 net_connect_ssl(conn);
             } else {
                 sync_connect_win(conn);

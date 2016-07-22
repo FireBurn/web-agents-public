@@ -599,8 +599,8 @@ static int create_agent_instance(int status,
                 install_log("failed to update %s, %s", AM_INSTALL_SSL_OPTIONS, am_strerror(rv));
                 break;
             }
-            
-            if (net_options.secure_channel_enable) {
+
+            if (net_options.secure_channel_disable) {
                 tmp = "true";
                 install_log("updating %s with %s", AM_INSTALL_SSL_SCHANNEL, tmp);
             } else {
@@ -2549,7 +2549,7 @@ int main(int argc, char **argv) {
                     }
                 }
                 if (strcmp(ssl_variables[i], AM_INSTALL_SSL_SCHANNEL) == 0) {
-                    net_options.secure_channel_enable = strlen(env) > 0;
+                    net_options.secure_channel_disable = !strcmp(env, "0") || !strcasecmp(env, "off") || !strcasecmp(env, "false");
                 }
                 if (strcmp(ssl_variables[i], AM_INSTALL_PROXY_HOST) == 0) {
                     net_options.proxy_host = strdup(env);
