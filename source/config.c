@@ -280,7 +280,6 @@ void remove_agent_instance_byname(const char *name) {
 
     AM_OFFSET_LIST_FOR_EACH(conf->pool, h, e, t, struct am_instance_entry) {
         if (strcasecmp(e->name, name) == 0) {
-            am_remove_cache_entry(e->instance_id, e->token); /* delete cached agent session data */
             am_agent_instance_init_lock();
             am_agent_init_set_value(e->instance_id, AM_FALSE); /* set this instance to 'unconfigured' */
             am_agent_instance_init_unlock();
@@ -1450,6 +1449,9 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
     int max_retry = 3;
     unsigned int retry = 3, retry_wait = 2;
 
+    if (instance_id == 0 || cnf == NULL || ISINVALID(config_file)) {
+        return AM_EINVAL;
+    }
     if (conf == NULL) {
         AM_LOG_ERROR(instance_id, "%s unable to fetch agent configuration (shared memory error)",
                 thisfunc);
@@ -1515,8 +1517,6 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
                 if ((store_status = am_set_agent_config(instance_id, profile_xml, profile_xml_sz,
                         agent_token, config_file, ac->user, ac, &c)) == AM_SUCCESS) {
 
-                    am_add_session_policy_cache_entry(&r, agent_token,
-                            NULL, agent_session);
                     AM_LOG_DEBUG(instance_id, "%s agent configuration stored in a cache",
                             thisfunc);
 
@@ -1524,8 +1524,6 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
 
                     AM_LOG_WARNING(instance_id, "%s retry %d (%s)",
                             thisfunc, (retry - max_retry) + 1, am_strerror(store_status));
-
-                    //TODO async logout if failed (session_logout_worker)?
 
                     if (c != NULL && delete_instance_entry(c) == AM_SUCCESS) {
                         am_shm_free(conf, c);
@@ -1553,10 +1551,36 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
             }
 
             am_agent_instance_init_unlock();
-        }
-
-        if (c != NULL && cnf != NULL) {
+            
+        } else {
+            
             *cnf = am_get_stored_agent_config(c);
+
+            /* validate configuration cache entry ttl */
+            if (*cnf != NULL) {
+                uint64_t ts = c->ts;
+                ts += (*cnf)->config_valid;
+                if (difftime(time(NULL), ts) >= 0) {
+                    char tsc[32], tsu[32];
+                    struct tm created, until;
+                    localtime_r((const time_t *) &c->ts, &created);
+                    localtime_r((const time_t *) &ts, &until);
+                    strftime(tsc, sizeof (tsc), AM_CACHE_TIMEFORMAT, &created);
+                    strftime(tsu, sizeof (tsu), AM_CACHE_TIMEFORMAT, &until);
+                    AM_LOG_WARNING(instance_id, "%s configuration cache entry is obsolete (created: %s, valid until: %s)",
+                            thisfunc, tsc, tsu);
+                    if (delete_instance_entry(c) == AM_SUCCESS) {
+                        am_shm_free(conf, c);
+                    }
+                    am_agent_instance_init_lock();
+                    /* set this instance to 'unconfigured' */
+                    am_agent_init_set_value(instance_id, AM_FALSE);
+                    am_agent_instance_init_unlock();
+                    am_config_free(cnf);
+                    *cnf = NULL;
+                }
+            }
+
             if (*cnf != NULL) {
                 (*cnf)->instance_id = instance_id;
                 (*cnf)->ts = c->ts;
@@ -1606,10 +1630,13 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
 }
 
 int am_get_agent_config_cache_or_local(unsigned long instance_id, const char *config_file, am_config_t **cnf) {
+    static const char *thisfunc = "am_get_agent_config_cache_or_local():";
     struct am_instance_entry *entry;
     int status = AM_ERROR;
 
-    if (instance_id == 0 || cnf == NULL) return AM_EINVAL;
+    if (instance_id == 0 || cnf == NULL || ISINVALID(config_file)) {
+        return AM_EINVAL;
+    }
 
     do {
         if (conf == NULL || am_shm_lock(conf) != AM_SUCCESS) break;
@@ -1624,6 +1651,28 @@ int am_get_agent_config_cache_or_local(unsigned long instance_id, const char *co
         }
 
         *cnf = am_get_stored_agent_config(entry);
+        if (*cnf != NULL) {
+            uint64_t ts = entry->ts;
+            ts += (*cnf)->config_valid;
+            if (difftime(time(NULL), ts) >= 0) {
+                char tsc[32], tsu[32];
+                struct tm created, until;
+                localtime_r((const time_t *) &entry->ts, &created);
+                localtime_r((const time_t *) &ts, &until);
+                strftime(tsc, sizeof (tsc), AM_CACHE_TIMEFORMAT, &created);
+                strftime(tsu, sizeof (tsu), AM_CACHE_TIMEFORMAT, &until);
+                AM_LOG_WARNING(instance_id, "%s configuration cache entry is obsolete (created: %s, valid until: %s)",
+                        thisfunc, tsc, tsu);
+                if (delete_instance_entry(entry) == AM_SUCCESS) {
+                    am_shm_free(conf, entry);
+                }
+                am_agent_instance_init_lock();
+                am_agent_init_set_value(instance_id, AM_FALSE);
+                am_agent_instance_init_unlock();
+                am_config_free(cnf);
+                *cnf = NULL;
+            }
+        }
         if (*cnf != NULL) {
             (*cnf)->instance_id = instance_id;
             (*cnf)->ts = entry->ts;
