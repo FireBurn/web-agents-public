@@ -420,7 +420,8 @@ static void sync_connect(am_net_t *n) {
     char *ip_address = n->uv.host;
 
     if (n->options != NULL) {
-        timeout = n->options->net_timeout;
+        /* if no timeout is set, use default AM_NET_CONNECT_TIMEOUT value */
+        timeout = n->options->net_timeout > 0 ? n->options->net_timeout : AM_NET_CONNECT_TIMEOUT;
 
         /* try to use com.forgerock.agents.config.hostmap property values to
          * shortcut any host name resolution.
