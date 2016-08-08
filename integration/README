@@ -1,0 +1,30 @@
+
+This is an initial state for the new robust cache inplementation, initially working only on OS-X. It includes source for integration tests and a make procedure.
+
+It is intended that this "integration" directory is retained as a place for long-running integration tests, but the new cache modules (alloc, rwlock and cache)
+are added to the agent source as and when needed.
+
+The aim of the integration tets is to test performance agains prolonged bursts of activity, and to test that the cache is robust when client processes die.
+
+On OS-X, with 2 or 3 instances of "cache" (the test excutable) with a garbage collection thread and a TTL expiry thread running, the cache can process about 3
+million operations a second and is fairly robust in that it seems to repair itself when you kill of any of the cache executables.
+
+This is currently a work in progress and in particular, we are working now on cache reformatting after certain errors taht can't be fixed up during the normal
+running of the cache.
+
+The makefile generates the following executables:
+
+cache: this is a simlulation of cache clients that each make rapid updates in multiple threads to a shared cache. There are the following command additional
+line options, which are needed to run the integration tests:
+
+1) cache --destroy will reinitialise shared memory
+2) cache --check will run a garbage collector thread, which kicks in every 2 secs.
+3) cache --purge will run a TTL cache expiry thread, which kicks in every 3 secs to remove cache entries that have expired.
+
+rwlock: which is a simple test of the rwlock module, in particular checking that writelocks are not starved when there are many concurrent readers.
+
+alloc: tests the shared memory allocator in alloc.c. This can be run with native malloc in place of the memory allocator as a kind of benchmark comparison (the
+shared memory one should be faster). This can also be run in multiple processes (though malloc can't compare with this). This test has the following command line
+option:
+
+1) --check, which will safely scan the memory structure once and print stats.
