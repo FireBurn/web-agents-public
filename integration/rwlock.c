@@ -276,7 +276,10 @@ int read_lock(struct readlock *lock, pid_t pid)
 
 int read_lock_try(struct readlock *lock, pid_t pid, int tries)
 {
-    check_barrier(lock, pid);
+    if (lock->barrier)                                                               // this must not wait during recovery
+    {
+        return 0;
+    }
 
     if (cas_array32(lock->pids, THREAD_LIMIT, 0, pid) == 0)
     {

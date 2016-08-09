@@ -2,7 +2,7 @@
 CC = clang -O3 -pthread
 
 cache: test_cache.o share.o cache.o alloc.o rwlock.o
-	$(CC) -o cache test_cache.c cache.o share.o alloc.o rwlock.o -lpthread
+	$(CC) $(CFLAGS) -o cache test_cache.c cache.c share.o alloc.o rwlock.o -lpthread
 
 alloc: test_alloc.o alloc.o share.o
 	$(CC) -o alloc test_alloc.c share.o alloc.o -lpthread
