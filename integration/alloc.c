@@ -101,7 +101,7 @@ typedef union
 
 typedef struct
 {
-    padded_counter_t                        n_attach, tx_start, tx_end;
+    padded_counter_t                        n_attach, tx_start;
 
     volatile uint64_t                       lock;
 
@@ -223,27 +223,23 @@ int try_validate(pid_t pid)
 }
 
 /*
- * connect and get new seed for transactions
+ * connect and get new seed for transactions, also checking for global locks
  *
  */
-int32_t agent_memory_connect()
+int32_t agent_memory_seed()
 {
     uint64_t                                lock;
 
-    while (( lock = _ctlblock->lock ))                                                // FIXME: only require a test with read barrier
+    while (( lock = _ctlblock->lock ))
     {
         if (lock == 1)
         {
             printf("waiting for agent memory\n");
-            if (sleep(1))
-            {
-                printf("failed waiting for agent memory\n");
-                return ~ 0;
-            }
+            sleep(1);
         }
         else
         {
-            printf("agent memory is not connectable (%lu)\n", (unsigned long)lock);
+            printf("agent memory is not available (%lu)\n", (unsigned long)lock);
             return ~ 0;
         }
         sync();
@@ -253,17 +249,7 @@ int32_t agent_memory_connect()
 }
 
 /*
- * remove connection for transactions
- *
- */
-void agent_memory_disconnect(const int32_t seed)
-{
-    incr(&_ctlblock->tx_end.value, 1);
-
-}
-
-/*
- * free list choice: 4 lists, 4096 bytes, return size > 3072 ? 3 : size > 2048 ? 2 : size > 1024 ? 1 : 0
+ * free list choice: 4 lists, returns 3, 2, 1, 0 depending on whether size > 3072, > 2048, > 1024, or smaller (respectively)
  *
  */
 inline static int32_t free_list_offset_for_size(int32_t size)
@@ -288,7 +274,6 @@ static inline int spinlock_lock(volatile int32_t *l, uint32_t pid)
 {
     int                                     i = 0;
 
-#if 1
     do
     {
         if (cas(l, 0, pid))
@@ -318,28 +303,6 @@ static inline int spinlock_lock(volatile int32_t *l, uint32_t pid)
 
     } while (1);
 
-#else
-    while (cas(l, 0, pid) == 0)
-    {
-        if (i < 100)
-        {
-            yield();
-
-            i++;
-        }
-        else
-        {
-            sleep(1);                                                                 // slowdown, check global consistency 
-
-            if (cas(&_ctlblock->lock, 2, 2))
-            {
-                printf("memory state inconcistent\n");
-                return 1;
-            }
-        }
-    }
-    return 0;
-#endif
 }
 
 /*
@@ -384,7 +347,7 @@ static void reset_ctlblock(void *cbdata, void *p)
 {
     ctl_header_t                          *ctl = p;
 
-    *ctl = (ctl_header_t) { .n_attach.value = 0, .tx_start.value = 0, .tx_end.value = 0, .lock = 0 };
+    *ctl = (ctl_header_t) { .n_attach.value = 0, .tx_start.value = 0, .lock = 0 };
 
 }
 

@@ -2,6 +2,8 @@
  ** test utility for shared memory allocator, and a control process that uses malloc in the same way for
  ** comparison.
  **
+ ** this will allocate memory in a way that is compatible with the cache tests, using a different value for
+ ** the memory block type so that it won't be garbage collected
  **
  **/
 
@@ -24,16 +26,20 @@
 
 #define TEST_CHUNK_SIZE                     4096
 
+#define TEST_DATA_TYPE                      3
+
 void *mem_test_thread(void * data)
 {
     void                                   *ptrs[TEST_ALLOCS];
     
     // each thread tends to have an isolated cluster
     
-    const int32_t                           seed = agent_memory_connect();
+    const int32_t                           seed = agent_memory_seed();
     const pid_t                             pid = getpid();
 
-    for (int n = 0; n < TEST_CYCLES; n++)
+    int                                     n;
+
+    for (n = 0; n < TEST_CYCLES; n++)
     {
         int                                 c = 0;
         
@@ -41,7 +47,7 @@ void *mem_test_thread(void * data)
         {
             int32_t                         size = 1 + rand() % TEST_CHUNK_SIZE;
             
-            void                           *ptr = agent_memory_alloc_seed(pid, seed, 1, size);
+            void                           *ptr = agent_memory_alloc_seed(pid, seed, TEST_DATA_TYPE, size);
 
             if (ptr)
             {
@@ -63,7 +69,6 @@ void *mem_test_thread(void * data)
         if (n % 10000 == 0)
             printf("%d done %d\n", seed, (int)n);
     }
-    agent_memory_disconnect(seed);
 
     return data;
     
@@ -78,11 +83,13 @@ void *mem_transact_thread(void * data)
     //int32_t                                 seed = rand();
     const pid_t                             pid = getpid();
 
-    for (int n = 0; n < TEST_CYCLES; n++)
+    int                                     n;
+
+    for (n = 0; n < TEST_CYCLES; n++)
     {
         int                                 c = 0;
 
-        const int32_t                       seed = agent_memory_connect();
+        const int32_t                       seed = agent_memory_seed();
 
         if (seed == ~ 0)
         {
@@ -93,7 +100,7 @@ void *mem_transact_thread(void * data)
         {
             int32_t                         size = 1 + rand() % TEST_CHUNK_SIZE;
 
-            void                           *ptr = agent_memory_alloc_seed(pid, (seed + 3) % 32, 1, size);
+            void                           *ptr = agent_memory_alloc_seed(pid, (seed + 3) % 32, TEST_DATA_TYPE, size);
 
             if (ptr)
             {
@@ -115,7 +122,6 @@ void *mem_transact_thread(void * data)
         if (n % 10000 == 0)
             printf("%d done %d\n", seed, (int)n);
 
-//        agent_memory_disconnect(seed);
     }
     return data;
 
@@ -125,11 +131,13 @@ void *mem_control_thread(void * data)
 {
     void                                   *ptrs[TEST_ALLOCS];
     
-    for (int n = 0; n < TEST_CYCLES; n++)
+    int                                     n;
+
+    for (n = 0; n < TEST_CYCLES; n++)
     {
         int c = 0;
     
-    const int32_t                           seed = agent_memory_connect();
+    const int32_t                           seed = agent_memory_seed();
         
         for (int i = 0; i < TEST_ALLOCS; i++)
         {
@@ -152,7 +160,6 @@ void *mem_control_thread(void * data)
         if (n % 10000 == 0)
             printf("%d done %d\n", seed, n);
 
-    agent_memory_disconnect(seed);
     }
 
     return data;
@@ -187,7 +194,7 @@ int main(int argc, char *argv[])
     for (int i = 0; i < THREADS; i++)
     {
         args [i] = 0;
-        if (pthread_create(threads + i, NULL, mem_transact_thread, args + i))
+        if (pthread_create(threads + i, NULL, mem_test_thread, args + i))
             perror("create thread");
     }
 

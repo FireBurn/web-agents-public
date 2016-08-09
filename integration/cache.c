@@ -55,11 +55,9 @@
 
 struct user_entry
 {
-    uint32_t                                hash, padding;
+    uint32_t                                hash;
 
-    uint32_t                                checksum;
     uint32_t                                ln;
-
     uint8_t                                 data[0];                                  // NOTE: this is 64 bit aligned
 
 };
@@ -405,7 +403,7 @@ int cache_add(uint32_t hash, void *data, size_t ln, int64_t expires, int (*ident
     struct user_entry                      *np;
 
     pid_t                                   pid = getpid();
-    uint32_t                                seed = agent_memory_connect();
+    uint32_t                                seed = agent_memory_seed();
 
     if (cache_readlock_p(hash, pid) == 0)
     {
@@ -419,8 +417,6 @@ int cache_add(uint32_t hash, void *data, size_t ln, int64_t expires, int (*ident
         np->ln = ln;
 
         memcpy(np->data, data, ln);
-
-        np->checksum = crc32(np, sizeof(struct user_entry) + ln);
 
         new = agent_memory_offset(np);
     }

@@ -26,6 +26,10 @@
 const struct readlock                       readlock_init = { .readers = 0, .barrier = 0, .pids = { 0 } };
 
 
+/*
+ * quick test whether all readers are finished with the lock; it is used to ensure that writers are not starved
+ *
+ */
 static int try_read_barrier(struct readlock *lock, int tries)
 {
     do
@@ -39,7 +43,7 @@ static int try_read_barrier(struct readlock *lock, int tries)
 
         yield();
 
-    } while (--tries);
+    } while (--tries);                                                                // NOTE: tries must be a positive number
 
     return 0;
 
@@ -65,11 +69,21 @@ static int try_robust_barrier(struct readlock *lock, pid_t pid)
         if (kill(checker, 0) && errno == ESRCH)
         {
             printf("checker is dead\n");
+
+            if (cas(&lock->barrier, checker, pid))
+            {
+                break;                                                                // this thread becomes the checker
+            }
+            else
+            {
+                return 0;
+            }
         }
         else
         {
-            return 0;                                                                 // after some time, we can suspect this process
+            return 0;                                                                 // after some time, we should suspect this process
         }
+        yield();
     }
 
     do
@@ -106,7 +120,6 @@ static int try_robust_barrier(struct readlock *lock, pid_t pid)
 
         usleep(10);                                                                   // wait for existing readers to complete
 
-printf("waiting for %d threads\n", THREAD_LIMIT - n);
     } while (1);
 
     do
@@ -174,7 +187,7 @@ int wait_for_barrier(struct readlock *lock, pid_t pid)
 
     do
     {
-        printf("%d try wait for robust barrier\n", pid);
+        printf("%d try wait for robust barrier\n", pid);                              // FIXME: leave this for now, to ensure we don't have too much unless checking 
 
         if (try_robust_barrier(lock, pid))
         {
@@ -206,6 +219,11 @@ static int cas_array32(volatile int32_t *array, size_t array_ln, int32_t old, in
 
 }
 
+/*
+ * get a read lock, trying to ensure that writers are not starved by enforing a "barrier" where readers -> zero, and
+ * remove pid and retry with robust barrier if it is taking too long
+ *
+ */
 int read_lock(struct readlock *lock, pid_t pid)
 {
     do

@@ -17,8 +17,7 @@ int agent_memory_clusters(void);
 
 int agent_memory_block(int value);
 
-int32_t agent_memory_connect();
-void agent_memory_disconnect(const int32_t seed);
+int32_t agent_memory_seed();
 
 void *agent_memory_alloc(pid_t pid, int32_t seed, int32_t type, int32_t size);
 void *agent_memory_alloc_seed(pid_t pid, int32_t seed, int32_t type, int32_t size);
