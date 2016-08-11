@@ -419,6 +419,26 @@ int am_get_pdp_cache_entry(am_request_t *request, const char *key, char **data, 
     return status;
 }
 
+int am_get_pdp_cache_entry_v2(am_request_t *request, const char *key, char **data, size_t *data_sz, char **content_type, int *method) {
+    unsigned long instance_id = 0;
+    uint64_t ts = 0;
+    int32_t valid = 0;
+    int status;
+    struct cache_object_ctx ctx;
+    /* data from shm hash table */
+    void *shm_data = NULL;
+    size_t shm_data_sz = 0;
+    char *url = NULL;
+    char *file = NULL;
+
+    cache_object_ctx_init_data(&ctx, shm_data, shm_data_sz);
+    am_cache_entry_header_deserialise(&ctx, &instance_id, &ts, &valid);
+    am_pdp_entry_deserialise(&ctx, &url, &file, content_type, method);
+    status = ctx.error;
+    cache_object_ctx_destroy(&ctx);
+    return status;
+}
+
 /* 
  * Add PDP cache entry (key: uuid value).
  */
@@ -543,6 +563,23 @@ int am_add_pdp_cache_entry(am_request_t *request, const char *key, const char *u
 
     am_shm_unlock(cache);
     return AM_SUCCESS;
+}
+
+int am_add_pdp_cache_entry_v2(am_request_t *request, const char *key, const char *url,
+        const char *file, const char *content_type, int method) {
+    struct cache_object_ctx ctx;
+    int status;
+    cache_object_ctx_init(&ctx);
+
+    am_cache_entry_header_serialise(&ctx, request->instance_id,
+            time(NULL), request->conf->pdp_cache_valid);
+    am_pdp_entry_serialise(&ctx, url, file, content_type, method);
+    if (ctx.error == 0) {
+        /* ctx.data and ctx.data_size is heap allocated data buffer ready for shm storage */
+    }
+    status = ctx.error;
+    cache_object_ctx_destroy(&ctx);
+    return status;
 }
 
 /*
@@ -728,6 +765,28 @@ int am_get_session_policy_cache_entry(am_request_t *request, const char *key,
     }
 
     am_shm_unlock(cache);
+    return status;
+}
+
+int am_get_session_policy_cache_entry_v2(am_request_t *request, const char *key,
+        struct am_policy_result **policy, struct am_namevalue **session, uint64_t *ets) {
+    unsigned long instance_id = 0;
+    uint64_t ts = 0;
+    int32_t valid = 0;
+    int status;
+    struct cache_object_ctx ctx;
+    /* data from shm hash table */
+    void *shm_data = NULL;
+    size_t shm_data_sz = 0;
+    
+    cache_object_ctx_init_data(&ctx, shm_data, shm_data_sz);
+    am_cache_entry_header_deserialise(&ctx, &instance_id, &ts, &valid);
+    
+    *policy = am_policy_result_deserialise(&ctx);
+    *session = am_name_value_deserialise(&ctx);
+    
+    status = ctx.error;
+    cache_object_ctx_destroy(&ctx);
     return status;
 }
 
@@ -1061,6 +1120,23 @@ int am_add_session_policy_cache_entry(am_request_t *request, const char *key,
 
     am_shm_unlock(cache);
     return AM_SUCCESS;
+}
+
+int am_add_session_policy_cache_entry_v2(am_request_t *request, const char *key,
+        struct am_policy_result *policy, struct am_namevalue *session) {
+    struct cache_object_ctx ctx;
+    int status;
+    cache_object_ctx_init(&ctx);
+    am_cache_entry_header_serialise(&ctx, request->instance_id,
+            time(NULL), 0 /* max_caching value from the method above here */);
+    am_policy_result_serialise(&ctx, policy);
+    am_name_value_serialise(&ctx, session);
+    if (ctx.error == 0) {
+        /* ctx.data and ctx.data_size is heap allocated data buffer ready for shm storage */
+    }
+    status = ctx.error;
+    cache_object_ctx_destroy(&ctx);
+    return status;
 }
 
 /**
