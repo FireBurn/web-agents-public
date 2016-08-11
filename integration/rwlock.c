@@ -68,10 +68,12 @@ static int try_robust_barrier(struct readlock *lock, pid_t pid)
     {
         if (kill(checker, 0) && errno == ESRCH)
         {
-            printf("checker is dead\n");
+            printf("rwlock: checker %d is dead\n", checker);
 
             if (cas(&lock->barrier, checker, pid))
             {
+                printf("rwlock: %d takes over as checker\n", pid);
+
                 break;                                                                // this thread becomes the checker
             }
             else
@@ -98,7 +100,7 @@ static int try_robust_barrier(struct readlock *lock, pid_t pid)
             {
                 if (kill(writer, 0) && errno == ESRCH)
                 {
-                    printf("recovery after termination of %d\n", pid);
+                    printf("rwlock: recovery after termination of %d\n", writer);
 
                     for (j = i; j < THREAD_LIMIT; j++)
                     {
@@ -130,7 +132,7 @@ static int try_robust_barrier(struct readlock *lock, pid_t pid)
 
     cas(&lock->barrier, pid, 0);
 
-printf("recovery complete\n");
+printf("rwlock: recovery complete\n");
 
     return 1;
 
@@ -142,8 +144,6 @@ static void check_barrier(struct readlock *lock, pid_t pid)
 
     if (barrier)
     {
-        printf("lock barrier entry\n");
-
         do
         {
             if (try_robust_barrier(lock, pid))
@@ -158,8 +158,6 @@ static void check_barrier(struct readlock *lock, pid_t pid)
             barrier = lock->barrier;
 
         } while (barrier);
-
-        printf("lock barrier exit\n");
     }
 
 }
@@ -187,7 +185,9 @@ int wait_for_barrier(struct readlock *lock, pid_t pid)
 
     do
     {
-        printf("%d try wait for robust barrier\n", pid);                              // FIXME: leave this for now, to ensure we don't have too much unless checking 
+#if 0
+        printf("rwlock: %d try wait for robust barrier\n", pid);                      // FIXME: leave this for now, to ensure we don't have too much unless checking 
+#endif
 
         if (try_robust_barrier(lock, pid))
         {

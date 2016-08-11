@@ -32,56 +32,24 @@
 #include "alloc.h"
 #include "share.h"
 
-#if NOLOCK
-                                                                                      // the following spinlock definitions are only for testing
-#define spinlock                            int32_t
-#define spinlock_init                       0
-#define spinlock_try(l)                     (true)
-#define spinlock_lock(l)
-#define spinlock_unlock(l)
-#define incr(p, v)                          (*(p)) += (v)
-
-#else
-#if _DARWIN
-#include <libkern/OSAtomic.h>
-#define spinlock                            volatile OSSpinLock
-#define spinlock_init                       OS_SPINLOCK_INIT
-#define spinlock_try(l)                     OSSpinLockTry(l)
-#define spinlock_lock(l)                    OSSpinLockLock(l)
-#define spinlock_unlock(l)                  OSSpinLockUnlock(l)
-#define incr(p, v)                          __sync_fetch_and_add((p), (v))
-#define cas(p, old, new)                    __sync_bool_compare_and_swap(p, old, new)
-
-#else
                                                                                       // linux and optionally OS-X
 #define offsetof(type, field)               ( (char *)(&((type *)0)->field) - (char *)0 )
 #define spinlock                            volatile int32_t
 #define spinlock_init                       0
 
-#if 1
-                                                                                      // barriers: lock "acquire" (loads after), unlock "release" (stores before)
-//#define spinlock_try(l)                     ( __sync_lock_test_and_set(l, 1) == 0 )
-//#define spinlock_lock(l)                    while ( __sync_lock_test_and_set(l, 1) ) pthread_yield_np()
 #define spinlock_unlock(l)                  __sync_lock_release(l)
-
-#else
-#define spinlock_try(l)                     __sync_bool_compare_and_swap(l, 0, 1)
-#define spinlock_lock(l)                    while ( __sync_bool_compare_and_swap(l, 0, 1) == 0 ) yield()
-#define spinlock_unlock(l)                  __sync_bool_compare_and_swap(l, 1, 0)
-#endif
 
 #define incr(p, v)                          __sync_fetch_and_add((p), (v))
 #define cas(p, old, new)                    __sync_bool_compare_and_swap(p, old, new)
+#define casv(p, old, new)                   __sync_val_compare_and_swap(p, old, new)
 #define yield()                             sched_yield()
-#endif
 
-#endif
 
 #define CLUSTERS                            32
 #define CLUSTER_FREELISTS                   4
 #define MIN_SPLIT_BLOCKSIZE                 24
+#define VALIDATION_LOCK                     -1
 
-#define LOCK                                0x80000000                                // arbitrary value for locking
 
 #define HDR(ofs)                            ( (block_header_t *)( ((char *)_base) + (ofs) ) )
 #define OFS(ptr)                            ( (offset) ( ( (char *)(ptr) ) - ( (char *)(_base) ) ) )
@@ -101,9 +69,10 @@ typedef union
 
 typedef struct
 {
-    padded_counter_t                        n_attach, tx_start;
+    padded_counter_t                        tx_start;
 
-    volatile uint64_t                       lock;
+    volatile int32_t                        error;
+    volatile pid_t                          checker;
 
 } ctl_header_t;
 
@@ -146,21 +115,15 @@ static int32_t                              _cluster_capacity;
 
 static void                                *_base;
 
-#define cluster_lock(c)                     (_cluster_hdrs[c].lock)
+#define cluster_lock(c)                     _cluster_hdrs[c].lock
 
-#define cluster_free_lists(c)               (_cluster_hdrs[c].free)
+#define cluster_free_lists(c)               _cluster_hdrs[c].free
 
 static const size_t                         block_data_offset = offsetof(block_header_t, u.data);
 
-/*
- * number of memory clusters
- *
- */
-int agent_memory_clusters()
-{
-    return CLUSTERS;
 
-}
+extern void master_recovery_process(pid_t pid);
+
 
 offset agent_memory_offset(void *ptr)
 {
@@ -174,51 +137,77 @@ void *agent_memory_ptr(offset ofs)
 
 }
 
-/*
- * block/unblock connections
- *
- */
-int agent_memory_block(int block)
+static int process_dead(pid_t pid)
 {
-    switch (block)
-        {
-        case 0:
-            return cas(&_ctlblock->lock, 1, 0);                                       // unblock
+    return kill(pid, 0) && errno == ESRCH;
 
-        case 1:
-            return cas(&_ctlblock->lock, 0, 1);                                       // block
-
-        default:
-            return cas(&_ctlblock->lock, 1, block);                                   // invalidate blocked memory
-        }
 }
 
 int try_validate(pid_t pid)
 {
-    if (_ctlblock->lock == 2)
+    if (_ctlblock->error)
     {
-        printf("memory state broken - get out of here\n");
-
         return 1;
     }
-
-    if (agent_memory_block(1))
+    else
     {
-        printf("%d checking memory slow\n", pid);
+printf("%d checking memory slow\n", pid);
 
         if (agent_memory_check(pid, 0, 0))
         {
-            printf("invalidating memory state\n");
-
-            agent_memory_block(2);
-
+            if (cas(&_ctlblock->error, 0, 1))
+            {
+printf("**** triggering memory cleardown\n");
+            }
+            else
+            {
+printf("**** memory cleardown alredy triggered\n");
+            }
             return 1;
         }
+    }
+    return 0;
 
-        agent_memory_block(0);
+}
+
+void agent_memory_validate(pid_t pid)
+{
+    pid_t                                   checker;
+
+    if (_ctlblock->error == 0)
+    {
+        return;
     }
 
-    return 0;
+    do
+    {
+        if (( checker = casv(&_ctlblock->checker, 0, pid) ))
+        {
+            if (process_dead(checker))
+            {   
+printf("**** cleardown process %d is dead, %d resetting checker\n", checker, pid);
+                cas(&_ctlblock->checker, checker, 0);   
+            }
+            else
+            {
+                usleep(100);
+            }
+        }
+        else
+        {
+printf("**** starting recovery process in %d\n", pid);
+
+            master_recovery_process(pid);
+
+            cas(&_ctlblock->error, 1, 0);
+
+            cas(&_ctlblock->checker, pid, 0);
+
+printf("**** ending recovery process in %d\n", pid);
+        }
+        sync();
+
+    } while (_ctlblock->error);
 
 }
 
@@ -228,22 +217,6 @@ int try_validate(pid_t pid)
  */
 int32_t agent_memory_seed()
 {
-    uint64_t                                lock;
-
-    while (( lock = _ctlblock->lock ))
-    {
-        if (lock == 1)
-        {
-            printf("waiting for agent memory\n");
-            sleep(1);
-        }
-        else
-        {
-            printf("agent memory is not available (%lu)\n", (unsigned long)lock);
-            return ~ 0;
-        }
-        sync();
-    }
     return (incr(&_ctlblock->tx_start.value, 1) & 0xffffffff) % CLUSTERS;
 
 }
@@ -260,7 +233,7 @@ inline static int32_t free_list_offset_for_size(int32_t size)
     
 }
 
-static int inline spinlock_try(volatile int32_t *l, uint32_t pid)
+static int inline spinlock_try(spinlock *l, uint32_t pid)
 {
     return cas(l, 0, pid);
 
@@ -270,7 +243,7 @@ static int inline spinlock_try(volatile int32_t *l, uint32_t pid)
  * acquire a spinlock, but backout and check global errors after a while
  *
  */
-static inline int spinlock_lock(volatile int32_t *l, uint32_t pid)
+static inline int spinlock_lock(spinlock *l, uint32_t pid)
 {
     int                                     i = 0;
 
@@ -294,7 +267,7 @@ static inline int spinlock_lock(volatile int32_t *l, uint32_t pid)
 
         if (i < 1000000)
         {
-            i *= 10;
+            i *= 10;                                                                  // exponential back off to some point when we start checking the memory
         }
         else if (try_validate(pid))
         {
@@ -347,7 +320,7 @@ static void reset_ctlblock(void *cbdata, void *p)
 {
     ctl_header_t                          *ctl = p;
 
-    *ctl = (ctl_header_t) { .n_attach.value = 0, .tx_start.value = 0, .lock = 0 };
+    *ctl = (ctl_header_t) { .tx_start.value = 0, .checker = 0, .error = 0 };
 
 }
 
@@ -394,20 +367,6 @@ void agent_memory_initialise(int32_t sz)
 
     _cluster_capacity = sz;
     
-#if INHEAP
-    posix_memalign(&p, 4096, sizeof(ctl_header_t));
-    _ctlblock = p;
-
-    posix_memalign(&p, 4096, sz * CLUSTERS);
-    _base = p;
-
-    posix_memalign(&p, 4096, sizeof(cluster_header_t) * CLUSTERS);
-    _cluster_hdrs = p;
-
-    reset_ctlblock(_ctlblock);
-    reset_blocks(_base);
-    reset_headers(_cluster_hdrs);
-#else
     get_memory_segment(&p, CTLFILE, sizeof(ctl_header_t), reset_ctlblock, 0);
     _ctlblock = p;
 
@@ -416,9 +375,26 @@ void agent_memory_initialise(int32_t sz)
 
     get_memory_segment(&p, HEADERFILE, sizeof(cluster_header_t) * CLUSTERS, reset_headers, 0);
     _cluster_hdrs = p;
+
+#if MASTER
+    // create/connect to locking sempahore (used if the pid lock in the header is set
+    if (get_semaphores_sysv(&semid, SEMSET, NSEMS, reset_shmMasterSemaphore, 0))
+    {
+        printf("unable to get semaphores in thread\n");
+    }
 #endif
 
-    incr(&_ctlblock->n_attach.value, 1);
+}
+
+/*
+ * reset blocks and headers
+ *
+ */
+void agent_memory_reset()
+{
+    reset_blocks(0, _base);
+
+    reset_headers(0, _cluster_hdrs);
 
 }
 
@@ -428,21 +404,11 @@ void agent_memory_initialise(int32_t sz)
  */
 void agent_memory_destroy(int unlink)
 {
-    incr(&_ctlblock->n_attach.value, -1);
-
-#if INHEAP
-    free(_ctlblock);
-
-    free(_base);
-
-    free(_cluster_hdrs);
-#else
     remove_memory_segment(_ctlblock, CTLFILE, unlink, sizeof(ctl_header_t));
 
     remove_memory_segment(_base, BLOCKFILE, unlink, _cluster_capacity * CLUSTERS);
 
     remove_memory_segment(_cluster_hdrs, HEADERFILE, unlink, sizeof(cluster_header_t) * CLUSTERS);
-#endif
  
 }
 
@@ -643,8 +609,9 @@ void *agent_memory_alloc(pid_t pid, int32_t cluster, int32_t type, int32_t size)
     
     void                                   *p;
 
-    spinlock_lock(&cluster_lock(cluster), pid);
-    
+    if (spinlock_lock(&cluster_lock(cluster), pid))
+        return 0;
+
     p = alloc_with_compact(cluster_free_lists(cluster), seq, type, required);
     
     spinlock_unlock(&cluster_lock(cluster));
@@ -664,7 +631,8 @@ int agent_memory_free(pid_t pid, void *p)
 
     int32_t                                 cluster = ofs / _cluster_capacity;
     
-    spinlock_lock(&cluster_lock(cluster), pid);
+    if (spinlock_lock(&cluster_lock(cluster), pid))
+        return 0;
     
 if (h->locks == 0)
 {
@@ -816,20 +784,24 @@ int agent_memory_check(pid_t pid, int verbose, int clearup)
     
     for (int32_t cluster = 0; cluster < CLUSTERS; cluster++)
     {
-        int                                 lock = 0;
-        int                                 i = 0;
+        pid_t                               locker;
+
+        int                                 tries = 1000;
 
         do
         {
-            if (( lock = spinlock_try(&cluster_lock(cluster), pid) ))
+            if (( locker = casv(&cluster_lock(cluster), 0, pid) ))
+            {
+                yield();
+            }
+            else
             {
                 break;
             }
-            yield();
 
-        } while (i++ < 1000);
+        } while (--tries);
 
-        if (lock)
+        if (locker == 0)
         {
             if (clearup)
             {
@@ -837,42 +809,89 @@ int agent_memory_check(pid_t pid, int verbose, int clearup)
 
                 HDR(base)->size = coalesce(cluster_free_lists(cluster), base, base + _cluster_capacity);
             }
+            spinlock_unlock(&cluster_lock(cluster));
         }
-        else
+        else if (locker == VALIDATION_LOCK)
         {
-            printf("checking lock on cluster %d\n", cluster);
-
-            if (kill(cluster_lock(cluster), 0) == 0)
+            err = 1;
+            printf("cluster %d: validating: validation lock was set\n", cluster);
+        }
+        else if (process_dead(locker))
+        {
+            if (cas(&cluster_lock(cluster), locker, VALIDATION_LOCK))
             {
-                printf("cluster %d locking process is active (skipping)\n", cluster);
+                printf("cluster %d: validating: locking process %d is dead\n", cluster, locker);
 
-                continue;
-            }
-            else if (errno == ESRCH)
-            {
-                printf("cluster %d locking process is dead\n", cluster);
+                if (validate_cluster_format(cluster, &used, &free, &blocks, free_lists))
+                {
+                    err = 1;
+                }
+                else
+                {
+                    printf("cluster %d: unlocking cluster\n", cluster);
+
+                    spinlock_unlock(&cluster_lock(cluster));
+                }
             }
             else
             {
-                perror("error identifying locking process");
+                printf("cluster %d another thread is checking (skipping)\n", cluster);
             }
-        }
-
-        if (validate_cluster_format(cluster, &used, &free, &blocks, free_lists))
-        {
-            err = 1;
         }
         else
         {
-            spinlock_unlock(&cluster_lock(cluster));
+            printf("cluster %d locking process is active (skipping)\n", cluster);
         }
     }
 
-    printf("free list sizes: [ "); for (int x = 0; x < CLUSTER_FREELISTS; x++) printf("%lu ", (unsigned long)free_lists[x]); printf("]\n");
+    if (verbose)
+    {
+        printf("free list sizes: [ "); for (int x = 0; x < CLUSTER_FREELISTS; x++) printf("%lu ", (unsigned long)free_lists[x]); printf("]\n");
     
-    printf("avg %f blocks per cluster, in use %lu, free %lu\n", (float)blocks / CLUSTERS, (unsigned long)used, (unsigned long)free);
+        printf("avg %f blocks per cluster, in use %lu, free %lu\n", (float)blocks / CLUSTERS, (unsigned long)used, (unsigned long)free);
+    }
 
     return err;
+
+}
+
+/*
+ * wait for all cluster lockers to complete
+ *
+ */
+void agent_memory_barrier(pid_t pid)
+{
+    int32_t                                 cluster;
+    pid_t                                   locker;
+
+    for (cluster = 0; cluster < CLUSTERS; cluster++)
+    {
+        while (( locker = cluster_lock(cluster) ))
+        {
+            if (locker == VALIDATION_LOCK)
+            {
+printf("***** memory barrier: validation lock %d found\n", locker);
+                if (cas(&cluster_lock(cluster), locker, 0))
+                {
+                    break;
+                }
+            }
+            else if (process_dead(locker))
+            {
+printf("***** memory barrier: locking thread %d is dead\n", locker);
+                if (cas(&cluster_lock(cluster), locker, 0))
+                {
+                    break;
+                }
+            }
+            else
+            {
+printf("***** memory barrier: locking thread %d is active\n", locker);
+                usleep(1000);
+            }
+            sync();
+        }
+    }
 
 }
 
@@ -915,12 +934,10 @@ void agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_
                 {
                     if (checker(cbdata, pid, h->locks, USR(ofs)))
                     {
-#if 1
                         h->size += coalesce(cluster_free_lists(cluster), ofs, end);
                         h->locks = 0;
 
                         push_free_ptr(cluster_free_lists(cluster) + free_list_offset_for_size(h->size), ofs);
-#endif
                         c++;
                     }
                 }
@@ -933,7 +950,7 @@ void agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_
             printf("unable to visit cluster %d\n", cluster);
         }
     }
-    printf("unlinked memory -> %d \n", c);
+    printf("unlinked memory blocks -> %d \n", c);
 
 }
 

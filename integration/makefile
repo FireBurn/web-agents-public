@@ -21,5 +21,5 @@ share.o: share.h
 all: cache alloc rwlock
 
 clean:
-	-rm -f *.dSYM *.o cache rwlock alloc
+	-rm -rf *.dSYM *.o cache rwlock alloc
 

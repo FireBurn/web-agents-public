@@ -7,10 +7,8 @@ are added to the agent source as and when needed.
 The aim of the integration tets is to test performance agains prolonged bursts of activity, and to test that the cache is robust when client processes die.
 
 On OS-X, with 2 or 3 instances of "cache" (the test excutable) with a garbage collection thread and a TTL expiry thread running, the cache can process about 3
-million operations a second and is fairly robust in that it seems to repair itself when you kill of any of the cache executables.
-
-This is currently a work in progress and in particular, we are working now on cache reformatting after certain errors taht can't be fixed up during the normal
-running of the cache.
+million operations a second and is fairly robust in that it seems to repair itself when you kill of any of the cache executables, and is now able to reset itself
+when a process dies unrecoverably during a critical memory management operation.
 
 The makefile generates the following executables:
 
@@ -28,3 +26,15 @@ shared memory one should be faster). This can also be run in multiple processes 
 option:
 
 1) --check, which will safely scan the memory structure once and print stats.
+
+There are two scripts that are used to run the tests:
+
+run_cache.sh, which will spawn an integration test instance and respawn it when it is finished
+
+bad.sh, which will spawn a cache process and kill it randomly within 10 seconds.
+
+The test invloves running the background threads (cache --purge and cache --check) as well as several instances of run_cache.sh, and a single instance of bad.sh,
+and it now can survive for at least 4 hours without reduction in throughput (except during recovery) or process failure. It causes crashes in many different
+citical sections, and seems to always go back to a full operational state, which is equivalent to the instances of run_cache.sh, showing that these processes are
+not compromised.
+

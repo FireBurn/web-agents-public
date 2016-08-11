@@ -117,7 +117,7 @@ void *cache_robustness_thread(void *data)
             {
                 printf("error adding cache item\n");
 
-                return data;
+//                return data;
             }
         }
 
@@ -183,12 +183,16 @@ int main(int argc, char *argv[])
 
     if (argc == 2 && strcmp(argv[1], "--check") == 0)
     {
+        pid_t                               pid = getpid();
+
         do
         {
+            agent_memory_validate(pid);
+
             t0 = clock();
             cache_garbage_collect();
-
             dt = ((double) (clock() - t0)) / CLOCKS_PER_SEC;
+
             cache_stats();
 
             printf("gc takes %lf secs\n", dt);
@@ -206,10 +210,18 @@ int main(int argc, char *argv[])
 
         do
         {
+            agent_memory_validate(pid);
+
+            t0 = clock();
+            cache_readlock_total_barrier(pid);
+            dt = ((double) (clock() - t0)) / CLOCKS_PER_SEC;
+
+            printf("barrier takes %lf secs\n", dt);
+
             t0 = clock();
             cache_purge_expired_entries(pid, time(0));
-
             dt = ((double) (clock() - t0)) / CLOCKS_PER_SEC;
+
             printf("expiry scan takes %lf secs\n", dt);
 
             sleep(5);

@@ -28,6 +28,13 @@
 
 #define TEST_DATA_TYPE                      3
 
+
+void master_recovery_process(pid_t pid)
+{
+    printf("alloc test recovery process: TBD\n");
+
+}
+
 void *mem_test_thread(void * data)
 {
     void                                   *ptrs[TEST_ALLOCS];

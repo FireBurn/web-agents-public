@@ -55,7 +55,8 @@
 
 struct user_entry
 {
-    uint32_t                                hash;
+    uint32_t                                hash, check;
+    uint32_t                                padding;
 
     uint32_t                                ln;
     uint8_t                                 data[0];                                  // NOTE: this is 64 bit aligned
@@ -64,7 +65,7 @@ struct user_entry
 
 struct cache_entry
 {
-    uint32_t                                hash;
+    uint32_t                                hash, check;
 
     volatile int64_t                        expires;
 
@@ -139,12 +140,6 @@ static void reset_locks(void *cbdata, void *p)
 
 }
 
-static uint32_t crc32(void *p, size_t ln)
-{
-    return 0;
-
-}
-
 int cache_initialise()
 {
     void                                   *p;
@@ -159,6 +154,12 @@ int cache_initialise()
     hashtable = p;
 
     return 0;
+
+}
+
+void cache_reinitialise()
+{
+    reset_hashtable(0, hashtable);
 
 }
 
@@ -221,6 +222,18 @@ void cache_readlock_barrier(uint32_t hash, pid_t pid)
     wait_for_barrier(locks + (hash % N_LOCKS), pid);
 
 }
+
+void cache_readlock_total_barrier(pid_t pid)
+{
+    int                                     i;
+
+    for (i = 0; i < N_LOCKS; i++)
+    {
+        wait_for_barrier(locks + i, pid);
+    }
+
+}
+
 
 void cache_readlock_status()
 {
@@ -368,8 +381,6 @@ void cache_purge_expired_entries(pid_t pid, int64_t now)
 
     for (i = 0; i < HASH_SZ; i++)
     {
-        cache_readlock_barrier(i, pid);
-
         if (cache_readlock_p(i, pid))
         {
             n += purge_expired_entries(pid, i, hashtable + i, now);
@@ -403,7 +414,17 @@ int cache_add(uint32_t hash, void *data, size_t ln, int64_t expires, int (*ident
     struct user_entry                      *np;
 
     pid_t                                   pid = getpid();
+
+#if MASTER
+    if (agent_memory_isMasterLockSet())
+    {
+        initiateAndJoinMasterRecoveryQueue(pid);
+    }
+#endif
+
     uint32_t                                seed = agent_memory_seed();
+
+    agent_memory_validate(pid);
 
     if (cache_readlock_p(hash, pid) == 0)
     {
@@ -411,10 +432,13 @@ int cache_add(uint32_t hash, void *data, size_t ln, int64_t expires, int (*ident
 
         return 1;
     }
-    if (( np = agent_memory_alloc_seed(pid, seed, USER, user_hdr_sz + ln) ))
+
+    if (( np = agent_memory_alloc(pid, seed, USER, user_hdr_sz + ln) ))
     {
         np->hash = hash;
-        np->ln = ln;
+        np->check = ~ hash;
+
+        np->ln = ln;                                                                  // FIXME: there must be some validation here
 
         memcpy(np->data, data, ln);
 
@@ -422,7 +446,7 @@ int cache_add(uint32_t hash, void *data, size_t ln, int64_t expires, int (*ident
     }
     else
     {
-        printf("agent memory allocation failure (data)\n");
+        //printf("agent memory allocation failure (data)\n");
 
         cache_readlock_release_p(hash, pid);
         return 1;
@@ -472,11 +496,12 @@ incr(&stats->updates.v, 1);
         ofs = e->next;
     }
 
-    if (( ne = agent_memory_alloc_seed(pid, seed, CACHE, sizeof(struct cache_entry)) ))
+    if (( ne = agent_memory_alloc(pid, seed, CACHE, sizeof(struct cache_entry)) ))
     {
-        offset                              eo = agent_memory_offset(ne);            // new cache entry will be at head of list, to supersede any others
+        offset                              eo = agent_memory_offset(ne);             // new cache entry will be at head of list, to supersede any others
         
-        ne->hash = hash;
+        ne->hash = hash;                                                              // FIXME: there must be some validation here
+        ne->check = ~ hash;                                                              // FIXME: there must be some validation here
         ne->expires = expires;
         ne->user = new;
 
@@ -495,7 +520,7 @@ incr(&stats->writes.v, 1);
     }
     else
     {
-        printf("agent memory allocation failure (entry list)\n");
+        //printf("agent memory allocation failure (entry list)\n");
     }
 
     cache_readlock_release_p(hash, pid);
@@ -511,6 +536,17 @@ incr(&stats->writes.v, 1);
 void cache_delete(uint32_t hash, void *data, int (*identity)(void *, void *))
 {
     pid_t                                   pid = getpid();
+
+#if MASTER
+    if (agent_memory_isMasterLockSet())
+    {
+        initiateAndJoinMasterRecoveryQueue(pid);
+
+        return;
+    }
+#endif
+
+    agent_memory_validate(pid);
 
     if (cache_readlock_p(hash, pid))
     {
@@ -534,6 +570,15 @@ int cache_get_readlocked_ptr(uint32_t hash, void **addr, void *data, int (*ident
 
     offset                                  ofs;
    
+#if MASTER
+    if (agent_memory_isMasterLockSet())
+    {
+        initiateAndJoinMasterRecoveryQueue(pid);
+    }
+#endif
+
+    agent_memory_validate(pid);
+
     if (cache_readlock_p(hash, pid) == 0)
     {
         return 1;
@@ -615,6 +660,11 @@ static int cache_garbage_checker(void *cbdata, pid_t pid, int32_t type, void *p)
         {
         case USER:
             hash = ((struct user_entry *)p)->hash;                            // this is called when the memory cluster is locked
+            if (hash != ~ ((struct user_entry *)p)->check)
+            {
+printf("*******that was a corrupt hashcode\n");
+                return 1;
+            }
 
             if (cache_readlock_try_p(hash, pid, 3))
             {
@@ -634,6 +684,11 @@ incr_gc_stat(&stats->data.collected.v, 1);
 
         case CACHE:
             hash = ((struct cache_entry *)p)->hash;
+            if (hash != ~ ((struct cache_entry *)p)->check)
+            {
+printf("*******that was a corrupt hashcode\n");
+                return 1;
+            }
 
             if (cache_readlock_try_p(hash, pid, 3))
             {
@@ -695,5 +750,20 @@ void cache_stats()
     printf("cleared: %llu\n", get_and_reset(&stats->data.cleared.v));    
     printf("collected: %llu\n", get_and_reset(&stats->data.collected.v));    
 #endif
+}
+
+void master_recovery_process(pid_t pid)
+{
+printf("**** getting cache lock barrier\n");
+    cache_readlock_total_barrier(pid);
+
+printf("**** getting memory lock barrier\n");
+    agent_memory_barrier(pid);
+
+    cache_reinitialise();
+
+    agent_memory_reset();
+printf("**** reset all memory\n");
+
 }
 

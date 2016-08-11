@@ -15,7 +15,7 @@ void agent_memory_destroy(int unlink);
 
 int agent_memory_clusters(void);
 
-int agent_memory_block(int value);
+void agent_memory_barrier(pid_t pid);
 
 int32_t agent_memory_seed();
 
@@ -29,6 +29,11 @@ void agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_
 
 offset agent_memory_offset(void *ptr);
 void *agent_memory_ptr(offset ofs);
+
+void agent_memory_barrier(pid_t pid);
+void agent_memory_validate(pid_t pid);
+
+void agent_memory_reset();
 
 #endif  /* AM_MEMORY_MANAGER */
 
