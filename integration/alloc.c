@@ -122,7 +122,7 @@ static void                                *_base;
 static const size_t                         block_data_offset = offsetof(block_header_t, u.data);
 
 
-extern void master_recovery_process(pid_t pid);
+extern int master_recovery_process(pid_t pid);
 
 
 offset agent_memory_offset(void *ptr)
@@ -143,6 +143,19 @@ static int process_dead(pid_t pid)
 
 }
 
+void agent_memory_error()
+{
+    if (cas(&_ctlblock->error, 0, 1))
+    {
+printf("**** triggering memory cleardown\n");
+    }
+    else
+    {
+printf("**** memory cleardown alredy triggered\n");
+    }
+
+}
+
 int try_validate(pid_t pid)
 {
     if (_ctlblock->error)
@@ -155,14 +168,8 @@ printf("%d checking memory slow\n", pid);
 
         if (agent_memory_check(pid, 0, 0))
         {
-            if (cas(&_ctlblock->error, 0, 1))
-            {
-printf("**** triggering memory cleardown\n");
-            }
-            else
-            {
-printf("**** memory cleardown alredy triggered\n");
-            }
+            agent_memory_error();
+
             return 1;
         }
     }
@@ -190,20 +197,25 @@ printf("**** cleardown process %d is dead, %d resetting checker\n", checker, pid
             }
             else
             {
-                usleep(100);
+                usleep(1000);
             }
         }
         else
         {
 printf("**** starting recovery process in %d\n", pid);
 
-            master_recovery_process(pid);
-
-            cas(&_ctlblock->error, 1, 0);
-
-            cas(&_ctlblock->checker, pid, 0);
+            if (master_recovery_process(pid) == 0)
+            {
+                cas(&_ctlblock->error, 1, 0);
 
 printf("**** ending recovery process in %d\n", pid);
+            }
+            else
+            {
+printf("**** abandoning recovery process in %d\n", pid);
+            }
+            cas(&_ctlblock->checker, pid, 0);
+
         }
         sync();
 
@@ -813,8 +825,9 @@ int agent_memory_check(pid_t pid, int verbose, int clearup)
         }
         else if (locker == VALIDATION_LOCK)
         {
-            err = 1;
             printf("cluster %d: validating: validation lock was set\n", cluster);
+
+            err = 1;
         }
         else if (process_dead(locker))
         {
@@ -826,11 +839,13 @@ int agent_memory_check(pid_t pid, int verbose, int clearup)
                 {
                     err = 1;
                 }
-                else
+                else if (cas(&cluster_lock(cluster), VALIDATION_LOCK, 0))
                 {
                     printf("cluster %d: unlocking cluster\n", cluster);
-
-                    spinlock_unlock(&cluster_lock(cluster));
+                }
+                else
+                {
+                    printf("cluster %d: unlocking cluster failed\n", cluster);
                 }
             }
             else
@@ -901,55 +916,45 @@ printf("***** memory barrier: locking thread %d is active\n", locker);
  */
 void agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_t type, void *p), void *cbdata)
 {
+    int32_t                                 cluster;
+
     int                                     c = 0;
 
-    for (int32_t cluster = 0; cluster < CLUSTERS; cluster++)
+    for (cluster = 0; cluster < CLUSTERS; cluster++)
     {
-        int                                 lock = 0;
-        int                                 i = 0;
+        const offset                        base = cluster * _cluster_capacity, end = base + _cluster_capacity;
+        offset                              ofs = base;
 
-        do
+        if (spinlock_lock(&cluster_lock(cluster), pid))
         {
-            if (( lock = spinlock_try(&cluster_lock(cluster), pid) ))
-            {
-                break;
-            }
-            yield();
+            printf("************ unable to scan cluster %d, getting out\n", cluster);
 
-        } while (i++ < 1000);
-
-        if (lock)
-        {
-            const offset                    base = cluster * _cluster_capacity, end = base + _cluster_capacity;
-            offset                          ofs = base;
+            return;
+        }
 
 #if 0
-            compact_cluster(cluster_free_lists(cluster));
+        compact_cluster(cluster_free_lists(cluster));
 #endif
-            while (ofs != end)
-            {
-                block_header_t             *h = HDR(ofs);
-
-                if (h->locks)
-                {
-                    if (checker(cbdata, pid, h->locks, USR(ofs)))
-                    {
-                        h->size += coalesce(cluster_free_lists(cluster), ofs, end);
-                        h->locks = 0;
-
-                        push_free_ptr(cluster_free_lists(cluster) + free_list_offset_for_size(h->size), ofs);
-                        c++;
-                    }
-                }
-                ofs += h->size;
-            }
-            spinlock_unlock(&cluster_lock(cluster));
-        }
-        else
+        while (ofs != end)
         {
-            printf("unable to visit cluster %d\n", cluster);
+            block_header_t             *h = HDR(ofs);
+
+            if (h->locks)
+            {
+                if (checker(cbdata, pid, h->locks, USR(ofs)))
+                {
+                    h->size += coalesce(cluster_free_lists(cluster), ofs, end);
+                    h->locks = 0;
+
+                    push_free_ptr(cluster_free_lists(cluster) + free_list_offset_for_size(h->size), ofs);
+                    c++;
+                }
+            }
+            ofs += h->size;
         }
+        spinlock_unlock(&cluster_lock(cluster));
     }
+
     printf("unlinked memory blocks -> %d \n", c);
 
 }

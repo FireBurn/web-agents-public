@@ -181,7 +181,7 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
-    if (argc == 2 && strcmp(argv[1], "--check") == 0)
+    if (argc == 2 && strcmp(argv[1], "--gc") == 0)
     {
         pid_t                               pid = getpid();
 
@@ -204,7 +204,7 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
-    if (argc == 2 && strcmp(argv[1], "--purge") == 0)
+    if (argc == 2 && strcmp(argv[1], "--expire") == 0)
     {
         pid_t                               pid = getpid();
 
@@ -231,6 +231,12 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
+    if (argc == 2 && strcmp(argv[1], "--error") == 0)
+    {
+        agent_memory_error();
+
+        exit(0);
+    }
 
     initialise_random_buffer();
 

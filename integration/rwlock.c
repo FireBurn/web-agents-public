@@ -56,7 +56,7 @@ static int try_read_barrier(struct readlock *lock, int tries)
  * this will block all readers, but it should be quick because readers are very transient
  *
  */
-static int try_robust_barrier(struct readlock *lock, pid_t pid) 
+static int try_robust_barrier(struct readlock *lock, pid_t pid, int unblock) 
 {
     int                                     i, j;
 
@@ -66,10 +66,12 @@ static int try_robust_barrier(struct readlock *lock, pid_t pid)
 
     while (( checker = casv(&lock->barrier, 0, pid) ))
     {
-        if (kill(checker, 0) && errno == ESRCH)
+        if (checker == pid)
         {
-            printf("rwlock: checker %d is dead\n", checker);
-
+            return 0;
+        }
+        else if (kill(checker, 0) && errno == ESRCH)
+        {
             if (cas(&lock->barrier, checker, pid))
             {
                 printf("rwlock: %d takes over as checker\n", pid);
@@ -78,6 +80,8 @@ static int try_robust_barrier(struct readlock *lock, pid_t pid)
             }
             else
             {
+                printf("rwlock: %d gives up being checker\n", pid);
+
                 return 0;
             }
         }
@@ -130,11 +134,24 @@ static int try_robust_barrier(struct readlock *lock, pid_t pid)
 
     } while (readers && cas(&lock->readers, readers, 0) == 0);
 
-    cas(&lock->barrier, pid, 0);
-
-printf("rwlock: recovery complete\n");
+    if (unblock)
+    {
+        cas(&lock->barrier, pid, 0);
+    }
 
     return 1;
+
+}
+
+int read_block(struct readlock *lock, pid_t pid)
+{
+    return try_robust_barrier(lock, pid, 0);
+
+}
+
+int read_unblock(struct readlock *lock, pid_t pid)
+{
+    return cas(&lock->barrier, pid, 0);
 
 }
 
@@ -146,7 +163,7 @@ static void check_barrier(struct readlock *lock, pid_t pid)
     {
         do
         {
-            if (try_robust_barrier(lock, pid))
+            if (try_robust_barrier(lock, pid, 1))
             {
                 break;
             }
@@ -189,7 +206,7 @@ int wait_for_barrier(struct readlock *lock, pid_t pid)
         printf("rwlock: %d try wait for robust barrier\n", pid);                      // FIXME: leave this for now, to ensure we don't have too much unless checking 
 #endif
 
-        if (try_robust_barrier(lock, pid))
+        if (try_robust_barrier(lock, pid, 1))
         {
             return 1;
         }

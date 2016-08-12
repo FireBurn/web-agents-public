@@ -35,5 +35,7 @@ void agent_memory_validate(pid_t pid);
 
 void agent_memory_reset();
 
+void agent_memory_error();
+
 #endif  /* AM_MEMORY_MANAGER */
 

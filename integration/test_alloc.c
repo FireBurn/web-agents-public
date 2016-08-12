@@ -29,9 +29,11 @@
 #define TEST_DATA_TYPE                      3
 
 
-void master_recovery_process(pid_t pid)
+int master_recovery_process(pid_t pid)
 {
     printf("alloc test recovery process: TBD\n");
+
+    return 0;
 
 }
 

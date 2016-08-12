@@ -234,6 +234,32 @@ void cache_readlock_total_barrier(pid_t pid)
 
 }
 
+int cache_readlock_block_all(pid_t pid)
+{
+    int                                     i;
+
+    for (i = 0; i < N_LOCKS; i++)
+    {
+        if (read_block(locks + i, pid) == 0)
+        {
+printf("unable to block cache lock %d\n", i);
+            return 1;
+        }
+    }
+    return 0;
+
+}
+
+void cache_readlock_unblock_all(pid_t pid)
+{
+    int                                     i;
+
+    for (i = 0; i < N_LOCKS; i++)
+    {
+        read_unblock(locks + i, pid);
+    }
+
+}
 
 void cache_readlock_status()
 {
@@ -752,10 +778,15 @@ void cache_stats()
 #endif
 }
 
-void master_recovery_process(pid_t pid)
+int master_recovery_process(pid_t pid)
 {
-printf("**** getting cache lock barrier\n");
-    cache_readlock_total_barrier(pid);
+printf("**** blockinag cache locks \n");
+    if (cache_readlock_block_all(pid))
+    {
+        cache_readlock_unblock_all(pid);
+
+        return 1;
+    }
 
 printf("**** getting memory lock barrier\n");
     agent_memory_barrier(pid);
@@ -764,6 +795,11 @@ printf("**** getting memory lock barrier\n");
 
     agent_memory_reset();
 printf("**** reset all memory\n");
+
+    cache_readlock_unblock_all(pid);
+printf("**** unblocked cache locks\n");
+
+    return 0;
 
 }
 
