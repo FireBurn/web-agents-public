@@ -108,7 +108,7 @@ static int try_robust_barrier(struct readlock *lock, pid_t pid, int unblock)
 
                     for (j = i; j < THREAD_LIMIT; j++)
                     {
-                        cas(lock->pids + i, writer, 0);
+                        cas(lock->pids + j, writer, 0);                               // FIXME: this *was* completely wrong..
                     }
                     n++;
                 }

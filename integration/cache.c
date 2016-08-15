@@ -788,16 +788,14 @@ printf("**** blockinag cache locks \n");
         return 1;
     }
 
-printf("**** getting memory lock barrier\n");
-    agent_memory_barrier(pid);
-
+printf("**** reinitialising cache \n");
     cache_reinitialise();
 
-    agent_memory_reset();
 printf("**** reset all memory\n");
+    agent_memory_reset(pid);
 
-    cache_readlock_unblock_all(pid);
 printf("**** unblocked cache locks\n");
+    cache_readlock_unblock_all(pid);
 
     return 0;
 

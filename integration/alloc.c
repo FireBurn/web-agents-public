@@ -399,18 +399,6 @@ void agent_memory_initialise(int32_t sz)
 }
 
 /*
- * reset blocks and headers
- *
- */
-void agent_memory_reset()
-{
-    reset_blocks(0, _base);
-
-    reset_headers(0, _cluster_hdrs);
-
-}
-
-/*
  * unmap all clusters and optionally destroy shared resource
  *
  */
@@ -871,22 +859,22 @@ int agent_memory_check(pid_t pid, int verbose, int clearup)
 }
 
 /*
- * wait for all cluster lockers to complete
+ * for all clusters, wait for any locker to complete and reset the block structure and free lists
  *
  */
-void agent_memory_barrier(pid_t pid)
+void agent_memory_reset(pid_t pid)
 {
     int32_t                                 cluster;
     pid_t                                   locker;
 
     for (cluster = 0; cluster < CLUSTERS; cluster++)
     {
-        while (( locker = cluster_lock(cluster) ))
+        while (( locker = casv(&cluster_lock(cluster), 0, pid) ))
         {
             if (locker == VALIDATION_LOCK)
             {
 printf("***** memory barrier: validation lock %d found\n", locker);
-                if (cas(&cluster_lock(cluster), locker, 0))
+                if (cas(&cluster_lock(cluster), locker, pid))
                 {
                     break;
                 }
@@ -894,7 +882,7 @@ printf("***** memory barrier: validation lock %d found\n", locker);
             else if (process_dead(locker))
             {
 printf("***** memory barrier: locking thread %d is dead\n", locker);
-                if (cas(&cluster_lock(cluster), locker, 0))
+                if (cas(&cluster_lock(cluster), locker, pid))
                 {
                     break;
                 }
@@ -906,8 +894,21 @@ printf("***** memory barrier: locking thread %d is active\n", locker);
             }
             sync();
         }
-    }
 
+        int                                 i;
+
+        offset                              ofs = cluster * _cluster_capacity;
+        block_header_t                     *h = (block_header_t *)(_base + ofs);
+
+        *h = (block_header_t) { .locks = 0, .size = _cluster_capacity, .u.free = { ~ 0, ~ 0 } };
+
+        for (i = 0; i < CLUSTER_FREELISTS; i++)
+            cluster_free_lists(cluster)[i] = ~ 0;
+
+        push_free_ptr(cluster_free_lists(cluster) + free_list_offset_for_size(h->size), ofs);
+
+        spinlock_unlock(&cluster_lock(cluster));
+    }
 }
 
 /*

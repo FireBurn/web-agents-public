@@ -33,7 +33,7 @@ void *agent_memory_ptr(offset ofs);
 void agent_memory_barrier(pid_t pid);
 void agent_memory_validate(pid_t pid);
 
-void agent_memory_reset();
+void agent_memory_reset(pid_t pid);
 
 void agent_memory_error();
 
