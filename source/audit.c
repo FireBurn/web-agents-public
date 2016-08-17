@@ -11,7 +11,7 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2015 ForgeRock AS.
+ * Copyright 2015 - 2016 ForgeRock AS.
  */
 
 #include "platform.h"
@@ -138,10 +138,11 @@ static struct am_audit_config *get_audit_config(unsigned long instance_id) {
     return NULL;
 }
 
-static am_status_t add_audit_entry(struct am_audit_config *config, unsigned long instance_id,
+static am_status_t add_audit_entry(unsigned long instance_id,
         const char *server_id, const char *message, size_t size) {
     int offset;
     struct am_audit_entry *audit_entry;
+    struct am_audit_config *config;
 
     audit_entry = am_shm_alloc(audit_shm, sizeof (struct am_audit_entry) +size + 1);
     if (audit_entry == NULL) {
@@ -159,6 +160,12 @@ static am_status_t add_audit_entry(struct am_audit_config *config, unsigned long
 
     audit_entry->lh.next = audit_entry->lh.prev = 0;
 
+    config = get_audit_config(instance_id);
+    if (config == NULL) {
+        am_shm_free(audit_shm, audit_entry);
+        return AM_EINVAL;
+    }
+    
     offset = AM_GET_OFFSET(audit_shm->pool, audit_entry);
     OFFSET_LIST_APPEND(&config->list_hdr, AUDIT_ENTRY_LINKS, offset);
     return AM_SUCCESS;
@@ -171,8 +178,7 @@ int am_add_remote_audit_entry(unsigned long instance_id, const char *agent_token
     size_t size;
     int msg_size;
     am_status_t status;
-    struct am_audit_config *config;
-    char *tmp = NULL, *message = NULL, *message_b64 = NULL;
+    char *tmp = NULL, *message = NULL, *message_b64;
 
     if (!instance_id || ISINVALID(agent_token) || ISINVALID(user_token) ||
             ISINVALID(file_name) || ISINVALID(format)) {
@@ -208,23 +214,22 @@ int am_add_remote_audit_entry(unsigned long instance_id, const char *agent_token
         return status;
     }
 
-    config = get_audit_config(instance_id);
-    if (config == NULL) {
-        status = AM_EINVAL;
-    } else {
-        status = add_audit_entry(config, instance_id, agent_token_server_id, message, size);
-    }
+    status = add_audit_entry(instance_id, agent_token_server_id, message, size);
+
     am_shm_unlock(audit_shm);
     AM_FREE(tmp, message, message_b64);
     return status;
 }
 
-static am_status_t extract_audit_entries(unsigned long instance_id,
+#ifndef UNIT_TEST
+static
+#endif
+am_status_t extract_audit_entries(unsigned long instance_id,
         am_status_t(*callback)(const char *openam, int count, struct am_audit_transfer *batch)) {
     static const char *thisfunc = "extract_audit_entries():";
     am_status_t status;
     struct am_audit_entry *e;
-    int offset;
+    unsigned int offset = 0;
     struct am_audit_config *config;
     int i, c = 0;
     struct am_audit_transfer *batch;

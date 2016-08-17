@@ -674,19 +674,11 @@ am_shm_t *am_shm_create(const char *name, uint64_t usize) {
 
 #ifdef _WIN32
 
-static BOOL resize_file(HANDLE file, size_t new_size) {
-    DWORD end_size, start_size = GetFileSize(file, NULL);
-    DWORD dwp = SetFilePointer(file, (LONG) new_size, NULL, FILE_BEGIN);
-    DWORD err = GetLastError();
-    if (dwp != INVALID_SET_FILE_POINTER) {
-        err = SetEndOfFile(file);
-        if (err == 0) {
-            err = GetLastError();
-        }
-        err = SetFileValidData(file, new_size);
-    }
-    end_size = GetFileSize(file, NULL);
-    return (start_size != INVALID_FILE_SIZE && end_size != INVALID_FILE_SIZE);
+static BOOL resize_file(HANDLE file, uint64_t new_size) {
+    int fd = _open_osfhandle((intptr_t) file, _O_APPEND);
+    if (fd == -1 || _chsize_s(fd, new_size) != 0)
+        return FALSE;
+    return TRUE;
 }
 
 #endif
