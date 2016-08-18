@@ -26,9 +26,9 @@ int read_release_unique(struct readlock *lock);
 
 int read_release_all(struct readlock *lock, pid_t pid);
 
-int wait_for_barrier(struct readlock *lock, pid_t pid);
-
 int read_block(struct readlock *lock, pid_t pid);
 
 int read_unblock(struct readlock *lock, pid_t pid);
+
+int wait_for_barrier(struct readlock *lock, pid_t pid);
 

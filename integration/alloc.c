@@ -814,8 +814,6 @@ int agent_memory_check(pid_t pid, int verbose, int clearup)
         else if (locker == VALIDATION_LOCK)
         {
             printf("cluster %d: validating: validation lock was set\n", cluster);
-
-            err = 1;
         }
         else if (process_dead(locker))
         {
@@ -843,7 +841,7 @@ int agent_memory_check(pid_t pid, int verbose, int clearup)
         }
         else
         {
-            printf("cluster %d locking process is active (skipping)\n", cluster);
+            printf("cluster %d locking process (%d) is active (skipping)\n", cluster, locker);
         }
     }
 

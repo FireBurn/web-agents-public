@@ -15,7 +15,7 @@
 
 #include "rwlock.h"
 
-#define THREADS                             10
+#define THREADS                             30
 
 #define N_SEMS                              128
 
@@ -148,13 +148,14 @@ void *single_lock_thread(void *data)
     void                                   *self = pthread_self();
 
     int                                     i;
-    int                                     updates = 0, busy = 0;
+    int                                     updates = 0, busy = 0, blocks = 0;
 
     for (i = 0; i < 10000000; i++)
     {
         int                                 l = 0;
+        int                                 r = random() & 3;
 
-        if (random()&1)
+        if (r == 0)
         {
             if (read_lock(locks + l, pid))
             {
@@ -169,11 +170,24 @@ void *single_lock_thread(void *data)
                 printf("%d:%p failed lock %d readlock\n", pid, self, (int)l);
             }
         }
+        else if (r == 1)
+        {
+            if (read_block(locks + l, pid))
+            {
+                update_bucket(&bucket);
+
+                //usleep(1000);
+                if (read_unblock(locks + l, pid) == 0)
+                    printf("read unblock failed\n");
+
+                blocks++;
+            }
+        }
         else
         {
             if (read_lock(locks + l, pid))
             {
-                if (read_try_unique(locks + l, 3))
+                if (read_try_unique(locks + l, 1))
                 {
                     update_bucket(&bucket);
                     read_release_unique(locks + l);
@@ -195,7 +209,7 @@ void *single_lock_thread(void *data)
 
         if (i % 100000 == 0)
         {
-            printf("%d:%p iteration %d, updates %d out of %d\n", pid, self, i, updates, busy);
+            printf("%d:%p iteration %d, updates %d out of %d, blocks %d\n", pid, self, i, updates, busy, blocks);
         }
     }
 
@@ -223,7 +237,7 @@ int main(int argc, char *argv[])
     {
         args [i] = 0;
 
-        if (pthread_create(threads + i, NULL, multi_lock_thread, args + i))
+        if (pthread_create(threads + i, NULL, single_lock_thread, args + i))
             perror("create thread");
     }
 

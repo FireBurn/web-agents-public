@@ -175,51 +175,48 @@ int cache_shutdown(int destroy)
 
 }
 
+#define lock_for_hash(h)                    (locks + ((h) % N_LOCKS))
+
+
 int cache_readlock_p(uint32_t hash, pid_t pid)
 {
-    return read_lock(locks + (hash % N_LOCKS), pid);
+    return read_lock(lock_for_hash(hash), pid);
 
 }
 
 int cache_readlock_try_p(uint32_t hash, pid_t pid, int tries)
 {
-    return read_lock_try(locks + (hash % N_LOCKS), pid, tries);
+    return read_lock_try(lock_for_hash(hash), pid, tries);
 
 }
 
 int cache_readlock_release_p(uint32_t hash, pid_t pid)
 {
-    return read_release(locks + (hash % N_LOCKS), pid);
+    return read_release(lock_for_hash(hash), pid);
 
 }
 
 int cache_readlock_try_unique(uint32_t hash)
 {
-    return read_try_unique(locks + (hash % N_LOCKS), 1);
+    return read_try_unique(lock_for_hash(hash), 1);
 
 }
 
 int cache_readlock_release_unique(uint32_t hash)
 {
-    return read_release_unique(locks + (hash % N_LOCKS));
+    return read_release_unique(lock_for_hash(hash));
 
 }
 
 int cache_readlock_release_all_p(uint32_t hash, pid_t pid)
 {
-    return read_release_all(locks + (hash % N_LOCKS), pid);
+    return read_release_all(lock_for_hash(hash), pid);
 
 }
 
 void cache_readlock_release(uint32_t hash)
 {
     cache_readlock_release_p(hash, getpid());
-
-}
-
-void cache_readlock_barrier(uint32_t hash, pid_t pid)
-{
-    wait_for_barrier(locks + (hash % N_LOCKS), pid);
 
 }
 
@@ -688,11 +685,11 @@ static int cache_garbage_checker(void *cbdata, pid_t pid, int32_t type, void *p)
             hash = ((struct user_entry *)p)->hash;                            // this is called when the memory cluster is locked
             if (hash != ~ ((struct user_entry *)p)->check)
             {
-printf("*******that was a corrupt hashcode\n");
-                return 1;
+printf("*******that was a corrupt hashcode\n");                               // FIXME: this could have a read-lock, but what hash is it?
+                return 0;
             }
 
-            if (cache_readlock_try_p(hash, pid, 3))
+            if (cache_readlock_try_p(hash, pid, 100))
             {
                 if (user_object_reachable(p, hash) == 0)
                 {
@@ -713,10 +710,10 @@ incr_gc_stat(&stats->data.collected.v, 1);
             if (hash != ~ ((struct cache_entry *)p)->check)
             {
 printf("*******that was a corrupt hashcode\n");
-                return 1;
+                return 0;
             }
 
-            if (cache_readlock_try_p(hash, pid, 3))
+            if (cache_readlock_try_p(hash, pid, 100))
             {
                 if (cache_object_reachable(p, hash) == 0)
                 {
