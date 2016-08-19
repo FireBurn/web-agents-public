@@ -277,7 +277,7 @@ static inline int spinlock_lock(spinlock *l, uint32_t pid)
         if (cas(l, 0, pid))
             return 0;
 
-        if (i < 1000000)
+        if (i < 100000)
         {
             i *= 10;                                                                  // exponential back off to some point when we start checking the memory
         }
@@ -536,7 +536,7 @@ static void *alloc(volatile offset *freelists, int32_t seq, int32_t type, const 
  * perform cluster-wide reorganisation of freelists if allocation fails, and try again
  *
  */
-static void *alloc_with_compact(volatile int32_t *freelists, int32_t seq, int32_t type, const int32_t required)
+static void *alloc_with_compact(volatile offset *freelists, int32_t seq, int32_t type, const int32_t required)
 {
     void                                   *p = 0;
     
@@ -649,7 +649,7 @@ return 0;
     return 1;
 
 }
-
+ 
 /*
  * identify errors in block formatting within a cluster
  *
@@ -675,9 +675,17 @@ static int validate_cluster_format(int cluster, size_t *p_used, size_t *p_free, 
 
     for (ofs = base; ofs != end; ofs += HDR(ofs)->size)
     {
+        if (ofs & 0x80000000)
+        {
+            printf("------ cluster %d offset value error: %d\n", cluster, ofs);
+            err = 1;
+
+            break;
+        }
+
         if (ofs < base || end < ofs)
         {
-            printf("cluster %d block range range error after %d: %d\n", cluster, base, ofs);
+            printf("------ cluster %d block range range error after %d: %d\n", cluster, base, ofs);
             err = 1;
 
             break;
@@ -685,7 +693,7 @@ static int validate_cluster_format(int cluster, size_t *p_used, size_t *p_free, 
 
         if (HDR(ofs)->size < sizeof(block_header_t))
         {
-            printf("cluster %d block range range error after %d: %d\n", cluster, base, ofs);
+            printf("------ cluster %d block range range error after %d: %d\n", cluster, base, ofs);
             err = 1;
 
             break;
@@ -714,11 +722,13 @@ static int validate_cluster_format(int cluster, size_t *p_used, size_t *p_free, 
 
         for (freelist_offset = 0; freelist_offset < CLUSTER_FREELISTS; freelist_offset++)
         {
+            offset                          prior = ~ 0;
+
             for (ofs = cluster_free_lists(cluster)[freelist_offset]; ~ ofs; ofs = HDR(ofs)->u.free.n)
             {
                 if (( ptr = bsearch(&ofs, buffer, n, sizeof(offset), offset_comparator_reverse) ) == 0)
                 {
-                    printf("cluster %d free list %d: entry is not a block offset\n", cluster, freelist_offset);
+                    printf("------ cluster %d free list %d: entry is not a block offset\n", cluster, freelist_offset);
                     err = 1;
 
                     break;
@@ -728,7 +738,7 @@ static int validate_cluster_format(int cluster, size_t *p_used, size_t *p_free, 
 
                 if (visits[v])
                 {
-                    printf("cluster %d, free list %d: cycle detected\n", cluster, freelist_offset);
+                    printf("------ cluster %d, free list %d: cycle detected\n", cluster, freelist_offset);
                     err = 1;
 
                     break;
@@ -737,13 +747,22 @@ static int validate_cluster_format(int cluster, size_t *p_used, size_t *p_free, 
 
                 released += HDR(ofs)->size;
 
+                if (HDR(ofs)->u.free.p != prior)
+                {
+                    printf("------ cluster %d, unexepected value for 'prior': %u\n", cluster, HDR(ofs)->u.free.p);
+                    err = 1;
+
+                    break;
+                }
+                prior = ofs;
+
                 freelist_stats[freelist_offset]++;
             }
         }
 
         if (used + released != _cluster_capacity)
         {
-            printf("missing memory: cluster %d used %lu, free %ld, (%lu out of %d)\n", cluster, used, released, used + released, _cluster_capacity);
+            printf("------ missing memory: cluster %d used %lu, free %ld, (%lu out of %d)\n", cluster, used, released, used + released, _cluster_capacity);
             err = 1;
         }
 
@@ -896,7 +915,7 @@ printf("***** memory barrier: locking thread %d is active\n", locker);
         int                                 i;
 
         offset                              ofs = cluster * _cluster_capacity;
-        block_header_t                     *h = (block_header_t *)(_base + ofs);
+        block_header_t                     *h = HDR(ofs);
 
         *h = (block_header_t) { .locks = 0, .size = _cluster_capacity, .u.free = { ~ 0, ~ 0 } };
 

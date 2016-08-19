@@ -8,7 +8,7 @@
 #define BLOCKFILE                                      MEMPREFIX"/blocks"
 #define HEADERFILE                                     MEMPREFIX"/headers"
 
-typedef int32_t                                        offset;
+typedef uint32_t                                       offset;
 
 void agent_memory_initialise(int32_t cluster_sz);
 void agent_memory_destroy(int unlink);
