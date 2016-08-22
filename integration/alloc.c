@@ -164,7 +164,7 @@ int try_validate(pid_t pid)
     }
     else
     {
-printf("%d checking memory slow\n", pid);
+printf("%d checking memory slowdown\n", pid);
 
         if (agent_memory_check(pid, 0, 0))
         {
@@ -387,14 +387,6 @@ void agent_memory_initialise(int32_t sz)
 
     get_memory_segment(&p, HEADERFILE, sizeof(cluster_header_t) * CLUSTERS, reset_headers, 0);
     _cluster_hdrs = p;
-
-#if MASTER
-    // create/connect to locking sempahore (used if the pid lock in the header is set
-    if (get_semaphores_sysv(&semid, SEMSET, NSEMS, reset_shmMasterSemaphore, 0))
-    {
-        printf("unable to get semaphores in thread\n");
-    }
-#endif
 
 }
 
@@ -832,7 +824,7 @@ int agent_memory_check(pid_t pid, int verbose, int clearup)
         }
         else if (locker == VALIDATION_LOCK)
         {
-            printf("cluster %d: validating: validation lock was set\n", cluster);
+            // printf("cluster %d: validating: validation lock was set\n", cluster);
         }
         else if (process_dead(locker))
         {
@@ -853,14 +845,6 @@ int agent_memory_check(pid_t pid, int verbose, int clearup)
                     printf("cluster %d: unlocking cluster failed\n", cluster);
                 }
             }
-            else
-            {
-                printf("cluster %d another thread is checking (skipping)\n", cluster);
-            }
-        }
-        else
-        {
-            printf("cluster %d locking process (%d) is active (skipping)\n", cluster, locker);
         }
     }
 
@@ -890,7 +874,6 @@ void agent_memory_reset(pid_t pid)
         {
             if (locker == VALIDATION_LOCK)
             {
-printf("***** memory barrier: validation lock %d found\n", locker);
                 if (cas(&cluster_lock(cluster), locker, pid))
                 {
                     break;

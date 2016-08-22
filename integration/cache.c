@@ -239,19 +239,31 @@ int cache_readlock_block_all(pid_t pid)
     {
         if (read_block(locks + i, pid) == 0)
         {
-printf("unable to block cache lock %d\n", i);
-            return 1;
+            break;
         }
     }
-    return 0;
+
+    if (i == N_LOCKS)
+    {
+        return 0;
+    }
+
+printf("unable to block cache lock %d\n", i);
+
+    while (i--)
+    {
+        read_unblock(locks + i, pid);
+    }
+
+    return 1;
 
 }
 
 void cache_readlock_unblock_all(pid_t pid)
 {
-    int                                     i;
+    int                                     i = N_LOCKS;
 
-    for (i = 0; i < N_LOCKS; i++)
+    while (i--)
     {
         read_unblock(locks + i, pid);
     }
@@ -777,11 +789,9 @@ void cache_stats()
 
 int master_recovery_process(pid_t pid)
 {
-printf("**** blockinag cache locks \n");
+printf("**** blocking cache locks \n");
     if (cache_readlock_block_all(pid))
     {
-        cache_readlock_unblock_all(pid);
-
         return 1;
     }
 
