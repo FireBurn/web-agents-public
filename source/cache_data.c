@@ -441,6 +441,10 @@ struct am_namevalue *am_name_value_deserialise(struct cache_object_ctx *ctx) {
 
     while (count--) {
         struct am_namevalue *r = malloc(sizeof (struct am_namevalue));
+        if (r == NULL) {
+            ctx->error = AM_ENOMEM;
+            break;
+        }
         cache_object_read_str(ctx, &r->n, (uint32_t *) & r->ns);
         cache_object_read_str(ctx, &r->v, (uint32_t *) & r->vs);
         r->next = NULL;
@@ -457,6 +461,10 @@ struct am_action_decision *am_action_decision_deserialise(struct cache_object_ct
 
     while (count--) {
         struct am_action_decision *r = malloc(sizeof (struct am_action_decision));
+        if (r == NULL) {
+            ctx->error = AM_ENOMEM;
+            break;
+        }
         cache_object_read_u64(ctx, &r->ttl);
         cache_object_read_s32(ctx, &r->method);
         cache_object_read_s32(ctx, &r->action);
@@ -475,6 +483,10 @@ struct am_policy_result *am_policy_result_deserialise(struct cache_object_ctx *c
 
     while (count--) {
         struct am_policy_result *r = malloc(sizeof (struct am_policy_result));
+        if (r == NULL) {
+            ctx->error = AM_ENOMEM;
+            break;
+        }
         cache_object_read_u64(ctx, &r->created);
         cache_object_read_s32(ctx, &r->index);
         cache_object_read_s32(ctx, &r->scope);
