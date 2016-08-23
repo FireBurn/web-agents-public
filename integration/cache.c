@@ -1,3 +1,19 @@
+/**
+ * The contents of this file are subject to the terms of the Common Development and
+ * Distribution License (the License). You may not use this file except in compliance with the
+ * License.
+ *
+ * You can obtain a copy of the License at legal/CDDLv1.0.txt. See the License for the
+ * specific language governing permission and limitations under the License.
+ *
+ * When distributing Covered Software, include this CDDL Header Notice in each file and include
+ * the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
+ * Header, with the fields enclosed by brackets [] replaced by your own identifying
+ * information: "Portions copyright [year] [name of copyright owner]".
+ *
+ * Copyright 2014 - 2016 ForgeRock AS.
+ */
+
 
 /*
  * this version of a cache will lock at the hash level, which simplifies greatly with conflicting entries to the
@@ -38,6 +54,8 @@
 
 #define HASH_SZ                             4657
 
+#define GC_MARKER                           0xa4420810u
+
 #define cas(p, old, new)                    __sync_bool_compare_and_swap(p, old, new)
 #define incr(p, v)                          __sync_fetch_and_add((p), (v))
 #define sync()                              __sync_synchronize()
@@ -55,17 +73,16 @@
 
 struct user_entry
 {
-    uint32_t                                hash, check;
-    uint32_t                                padding;
+    uint32_t                                hash, check, gcdata;
 
     uint32_t                                ln;
-    uint8_t                                 data[0];                                  // NOTE: this is 64 bit aligned
+    uint8_t                                 data[0];                                  /* NOTE: this is 64 bit aligned */
 
 };
 
 struct cache_entry
 {
-    uint32_t                                hash, check;
+    uint32_t                                hash, check, gcdata;
 
     volatile int64_t                        expires;
 
@@ -270,31 +287,6 @@ void cache_readlock_unblock_all(pid_t pid)
 
 }
 
-void cache_readlock_status()
-{
-    int                                     i, j, c = 0;
-
-    for (i = 0; i < N_LOCKS; i++)
-    {
-        if (locks[i].readers)
-        {
-            printf("lock %d readers -> %d\n", i, locks[i].readers);
-        }
-
-        for (j = 0; j < THREAD_LIMIT; j++)
-        {
-            if (locks[i].pids[j])
-                c++;
-        }
-
-        if (locks[i].readers != c)
-        {
-            printf("lock %d readers -> %d, pids -> %d\n", i, locks[i].readers, c);
-        }
-    }
-
-}
-
 /*
  * remove cach entries that are the same as callers' data 
  *
@@ -311,16 +303,16 @@ static void purge_identical_entries(pid_t pid, uint32_t hash, volatile offset *p
         struct cache_entry                 *e = agent_memory_ptr(ofs);
         struct user_entry                  *p = agent_memory_ptr(e->user);
 
-        if (identity(data, p->data))                                                  // a version for checking the identity
+        if (identity(data, p->data))                                                  /* a version for checking the identity */
         {
             if (cas(ptr, ofs, e->next))
             {
-                                                                                      // e is now unreachable by new readers
+                                                                                      /* e is now unreachable by new readers */
                 if (cache_readlock_try_unique(hash))
                 {
-                    p = agent_memory_ptr(e->user);                                    // no other extant readers, cannot now be changed
+                    p = agent_memory_ptr(e->user);                                    /* no other extant readers, cannot now be changed */
 
-                    agent_memory_free(pid, e);                                        // failures here can be gc'd later
+                    agent_memory_free(pid, e);                                        /* failures here can be gc'd later */
                     agent_memory_free(pid, p);
 
                     cache_readlock_release_unique(hash);
@@ -335,7 +327,7 @@ incr_gc_stat(&stats->data.leaked.v, 1);
             }
             else
             {
-                                                                                      // <- e was already unlinked
+                                                                                      /* <- e was already unlinked */
             }
         }
         else
@@ -362,16 +354,16 @@ static int purge_expired_entries(pid_t pid, uint32_t hash, volatile offset *ptr,
     {
         struct cache_entry                 *e = agent_memory_ptr(ofs);
 
-        if (e->expires < now)                                                         // a version for checking the expiry
+        if (e->expires < now)                                                         /* a version for checking the expiry */
         {
             if (cas(ptr, ofs, e->next))
             {
-                                                                                      // e is now unreachable by new readers
+                                                                                      /* e is now unreachable by new readers */
                 if (cache_readlock_try_unique(hash))
                 {
-                    struct user_entry      *p = agent_memory_ptr(e->user);            // no other extant readers, this cannot now be changed
+                    struct user_entry      *p = agent_memory_ptr(e->user);            /* no other extant readers, this cannot now be changed */
 
-                    agent_memory_free(pid, e);                                        // failures here can be gc'd later
+                    agent_memory_free(pid, e);                                        /* failures here can be gc'd later */
                     agent_memory_free(pid, p);
 
                     cache_readlock_release_unique(hash);
@@ -389,7 +381,7 @@ incr(&stats->expires.v, 1);
             }
             else
             {
-                                                                                      // <- e was already unlinked
+                                                                                      /* <- e was already unlinked */
             }
         }
         else
@@ -450,14 +442,7 @@ int cache_add(uint32_t hash, void *data, size_t ln, int64_t expires, int (*ident
 
     pid_t                                   pid = getpid();
 
-#if MASTER
-    if (agent_memory_isMasterLockSet())
-    {
-        initiateAndJoinMasterRecoveryQueue(pid);
-    }
-#endif
-
-    uint32_t                                seed = agent_memory_seed();
+    uint32_t                                seed = agent_memory_seed();               /* use seed to direct user to new memory cluster */
 
     agent_memory_validate(pid);
 
@@ -471,9 +456,9 @@ int cache_add(uint32_t hash, void *data, size_t ln, int64_t expires, int (*ident
     if (( np = agent_memory_alloc(pid, seed, USER, user_hdr_sz + ln) ))
     {
         np->hash = hash;
-        np->check = ~ hash;
+        np->check = ~ hash;                                                           /* this is to validate the hash */
 
-        np->ln = ln;                                                                  // FIXME: there must be some validation here
+        np->ln = ln;
 
         memcpy(np->data, data, ln);
 
@@ -481,9 +466,7 @@ int cache_add(uint32_t hash, void *data, size_t ln, int64_t expires, int (*ident
     }
     else
     {
-        //printf("agent memory allocation failure (data)\n");
-
-        cache_readlock_release_p(hash, pid);
+        cache_readlock_release_p(hash, pid);                                          /* agent memory allocation failure */
         return 1;
     }
 
@@ -492,9 +475,9 @@ int cache_add(uint32_t hash, void *data, size_t ln, int64_t expires, int (*ident
     while (~ ofs)
     {
         struct cache_entry                 *e = agent_memory_ptr(ofs);
-        struct user_entry                  *p = agent_memory_ptr(e->user);            // this is read locked, and identity will not change
+        struct user_entry                  *p = agent_memory_ptr(e->user);            /* this is read locked, and identity will not change */
 
-        if (identity(data, p->data))                                                  // if we find an entry, we can replace it
+        if (identity(data, p->data))                                                  /* if we find an entry, we can replace it */
         {
             offset                          old;
 
@@ -504,13 +487,13 @@ int cache_add(uint32_t hash, void *data, size_t ln, int64_t expires, int (*ident
 
             } while (cas(&e->user, old, new) == 0);
 
-            cas(&e->user, e->expires, expires);                                       // atomically change expiry time on cache entry
-                                                                                      // the replaced user data is inaccessible to new readers
+            cas(&e->user, e->expires, expires);                                       /* atomically change expiry time on cache entry */
+                                                                                      /* the replaced user data is inaccessible to new readers */
             if (cache_readlock_try_unique(hash))
             {
-                p = agent_memory_ptr(old);                                            // no other readers - cannot change now
+                p = agent_memory_ptr(old);                                            /* no other readers - cannot change now */
 
-                agent_memory_free(pid, p);                                            // free the replaced version, which can have no readers
+                agent_memory_free(pid, p);                                            /* free the replaced version, which can have no readers */
 
                 cache_readlock_release_unique(hash);
 
@@ -533,10 +516,10 @@ incr(&stats->updates.v, 1);
 
     if (( ne = agent_memory_alloc(pid, seed, CACHE, sizeof(struct cache_entry)) ))
     {
-        offset                              eo = agent_memory_offset(ne);             // new cache entry will be at head of list, to supersede any others
+        offset                              eo = agent_memory_offset(ne);             /* new cache entry will be at head of list, to supersede any others */
         
-        ne->hash = hash;                                                              // FIXME: there must be some validation here
-        ne->check = ~ hash;                                                              // FIXME: there must be some validation here
+        ne->hash = hash;
+        ne->check = ~ hash;                                                           /* this is for validating the hash */
         ne->expires = expires;
         ne->user = new;
 
@@ -545,7 +528,7 @@ incr(&stats->updates.v, 1);
             ne->next = hashtable[hash];
 
         } while (cas(hashtable + hash, ne->next, eo) == 0);
-                                                                                      // e and the user data are now accessible
+                                                                                      /* e and the user data are now accessible */
         purge_identical_entries(pid, hash, &ne->next, data, identity);
 
         cache_readlock_release_p(hash, pid);
@@ -553,12 +536,8 @@ incr(&stats->updates.v, 1);
 incr(&stats->writes.v, 1);
         return 0;
     }
-    else
-    {
-        //printf("agent memory allocation failure (entry list)\n");
-    }
 
-    cache_readlock_release_p(hash, pid);
+    cache_readlock_release_p(hash, pid);                                              /* agent memory allocation failure */
 
     return 1;
 
@@ -571,15 +550,6 @@ incr(&stats->writes.v, 1);
 void cache_delete(uint32_t hash, void *data, int (*identity)(void *, void *))
 {
     pid_t                                   pid = getpid();
-
-#if MASTER
-    if (agent_memory_isMasterLockSet())
-    {
-        initiateAndJoinMasterRecoveryQueue(pid);
-
-        return;
-    }
-#endif
 
     agent_memory_validate(pid);
 
@@ -605,13 +575,6 @@ int cache_get_readlocked_ptr(uint32_t hash, void **addr, void *data, int (*ident
 
     offset                                  ofs;
    
-#if MASTER
-    if (agent_memory_isMasterLockSet())
-    {
-        initiateAndJoinMasterRecoveryQueue(pid);
-    }
-#endif
-
     agent_memory_validate(pid);
 
     if (cache_readlock_p(hash, pid) == 0)
@@ -683,8 +646,12 @@ static int user_object_reachable(void *data, uint32_t hash)
 }
 
 /*
- * NOTE: this is called when the memory cluster of p is locked, so we know that it is safe
- * to get the hash code of p
+ * NOTE: this is called when the memory cluster of p is locked, so we know that it is safe to get the hash code
+ * of p, although it could be changing
+ *
+ * NOTE: if the hash code has not yet been set, we can't tell whether the block is in use or not - it can be
+ * in-progress. So we will record in gcdata a marker to indicate that it has been observed, and if the hash is
+ * still uninitialised in a subsequent gc sweep (when the marker has been set) then it can be released.
  *
  */
 static int cache_garbage_checker(void *cbdata, pid_t pid, int32_t type, void *p)
@@ -694,11 +661,16 @@ static int cache_garbage_checker(void *cbdata, pid_t pid, int32_t type, void *p)
     switch (type)
         {
         case USER:
-            hash = ((struct user_entry *)p)->hash;                            // this is called when the memory cluster is locked
+            hash = ((struct user_entry *)p)->hash;                            /* this is called when the memory cluster is locked */
             if (hash != ~ ((struct user_entry *)p)->check)
             {
-printf("*******that was a corrupt hashcode\n");                               // FIXME: this could have a read-lock, but what hash is it?
-                return 0;
+printf("*******that was a corrupt hashcode\n");
+                if (((struct user_entry *)p)->gcdata == (hash ^ GC_MARKER))
+                {
+                    return 1;                                                 /* this has been seen in a prior gc sweep, let it go */
+                }
+                ((struct user_entry *)p)->gcdata = hash ^ GC_MARKER;
+                return 0;                                                     /* this might still be in use, the hash not yet assigned */
             }
 
             if (cache_readlock_try_p(hash, pid, 100))
@@ -710,7 +682,7 @@ printf("*******that was a corrupt hashcode\n");                               //
                         cache_readlock_release_all_p(hash, pid);
 incr_gc_stat(&stats->data.collected.v, 1);
                         
-                        return 1;                                             // no new threads can reach this block, and it isn't being read
+                        return 1;                                             /* no new threads can reach this block, and it isn't being read */
                     }
                 }
                 cache_readlock_release_p(hash, pid);
@@ -722,6 +694,11 @@ incr_gc_stat(&stats->data.collected.v, 1);
             if (hash != ~ ((struct cache_entry *)p)->check)
             {
 printf("*******that was a corrupt hashcode\n");
+                if (((struct cache_entry *)p)->gcdata == (hash ^ GC_MARKER))  /* as above: wait until its been seen before in this state */
+                {
+                    return 1;
+                }
+                ((struct cache_entry *)p)->gcdata = hash ^ GC_MARKER;
                 return 0;
             }
 
@@ -734,7 +711,7 @@ printf("*******that was a corrupt hashcode\n");
                         cache_readlock_release_all_p(hash, pid);
 incr_gc_stat(&stats->cache.collected.v, 1);
 
-                        return 1;                                             // no new threads can reach this block, and it isn't being read
+                        return 1;                                             /* no new threads can reach this block, and it isn't being read */
                     }
                 }
                 cache_readlock_release_p(hash, pid);
@@ -798,10 +775,10 @@ printf("**** blocking cache locks \n");
 printf("**** reinitialising cache \n");
     cache_reinitialise();
 
-printf("**** reset all memory\n");
+printf("**** resetting memory clusters\n");
     agent_memory_reset(pid);
 
-printf("**** unblocked cache locks\n");
+printf("**** unblocking cache locks\n");
     cache_readlock_unblock_all(pid);
 
     return 0;

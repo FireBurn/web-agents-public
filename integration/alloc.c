@@ -1,3 +1,20 @@
+/**
+ * The contents of this file are subject to the terms of the Common Development and
+ * Distribution License (the License). You may not use this file except in compliance with the
+ * License.
+ *
+ * You can obtain a copy of the License at legal/CDDLv1.0.txt. See the License for the
+ * specific language governing permission and limitations under the License.
+ *
+ * When distributing Covered Software, include this CDDL Header Notice in each file and include
+ * the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
+ * Header, with the fields enclosed by brackets [] replaced by your own identifying
+ * information: "Portions copyright [year] [name of copyright owner]".
+ *
+ * Copyright 2014 - 2016 ForgeRock AS.
+ */
+
+
 /*
  * This is an allocator for shared memory that divides the memory into clusters and directs threads to use
  * a cluster largely in isolation from eachother to avoid contention. It uses course-grained atomic locking 
@@ -32,7 +49,7 @@
 #include "alloc.h"
 #include "share.h"
 
-                                                                                      // linux and optionally OS-X
+                                                                                      /* linux and optionally OS-X */
 #define offsetof(type, field)               ( (char *)(&((type *)0)->field) - (char *)0 )
 #define spinlock                            volatile int32_t
 #define spinlock_init                       0
@@ -55,7 +72,7 @@
 #define OFS(ptr)                            ( (offset) ( ( (char *)(ptr) ) - ( (char *)(_base) ) ) )
 #define USR(ofs)                            ((char *)_base) + ((ofs) + block_data_offset)
 
-#define UP64(i)                             ( ((i)+0x7u) & ~ 0x7u )                   // 8 byte alignment
+#define UP64(i)                             ( ((i)+0x7u) & ~ 0x7u )                   /* 8 byte alignment */
 
 
 typedef union
@@ -245,12 +262,6 @@ inline static int32_t free_list_offset_for_size(int32_t size)
     
 }
 
-static int inline spinlock_try(spinlock *l, uint32_t pid)
-{
-    return cas(l, 0, pid);
-
-}
-
 /*
  * acquire a spinlock, but backout and check global errors after a while
  *
@@ -262,8 +273,9 @@ static inline int spinlock_lock(spinlock *l, uint32_t pid)
     do
     {
         if (cas(l, 0, pid))
+        {
             return 0;
-
+        }
         yield();
 
     } while (++i < 1000);
@@ -275,11 +287,13 @@ static inline int spinlock_lock(spinlock *l, uint32_t pid)
         usleep(i);
 
         if (cas(l, 0, pid))
+        {
             return 0;
+        }
 
         if (i < 100000)
         {
-            i *= 10;                                                                  // exponential back off to some point when we start checking the memory
+            i *= 10;                                                                  /* exponential back off to some point when we start checking the memory */
         }
         else if (try_validate(pid))
         {
@@ -537,56 +551,14 @@ static void *alloc_with_compact(volatile offset *freelists, int32_t seq, int32_t
         seq++;
     }
     
-    if (seq < CLUSTER_FREELISTS)
+    if (( p = alloc(freelists, seq, type, required) ) == 0)
     {
-        if (( p = alloc(freelists, seq, type, required) ) == 0)
+        if (compact_cluster(freelists))
         {
-            if (compact_cluster(freelists))
-            {
-                p = alloc(freelists, seq, type, required);
-            }
+            p = alloc(freelists, seq, type, required);
         }
     }
     return p;
-    
-}
-
-/*
- * allocate memory with a seed, but not restricted to a cluster
- *
- */
-void *agent_memory_alloc_seed(pid_t pid, int32_t cluster, int32_t type, int32_t size)
-{
-    int32_t                                 required = UP64(block_data_offset + size);
-    int32_t                                 seq = free_list_offset_for_size(required);
-    
-    void                                   *p;
-    
-    for (int i = 0; i < 1000; i++)
-    //while (1)
-    {
-        if (cluster == CLUSTERS)
-        {
-            cluster = 0;
-        }
-        
-        if (spinlock_try(&cluster_lock(cluster), pid))
-        {
-            p = alloc_with_compact(cluster_free_lists(cluster), seq, type, required);
-            spinlock_unlock(&cluster_lock(cluster));
-            
-            if (p)
-            {
-                return p;
-            }
-        }
-        cluster++;
-
-        yield();
-    }
-
-printf("failed after 1000 tries\n");
-    return 0;
     
 }
 
@@ -597,12 +569,15 @@ printf("failed after 1000 tries\n");
 void *agent_memory_alloc(pid_t pid, int32_t cluster, int32_t type, int32_t size)
 {
     int32_t                                 required = UP64(block_data_offset + size);
+
     int32_t                                 seq = free_list_offset_for_size(required);
     
     void                                   *p;
 
     if (spinlock_lock(&cluster_lock(cluster), pid))
+    {
         return 0;
+    }
 
     p = alloc_with_compact(cluster_free_lists(cluster), seq, type, required);
     
@@ -611,6 +586,26 @@ void *agent_memory_alloc(pid_t pid, int32_t cluster, int32_t type, int32_t size)
     return p;
 
 }
+
+#if 0
+void *agent_memory_alloc(pid_t pid, int32_t cluster, int32_t type, int32_t size)
+{
+    void                                   *p;
+
+    for (int i = 0; i < 100; i++)
+    {
+        if (( p = alloc_in_cluster(pid, cluster, type, size) ))
+            break;
+
+        cluster++;
+
+        if (cluster == CLUSTERS)
+            cluster = 0;
+    }
+    return p;
+
+}
+#endif
 
 /*
  * free, always trying to coalesce with nearby blocks
@@ -707,7 +702,7 @@ static int validate_cluster_format(int cluster, size_t *p_used, size_t *p_free, 
     {
         int                                 freelist_offset;
 
-        uint64_t                           *visits = calloc(sizeof(uint64_t), n);     // FIXME: this sbould be a bitset 
+        uint8_t                            *visits = calloc(sizeof(uint8_t), n);      /* FIXME: this should be a bitset */
         offset                             *ptr;
 
         qsort(buffer, n, sizeof(offset), offset_comparator_reverse);
@@ -778,7 +773,7 @@ static int validate_cluster_format(int cluster, size_t *p_used, size_t *p_free, 
 /*
  * validation - scan all clusters, blocks and freelists, check consistency and some reporting
  *
- * it might be possible to fix up, for example lock errors here, at some point
+ * this will unlock clusters after the locker has carashed, but only if the block format passes a validation test
  *
  */
 int agent_memory_check(pid_t pid, int verbose, int clearup)

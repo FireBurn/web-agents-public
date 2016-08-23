@@ -1,4 +1,20 @@
 /**
+ * The contents of this file are subject to the terms of the Common Development and
+ * Distribution License (the License). You may not use this file except in compliance with the
+ * License.
+ *
+ * You can obtain a copy of the License at legal/CDDLv1.0.txt. See the License for the
+ * specific language governing permission and limitations under the License.
+ *
+ * When distributing Covered Software, include this CDDL Header Notice in each file and include
+ * the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
+ * Header, with the fields enclosed by brackets [] replaced by your own identifying
+ * information: "Portions copyright [year] [name of copyright owner]".
+ *
+ * Copyright 2014 - 2016 ForgeRock AS.
+ */
+
+/**
  ** test utility for shared memory allocator, and a control process that uses malloc in the same way for
  ** comparison.
  **
@@ -41,9 +57,7 @@ void *mem_test_thread(void * data)
 {
     void                                   *ptrs[TEST_ALLOCS];
     
-    // each thread tends to have an isolated cluster
-    
-    const int32_t                           seed = agent_memory_seed();
+    const int32_t                           seed = agent_memory_seed();               /* use seed to separate clusters used by each thread */
     const pid_t                             pid = getpid();
 
     int                                     n;
@@ -56,7 +70,7 @@ void *mem_test_thread(void * data)
         {
             int32_t                         size = 1 + rand() % TEST_CHUNK_SIZE;
             
-            void                           *ptr = agent_memory_alloc_seed(pid, seed, TEST_DATA_TYPE, size);
+            void                           *ptr = agent_memory_alloc(pid, seed, TEST_DATA_TYPE, size);
 
             if (ptr)
             {
@@ -81,59 +95,6 @@ void *mem_test_thread(void * data)
 
     return data;
     
-}
-
-void *mem_transact_thread(void * data)
-{
-    void                                   *ptrs[TEST_ALLOCS];
-
-    // each thread tends to have an isolated cluster
-
-    //int32_t                                 seed = rand();
-    const pid_t                             pid = getpid();
-
-    int                                     n;
-
-    for (n = 0; n < TEST_CYCLES; n++)
-    {
-        int                                 c = 0;
-
-        const int32_t                       seed = agent_memory_seed();
-
-        if (seed == ~ 0)
-        {
-            printf("unable to start transaction\n");
-        }
-
-        for (int i = 0; i < TEST_ALLOCS; i++)
-        {
-            int32_t                         size = 1 + rand() % TEST_CHUNK_SIZE;
-
-            void                           *ptr = agent_memory_alloc_seed(pid, (seed + 3) % 32, TEST_DATA_TYPE, size);
-
-            if (ptr)
-            {
-                memset(ptr, 0, size);
-                ptrs[c++] = ptr;
-            }
-            else
-            {
-                printf("fail\n");
-            }
-        }
-        // non-sequential freeing...
-        for (int i = 0; i < 7; i++)
-            for (int j = i; j < c; j += 7)
-                agent_memory_free(pid, ptrs[j]);
-
-        *(long *)data += c;
-
-        if (n % 10000 == 0)
-            printf("%d done %d\n", seed, (int)n);
-
-    }
-    return data;
-
 }
 
 void *mem_control_thread(void * data)
@@ -142,12 +103,12 @@ void *mem_control_thread(void * data)
     
     int                                     n;
 
+    const int32_t                           seed = agent_memory_seed();
+        
     for (n = 0; n < TEST_CYCLES; n++)
     {
         int c = 0;
     
-    const int32_t                           seed = agent_memory_seed();
-        
         for (int i = 0; i < TEST_ALLOCS; i++)
         {
             int32_t                         size = 1 + rand() % TEST_CHUNK_SIZE;

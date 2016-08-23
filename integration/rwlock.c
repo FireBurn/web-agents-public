@@ -1,3 +1,19 @@
+/**
+ * The contents of this file are subject to the terms of the Common Development and
+ * Distribution License (the License). You may not use this file except in compliance with the
+ * License.
+ *
+ * You can obtain a copy of the License at legal/CDDLv1.0.txt. See the License for the
+ * specific language governing permission and limitations under the License.
+ *
+ * When distributing Covered Software, include this CDDL Header Notice in each file and include
+ * the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
+ * Header, with the fields enclosed by brackets [] replaced by your own identifying
+ * information: "Portions copyright [year] [name of copyright owner]".
+ *
+ * Copyright 2014 - 2016 ForgeRock AS.
+ */
+
 
 /*
  * this is a prototype for a robust, in-memory readlock, which is intended to ensure that readers cannot have
@@ -43,7 +59,7 @@ static int wait_for_counted_readers(struct readlock *lock, int tries)
 
         yield();
 
-    } while (--tries);                                                                // NOTE: tries must be a positive number
+    } while (--tries);                                                                /* NOTE: tries must be a positive number */
 
     return 0;
 
@@ -61,7 +77,7 @@ static int process_dead(pid_t pid)
         {
             return 1;
         }
-printf("************** after kill, errno was %d\n", errno);
+printf("************** after kill, errno was %d\n", errno);                           /* TODO: remove this, this doesn't happen */
     }
     return 0;
 
@@ -84,22 +100,22 @@ static int wait_for_live_readers(struct readlock *lock, pid_t pid, int unblock)
     {
         if (checker == pid)
         {
-            return 0;                                                                 // this process is already the checker, wait 
+            return 0;                                                                 /* this process is already the checker, wait  */
         }
         else if (process_dead(checker))
         {
             if (cas(&lock->barrier, checker, pid))
             {
-                printf("rwlock: %d takes over as checker\n", pid);                    // this process takes over as checker
+                printf("rwlock: %d takes over as checker\n", pid);                    /* this process takes over as checker */
             }
             else
             {
-                return 0;                                                             // another process has become the checker
+                return 0;                                                             /* another process has become the checker */
             }
         }
         else
         {
-            return 0;                                                                 // a live process is the checker, wait for it to finish
+            return 0;                                                                 /* a live process is the checker, wait for it to finish */
         }
     }
 
@@ -119,10 +135,10 @@ static int wait_for_live_readers(struct readlock *lock, pid_t pid, int unblock)
                 }
                 else if (process_dead(writer))
                 {
-printf("rwlock: %d sees termination of %d\n", pid, writer);
+printf("rwlock: %d sees termination of %d\n", pid, writer);                           /* TODO: remove this debug info */
                     for (j = i; j < THREAD_LIMIT; j++)
                     {
-                        cas(lock->pids + j, writer, -1);                              // remove pids for threads of a dead process
+                        cas(lock->pids + j, writer, -1);                              /* remove pids for threads of a dead process */
                     }
                     n++;
                 }
@@ -138,7 +154,7 @@ printf("rwlock: %d sees termination of %d\n", pid, writer);
             break;
         }
 
-        usleep(10);                                                                   // wait for existing readers to complete
+        usleep(10);                                                                   /* wait for existing readers to complete */
 
     } while (1);
 
@@ -288,12 +304,12 @@ int read_lock(struct readlock *lock, pid_t pid)
         int                                 tries = 1000;
 
         ensure_liveness(lock, pid);
-                                                                                      // ensure that any checker can complete
+                                                                                      /* ensure that any checker can complete */
         while (cas_array32(lock->pids, THREAD_LIMIT, 0, pid) == 0)
         {
             yield();
 
-            wait_for_barrier(lock, pid);                                              // allow write locks by waiting for lockers to complete
+            wait_for_barrier(lock, pid);                                              /* allow write locks by waiting for lockers to complete */
         }
 
         do
@@ -309,18 +325,18 @@ int read_lock(struct readlock *lock, pid_t pid)
             }
             else if (wait_for_counted_readers(lock, 100) == 0)
             {
-                break;                                                                // too much contention or blockage
+                break;                                                                /* too much contention or blockage */
             }
             yield();
 
         } while (--tries);
 
-        while (cas_array32(lock->pids, THREAD_LIMIT, pid, 0) == 0)                    // should never fail
+        while (cas_array32(lock->pids, THREAD_LIMIT, pid, 0) == 0)                    /* should never fail */
         {
             yield();
         }
 
-        wait_for_live_readers(lock, pid, 1);                                          // ensure robustly that writers momentarily go to zero
+        wait_for_live_readers(lock, pid, 1);                                          /* ensure robustly that writers momentarily go to zero */
 
     } while (1);
 
@@ -350,7 +366,7 @@ int read_lock_try(struct readlock *lock, pid_t pid, int tries)
 
     } while (--tries);
 
-    while (cas_array32(lock->pids, THREAD_LIMIT, pid, 0) == 0)                        // should never fail
+    while (cas_array32(lock->pids, THREAD_LIMIT, pid, 0) == 0)                        /* should never fail */
     {
         yield();            
     }
@@ -367,7 +383,7 @@ int read_try_unique(struct readlock *lock, int tries)
 {
     do
     {
-if (lock->readers == 0) printf("*********** i don't have a readlock\n");
+if (lock->readers == 0) printf("*********** i don't have a readlock\n");              /* TODO: remove this, this doesn't happen */
 
         if (cas(&lock->readers, 1, THREAD_LIMIT))
         {
@@ -394,7 +410,7 @@ int read_release_unique(struct readlock *lock)
         {
             return 1;
         }
-printf("lock_release_unique: *************** readers -> %d\n", lock->readers);
+printf("lock_release_unique: *************** readers -> %d\n", lock->readers);        /* TODO: remove this, this doesn't happen */
 
         yield();            
 
@@ -414,13 +430,13 @@ int read_release_all(struct readlock *lock, pid_t pid)
         {
             break;
         }
-printf("lock_release_unique: **************** readers -> %d\n", lock->readers);
+printf("lock_release_unique: **************** readers -> %d\n", lock->readers);       /* TODO: remove this, this doesn't happen */
 
         yield();            
 
     } while (1);
 
-    while (cas_array32(lock->pids, THREAD_LIMIT, pid, 0) == 0)                        // should never fail
+    while (cas_array32(lock->pids, THREAD_LIMIT, pid, 0) == 0)                        /* should never fail */
     {
         yield();            
     }
@@ -448,7 +464,7 @@ int read_release(struct readlock *lock, pid_t pid)
         }
         else
         {
-printf("lock_release: *************** count error has occurredn");
+printf("lock_release: *************** count error has occurredn");                    /* TODO: remove this, this doesn't happen */
             break;
         }
         
@@ -458,7 +474,7 @@ printf("lock_release: *************** count error has occurredn");
 
     } while (1);
 
-    while (cas_array32(lock->pids, THREAD_LIMIT, pid, 0) == 0)                        // should never fail
+    while (cas_array32(lock->pids, THREAD_LIMIT, pid, 0) == 0)                        /* should never fail */
     {
         yield();            
     }

@@ -1,3 +1,18 @@
+/**
+ * The contents of this file are subject to the terms of the Common Development and
+ * Distribution License (the License). You may not use this file except in compliance with the
+ * License.
+ *
+ * You can obtain a copy of the License at legal/CDDLv1.0.txt. See the License for the
+ * specific language governing permission and limitations under the License.
+ *
+ * When distributing Covered Software, include this CDDL Header Notice in each file and include
+ * the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
+ * Header, with the fields enclosed by brackets [] replaced by your own identifying
+ * information: "Portions copyright [year] [name of copyright owner]".
+ *
+ * Copyright 2014 - 2016 ForgeRock AS.
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,7 +51,7 @@ struct bucket
 };
 
 
-uint8_t                                     random_buffer[RANDOM_BUFFER_SZ];          // reduce time generating random data 
+uint8_t                                     random_buffer[RANDOM_BUFFER_SZ];          /* reduce time generating random data */
 
 
 static void initialise_random_buffer()
@@ -100,12 +115,12 @@ void *cache_robustness_thread(void *data)
 
     int                                     i;
 
-    int                                     n_iters = 10000;
+    int                                     n_iters = 10000, iter;
     int                                     n_ops = 4096;
 
     int                                     n_keys = 4096;
 
-    for (int iter = 0; iter < n_iters; iter++)
+    for (iter = 0; iter < n_iters; iter++)
     {
         for (i = 1; i < n_ops; i++)
         {
@@ -115,9 +130,7 @@ void *cache_robustness_thread(void *data)
 
             if (cache_add(key, &bucket, offsetof(struct bucket, data) + bucket.ln, time(0) + 2, bucket_identity))
             {
-                printf("error adding cache item\n");
-
-//                return data;
+                printf("error adding cache item\n");                                  /* acceptable during high load and recovery */
             }
         }
 
@@ -175,7 +188,7 @@ int main(int argc, char *argv[])
 
     if (argc == 2 && strcmp(argv[1], "--destroy") == 0)
     {
-        cache_shutdown(1);
+        cache_shutdown(1);                                                            /* one-off delete shared resources */
         agent_memory_destroy(1);
 
         exit(0);
@@ -183,7 +196,7 @@ int main(int argc, char *argv[])
 
     if (argc == 2 && strcmp(argv[1], "--gc") == 0)
     {
-        pid_t                               pid = getpid();
+        pid_t                               pid = getpid();                           /* run as garbage collection thread */
 
         do
         {
@@ -206,7 +219,7 @@ int main(int argc, char *argv[])
 
     if (argc == 2 && strcmp(argv[1], "--expire") == 0)
     {
-        pid_t                               pid = getpid();
+        pid_t                               pid = getpid();                           /* run as an expiry thread */
 
         do
         {
@@ -233,7 +246,7 @@ int main(int argc, char *argv[])
 
     if (argc == 2 && strcmp(argv[1], "--error") == 0)
     {
-        agent_memory_error();
+        agent_memory_error();                                                         /* one-off trigger global cache reset */
 
         exit(0);
     }
