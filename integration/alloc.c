@@ -539,16 +539,20 @@ static void *alloc(volatile offset *freelists, int32_t seq, int32_t type, const 
 }
 
 /*
- * perform cluster-wide reorganisation of freelists if allocation fails, and try again
+ * try allocate within a cluster but perform cluster-wide reorganisation of freelists if allocation fails, then try again
  *
  */
 static void *alloc_with_compact(volatile offset *freelists, int32_t seq, int32_t type, const int32_t required)
 {
     void                                   *p = 0;
     
-    while (seq < CLUSTER_FREELISTS && freelists[seq] == ~ 0)
+    while (freelists[seq] == ~ 0)
     {
         seq++;
+        if (seq == CLUSTER_FREELISTS)
+        {
+            return 0;
+        }
     }
     
     if (( p = alloc(freelists, seq, type, required) ) == 0)
@@ -558,6 +562,7 @@ static void *alloc_with_compact(volatile offset *freelists, int32_t seq, int32_t
             p = alloc(freelists, seq, type, required);
         }
     }
+
     return p;
     
 }
