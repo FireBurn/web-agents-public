@@ -215,7 +215,7 @@ int cache_readlock_release_p(uint32_t hash, pid_t pid)
 
 int cache_readlock_try_unique(uint32_t hash)
 {
-    return read_try_unique(lock_for_hash(hash), 1);
+    return read_try_unique(lock_for_hash(hash), 10);
 
 }
 
