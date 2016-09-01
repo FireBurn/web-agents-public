@@ -20,7 +20,7 @@ LINUX_MK_INCLUDED := true
 CC := gcc
 SHARED := -shared
 
-CFLAGS  += -fPIC -pthread -D_REENTRANT -DLINUX -D_GNU_SOURCE -D_FORTIFY_SOURCE=2 -fstack-protector \
+CFLAGS  += -fPIC -pthread -std=gnu99 -D_REENTRANT -DLINUX -D_GNU_SOURCE -D_FORTIFY_SOURCE=2 -fstack-protector \
 	    -Wno-unused-value -Wno-deprecated-declarations
 	
 ifdef DEBUG

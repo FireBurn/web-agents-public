@@ -822,6 +822,9 @@ void am_log_write(unsigned long instance_id, int level, const char* header, int 
         /* and the rest of the message */
         block->size = vsnprintf(block->data + header_sz,
                 AM_LOG_MESSAGE_SIZE - header_sz, format, args) + header_sz;
+        if (block->size >= AM_LOG_MESSAGE_SIZE) {
+            block->size = AM_LOG_MESSAGE_SIZE - 1;
+        }
         block->data[block->size] = '\0';
         va_end(args);
     }
