@@ -29,15 +29,6 @@
 #define AM_ATOMIC_ADD_32        atomic_add_32_nv
 #define AM_ATOMIC_CAS_32(t,o,n) atomic_cas_32(t,n,o)
 #define AM_ATOMIC_SWAP_32       atomic_swap_32
-#elif defined(AIX)
-#define AM_ATOMIC_ADD_32(t,v)   __fetch_and_add((volatile int *)(t),(int)(v))
-
-inline uint32_t AM_ATOMIC_CAS_32(volatile uint32_t *target, uint32_t old, uint32_t new) {
-    uint32_t t = *target;
-    __compare_and_swap((volatile int *) target, (int *) &old, (int) new);
-    return t;
-}
-#define AM_ATOMIC_SWAP_32(t,v)  __fetch_and_swap((volatile int *)(t),(int)(v))
 #else
 #define AM_ATOMIC_ADD_32        __sync_fetch_and_add
 #define AM_ATOMIC_CAS_32(t,o,n) __sync_val_compare_and_swap(t,n,o)
