@@ -287,6 +287,11 @@ static int on_headers_complete_cb(http_parser *parser) {
          * that it should not expect neither a body nor any further responses on this connection */
         return 2;
     }
+    if (n->req_method == AM_REQUEST_HEAD) {
+        /* Another special case for http_parser handling response to HEAD request,
+         * that it should not expect neither a body nor any further responses on this connection */
+        return 1;
+    }
     return 0;
 }
 
@@ -715,8 +720,24 @@ static int am_net_write_internal(am_net_t *n, const char *data, size_t data_sz) 
     return status;
 }
 
+static int get_req_method(const char *data, size_t data_sz) {
+    int ret = AM_REQUEST_UNKNOWN;
+    char *method, *sep;
+
+    sep = memchr(data, ' ', data_sz);
+    if (sep == NULL) return ret;
+
+    method = strndup(data, sep - data);
+    if (method == NULL) return ret;
+    
+    ret = am_method_str_to_num(method);
+    free(method);
+    return ret;
+}
+
 int am_net_write(am_net_t *n, const char *data, size_t data_sz) {
     if (n == NULL || data == NULL || data_sz == 0) return AM_EINVAL;
+    n->req_method = get_req_method(data, data_sz);
 #ifdef _WIN32
     if (n->uv.ssl && n->options != NULL && !n->options->secure_channel_disable) {
         int status;

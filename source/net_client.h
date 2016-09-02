@@ -63,6 +63,7 @@ typedef struct {
     char *req_headers;
     char **header_fields;
     char **header_values;
+    int req_method;
 
     struct ssl {
         char on;
