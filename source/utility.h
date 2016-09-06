@@ -49,24 +49,6 @@
     } \
   } while(0)
 
-#ifndef htonll
-#define htonll(x) ((htonl(1) == 1) ? (x) : ((uint64_t)htonl((x) & 0xFFFFFFFF) << 32) | htonl((x) >> 32))
-#endif
-#ifndef ntohll
-#define ntohll(x) ((ntohl(1) == 1) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
-#endif
-
-struct cache_object_ctx {
-    size_t alloc_size;
-    size_t data_size;
-    size_t offset;
-    int error;
-    int external;
-    void *data;
-    int (*read)(struct cache_object_ctx *, void *, size_t);
-    size_t(*write)(struct cache_object_ctx *, const void *, size_t);
-};
-
 enum {
     CONF_NUMBER = 0, CONF_STRING, CONF_NUMBER_LIST, CONF_STRING_LIST,
     CONF_STRING_MAP, CONF_DEBUG_LEVEL, CONF_ATTR_MODE, CONF_AUDIT_LEVEL
@@ -265,6 +247,7 @@ const char *am_policy_strerror(char status);
 
 char* am_strsep(char** sp, const char* sep);
 char* am_strldup(const char* src);
+char *am_strrstr(const char *str, const char *search);
 
 int compare_property(const char *line, const char *property);
 
@@ -353,21 +336,5 @@ char * property_map_write_to_buffer(property_map_t * map, size_t * data_sz);
 
 uint32_t am_hash_buffer(const void *buf, size_t len);
 uint32_t am_hash(const void *buf);
-
-void cache_object_ctx_init(struct cache_object_ctx *ctx);
-void cache_object_ctx_init_data(struct cache_object_ctx *ctx, void *data, size_t sz);
-void cache_object_ctx_destroy(struct cache_object_ctx *ctx);
-int am_cache_entry_header_serialise(struct cache_object_ctx *ctx, unsigned long instance_id,
-        uint64_t ts, int32_t valid);
-int am_cache_entry_header_deserialise(struct cache_object_ctx *ctx, unsigned long *instance_id,
-        uint64_t *ts, int32_t *valid);
-int am_policy_result_serialise(struct cache_object_ctx *ctx, struct am_policy_result *list);
-int am_name_value_serialise(struct cache_object_ctx *ctx, struct am_namevalue *list);
-struct am_policy_result *am_policy_result_deserialise(struct cache_object_ctx *ctx);
-struct am_namevalue *am_name_value_deserialise(struct cache_object_ctx *ctx);
-int am_pdp_entry_serialise(struct cache_object_ctx *ctx, const char *url,
-        const char *file, const char *content_type, int method);
-int am_pdp_entry_deserialise(struct cache_object_ctx *ctx, char **url,
-        char **file, char **content_type, int *method);
 
 #endif

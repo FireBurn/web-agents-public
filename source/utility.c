@@ -86,7 +86,7 @@ const char *request_method_str[] = {
 #define URI_HTTP "%"AM_XSTR(AM_PROTO_SIZE)"[HTPShtps]"
 #define URI_HOST "%"AM_XSTR(AM_HOST_SIZE)"[-_.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789]"
 #define URI_PORT "%6d"
-#define URI_PATH "%"AM_XSTR(AM_URI_SIZE)"[-_.!~*'();/?:@&=+$,%#abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789]"
+#define URI_PATH "%"AM_XSTR(AM_URI_SIZE)"s"
 #define HD1 URI_HTTP "://" URI_HOST ":" URI_PORT "/" URI_PATH
 #define HD2 URI_HTTP "://" URI_HOST "/" URI_PATH
 #define HD3 URI_HTTP "://" URI_HOST ":" URI_PORT
@@ -487,23 +487,12 @@ int parse_url(const char *u, struct url *url) {
         }
     }
 
-    /* decode path */
-    d = url_decode(url->path);
+    d = strdup(url->path);
     if (d == NULL) {
         url->error = AM_ENOMEM;
         return AM_ERROR;
     }
     
-    if (strchr(d, '#') != NULL) {
-        size_t sz = strlen(d);
-        /* re-encode # character(s) */
-        url->error = string_replace(&d, "#", "%23", &sz);
-        if (url->error != AM_SUCCESS) {
-            am_free(d);
-            return AM_ERROR;
-        }
-    }
-
     p = d;
     /* replace all consecutive '/' with a single '/' */
     while (*p != '\0') {
@@ -852,6 +841,16 @@ char *am_strsep(char **str, const char *delim) {
             }
         } while (sc != 0);
     }
+}
+
+/* Reverse function of strstr() */
+char *am_strrstr(const char *str, const char *search) {
+    char *last = NULL;
+    char *ptr = (char *) str;
+    while ((ptr = strstr(ptr, search))) {
+        last = ptr++;
+    }
+    return last;
 }
 
 int compare_property(const char *line, const char *property) {

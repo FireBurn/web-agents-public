@@ -33,7 +33,7 @@
 #define AM_ATOMIC_ADD_32        __sync_fetch_and_add
 #define AM_ATOMIC_CAS_32(t,o,n) __sync_val_compare_and_swap(t,n,o)
 
-inline uint32_t AM_ATOMIC_SWAP_32(volatile uint32_t *target, uint32_t value) {
+static inline uint32_t AM_ATOMIC_SWAP_32(volatile uint32_t *target, uint32_t value) {
     __sync_synchronize();
     return __sync_lock_test_and_set(target, value);
 }

@@ -897,3 +897,46 @@ void test_header_value_encoding(void **state) {
     assert_string_equal(value2_encoded, val);
     free(val);
 }
+
+char *remove_pathinfo_from_url(struct url *url, const char *pathinfo);
+
+void test_pathinfo_removal(void **state) {
+    struct url u;
+    char *res;
+    int i;
+
+    char *iso88591 = url_decode("/caf%E9.gif");
+    assert_true(iso88591 != NULL);
+    char *iso88591_url = NULL;
+    am_asprintf(&iso88591_url, "http://host:80/caf%%C3%%A9/index.cgi%s", iso88591);
+    assert_true(iso88591_url != NULL);
+
+    struct url_test {
+        const char *url;
+        const char *pathinfo;
+        const char *result;
+    } ut[] = {
+        {.url = "http://host:80/caf%C3%A9/index.cgi/caf%C3%A9.gif", .pathinfo = "/café.gif", .result = "http://host:80/caf%C3%A9/index.cgi"},
+        {.url = "http://host:80/caf%C3%A9/index.cgi/caf%E9.gif", .pathinfo = iso88591, .result = "http://host:80/caf%C3%A9/index.cgi"},
+        {.url = "http://host:80/caf%C3%A9/index.cgi/caf%C3%A9.gif", .pathinfo = "/other.gif", .result = NULL},
+        {.url = "http://host:80/index.cgi/cafe.gif?a=b", .pathinfo = "/cafe.gif", .result = "http://host:80/index.cgi?a=b"},
+        {.url = "http://host:80/index.cgi/", .pathinfo = "/", .result = "http://host:80/index.cgi"},
+        {.url = "http://host:80/caf%C3%A9/index.cgi/café.gif", .pathinfo = "/café.gif", .result = "http://host:80/caf%C3%A9/index.cgi"},
+        {.url = iso88591_url, .pathinfo = "/caf%E9.gif", .result = "http://host:80/caf%C3%A9/index.cgi"}
+    };
+
+    for (i = 0; i < ARRAY_SIZE(ut); i++) {
+        struct url_test *e = &ut[i];
+        memset(&u, 0, sizeof (struct url));
+        assert_int_equal(parse_url(e->url, &u), AM_SUCCESS);
+        res = remove_pathinfo_from_url(&u, e->pathinfo);
+        if (e->result == NULL) {
+            assert_true(res == NULL);
+        } else {
+            assert_true(res != NULL);
+            assert_string_equal(res, e->result);
+        }
+        am_free(res);
+    }
+    AM_FREE(iso88591, iso88591_url);
+}

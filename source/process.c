@@ -116,6 +116,78 @@ static am_bool_t is_json_request(am_request_t *request) {
     return AM_FALSE;
 }
 
+#ifndef UNIT_TEST
+static
+#endif
+char *remove_pathinfo_from_url(struct url *url, const char *pathinfo) {
+    char *pos, *tmp, *out = NULL;
+    int sep_count;
+
+    tmp = strdup(url->path);
+    if (tmp == NULL) {
+        return NULL;
+    }
+
+    /* look up path_info value in url path */
+    if (strcmp(pathinfo, "/") == 0) {
+        pos = tmp + (strlen(tmp) - 1);
+    } else {
+        pos = am_strrstr(tmp, pathinfo);
+    }
+    if (pos == NULL) {
+        free(tmp);
+
+        /* was not able to find it - try url-decode url path value first */
+        tmp = url_decode(url->path);
+        if (tmp == NULL) {
+            return NULL;
+        }
+
+        pos = am_strrstr(tmp, pathinfo);
+        if (pos == NULL) {
+            /* still not able to find it - now try url-decoding pathinfo value */
+            char *pathinfo_decoded = url_decode(pathinfo);
+            if (pathinfo_decoded == NULL) {
+                free(tmp);
+                return NULL;
+            }
+
+            pos = am_strrstr(tmp, pathinfo_decoded);
+            free(pathinfo_decoded);
+            if (pos == NULL) {
+                free(tmp);
+                /* nothing - path_info value is not found in url path */
+                return NULL;
+            }
+        }
+
+        /* path_info is found, but in url-decoded url path, 
+         * find out where the pathinfo is within the original (unencoded) url path */
+        *pos = '\0';
+
+        sep_count = char_count(tmp, '/', NULL);
+        free(tmp);
+
+        pos = tmp = strdup(url->path);
+        if (tmp == NULL) {
+            return NULL;
+        }
+        while (*pos != '\0') {
+            if (*pos == '/' && --sep_count < 0) {
+                break;
+            }
+            pos++;
+        }
+    }
+    /* path_info value is found - remove it from url path */
+    *pos = '\0';
+
+    am_asprintf(&out, "%s://%s:%d%s%s", url->proto, url->host,
+            url->port, tmp, url->query);
+    free(tmp);
+    return out;
+}
+
 static am_return_t setup_request_data(am_request_t *r) {
     static const char *thisfunc = "setup_request_data():";
     am_status_t status = AM_ERROR, status_token_query = AM_ERROR;
@@ -223,30 +295,12 @@ static am_return_t setup_request_data(am_request_t *r) {
     }
 
     if (ISVALID(r->path_info) && (r->conf->path_info_ignore_not_enforced || r->conf->path_info_ignore)) {
-        char *pos;
-
-        r->normalized_url_pathinfo = strdup(r->normalized_url);
+        r->normalized_url_pathinfo = remove_pathinfo_from_url(&r->url, r->path_info);
         if (r->normalized_url_pathinfo == NULL) {
-            AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
-            r->status = AM_ENOMEM;
+            AM_LOG_ERROR(r->instance_id, "%s path_info %s is not part of the normalized request url %s",
+                    thisfunc, r->path_info, r->normalized_url);
             return AM_FAIL;
         }
-
-        pos = strstr(r->normalized_url_pathinfo, r->path_info);
-        if (pos == NULL) {
-            /* 2nd try - request url is url_decoded, check if url_decoded pathinfo can be found */
-            char *path_info_clear = url_decode(r->path_info);
-            if (path_info_clear != NULL) {
-                pos = strstr(r->normalized_url_pathinfo, path_info_clear);
-                free(path_info_clear);
-            }
-            if (pos == NULL) {
-                AM_LOG_ERROR(r->instance_id, "%s path_info %s is not part of the normalized request url %s",
-                        thisfunc, r->path_info, r->normalized_url);
-                return AM_FAIL;
-            }
-        }
-        *pos = '\0';
     }
 
     /* Re-format normalized request url based on override parameter values.
@@ -278,30 +332,12 @@ static am_return_t setup_request_data(am_request_t *r) {
     }
 
     if (ISVALID(r->path_info) && r->conf->path_info_ignore) {
-        char *pos;
-
-        r->overridden_url_pathinfo = strdup(r->overridden_url);
+        r->overridden_url_pathinfo = remove_pathinfo_from_url(&request_url, r->path_info);
         if (r->overridden_url_pathinfo == NULL) {
-            AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
-            r->status = AM_ENOMEM;
+            AM_LOG_ERROR(r->instance_id, "%s path_info %s is not part of the overridden request url %s",
+                        thisfunc, r->path_info, r->overridden_url);
             return AM_FAIL;
         }
-
-        pos = strstr(r->overridden_url_pathinfo, r->path_info);
-        if (pos == NULL) {
-            /* 2nd try - request url is url_decoded, check if url_decoded pathinfo can be found */
-            char *path_info_clear = url_decode(r->path_info);
-            if (path_info_clear != NULL) {
-                pos = strstr(r->overridden_url_pathinfo, path_info_clear);
-                free(path_info_clear);
-            }
-            if (pos == NULL) {
-                AM_LOG_ERROR(r->instance_id, "%s path_info %s is not part of the overridden request url %s",
-                        thisfunc, r->path_info, r->overridden_url);
-                return AM_FAIL;
-            }
-        }
-        *pos = '\0';
     }
 
     /* check if this request url (normalized) matches any of 
