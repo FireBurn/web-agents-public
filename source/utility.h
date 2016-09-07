@@ -49,6 +49,24 @@
     } \
   } while(0)
 
+#ifndef htonll
+#define htonll(x) ((htonl(1) == 1) ? (x) : ((uint64_t)htonl((x) & 0xFFFFFFFF) << 32) | htonl((x) >> 32))
+#endif
+#ifndef ntohll
+#define ntohll(x) ((ntohl(1) == 1) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
+#endif
+
+struct cache_object_ctx {
+    size_t alloc_size;
+    size_t data_size;
+    size_t offset;
+    int error;
+    int external;
+    void *data;
+    int (*read)(struct cache_object_ctx *, void *, size_t);
+    size_t(*write)(struct cache_object_ctx *, const void *, size_t);
+};
+
 enum {
     CONF_NUMBER = 0, CONF_STRING, CONF_NUMBER_LIST, CONF_STRING_LIST,
     CONF_STRING_MAP, CONF_DEBUG_LEVEL, CONF_ATTR_MODE, CONF_AUDIT_LEVEL
