@@ -515,7 +515,8 @@ static int send_attribute_request(am_net_t *conn, char **token, char **pxml, siz
     }
 
     if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->data)) {
-        if (stristr(req_data->data, "exception") != NULL) {
+        if (stristr(req_data->data, "<identitydetails>") == NULL ||
+                stristr(req_data->data, "<attribute name=\"") == NULL) {
             status = AM_ERROR;
         } else {
             if (pxml != NULL) {
