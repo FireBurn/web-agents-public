@@ -332,6 +332,26 @@ static int cache_object_read_map(struct cache_object_ctx *ctx, uint32_t *size) {
     return -1;
 }
 
+/* write initial key for the cache object */
+int cache_object_write_key(struct cache_object_ctx *ctx, char *key) {
+    return cache_object_write_str(ctx, key, (uint32_t) strlen(key));
+}
+
+/* move reader past the key string */
+int cache_object_skip_key(struct cache_object_ctx *ctx) {
+    uint32_t sz = 0;
+
+    if (cache_object_read_str_size(ctx, &sz) != 0)
+        return -1;
+
+    if (ctx->data_size < (ctx->offset + sz)) {
+        return -1;
+    }
+    ctx->offset += sz;
+
+    return 0;
+}
+
 int am_name_value_serialise(struct cache_object_ctx *ctx, struct am_namevalue *list) {
     uint32_t count = 0;
     struct am_namevalue *p = list;
@@ -405,22 +425,6 @@ int am_pdp_entry_serialise(struct cache_object_ctx *ctx, const char *url,
     cache_object_write_str(ctx, file, ISVALID(file) ? (uint32_t) strlen(file) : 0);
     cache_object_write_str(ctx, content_type, ISVALID(content_type) ? (uint32_t) strlen(content_type) : 0);
     cache_object_write_s32(ctx, method);
-    return 0;
-}
-
-int am_cache_entry_header_serialise(struct cache_object_ctx *ctx, unsigned long instance_id,
-        uint64_t ts, int32_t valid) {
-    cache_object_write_u32(ctx, instance_id);
-    cache_object_write_u64(ctx, ts);
-    cache_object_write_s32(ctx, valid);
-    return 0;
-}
-
-int am_cache_entry_header_deserialise(struct cache_object_ctx *ctx, unsigned long *instance_id,
-        uint64_t *ts, int32_t *valid) {
-    cache_object_read_u32(ctx, (uint32_t *) instance_id);
-    cache_object_read_u64(ctx, ts);
-    cache_object_read_s32(ctx, valid);
     return 0;
 }
 
@@ -499,3 +503,15 @@ struct am_policy_result *am_policy_result_deserialise(struct cache_object_ctx *c
     }
     return list;
 }
+
+int am_policy_epoch_deserialise(struct cache_object_ctx *ctx, uint64_t *time_addr) {
+    cache_object_read_u64(ctx, time_addr);
+    return ctx->error;
+}
+
+int am_policy_epoch_serialise(struct cache_object_ctx *ctx, uint64_t time) {
+    cache_object_write_u64(ctx, time);
+    return ctx->error;
+}
+
+

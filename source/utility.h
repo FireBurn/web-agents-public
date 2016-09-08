@@ -303,8 +303,8 @@ const char *am_scope_to_str(int scope);
 
 int remove_cookie(am_request_t *rq, const char *cookie_name, char **cookie_hdr);
 
-int am_get_policy_cache_entry(am_request_t *r, const char *key, time_t reference);
-int am_add_policy_cache_entry(am_request_t *r, const char *key, int valid);
+int am_set_policy_cache_epoch(uint64_t epoch_start);
+int am_check_policy_cache_epoch(uint64_t policy_created);
 
 int am_get_agent_config(unsigned long instance_id, const char *config_file, am_config_t **cnf);
 
@@ -319,7 +319,7 @@ int am_get_agent_config_cache_or_local(unsigned long instance_id, const char *co
 
 am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, size_t xml_sz, char log_enable);
 
-int am_get_pdp_cache_entry(am_request_t *r, const char *key, char **data, size_t *data_sz, char **content_type, int *method);
+int am_get_pdp_cache_entry(am_request_t *r, const char *key, char **url, char **file, char **content_type, int *method);
 int am_add_pdp_cache_entry(am_request_t *r, const char *key, const char *url, const char *file, const char *content_type, int method);
 int am_add_session_policy_cache_entry(am_request_t *request, const char *key,
         struct am_policy_result *policy, struct am_namevalue *session);
@@ -354,5 +354,23 @@ char * property_map_write_to_buffer(property_map_t * map, size_t * data_sz);
 
 uint32_t am_hash_buffer(const void *buf, size_t len);
 uint32_t am_hash(const void *buf);
+
+void cache_object_ctx_init(struct cache_object_ctx *ctx);
+void cache_object_ctx_init_data(struct cache_object_ctx *ctx, void *data, size_t sz);
+void cache_object_ctx_destroy(struct cache_object_ctx *ctx);
+int cache_object_write_key(struct cache_object_ctx *ctx, char *key);
+int cache_object_skip_key(struct cache_object_ctx *ctx);
+int am_policy_result_serialise(struct cache_object_ctx *ctx, struct am_policy_result *list);
+int am_name_value_serialise(struct cache_object_ctx *ctx, struct am_namevalue *list);
+struct am_policy_result *am_policy_result_deserialise(struct cache_object_ctx *ctx);
+struct am_namevalue *am_name_value_deserialise(struct cache_object_ctx *ctx);
+
+int am_pdp_entry_serialise(struct cache_object_ctx *ctx, const char *url,
+        const char *file, const char *content_type, int method);
+int am_pdp_entry_deserialise(struct cache_object_ctx *ctx, char **url,
+        char **file, char **content_type, int *method);
+
+int am_policy_epoch_deserialise(struct cache_object_ctx *ctx, uint64_t *p_time);
+int am_policy_epoch_serialise(struct cache_object_ctx *ctx, uint64_t time);
 
 #endif

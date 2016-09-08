@@ -58,7 +58,7 @@ static void initialise_random_buffer()
 {
     int                                     i;
 
-    srandomdev();
+    //srandomdev();
 
     for (i = 0; i < RANDOM_BUFFER_SZ; i++)
     {
@@ -112,19 +112,20 @@ void *cache_robustness_thread(void *data)
 {
     struct bucket                           bucket;
     void                                   *ptr;
+    uint32_t                                ln;
 
     int                                     i;
 
     int                                     n_iters = 10000, iter;
     int                                     n_ops = 4096;
 
-    int                                     n_keys = 4096;
+    uint32_t                                n_keys = 0x7fff;
 
     for (iter = 0; iter < n_iters; iter++)
     {
         for (i = 1; i < n_ops; i++)
         {
-            int                             key = random() % n_keys;
+            uint32_t                        key = ((uint32_t)random()) & n_keys;
 
             write_bucket(key, &bucket);
 
@@ -136,11 +137,11 @@ void *cache_robustness_thread(void *data)
 
         for (i = 1; i < n_ops; i++)
         {
-            int                             key = random() % n_keys;
+            uint32_t                        key = ((uint32_t)random()) & n_keys;
 
             bucket.key = key;
 
-            if (cache_get_readlocked_ptr(key, &ptr, &bucket, bucket_identity))
+            if (cache_get_readlocked_ptr(key, &ptr, &ln, &bucket, time(0), bucket_identity))
             {
                 /* deleted */
             }
@@ -150,13 +151,13 @@ void *cache_robustness_thread(void *data)
                 {
                     printf("*** bucket verification error\n");
                 }
-                cache_readlock_release(key);
+                cache_release_readlocked_ptr(key);
             }
         }
 
         for (i = 1; i < n_ops; i++)
         {
-            int                             key = random() % n_keys;
+            uint32_t                        key = ((uint32_t)random()) & n_keys;
 
             bucket.key = key;
 
@@ -177,8 +178,6 @@ int main(int argc, char *argv[])
     long                                    t0;
     double                                  dt;
 
-    agent_memory_initialise(4096*1024);
-
     if (cache_initialise())
     {
         printf("unable to initialise cache\n");
@@ -189,7 +188,6 @@ int main(int argc, char *argv[])
     if (argc == 2 && strcmp(argv[1], "--destroy") == 0)
     {
         cache_shutdown(1);                                                            /* one-off delete shared resources */
-        agent_memory_destroy(1);
 
         exit(0);
     }
@@ -277,8 +275,6 @@ int main(int argc, char *argv[])
     agent_memory_check(getpid(), 0, 0);
 
     cache_shutdown(0);
-
-    agent_memory_destroy(0);
 
     exit(0);
 

@@ -1,22 +1,32 @@
 
-CC = clang -O3 -pthread
+SRC = ../source
+
+CC = cc
+
+CFLAGS = -D_GNU_SOURCE -std=gnu99 -O3 -pthread -I$(SRC)
+
+LDFLAGS = -lpthread 
 
 cache: test_cache.o share.o cache.o alloc.o rwlock.o
-	$(CC) $(CFLAGS) -o cache test_cache.c cache.c share.o alloc.o rwlock.o -lpthread
+	$(CC) $(CFLAGS) -o cache test_cache.c cache.o share.o alloc.o rwlock.o $(LDFLAGS)
 
 alloc: test_alloc.o alloc.o share.o
-	$(CC) -o alloc test_alloc.c share.o alloc.o -lpthread
+	$(CC) $(CFLAGS) -o alloc test_alloc.c share.o alloc.o $(LDFLAGS)
 
 rwlock: test_rwlock.o rwlock.o
-	$(CC) -o rwlock test_rwlock.c rwlock.o -lpthread
+	$(CC) $(CFLAGS) -o rwlock test_rwlock.c rwlock.o $(LDFLAGS)
 
-cache.o: cache.h share.o alloc.o rwlock.o
+cache.o: $(SRC)/cache.h share.o alloc.o rwlock.o
+	$(CC) -c $(CFLAGS) $(SRC)/cache.c
 
-alloc.o: alloc.h share.o
+alloc.o: $(SRC)/alloc.h $(SRC)/alloc.c share.o 
+	$(CC) -c $(CFLAGS) $(SRC)/alloc.c
 
-rwlock.o: rwlock.h
+rwlock.o: $(SRC)/rwlock.h $(SRC)/rwlock.c
+	$(CC) -c $(CFLAGS) $(SRC)/rwlock.c
 
-share.o: share.h
+share.o: $(SRC)/share.h $(SRC)/share.c
+	$(CC) -c $(CFLAGS) $(SRC)/share.c
 
 all: cache alloc rwlock
 

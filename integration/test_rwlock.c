@@ -31,7 +31,7 @@
 
 #include "rwlock.h"
 
-#define THREADS                             30
+#define THREADS                             21
 
 #define N_SEMS                              128
 
@@ -148,7 +148,7 @@ void *multi_lock_thread(void *data)
             }
         }
 
-        if (i % 100000 == 0)
+        if (i % 1000000 == 0)
         {
             printf("%d:%p iteration %d, updates %d out of %d\n", pid, self, i, updates, busy);
         }
@@ -169,7 +169,7 @@ void *single_lock_thread(void *data)
     for (i = 0; i < 10000000; i++)
     {
         int                                 l = 0;
-        int                                 r = random() & 3;
+        int                                 r = random() & 1;
 
         if (r == 0)
         {
@@ -186,7 +186,7 @@ void *single_lock_thread(void *data)
                 printf("%d:%p failed lock %d readlock\n", pid, self, (int)l);
             }
         }
-        else if (r == 1)
+        else if (0 && r == 1)
         {
             if (read_block(locks + l, pid))
             {
@@ -201,7 +201,7 @@ void *single_lock_thread(void *data)
         }
         else
         {
-            if (read_lock(locks + l, pid))
+            if (read_lock_try(locks + l, pid, 1))
             {
                 if (read_try_unique(locks + l, 1))
                 {
@@ -219,7 +219,7 @@ void *single_lock_thread(void *data)
             }
             else
             {
-                printf("%d:%p failed lock %d writelock\n", pid, self, (int)l);
+                //printf("%d:%p failed lock %d writelock\n", pid, self, (int)l);
             }
         }
 

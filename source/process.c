@@ -1277,7 +1277,7 @@ static am_return_t validate_policy(am_request_t *r) {
                         break;
                     }
 
-                    rv = am_get_policy_cache_entry(r, AM_POLICY_CHANGE_KEY, e->created);
+                    rv = am_check_policy_cache_epoch(e->created);
                     AM_LOG_DEBUG(r->instance_id, "%s global policy cache status: %s", thisfunc,
                             am_strerror(rv));
                     if (rv == AM_SUCCESS) {
@@ -2127,8 +2127,7 @@ static am_return_t handle_exit(am_request_t *r) {
                 /* post (pdp) data reply */
 
                 am_status_t pdp_status;
-                char *data = NULL /* url\0file\0 format */, *content_type = NULL, *file;
-                size_t url_sz = 0;
+                char *url = NULL, *file = NULL, *content_type = NULL;
                 int method = AM_REQUEST_POST;
                 const char *key = r->url.query + 1; /* skip '?' */
 
@@ -2139,21 +2138,20 @@ static am_return_t handle_exit(am_request_t *r) {
                     break;
                 }
 
-                pdp_status = am_get_pdp_cache_entry(r, key, &data, &url_sz, &content_type, &method);
+                pdp_status = am_get_pdp_cache_entry(r, key, &url, &file, &content_type, &method);
 
                 if (pdp_status != AM_SUCCESS) {
                     AM_LOG_WARNING(r->instance_id,
                             "%s post data preservation cache entry %s is not available (%s)",
                             thisfunc, key, am_strerror(pdp_status));
-                    AM_FREE(data, content_type);
+                    AM_FREE(url, file, content_type);
                     r->status = AM_NOT_FOUND;
                     break;
                 }
 
-                file = data + url_sz + 1;
                 AM_LOG_DEBUG(r->instance_id, "%s found post data preservation cache "
                         "entry: %s, url: %s, file: %s, content type: %s",
-                        thisfunc, key, LOGEMPTY(data), LOGEMPTY(file), LOGEMPTY(content_type));
+                        thisfunc, key, LOGEMPTY(url), LOGEMPTY(file), LOGEMPTY(content_type));
 
                 /* reset pdp sticky-session load-balancer cookie */
                 if (ISVALID(r->conf->pdp_sess_mode) && ISVALID(r->conf->pdp_sess_value)
@@ -2176,7 +2174,7 @@ static am_return_t handle_exit(am_request_t *r) {
                     /* empty post */
                     r->method = method;
                     r->status = AM_PDP_DONE;
-                    r->post_data_url = data;
+                    r->post_data_url = strdup(url); /* FIXME: this was being freed below, as 'data' variable */
                     r->post_data_sz = 0;
                     am_free(r->post_data);
                     r->post_data = NULL;
@@ -2211,7 +2209,7 @@ static am_return_t handle_exit(am_request_t *r) {
                                 "var b = base64toBlob(\"%s\", \"%s\");r.send(b);"
                                 "}</script></head><body onload=\"sendpost();\">"
                                 "</body><p></p></html>",
-                                data, data,
+                                url, url,
                                 NOTNULL(post_enc),
                                 content_type);
                         r->status = AM_SUCCESS;
@@ -2224,7 +2222,7 @@ static am_return_t handle_exit(am_request_t *r) {
                         if (stat(file, &st) == 0) {
                             r->method = method;
                             r->status = AM_PDP_DONE;
-                            r->post_data_url = data;
+                            r->post_data_url = url;
                             r->post_data_sz = st.st_size;
                             am_free(r->post_data);
                             r->post_data = NULL;
@@ -2246,7 +2244,7 @@ static am_return_t handle_exit(am_request_t *r) {
                 /* delete cache entry */
                 am_remove_cache_entry(r->instance_id, key);
 
-                AM_FREE(data, content_type);
+                AM_FREE(url, file, content_type);
 
                 if (pdp_status != AM_SUCCESS) {
                     r->status = AM_NOT_FOUND;
