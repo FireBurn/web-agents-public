@@ -379,19 +379,7 @@ static int test_cache_with_seed(int seed, int test_size, am_request_t * request,
     for(i = 0; i < capacity; i++) {
         create_random_cache_key(key, sizeof(key));
         if (error)
-#if 1
-{
-if (am_add_session_policy_cache_entry(request, key, result, NULL) != AM_SUCCESS) {
-    if (am_add_session_policy_cache_entry(request, key, result, NULL) != AM_SUCCESS) {
-printf("here: two failures %d\n", i);
-    } else {
-printf("here:one failure %d\n", i);
-    }
-}
-}
-#else
            assert_int_equal(am_add_session_policy_cache_entry(request, key, result, NULL), AM_SUCCESS);
-#endif
         else
            am_add_session_policy_cache_entry(request, key, result, NULL);
 
@@ -746,7 +734,7 @@ void test_policy_cache_multithread(void **state) {
         };
 
         long t0 = clock();
-#define NTHREADS 8
+#define NTHREADS 4
         am_thread_t threads [NTHREADS];
 
         am_thread_t gc_thread;

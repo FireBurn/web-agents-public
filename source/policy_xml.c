@@ -115,6 +115,7 @@ int create_am_policy_result_node(const char *resource, size_t resource_size, str
     memcpy(policy_result->resource, resource, resource_size);
     policy_result->resource[resource_size] = '\0';
     policy_result->scope = -1;
+    policy_result->created = time(0);
     *node = policy_result;
     return 0;
 }

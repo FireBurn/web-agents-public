@@ -55,7 +55,7 @@ static int key_equality(void *a, void *b)
  * delete cache entry. 
  *
  */
-int delete_cache_entry(char *key)
+int am_remove_cache_entry(unsigned long instance, const char *key)
 {
     struct cache_object_ctx              ctx;
 
@@ -417,6 +417,7 @@ int am_cache_shutdown()
 }
 
 void am_cache_destroy() {
+    cache_initialise();
     cache_shutdown(1);
 
 }

@@ -33,6 +33,10 @@ void am_net_init_ssl_reset();
 
 static am_status_t get_post_data(struct am_request * request)
 {
+    request->post_data_fn = strdup("test_post_data-XXXXXXX");
+    mktemp(request->post_data_fn);
+
+    write_file(request->post_data_fn, request->post_data, request->post_data_sz);
     return AM_SUCCESS;
 }
 
@@ -164,6 +168,8 @@ void test_simple_notification(void **state) {
         .am_set_custom_response_f   = set_custom_response,
     };
     
+    am_cache_destroy();
+
     am_test_get_state_funcs(&func_array, &array_len);
     notification_handler = func_array[2];
     
@@ -302,6 +308,8 @@ void test_session_notification_on_policy_cache(void **state) {
     am_test_get_state_funcs(&func_array, &array_len);
     notification_handler = func_array [2];
     
+    am_cache_destroy();
+
     assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
     am_init_worker(AM_DEFAULT_AGENT_ID);
     
@@ -355,7 +363,7 @@ void test_resource_notification_on_policy_cache(void **state) {
    
     am_config_t config = {
         .instance_id                = 0,
-        .token_cache_valid          = 0,
+        .token_cache_valid          = 1000,
         
         .notif_enable               = AM_TRUE,
         .notif_url                  = "https://www.notify.com:1234/am",
@@ -453,31 +461,33 @@ void test_resource_notification_on_policy_cache(void **state) {
     am_test_get_state_funcs(&func_array, &array_len);
     notification_handler = func_array [2];
     
+    am_cache_destroy();
+
     assert_int_equal(am_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
     am_init_worker(AM_DEFAULT_AGENT_ID);
     
     sleep(2); /* must wait till worker pool is all set */
     
     assert_int_equal(am_add_session_policy_cache_entry(&request, session_id, result, 0), AM_SUCCESS);
-
-    /* add the resources to the policy cache */
-    for(p = result; p; p = p->next) {
-        am_add_policy_cache_entry(&request, p->resource, 500);
-    }
     delete_am_policy_result_list(&result);
     
+    /* add the resources to the policy cache */
+    am_set_policy_cache_epoch(500);
+
+    // check that the notification does not apply
+    assert_int_equal(am_get_session_policy_cache_entry(&request, session_id, &r, &session, &ets), AM_SUCCESS);
+    assert_int_equal(strcmp(r->resource, "a.b.c:3232/d/e/f"), 0);
+    assert_int_equal(am_check_policy_cache_epoch(r->created), AM_SUCCESS);
+    delete_am_policy_result_list(&r);
+
     /* send a resource notification for the cached resource */
     assert_int_equal(notification_handler(&request), AM_OK);
-
     sleep(2);
     
+    // check that the notification has been received, which will invalidate the cache entry
     assert_int_equal(am_get_session_policy_cache_entry(&request, session_id, &r, &session, &ets), AM_SUCCESS);
-    
-    if (r != NULL) {
-        // check that the notification has been received, which will invalidate the cache entry
-        assert_int_equal(strcmp(r->resource, "a.b.c:3232/d/e/f"), 0);
-        assert_int_equal(am_get_policy_cache_entry(&request, r->resource, 0), AM_SUCCESS);
-    }
+    assert_int_equal(strcmp(r->resource, "a.b.c:3232/d/e/f"), 0);
+    assert_int_equal(am_check_policy_cache_epoch(r->created), AM_ETIMEDOUT);
     delete_am_policy_result_list(&r);
 
     am_shutdown_worker();
