@@ -61,7 +61,6 @@
 #define casv(p, old, new)                   __sync_val_compare_and_swap((p), (old), (new))
 
 #define incr(p, v)                          __sync_fetch_and_add((p), (v))
-#define sync()                              __sync_synchronize()
 #define yield()                             sched_yield()
 
 #ifdef GC_STATS
@@ -90,7 +89,7 @@ struct cache_entry
 
     volatile offset                         bucket[BUCKET_SZ];
     
-    volatile uint64_t                       expires[BUCKET_SZ];
+    volatile uint32_t                       expires[BUCKET_SZ];
 
 };
 
@@ -110,6 +109,8 @@ struct garbage_stat
 
 struct stats
 {
+    int64_t                                 basetime;
+
     union stat                              reads, updates, writes, deletes, expires;
 
     struct garbage_stat                     cache, data;
@@ -127,8 +128,12 @@ static offset                              *hashtable;
 
 static void reset_stats(void *cbdata, void *p)
 {
-    memset(p, 0, sizeof(struct stats));
+    struct stats                           *stats = p;
 
+    memset(stats, 0, sizeof(struct stats));
+
+    stats->basetime = time(0);
+    
     printf("cache stats reset\n");
 }
 
@@ -290,6 +295,16 @@ void cache_readlock_unblock_all(pid_t pid)
 }
 
 /*
+ * expiry time is represented as a 32 bit seconds value, relative to the cache shared start time
+ *
+ */
+static uint32_t relative_time(int64_t t)
+{
+    return (t - stats->basetime) & 0xffffffff;
+
+}
+
+/*
  * remove cach entries that are the same as callers' data 
  *
  * this doesn't ensure that other entries are not added concurrently
@@ -336,6 +351,8 @@ static int purge_expired_entries(pid_t pid, uint32_t hash, struct cache_entry *e
 {
     int                                     i, n = 0;
 
+    uint32_t                                t = relative_time(now);
+
     for (i = 0; i < BUCKET_SZ; i++)
     {
         offset                              ofs = e->bucket[i];
@@ -344,7 +361,7 @@ static int purge_expired_entries(pid_t pid, uint32_t hash, struct cache_entry *e
         {
             struct user_entry              *p = agent_memory_ptr(ofs);
 
-            if (e->expires[i] < now)
+            if (e->expires[i] < t)
             {
                 if (cas(e->bucket + i, ofs, ~ 0))
                 {
@@ -375,7 +392,7 @@ incr(&stats->expires.v, 1);
  * NOTE: this could be done in multiple threads, but the performance problem issue would only be the dispersed memory access
  *
  */
-void cache_purge_expired_entries(pid_t pid, int64_t now)
+void cache_purge_expired_entries(pid_t pid)
 {
     int                                     n = 0;
 
@@ -388,7 +405,7 @@ void cache_purge_expired_entries(pid_t pid, int64_t now)
         {
             if (~ ( ofs = hashtable[i] ))
             {
-                n += purge_expired_entries(pid, i, agent_memory_ptr(ofs), now);
+                n += purge_expired_entries(pid, i, agent_memory_ptr(ofs), time(0));
             }
             cache_readlock_release_p(i, pid);
         }
@@ -463,7 +480,7 @@ int cache_add(uint32_t h, void *data, size_t ln, int64_t expires, int (*identity
         e->check = ~ hash;                                                            /* this is for validating the hash */
 
         for (i = 0; i < BUCKET_SZ; i++) e->bucket[i] = ~ 0;
-        for (i = 0; i < BUCKET_SZ; i++) e->expires[i] = 0ll;
+        for (i = 0; i < BUCKET_SZ; i++) e->expires[i] = 0;
 
         hashtable[hash] = agent_memory_offset(e);
     }
@@ -515,9 +532,10 @@ incr(&stats->updates.v, 1);
 
     if (i < BUCKET_SZ)
     {
-        int64_t                             ex = e->expires[i];
+        uint32_t                            t = relative_time(expires);
+        uint32_t                            ex = e->expires[i];
 
-        while (cas(e->expires + i, ex, expires) == 0)
+        while (cas(e->expires + i, ex, t) == 0)
         {
             ex = e->expires[i];
         }
@@ -572,6 +590,8 @@ int cache_get_readlocked_ptr(uint32_t h, void **addr, uint32_t *ln, void *data, 
 
     uint32_t                                hash = h % HASH_SZ;
 
+    uint32_t                                t = relative_time(now);
+
     offset                                  ofs;
    
     agent_memory_validate(pid);
@@ -598,7 +618,7 @@ int cache_get_readlocked_ptr(uint32_t h, void **addr, uint32_t *ln, void *data, 
 
                 if (identity(data, p->data))
                 {
-                    if (e->expires[i] < now)
+                    if (e->expires[i] < t)
                         break;
 
                     *addr = p->data;

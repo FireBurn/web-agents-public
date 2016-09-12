@@ -230,7 +230,7 @@ int main(int argc, char *argv[])
             printf("barrier takes %lf secs\n", dt);
 
             t0 = clock();
-            cache_purge_expired_entries(pid, time(0));
+            cache_purge_expired_entries(pid);
             dt = ((double) (clock() - t0)) / CLOCKS_PER_SEC;
 
             printf("expiry scan takes %lf secs\n", dt);

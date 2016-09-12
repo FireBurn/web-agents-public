@@ -22,9 +22,4 @@ int remove_memory_segment(void *addr, char *name, int unlink, size_t sz);
 
 int get_memory_attach_count(char *name, int *count_addr);
 
-#if 0
-int get_semaphores_sysv(int *semid_addr, char *name, uint16_t sz, void (*cb)(void *cbdata, int sem_id), void *cbdata);
-int remove_semaphores_sysv(int semid);
-#endif
-
 #endif  /*SHM_INCLUDED*/

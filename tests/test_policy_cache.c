@@ -303,11 +303,6 @@ static void cleardown() {
     int clearup_count = 0;
 
     am_cache_destroy();
-
-    //am_remove_shm_and_locks(AM_DEFAULT_AGENT_ID, test_log_callback, &clearup_count);
-
-//printf("hit return to continue\n");
-//getc(stdin);
 }
 
 void test_policy_cache_simple(void **state) {
@@ -332,6 +327,8 @@ void test_policy_cache_simple(void **state) {
     assert_int_equal(am_cache_init(AM_DEFAULT_AGENT_ID), AM_SUCCESS);
         
     am_add_session_policy_cache_entry(&request, "Policy-key", result, NULL);
+    delete_am_policy_result_list(&result);
+
     am_get_session_policy_cache_entry(&request, "Policy-key", &r, &session, &ets);
     
     am_cache_shutdown();
@@ -498,7 +495,7 @@ void test_policy_cache_purge_many_entries(void **state) {
     
     capacity = test_cache(test_size, &request, result);
     cache_garbage_collect();
-    cache_purge_expired_entries(getpid(), time(0));
+    cache_purge_expired_entries(getpid());
 
     // assert_int_equal(am_purge_caches(0, time(NULL) + cache_valid_secs + 1), capacity);
 
@@ -543,7 +540,7 @@ void test_policy_cache_purge_during_insert(void **state) {
     elapsed = time(NULL) - t0;
 
     cache_garbage_collect();
-    cache_purge_expired_entries(getpid(), time(0));
+    cache_purge_expired_entries(getpid());
 
     // assert_int_equal(am_purge_caches(0, time(NULL) + cache_valid + 1), loaded);
 
@@ -559,14 +556,14 @@ void test_policy_cache_purge_during_insert(void **state) {
     sleep( (elapsed + 4) );
     
     cache_garbage_collect();
-    cache_purge_expired_entries(getpid(), time(0));
+    cache_purge_expired_entries(getpid());
     
     // this update should trigger purge 
     printf("verifying expiry during load.. \n");
     loaded = test_cache_with_seed(321213, 100, &request, result, AM_TRUE);
 
     cache_garbage_collect();
-    cache_purge_expired_entries(getpid(), time(0));
+    cache_purge_expired_entries(getpid());
 
     //assert_int_equal(am_purge_caches(0, time(NULL) + elapsed + 10), loaded);
 
@@ -613,6 +610,9 @@ void test_policy_cache_with_many_different_entries_single_session(void **state) 
     for (i = 0; i < sizeof(urls)/sizeof(urls[0]); i++) {
         memset(&config, 0, sizeof(am_config_t));
         memset(&request, 0, sizeof(am_request_t));
+        config.token_cache_valid = 10000;
+        request.conf = &config;
+
         request.conf = &config;
         
         buffer = get_policy_for_url(urls[i]);
@@ -620,6 +620,7 @@ void test_policy_cache_with_many_different_entries_single_session(void **state) 
         free(buffer);
         
         assert_int_equal(am_add_session_policy_cache_entry(&request, fake_session, policy_result, NULL), AM_SUCCESS);
+        delete_am_policy_result_list(&policy_result);
     }
     
     /**
@@ -645,6 +646,8 @@ void test_policy_cache_with_many_different_entries_single_session(void **state) 
                 }
             }
             
+            delete_am_policy_result_list(&r);
+
             if (found == AM_FALSE) {
                 AM_LOG_ERROR(0, "Failed to match policy for URL %s, although results retrieved", urls[i]);
             }
@@ -686,14 +689,14 @@ static void* test_gc_procedure(void * params)
     while (*state)
     {
         printf("*************gc start\n");
-        cache_purge_expired_entries(getpid(), time(0) + 100);
+        cache_purge_expired_entries(getpid());
         printf("*************gc end\n");
         usleep(500000);
     }
 
     printf("gc thread exiting\n");
 
-    cache_purge_expired_entries(getpid(), time(0));
+    cache_purge_expired_entries(getpid());
     cache_garbage_collect();
 
     return 0;
@@ -796,5 +799,6 @@ void test_key_creation(void **state) {
     for(i = 0; i < TEST_SIZE_1; i++) {
         create_random_cache_key(key, sizeof(key));
         assert_string_equal(key, keys[i]);
+        free(keys[i]);
     }
 }

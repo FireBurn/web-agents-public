@@ -64,7 +64,7 @@ int am_remove_cache_entry(unsigned long instance, const char *key)
     uint32_t                             hash = am_hash(key);
 
     cache_object_ctx_init(&ctx);
-    cache_object_write_key(&ctx, key);
+    cache_object_write_key(&ctx, (char *)key);
 
     if (ctx.error)
     {
@@ -256,11 +256,37 @@ int am_add_pdp_cache_entry(am_request_t *request, const char *key, const char *u
 }
 
 /*
- * deserialise cached session attributes and policy decision list
+ * get ttl for session
  *
  */
-static int cache_read_session(am_request_t *request, uint32_t hash, const char *key, struct am_policy_result **policy, struct am_namevalue **session)
+static int get_session_ttl(am_request_t *request, struct am_namevalue *session)
 {
+    int                                  ttl = request->conf->token_cache_valid;
+    int                                  max_caching = get_ttl_value(session, "maxcaching", ttl, AM_TRUE);
+    int                                  timeleft = get_ttl_value(session, "timeleft", ttl, AM_FALSE);
+
+    if (max_caching < ttl)
+    {
+        ttl = max_caching;
+    }
+
+    if (timeleft < ttl)
+    {
+        ttl = timeleft;
+    }
+
+    return ttl;
+
+}
+
+/*
+ * deserialise cached policy and session data
+ *
+ */
+int am_get_session_policy_cache_entry(am_request_t *request, const char *key, struct am_policy_result **policy, struct am_namevalue **session, uint64_t *ts)
+{
+    uint32_t                             hash = am_hash(key);
+
     struct cache_object_ctx              ctx;
     int                                  status;
 
@@ -287,43 +313,72 @@ static int cache_read_session(am_request_t *request, uint32_t hash, const char *
 }
 
 /*
- * get ttl for session
+ * cache policy and session data, add existing policies for other resources, overriding existing policies for the same resources
  *
  */
-static int get_session_ttl(am_request_t *request, struct am_namevalue *session)
+int am_add_session_policy_cache_entry(am_request_t *request, const char *key, struct am_policy_result *policy, struct am_namevalue *session)
 {
-    int                                  ttl = request->conf->token_cache_valid;
-    int                                  max_caching = get_ttl_value(session, "maxcaching", ttl, AM_TRUE);
-    int                                  timeleft = get_ttl_value(session, "timeleft", ttl, AM_FALSE);
+    int                                  status;
 
-    if (max_caching < ttl)
-    {
-        ttl = max_caching;
-    }
+    uint32_t                             hash = am_hash(key);
 
-    if (timeleft < ttl)
-    {
-        ttl = timeleft;
-    }
+    struct am_policy_result             *merged = policy;
 
-    return ttl;
-
-}
-
-/*
- * cache serialised policy and session data
- *
- */
-static int cache_write_session(am_request_t *request, uint32_t hash, const char *key, struct am_policy_result *policy, struct am_namevalue *session)
-{
     struct cache_object_ctx              ctx;
 
-    int                                  status;
+    void                                *shm_data;                                    /* pointer into hash table */
+    uint32_t                             shm_data_sz;
+
+    if (cache_fetch_readable(hash, (char *)key, &shm_data, &shm_data_sz) == 0)
+    {
+        struct am_policy_result         *cached;
+
+        cache_object_ctx_init_data(&ctx, shm_data, (size_t)shm_data_sz);
+        cache_object_skip_key(&ctx);
+        cached = am_policy_result_deserialise(&ctx);                                  /* read cached policy */
+
+        cache_release_readlocked_ptr(hash);
+
+        status = ctx.error;
+        cache_object_ctx_destroy(&ctx);
+
+        if (status)
+        {
+            return status;                                                            /* serialisation problem */
+        }
+
+        while (cached)                                                                /* add existing policies, new ones override */
+        {
+            struct am_policy_result     *p;
+
+            for (p = policy; p; p = p->next)
+            {
+                if (strcmp(cached->resource, p->resource) == 0)
+                    break;
+            }
+
+            struct am_policy_result     *next = cached->next;
+
+            if (p)
+            {
+                cached->next = 0;                                                     /* discard existing policy */
+                delete_am_policy_result_list(&cached);
+            }
+            else
+            {
+                cached->next = merged;                                                /* merge (prepend) existing policy */
+                merged = cached;
+            }
+
+            cached = next;
+        }
+    }
+
     int                                  ttl = get_session_ttl(request, session);
 
     cache_object_ctx_init(&ctx);
     cache_object_write_key(&ctx, (char *)key);
-    am_policy_result_serialise(&ctx, policy);
+    am_policy_result_serialise(&ctx, merged);
     am_name_value_serialise(&ctx, session);
 
     if (ctx.error)
@@ -340,65 +395,18 @@ static int cache_write_session(am_request_t *request, uint32_t hash, const char 
     }
 
     cache_object_ctx_destroy(&ctx);
-    return status;
 
-}
-
-/*
- * deserialise cached policy and session data
- *
- */
-int am_get_session_policy_cache_entry(am_request_t *request, const char *key, struct am_policy_result **policy, struct am_namevalue **session, uint64_t *ts)
-{
-    uint32_t                             hash = am_hash(key);
-
-    return cache_read_session(request, hash, key, policy, session);
-
-}
-
-/*
- * cache policy and session data, add existing policies for other resources, overriding existing policies for the same resources
- *
- */
-int am_add_session_policy_cache_entry(am_request_t *request, const char *key, struct am_policy_result *policy, struct am_namevalue *session)
-{
-    uint32_t                             hash = am_hash(key);
-
-    struct am_policy_result             *existing_policy;
-    struct am_namevalue                 *existing_session;
-
-    if (cache_read_session(request, hash, key, &existing_policy, &existing_session) == 0)
+    while (merged != policy)                                                          /* free merged policy */
     {
-        delete_am_namevalue_list(&existing_session);                                  /* delete existing sessions */
+        struct am_policy_result         *next = merged->next;
 
-        while (existing_policy)                                                       /* add existing policies, new ones override */
-        {
-            struct am_policy_result     *p;
+        merged->next = 0;
+        delete_am_policy_result_list(&merged);
 
-            for (p = policy; p; p = p->next)
-            {
-                if (strcmp(existing_policy->resource, p->resource) == 0)
-                    break;
-            }
-
-            struct am_policy_result     *next = existing_policy->next;
-
-            if (p)
-            {
-                existing_policy->next = 0;                                            /* discard existing policy */
-                delete_am_policy_result_list(&existing_policy);
-            }
-            else
-            {
-                existing_policy->next = policy;                                       /* prepend existing policy */
-                policy = existing_policy;
-            }
-
-            existing_policy = next;
-        }
+        merged = next;
     }
 
-    return cache_write_session(request, hash, key, policy, session);
+    return status;
 
 }
 

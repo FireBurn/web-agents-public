@@ -130,7 +130,7 @@ static cluster_header_t                    *_cluster_hdrs;
 
 static int32_t                              _cluster_capacity;
 
-static void                                *_base;
+void                                       *_base;
 
 #define cluster_lock(c)                     _cluster_hdrs[c].lock
 
@@ -141,18 +141,6 @@ static const size_t                         block_data_offset = offsetof(block_h
 
 extern int master_recovery_process(pid_t pid);
 
-
-offset agent_memory_offset(void *ptr)
-{
-    return ((char *)ptr) - ((char *)_base);
-
-}
-
-void *agent_memory_ptr(offset ofs)
-{
-    return ((char *)_base) + ofs;
-
-}
 
 static int process_dead(pid_t pid)
 {
@@ -234,7 +222,6 @@ printf("**** abandoning recovery process in %d\n", pid);
             cas(&_ctlblock->checker, pid, 0);
 
         }
-        sync();
 
     } while (_ctlblock->error);
 
@@ -548,17 +535,18 @@ static void *alloc(volatile offset *freelists, int32_t seq, int32_t type, const 
 static void *alloc_with_compact(volatile offset *freelists, int32_t seq, int32_t type, const int32_t required)
 {
     void                                   *p = 0;
+    int32_t                                 s = seq;
     
-    while (freelists[seq] == ~ 0)
+    while (freelists[s] == ~ 0)
     {
-        seq++;
-        if (seq == CLUSTER_FREELISTS)
+        s++;
+        if (s == CLUSTER_FREELISTS)
         {
             return 0;
         }
     }
     
-    if (( p = alloc(freelists, seq, type, required) ) == 0)
+    if (( p = alloc(freelists, s, type, required) ) == 0)
     {
         if (compact_cluster(freelists))
         {
@@ -886,7 +874,6 @@ printf("***** memory barrier: locking thread %d is dead\n", locker);
 printf("***** memory barrier: locking thread %d is active\n", locker);
                 usleep(1000);
             }
-            sync();
         }
 
         int                                 i;

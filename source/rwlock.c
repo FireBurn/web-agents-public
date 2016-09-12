@@ -35,7 +35,6 @@
 
 #define cas(p, old, new)                    __sync_bool_compare_and_swap(p, old, new)
 #define casv(p, old, new)                   __sync_val_compare_and_swap(p, old, new)
-#define sync()                              __sync_synchronize()
 #define inc(p)                              __sync_fetch_and_add((p), 1)
 #define yield()                             sched_yield()
 
@@ -50,8 +49,6 @@ static int wait_for_counted_readers(struct readlock *lock, int tries)
 {
     do
     {
-        sync();
-
         if (lock->readers == 0)
         {
             return 1;
@@ -225,8 +222,6 @@ static void ensure_liveness(struct readlock *lock, pid_t pid)
             }
 
             usleep(100);
-
-            sync();
 
             checker = lock->barrier;
 
