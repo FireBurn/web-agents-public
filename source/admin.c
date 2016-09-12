@@ -1775,7 +1775,7 @@ static void install_interactive(int argc, char **argv) {
         install_log("validating configuration parameters...");
         fprintf(stdout, "\nValidating...\n");
 
-        rv = am_agent_login(0, openam_url, agent_user, agent_password, agent_realm, &net_options,
+        rv = am_agent_login(0, openam_url, agent_user, agent_password, agent_realm, NULL, &net_options,
                 &agent_token, NULL, NULL, NULL);
 
         if (rv != AM_SUCCESS) {
@@ -1972,7 +1972,7 @@ static void install_silent(int argc, char** argv) {
             install_log("validating configuration parameters...");
             fprintf(stdout, "\nValidating...\n");
 
-            rv = am_agent_login(0, argv[3], argv[6], agent_password, argv[5], &net_options,
+            rv = am_agent_login(0, argv[3], argv[6], agent_password, argv[5], NULL, &net_options,
                     &agent_token, NULL, NULL, NULL);
             if (rv != AM_SUCCESS) {
                 fprintf(stderr, "\nError validating OpenAM - Agent configuration.\n");

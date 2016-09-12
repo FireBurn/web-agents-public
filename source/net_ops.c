@@ -515,8 +515,7 @@ static int send_attribute_request(am_net_t *conn, char **token, char **pxml, siz
     }
 
     if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->data)) {
-        if (stristr(req_data->data, "<identitydetails>") == NULL ||
-                stristr(req_data->data, "<attribute name=\"") == NULL) {
+        if (stristr(req_data->data, "exception") != NULL) {
             status = AM_ERROR;
         } else {
             if (pxml != NULL) {
@@ -682,13 +681,14 @@ static int send_session_request(am_net_t *conn, char **token, const char *user_t
     return status;
 }
 
-static int send_policychange_request(am_net_t *conn, char **token) {
+static int send_policychange_request(am_net_t *conn, char **token, const char *eval_app) {
     static const char *thisfunc = "send_policychange_request():";
     size_t post_sz, post_data_sz;
     char *post = NULL, *post_data = NULL;
     int status = AM_ERROR;
     struct request_data *req_data;
     char *notifyurl;
+    const char *service_name = ISVALID(eval_app) ? eval_app : "iPlanetAMWebAgentService";
 
     if (conn == NULL || conn->data == NULL || token == NULL ||
             !ISVALID(*token)) return AM_EINVAL;
@@ -702,19 +702,19 @@ static int send_policychange_request(am_net_t *conn, char **token) {
             "<Request><![CDATA["
             "<PolicyService version=\"1.0\">"
             "<PolicyRequest requestId=\"1\" appSSOToken=\"%s\">"
-            "<RemovePolicyListener notificationURL=\"%s\" serviceName=\"iPlanetAMWebAgentService\"/>"
+            "<RemovePolicyListener notificationURL=\"%s\" serviceName=\"%s\"/>"
             "</PolicyRequest>"
             "</PolicyService>]]>"
             "</Request>"
             "<Request><![CDATA["
             "<PolicyService version=\"1.0\">"
             "<PolicyRequest requestId=\"2\" appSSOToken=\"%s\">"
-            "<AddPolicyListener notificationURL=\"%s\" serviceName=\"iPlanetAMWebAgentService\"/>"
+            "<AddPolicyListener notificationURL=\"%s\" serviceName=\"%s\"/>"
             "</PolicyRequest>"
             "</PolicyService>]]>"
             "</Request>"
             "</RequestSet>",
-            *token, notifyurl, *token, notifyurl);
+            *token, notifyurl, service_name, *token, notifyurl, service_name);
     if (post_data == NULL) return AM_ENOMEM;
 
     post_sz = am_asprintf(&post, "POST %s/policyservice HTTP/1.1\r\n"
@@ -772,7 +772,7 @@ static int send_policychange_request(am_net_t *conn, char **token) {
 }
 
 static int send_policy_request(am_net_t *conn, const char *token, const char *user_token,
-        const char *req_url, const char *scope, const char *cip, const char *pattr,
+        const char *req_url, const char *scope, const char *cip, const char *pattr, const char *eval_app,
         struct am_policy_result **policy_list) {
     static const char *thisfunc = "send_policy_request():";
     size_t post_sz, post_data_sz;
@@ -781,6 +781,7 @@ static int send_policy_request(am_net_t *conn, const char *token, const char *us
     struct request_data *req_data;
     size_t req_url_sz;
     char *req_url_escaped;
+    const char *service_name = ISVALID(eval_app) ? eval_app : "iPlanetAMWebAgentService";
 
     if (conn == NULL || conn->data == NULL || !ISVALID(token) || !ISVALID(user_token) ||
             !ISVALID(req_url) || !ISVALID(scope) || !ISVALID(cip)) return AM_EINVAL;
@@ -802,7 +803,7 @@ static int send_policy_request(am_net_t *conn, const char *token, const char *us
             "<RequestSet vers=\"1.0\" svcid=\"Policy\" reqid=\"3\">"
             "<Request><![CDATA[<PolicyService version=\"1.0\">"
             "<PolicyRequest requestId=\"4\" appSSOToken=\"%s\">"
-            "<GetResourceResults userSSOToken=\"%s\" serviceName=\"iPlanetAMWebAgentService\" resourceName=\"%s\" resourceScope=\"%s\">"
+            "<GetResourceResults userSSOToken=\"%s\" serviceName=\"%s\" resourceName=\"%s\" resourceScope=\"%s\">"
             "<EnvParameters><AttributeValuePair><Attribute name=\"requestIp\"/><Value>%s</Value></AttributeValuePair></EnvParameters>"
             "<GetResponseDecisions>"
             "%s"
@@ -812,7 +813,7 @@ static int send_policy_request(am_net_t *conn, const char *token, const char *us
             "</PolicyService>]]>"
             "</Request>"
             "</RequestSet>",
-            token, user_token, req_url_escaped, scope, cip, NOTNULL(pattr));
+            token, user_token, service_name, req_url_escaped, scope, cip, NOTNULL(pattr));
 
     if (post_data == NULL) {
         free(req_url_escaped);
@@ -997,7 +998,7 @@ static int do_net_connect(am_net_t *conn, struct request_data *req_data,
 }
 
 int am_agent_login(unsigned long instance_id, const char *openam,
-        const char *user, const char *pass, const char *realm, am_net_options_t *options,
+        const char *user, const char *pass, const char *realm, const char *eval_app, am_net_options_t *options,
         char **agent_token, char **pxml, size_t *pxsz, struct am_namevalue **session_list) {
     static const char *thisfunc = "am_agent_login():";
     am_net_t *conn = NULL;
@@ -1131,7 +1132,7 @@ int am_agent_login(unsigned long instance_id, const char *openam,
                 }
             case login_policychange:
                 /* subscribe to a policy change notification (PLL endpoint) */
-                status = send_policychange_request(conn, agent_token);
+                status = send_policychange_request(conn, agent_token, eval_app);
             default:
                 state = login_done;
                 break;
@@ -1256,7 +1257,7 @@ int am_agent_logout(unsigned long instance_id, const char *openam, const char *t
 
 int am_agent_policy_request(unsigned long instance_id, const char *openam,
         const char *token, const char *user_token, const char *req_url,
-        const char *scope, const char *cip, const char *pattr,
+        const char *scope, const char *cip, const char *pattr, const char *eval_app,
         am_net_options_t *options, struct am_namevalue **session_list, struct am_policy_result **policy_list) {
     static const char *thisfunc = "am_agent_policy_request():";
     am_net_t *conn = NULL;
@@ -1326,7 +1327,7 @@ int am_agent_policy_request(unsigned long instance_id, const char *openam,
             case policy_request:
                 /* send policy request (PLL endpoint)  */
                 status = send_policy_request(conn, token, user_token, req_url, scope, cip,
-                        pattr, policy_list);
+                        pattr, eval_app, policy_list);
             default:
                 state = policy_done;
                 break;

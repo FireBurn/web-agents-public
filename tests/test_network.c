@@ -97,7 +97,7 @@ void test_multiple_requests(void **state) {
 
     am_net_init();
 
-    rv = am_agent_login(0, openam_url, agent_user, agent_password, agent_realm, &net_options,
+    rv = am_agent_login(0, openam_url, agent_user, agent_password, agent_realm, NULL, &net_options,
             &agent_token, &profile_xml, &profile_xml_sz, &agent_session);
 
     fprintf(stderr, "LOGIN STATUS: %s\n", am_strerror(rv));

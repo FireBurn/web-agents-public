@@ -587,6 +587,7 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PERSISTENT_COOKIE_ENABLE, CONF_NUMBER, NULL, &conf->persistent_cookie_enable, NULL);
             
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_SKIP_POST_URL, CONF_STRING_MAP, &conf->skip_post_url_map_sz, &conf->skip_post_url_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_POLICY_EVAL_APP, CONF_STRING, NULL, &conf->policy_eval_app, NULL);
         }
     }
 
@@ -642,7 +643,7 @@ void am_config_free(am_config_t **cp) {
                 c->client_hostname_header, c->url_check_regex, c->multi_attr_separator,
                 c->pdp_sess_mode, c->pdp_sess_value, c->pdp_uri_prefix, c->logout_url_regex,
                 c->audit_file_remote, c->audit_file_disposition, c->unauthenticated_user,
-                c->proxy_host, c->proxy_user, c->proxy_password);
+                c->proxy_host, c->proxy_user, c->proxy_password, c->policy_eval_app);
 
         AM_CONF_FREE(c->naming_url_sz, c->naming_url);
         AM_CONF_FREE(c->hostmap_sz, c->hostmap);

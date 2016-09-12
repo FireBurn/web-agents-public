@@ -214,7 +214,7 @@ void url_validator_worker(void *arg) {
             /* full scale agent login-logout request */
             char *agent_token = NULL;
             validate_status = am_agent_login(w->instance_id, url, conf->user, conf->pass, conf->realm,
-                    net_options, &agent_token, NULL, NULL, NULL);
+                    NULL, net_options, &agent_token, NULL, NULL, NULL);
             if (agent_token != NULL) {
                 am_agent_logout(0, url, agent_token, net_options);
                 free(agent_token);

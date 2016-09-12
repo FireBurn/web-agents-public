@@ -115,13 +115,13 @@ void am_net_options_create(am_config_t *ac, am_net_options_t *options, void (*lo
 void am_net_options_delete(am_net_options_t *options);
 
 int am_agent_login(unsigned long instance_id, const char *openam,
-        const char *user, const char *pass, const char *realm, am_net_options_t *options,
+        const char *user, const char *pass, const char *realm, const char *eval_app, am_net_options_t *options,
         char **agent_token, char **pxml, size_t *pxsz, struct am_namevalue **session_list);
 int am_agent_logout(unsigned long instance_id, const char *openam,
         const char *token, am_net_options_t *options);
 int am_agent_policy_request(unsigned long instance_id, const char *openam,
         const char *token, const char *user_token, const char *req_url,
-        const char *scope, const char *cip, const char *pattr,
+        const char *scope, const char *cip, const char *pattr, const char *eval_app,
         am_net_options_t *options, struct am_namevalue **session_list, struct am_policy_result **policy_list);
 int am_url_validate(unsigned long instance_id, const char *url,
         am_net_options_t *options, int *httpcode);

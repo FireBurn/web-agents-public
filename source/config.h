@@ -248,6 +248,8 @@ typedef struct {
     char *proxy_user;
     char *proxy_password;
     int proxy_password_sz;
+    
+    char *policy_eval_app;
 } am_config_t;
 
 /* bootstrap options */
@@ -416,5 +418,7 @@ typedef struct {
 #define AM_AGENTS_CONFIG_PROXY_PORT "com.sun.identity.agents.config.forward.proxy.port"
 #define AM_AGENTS_CONFIG_PROXY_USER "com.sun.identity.agents.config.forward.proxy.user"
 #define AM_AGENTS_CONFIG_PROXY_PASSWORD "com.sun.identity.agents.config.forward.proxy.password"
+
+#define AM_AGENTS_CONFIG_POLICY_EVAL_APP "org.forgerock.openam.agents.config.policy.evaluation.application"
 
 #endif

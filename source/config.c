@@ -150,7 +150,8 @@ enum {
     AM_CONF_PROXY_PORT,
     AM_CONF_PROXY_USER,
     AM_CONF_PROXY_PASSWORD,
-    AM_CONF_CDSSO_DENY_CLEANUP_DISABLE
+    AM_CONF_CDSSO_DENY_CLEANUP_DISABLE,
+    AM_CONF_POLICY_EVAL_APP
 };
 
 struct am_instance {
@@ -795,6 +796,9 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
         if (c->path_info_ignore_not_enforced > 0) {
             SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_PATHINFO_IGNORE_NOTENFORCED, 0), c->path_info_ignore_not_enforced);
         }
+        if (ISVALID(c->policy_eval_app)) {
+            SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_POLICY_EVAL_APP, 0), c->policy_eval_app);
+        }
     }
     return AM_SUCCESS;
 }
@@ -1323,6 +1327,9 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
             case AM_CONF_PATHINFO_IGNORE_NOTENFORCED:
                 r->path_info_ignore_not_enforced = i->num_value;
                 break;
+            case AM_CONF_POLICY_EVAL_APP:
+                r->policy_eval_app = strndup(i->value, i->size[0]);
+                break;
         }
     }
 
@@ -1506,7 +1513,7 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
             r.instance_id = instance_id;
 
             login_status = am_agent_login(instance_id, get_valid_openam_url(&r),
-                    ac->user, ac->pass, ac->realm, &net_options,
+                    ac->user, ac->pass, ac->realm, ac->policy_eval_app, &net_options,
                     &agent_token, &profile_xml, &profile_xml_sz, &agent_session);
 
             if (login_status == AM_SUCCESS && ISVALID(agent_token) && agent_session != NULL) {
