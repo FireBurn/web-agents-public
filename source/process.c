@@ -94,24 +94,58 @@ static am_state_t lookup_transition(am_state_t c, am_return_t r) {
     return EXIT_STATE;
 }
 
+static am_bool_t url_matches_pattern(am_request_t *r, const char *pattern,
+        const char *url, am_bool_t regex_enable) {
+    if (regex_enable) {
+        return match(r->instance_id, url, pattern) == AM_OK;
+    }
+    return policy_compare_url(r, pattern, url) != AM_NO_MATCH;
+}
+
 static am_bool_t is_json_request(am_request_t *request) {
-    int i, compare_status;
-    if (request->conf->json_url_map_sz <= 0) {
+    static const char *thisfunc = "is_json_request():";
+    int i, compare_status = 0;
+
+    if (request->conf->json_url_map_sz <= 0 && request->conf->json_header_map_sz <= 0) {
         return AM_FALSE;
     }
+
     for (i = 0; i < request->conf->json_url_map_sz; i++) {
         am_config_map_t *m = &request->conf->json_url_map[i];
-        if (!ISVALID(m->value)) continue;
+        if (ISINVALID(m->value)) continue;
 
-        compare_status = policy_compare_url(request, m->value, request->overridden_url);
-        if (compare_status == AM_EXACT_MATCH || compare_status == AM_EXACT_PATTERN_MATCH) {
+        compare_status += url_matches_pattern(request, m->value, request->overridden_url, AM_FALSE);
+        if (compare_status > 0 && !request->conf->json_url_invert) {
+            AM_LOG_DEBUG(request->instance_id, "%s %s is json response url",
+                    thisfunc, request->overridden_url);
             return AM_TRUE;
         }
+    }
 
-        /* compare_status = match(request->instance_id, request->overridden_url, m->value);
-        if (compare_status == AM_SUCCESS) {
-            return AM_TRUE;
-        } */
+    if (request->am_get_request_header_f != NULL) {
+        for (i = 0; i < request->conf->json_header_map_sz; i++) {
+            am_config_map_t *m = &request->conf->json_header_map[i];
+            if (ISINVALID(m->name) || ISINVALID(m->value)) continue;
+            
+            const char *header_value = request->am_get_request_header_f(request, m->name);
+            compare_status += ISVALID(header_value) && strcasecmp(m->value, header_value) == 0;
+            if (compare_status > 0 && !request->conf->json_url_invert) {
+                AM_LOG_DEBUG(request->instance_id, "%s %s is json response url (header match)",
+                        thisfunc, request->overridden_url);
+                return AM_TRUE;
+            }
+        }
+    }
+
+    compare_status = compare_status > 0;
+    if (request->conf->json_url_invert) {
+        AM_LOG_DEBUG(request->instance_id, "%s json url list/header-map is inverted", thisfunc);
+        compare_status = !compare_status;
+    }
+    if (compare_status) {
+        AM_LOG_DEBUG(request->instance_id, "%s %s is json response url",
+                thisfunc, request->overridden_url);
+        return AM_TRUE;
     }
     return AM_FALSE;
 }
@@ -507,15 +541,6 @@ static am_return_t validate_fqdn_access(am_request_t *r) {
             "%s host name %s is not valid (no corresponding map value)", thisfunc, r->url.host);
     r->status = AM_INVALID_FQDN_ACCESS;
     return AM_FAIL;
-}
-
-static am_bool_t url_matches_pattern(am_request_t *r, const char *pattern,
-        const char *url, am_bool_t regex_enable) {
-    if (regex_enable) {
-        return match(r->instance_id, url, pattern) == AM_OK;
-    } else {
-        return policy_compare_url(r, pattern, url) != AM_NO_MATCH;
-    }
 }
 
 static am_return_t handle_not_enforced(am_request_t *r) {

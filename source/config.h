@@ -229,6 +229,10 @@ typedef struct {
 
     int json_url_map_sz;
     am_config_map_t *json_url_map;
+    int json_url_invert;
+    int json_header_map_sz;
+    am_config_map_t *json_header_map;
+    int json_url_response_code;
 
     int anon_remote_user_enable;
     char *unauthenticated_user;
@@ -398,6 +402,9 @@ typedef struct {
 #define AM_AGENTS_CONFIG_EXT_NOT_ENFORCED_REGEX_ENABLE "org.forgerock.agents.config.notenforced.ext.regex.enable"
 
 #define AM_AGENTS_CONFIG_JSON_URL "org.forgerock.agents.config.json.url"
+#define AM_AGENTS_CONFIG_JSON_URL_INVERT "org.forgerock.agents.config.json.url.invert"
+#define AM_AGENTS_CONFIG_JSON_HEADER "org.forgerock.agents.config.json.header"
+#define AM_AGENTS_CONFIG_JSON_RESPONSE_CODE "org.forgerock.agents.config.json.response.code"
 
 #define AM_AGENTS_CONFIG_AUDIT_REMOTE_FILE "com.sun.identity.agents.config.remote.logfile"
 #define AM_AGENTS_CONFIG_AUDIT_REMOTE_INTERVAL "com.sun.identity.agents.config.remote.log.interval"

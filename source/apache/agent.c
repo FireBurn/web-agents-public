@@ -234,6 +234,13 @@ static int am_status_value(am_status_t v) {
     }
 }
 
+static const char *get_request_header(am_request_t *req, const char *name) {
+    request_rec *rec;
+    if (req == NULL || (rec = (request_rec *) req->ctx) == NULL || ISINVALID(name))
+        return NULL;
+    return apr_table_get(rec->headers_in, name);
+}
+
 static am_status_t get_request_url(am_request_t *req) {
     request_rec *rec;
 
@@ -389,12 +396,22 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
                 case AM_INTERNAL_REDIRECT:
                     ap_rprintf(r, AM_JSON_TEMPLATE_LOCATION,
                             am_strerror(rq->status), text, am_status_value(rq->status));
+                    if (is_http_status(rq->conf->json_url_response_code)) {
+                        r->status = rq->conf->json_url_response_code;
+                    } else {
+                        if (rq->conf->json_url_response_code != 0) {
+                            AM_LOG_WARNING(rq->instance_id, "%s response status code %d is not valid, sending HTTP_FORBIDDEN",
+                                    thisfunc, rq->conf->json_url_response_code);
+                        }
+                        r->status = HTTP_FORBIDDEN;
+                    }
                     break;
                 default:
                 {
                     char *payload = am_json_escape(text, NULL);
                     ap_rprintf(r, AM_JSON_TEMPLATE_DATA,
-                            am_strerror(rq->status), NOTNULL(payload), am_status_value(rq->status));
+                            am_strerror(rq->status), ISVALID(payload) ? payload : "\"\"",
+                            am_status_value(rq->status));
                     am_free(payload);
                     break;
                 }
@@ -828,16 +845,17 @@ static int amagent_auth_handler(request_rec *req) {
     am_request.am_set_cookie_f = set_cookie;
     am_request.am_set_custom_response_f = set_custom_response;
     am_request.am_set_method_f = set_method;
+    am_request.am_get_request_header_f = get_request_header;
 
     am_process_request(&am_request);
 
     result = am_status_value(am_request.status);
 
-    /* json handle for the rest of the unsuccessful exit statuses not processed by set_custom_response */
+    /* json handler for the rest of the unsuccessful exit statuses not processed by set_custom_response */
     if (am_request.is_json_url && !(result == OK || result == DONE || result == DECLINED)) {
         ap_set_content_type(req, "application/json");
         ap_rprintf(req, AM_JSON_TEMPLATE_DATA,
-                am_strerror(am_request.status), "", am_status_value(am_request.status));
+                am_strerror(am_request.status), "\"\"", am_status_value(am_request.status));
         ap_rflush(req);
         result = DONE;
     }

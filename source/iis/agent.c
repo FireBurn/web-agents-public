@@ -470,6 +470,13 @@ static const char *get_server_variable(IHttpContext *ctx,
     return val;
 }
 
+static const char *get_request_header(am_request_t *req, const char *name) {
+    IHttpContext *ctx;
+    if (req == NULL || (ctx = (IHttpContext *) req->ctx) == NULL || ISINVALID(name))
+        return NULL;
+    return get_server_variable(ctx, req->instance_id, name);
+}
+
 static am_status_t get_request_url(am_request_t *req) {
     static const char *thisfunc = "get_request_url():";
     IHttpContext *ctx;
@@ -901,14 +908,15 @@ static am_status_t des_decrypt(const char *encrypted, const char *keys, char **c
 }
 
 static void send_custom_data(IHttpResponse *res, const char *payload, int payload_sz,
-        const char *cont_type) {
+        const char *cont_type, int status) {
     HTTP_DATA_CHUNK dc;
     DWORD sent;
     char payload_sz_text[64];
     BOOL cmpl = FALSE;
+    struct http_status *ht = get_http_status(status);
 
     if (res == NULL) return;
-    res->SetStatus(AM_HTTP_STATUS_200, "OK", 0, S_OK);
+    res->SetStatus(ht->code, ht->reason, 0, S_OK);
     res->SetHeader("Content-Type", cont_type,
             (USHORT) strlen(cont_type), TRUE);
     snprintf(payload_sz_text, sizeof (payload_sz_text), "%d", payload_sz);
@@ -1051,6 +1059,7 @@ class OpenAMHttpModule : public CHttpModule{
         d.am_set_cookie_f = set_cookie;
         d.am_set_custom_response_f = set_custom_response;
         d.am_set_post_data_filename_f = set_post_data_filename;
+        d.am_get_request_header_f = get_request_header;
 
         am_process_request(&d);
 
@@ -1062,8 +1071,8 @@ class OpenAMHttpModule : public CHttpModule{
         if (d.is_json_url && status_code > AM_HTTP_STATUS_302) {
             char *payload = NULL;
             int payload_sz = am_asprintf(&payload, AM_JSON_TEMPLATE_DATA,
-                    am_strerror(d.status), "", status_code);
-            send_custom_data(res, payload, payload_sz, "application/json");
+                    am_strerror(d.status), "\"\"", status_code);
+            send_custom_data(res, payload, payload_sz, "application/json", AM_HTTP_STATUS_200);
             status = RQ_NOTIFICATION_FINISH_REQUEST;
             am_free(payload);
         }
@@ -1285,17 +1294,30 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
                 case AM_INTERNAL_REDIRECT:
                     payload_sz = am_asprintf(&payload, AM_JSON_TEMPLATE_LOCATION,
                             am_strerror(rq->status), text, AM_HTTP_STATUS_302);
-                    break;
+                    if (is_http_status(rq->conf->json_url_response_code)) {
+                        send_custom_data(r->GetResponse(), payload, payload_sz,
+                                "application/json", rq->conf->json_url_response_code);
+                    } else {
+                        if (rq->conf->json_url_response_code != 0) {
+                            AM_LOG_WARNING(rq->instance_id, "%s response status code %d is not valid, sending HTTP_FORBIDDEN",
+                                    thisfunc, rq->conf->json_url_response_code);
+                        }
+                        send_custom_data(r->GetResponse(), payload, payload_sz,
+                                "application/json", AM_HTTP_STATUS_403);
+                    }
+                    rq->status = AM_DONE;
+                    am_free(payload);
+                    return AM_SUCCESS;
                 default:
                 {
                     char *temp = am_json_escape(text, NULL);
                     payload_sz = am_asprintf(&payload, AM_JSON_TEMPLATE_DATA,
-                            am_strerror(rq->status), NOTNULL(temp), AM_HTTP_STATUS_200);
+                            am_strerror(rq->status), ISVALID(temp) ? temp : "\"\"", AM_HTTP_STATUS_200);
                     am_free(temp);
                     break;
                 }
             }
-            send_custom_data(r->GetResponse(), payload, payload_sz, "application/json");
+            send_custom_data(r->GetResponse(), payload, payload_sz, "application/json", AM_HTTP_STATUS_200);
             rq->status = AM_DONE;
             am_free(payload);
             break;
@@ -1362,7 +1384,7 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
                     rq->status = AM_ERROR;
                     break;
                 }
-                send_custom_data(r->GetResponse(), form, form_sz, "text/html");
+                send_custom_data(r->GetResponse(), form, form_sz, "text/html", AM_HTTP_STATUS_200);
                 rq->status = AM_DONE;
                 am_free(form);
                 break;

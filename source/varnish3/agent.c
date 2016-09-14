@@ -309,6 +309,14 @@ static void *WS_Printf(struct ws *ws, const char *fmt, ...) {
 }
 #endif
 
+static const char *get_request_header_ex(am_request_t *req, const char *name) {
+    struct request *rec;
+    if (req == NULL || (rec = (struct request *) req->ctx) == NULL ||
+            rec->ctx == NULL || ISINVALID(name))
+        return NULL;
+    return get_request_header(rec->ctx, name);
+}
+
 static am_status_t get_request_url(am_request_t *ar) {
     struct sockaddr_storage *server_addr;
     struct request *req = (struct request *) ar->ctx;
@@ -448,6 +456,7 @@ static am_status_t set_custom_response(am_request_t *ar, const char *text, const
         case AM_JSON_RESPONSE:
         {
             AM_ADD_HEADER_RESP_SYNTH(req, H_Content_Type, "application/json");
+            req->status = am_status_value(ar->status);
             switch (ar->status) {
                 case AM_PDP_DONE:
                 {
@@ -469,17 +478,25 @@ static am_status_t set_custom_response(am_request_t *ar, const char *text, const
                 case AM_INTERNAL_REDIRECT:
                     req->body_sz = am_asprintf(&req->body, AM_JSON_TEMPLATE_LOCATION,
                             am_strerror(ar->status), text, am_status_value(ar->status));
+                    if (is_http_status(ar->conf->json_url_response_code)) {
+                        req->status = ar->conf->json_url_response_code;
+                    } else {
+                        if (rq->conf->json_url_response_code != 0) {
+                            AM_LOG_WARNING(ar->instance_id, "set_custom_response(): response status code %d is not valid, sending HTTP_FORBIDDEN",
+                                    ar->conf->json_url_response_code);
+                        }
+                        req->status = am_status_value(AM_FORBIDDEN);
+                    }
                     break;
                 default:
                 {
                     char *payload = am_json_escape(text, NULL);
                     am_asprintf(&req->body, AM_JSON_TEMPLATE_DATA,
-                            am_strerror(ar->status), NOTNULL(payload), am_status_value(ar->status));
+                            am_strerror(ar->status), ISVALID(payload) ? payload : "\"\"", am_status_value(ar->status));
                     am_free(payload);
                     break;
                 }
             }
-            req->status = am_status_value(ar->status);
             break;
         }
         case AM_PDP_DONE:
@@ -766,6 +783,7 @@ unsigned int vmod_authenticate_wp(struct sess *ctx, struct vmod_priv *priv) {
     am_request.am_set_cookie_f = set_cookie;
     am_request.am_set_custom_response_f = set_custom_response;
     am_request.am_set_method_f = set_method;
+    am_request.am_get_request_header_f = get_request_header_ex;
 
     am_process_request(&am_request);
 

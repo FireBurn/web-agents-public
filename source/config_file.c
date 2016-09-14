@@ -572,6 +572,9 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PDP_JS_REPOST, CONF_NUMBER, NULL, &conf->pdp_js_repost, NULL);
 
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_JSON_URL, CONF_STRING_MAP, &conf->json_url_map_sz, &conf->json_url_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_JSON_URL_INVERT, CONF_NUMBER, NULL, &conf->json_url_invert, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_JSON_HEADER, CONF_STRING_MAP, &conf->json_header_map_sz, &conf->json_header_map, NULL);
+            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_JSON_RESPONSE_CODE, CONF_NUMBER, NULL, &conf->json_url_response_code, NULL);
 
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_LEVEL, CONF_AUDIT_LEVEL, NULL, &conf->audit_level, NULL);
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_AUDIT_REMOTE_INTERVAL, CONF_NUMBER, NULL, &conf->audit_remote_interval, NULL);
@@ -663,6 +666,7 @@ void am_config_free(am_config_t **cp) {
         AM_CONF_MAP_FREE(c->openam_logout_map_sz, c->openam_logout_map);
         AM_CONF_MAP_FREE(c->cond_login_url_sz, c->cond_login_url);
         AM_CONF_MAP_FREE(c->json_url_map_sz, c->json_url_map);
+        AM_CONF_MAP_FREE(c->json_header_map_sz, c->json_header_map);
         AM_CONF_MAP_FREE(c->skip_post_url_map_sz, c->skip_post_url_map);
 
         free(c);

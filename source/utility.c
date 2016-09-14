@@ -133,6 +133,80 @@ static const char *hex_chars = "0123456789ABCDEF";
 static const unsigned char base64_table[64] =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+static struct http_status http_status_list[] = {
+#define HTTP_STATUS_CODE(c) c, AM_XSTR(c)
+    {HTTP_STATUS_CODE(100), "Continue"},
+    {HTTP_STATUS_CODE(101), "Switching Protocols"},
+    {HTTP_STATUS_CODE(102), "Processing"},
+    {HTTP_STATUS_CODE(200), "OK"},
+    {HTTP_STATUS_CODE(201), "Created"},
+    {HTTP_STATUS_CODE(202), "Accepted"},
+    {HTTP_STATUS_CODE(203), "Non-Authoritative Information"},
+    {HTTP_STATUS_CODE(204), "No Content"},
+    {HTTP_STATUS_CODE(205), "Reset Content"},
+    {HTTP_STATUS_CODE(206), "Partial Content"},
+    {HTTP_STATUS_CODE(207), "Multi-Status"},
+    {HTTP_STATUS_CODE(300), "Multiple Choices"},
+    {HTTP_STATUS_CODE(301), "Moved Permanently"},
+    {HTTP_STATUS_CODE(302), "Found"},
+    {HTTP_STATUS_CODE(303), "See Other"},
+    {HTTP_STATUS_CODE(304), "Not Modified"},
+    {HTTP_STATUS_CODE(305), "Use Proxy"},
+    {HTTP_STATUS_CODE(307), "Temporary Redirect"},
+    {HTTP_STATUS_CODE(400), "Bad Request"},
+    {HTTP_STATUS_CODE(401), "Unauthorized"},
+    {HTTP_STATUS_CODE(402), "Payment Required"},
+    {HTTP_STATUS_CODE(403), "Forbidden"},
+    {HTTP_STATUS_CODE(404), "Not Found"},
+    {HTTP_STATUS_CODE(405), "Method Not Allowed"},
+    {HTTP_STATUS_CODE(406), "Not Acceptable"},
+    {HTTP_STATUS_CODE(407), "Proxy Authentication Required"},
+    {HTTP_STATUS_CODE(408), "Request Time-out"},
+    {HTTP_STATUS_CODE(409), "Conflict"},
+    {HTTP_STATUS_CODE(410), "Gone"},
+    {HTTP_STATUS_CODE(411), "Length Required"},
+    {HTTP_STATUS_CODE(412), "Precondition Failed"},
+    {HTTP_STATUS_CODE(413), "Request Entity Too Large"},
+    {HTTP_STATUS_CODE(414), "Request-URI Too Large"},
+    {HTTP_STATUS_CODE(415), "Unsupported Media Type"},
+    {HTTP_STATUS_CODE(416), "Requested range not satisfiable"},
+    {HTTP_STATUS_CODE(417), "Expectation Failed"},
+    {HTTP_STATUS_CODE(422), "Unprocessable Entity"},
+    {HTTP_STATUS_CODE(423), "Locked"},
+    {HTTP_STATUS_CODE(424), "Failed Dependency"},
+    {HTTP_STATUS_CODE(426), "Upgrade Required"},
+    {HTTP_STATUS_CODE(500), "Internal Server Error"},
+    {HTTP_STATUS_CODE(501), "Not Implemented"},
+    {HTTP_STATUS_CODE(502), "Bad Gateway"},
+    {HTTP_STATUS_CODE(503), "Service Unavailable"},
+    {HTTP_STATUS_CODE(504), "Gateway Time-out"},
+    {HTTP_STATUS_CODE(505), "HTTP Version not supported"},
+    {HTTP_STATUS_CODE(506), "Variant Also Negotiates"},
+    {HTTP_STATUS_CODE(507), "Insufficient Storage"},
+    {HTTP_STATUS_CODE(510), "HTTP Version not supported"}
+#undef HTTP_STATUS_CODE
+};
+
+am_bool_t is_http_status(int status) {
+    int i;
+    for (i = 0; i < ARRAY_SIZE(http_status_list); i++) {
+        struct http_status *s = &http_status_list[i];
+        if (s->code == status)
+            return AM_TRUE;
+    }
+    return AM_FALSE;
+}
+
+struct http_status *get_http_status(int status) {
+    int i;
+    for (i = 0; i < ARRAY_SIZE(http_status_list); i++) {
+        struct http_status *s = &http_status_list[i];
+        if (s->code == status)
+            return s;
+    }
+    return &http_status_list[40]; /* HTTP-500 */
+}
+
 void am_free(void *ptr) {
     if (ptr != NULL) {
         free(ptr);

@@ -127,7 +127,7 @@ typedef enum {
         "\"error\": {"\
         " \"errors\": ["\
         "  {"\
-        "   \"message\": \"%s\","\
+        "   \"message\": %s,"\
         "   \"data\": \"%s\""\
         "  }"\
         " ],"\
@@ -295,8 +295,18 @@ typedef struct am_request {
     am_status_t(*am_set_cookie_f)(struct am_request *, const char *);
     am_status_t(*am_render_result_f)(struct am_request *);
     am_status_t(*am_set_custom_response_f)(struct am_request *, const char *, const char *);
+    const char *(*am_get_request_header_f)(struct am_request *, const char *);
 
 } am_request_t;
+
+struct http_status {
+    int code;
+    const char *code_str;
+    const char *reason;
+};
+
+am_bool_t is_http_status(int status);
+struct http_status *get_http_status(int status);
 
 unsigned long am_instance_id(const char *);
 

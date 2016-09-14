@@ -130,6 +130,9 @@ enum {
     AM_CONF_WIN_LOGON,
     AM_CONF_WIN_PASS_HEADER,
     AM_CONF_JSON_URL_MAP,
+    AM_CONF_JSON_URL_INVERT,
+    AM_CONF_JSON_HEADER_MAP,
+    AM_CONF_JSON_RESPONSE_CODE,
     AM_CONF_NEF_REGEX_ENABLE,
     AM_CONF_NEF_EXT_REGEX_ENABLE,
     AM_CONF_LOGOUT_REGEX_ENABLE,
@@ -764,6 +767,20 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
                 }
             }
         }
+        if (c->json_url_invert > 0) {
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_JSON_URL_INVERT, 0), c->json_url_invert);
+        }
+        if (c->json_header_map_sz > 0 && c->json_header_map != NULL) {
+            for (i = 0; i < c->json_header_map_sz; i++) {
+                am_config_map_t *v = &c->json_header_map[i];
+                if (ISVALID(v->name) && ISVALID(v->value)) {
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_JSON_HEADER_MAP, c->json_header_map_sz), v->name, v->value);
+                }
+            }
+        }
+        if (c->json_url_response_code > 0) {
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_JSON_RESPONSE_CODE, 0), c->json_url_response_code);
+        }
         if (c->skip_post_url_map_sz > 0 && c->skip_post_url_map != NULL) {
             for (i = 0; i < c->skip_post_url_map_sz; i++) {
                 am_config_map_t *v = &(c->skip_post_url_map[i]);
@@ -940,8 +957,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->login_url != NULL && r->login_url_sz < sz) {
                     am_config_map_t *m = &r->login_url[r->login_url_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->login_url_sz, r->login_url);
+                        r->login_url_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_COOKIE_SECURE:
@@ -978,8 +1000,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->profile_attr_map != NULL && r->profile_attr_map_sz < sz) {
                     am_config_map_t *m = &r->profile_attr_map[r->profile_attr_map_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->profile_attr_map_sz, r->profile_attr_map);
+                        r->profile_attr_map_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_SESS_ATTR:
@@ -992,8 +1019,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->session_attr_map != NULL && r->session_attr_map_sz < sz) {
                     am_config_map_t *m = &r->session_attr_map[r->session_attr_map_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->session_attr_map_sz, r->session_attr_map);
+                        r->session_attr_map_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_RESP_ATTR:
@@ -1006,8 +1038,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->response_attr_map != NULL && r->response_attr_map_sz < sz) {
                     am_config_map_t *m = &r->response_attr_map[r->response_attr_map_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->response_attr_map_sz, r->response_attr_map);
+                        r->response_attr_map_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_LB_ENABLE:
@@ -1053,8 +1090,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->fqdn_map != NULL && r->fqdn_map_sz < sz) {
                     am_config_map_t *m = &r->fqdn_map[r->fqdn_map_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->fqdn_map_sz, r->fqdn_map);
+                        r->fqdn_map_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_COOKIE_RESET:
@@ -1067,8 +1109,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->cookie_reset_map != NULL && r->cookie_reset_map_sz < sz) {
                     am_config_map_t *m = &r->cookie_reset_map[r->cookie_reset_map_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->cookie_reset_map_sz, r->cookie_reset_map);
+                        r->cookie_reset_map_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_NEF_INVERT:
@@ -1084,8 +1131,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->not_enforced_map != NULL && r->not_enforced_map_sz < sz) {
                     am_config_map_t *m = &r->not_enforced_map[r->not_enforced_map_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->not_enforced_map_sz, r->not_enforced_map);
+                        r->not_enforced_map_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_NEF_IP_MAP:
@@ -1095,8 +1147,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->not_enforced_ip_map != NULL && r->not_enforced_ip_map_sz < sz) {
                     am_config_map_t *m = &r->not_enforced_ip_map[r->not_enforced_ip_map_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->not_enforced_ip_map_sz, r->not_enforced_ip_map);
+                        r->not_enforced_ip_map_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_NEF_EXT_MAP:
@@ -1106,8 +1163,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->not_enforced_ext_map != NULL && r->not_enforced_ext_map_sz < sz) {
                     am_config_map_t *m = &r->not_enforced_ext_map[r->not_enforced_ext_map_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->not_enforced_ext_map_sz, r->not_enforced_ext_map);
+                        r->not_enforced_ext_map_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_NEF_REGEX_ENABLE:
@@ -1162,8 +1224,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->cdsso_login_map != NULL && r->cdsso_login_map_sz < sz) {
                     am_config_map_t *m = &r->cdsso_login_map[r->cdsso_login_map_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->cdsso_login_map_sz, r->cdsso_login_map);
+                        r->cdsso_login_map_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_CDSSO_COOKIE_MAP:
@@ -1173,8 +1240,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->cdsso_cookie_domain_map != NULL && r->cdsso_cookie_domain_map_sz < sz) {
                     am_config_map_t *m = &r->cdsso_cookie_domain_map[r->cdsso_cookie_domain_map_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->cdsso_cookie_domain_map_sz, r->cdsso_cookie_domain_map);
+                        r->cdsso_cookie_domain_map_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_LOGOUT_COOKIE_MAP:
@@ -1184,8 +1256,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->logout_cookie_reset_map != NULL && r->logout_cookie_reset_map_sz < sz) {
                     am_config_map_t *m = &r->logout_cookie_reset_map[r->logout_cookie_reset_map_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->logout_cookie_reset_map_sz, r->logout_cookie_reset_map);
+                        r->logout_cookie_reset_map_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_LOGOUT_REDIRECT:
@@ -1204,8 +1281,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->logout_map != NULL && r->logout_map_sz < sz) {
                     am_config_map_t *m = &r->logout_map[r->logout_map_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->logout_map_sz, r->logout_map);
+                        r->logout_map_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_AMLOGOUT_MAP:
@@ -1215,8 +1297,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->openam_logout_map != NULL && r->openam_logout_map_sz < sz) {
                     am_config_map_t *m = &r->openam_logout_map[r->openam_logout_map_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->openam_logout_map_sz, r->openam_logout_map);
+                        r->openam_logout_map_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_SCOPE:
@@ -1277,8 +1364,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->cond_login_url != NULL && r->cond_login_url_sz < sz) {
                     am_config_map_t *m = &r->cond_login_url[r->cond_login_url_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->cond_login_url_sz, r->cond_login_url);
+                        r->cond_login_url_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_HTTP_ONLY_COOKIE:
@@ -1300,9 +1392,36 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->json_url_map != NULL && r->json_url_map_sz < sz) {
                     am_config_map_t *m = &r->json_url_map[r->json_url_map_sz++];
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->json_url_map_sz, r->json_url_map);
+                        r->json_url_map_sz = 0;
+                    }
                 }
+                break;
+            case AM_CONF_JSON_URL_INVERT:
+                r->json_url_invert = i->num_value;
+                break;
+            case AM_CONF_JSON_HEADER_MAP:
+                if (r->json_header_map_sz == 0) {
+                    r->json_header_map = malloc(sz * sizeof (am_config_map_t));
+                }
+                if (r->json_header_map != NULL && r->json_header_map_sz < sz) {
+                    am_config_map_t *m = &r->json_header_map[r->json_header_map_sz++];
+                    m->name = malloc(i->size[0] + i->size[1] + 2);
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->json_header_map_sz, r->json_header_map);
+                        r->json_header_map_sz = 0;
+                    }
+                }
+                break;
+            case AM_CONF_JSON_RESPONSE_CODE:
+                r->json_url_response_code = i->num_value;
                 break;
             case AM_CONF_SKIP_POST_URL_MAP:
                 if (r->skip_post_url_map_sz == 0) {
@@ -1311,8 +1430,13 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
                 if (r->skip_post_url_map != NULL && r->skip_post_url_map_sz < sz) {
                     am_config_map_t *m = &(r->skip_post_url_map[r->skip_post_url_map_sz++]);
                     m->name = malloc(i->size[0] + i->size[1] + 2);
-                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                    m->value = m->name + i->size[0] + 1;
+                    if (m->name != NULL) {
+                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                        m->value = m->name + i->size[0] + 1;
+                    } else {
+                        AM_CONF_MAP_FREE(--r->skip_post_url_map_sz, r->skip_post_url_map);
+                        r->skip_post_url_map_sz = 0;
+                    }
                 }
                 break;
             case AM_CONF_ANON_USER_ENABLE:
@@ -1558,9 +1682,9 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
             }
 
             am_agent_instance_init_unlock();
-            
+
         } else {
-            
+
             *cnf = am_get_stored_agent_config(c);
 
             /* validate configuration cache entry ttl */

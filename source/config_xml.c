@@ -370,6 +370,9 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
     parse_config_value(ctx, AM_AGENTS_CONFIG_PDP_JS_REPOST, CONF_NUMBER, NULL, &ctx->conf->pdp_js_repost, val, len);
 
     parse_config_value(ctx, AM_AGENTS_CONFIG_JSON_URL, CONF_STRING_MAP, &ctx->conf->json_url_map_sz, &ctx->conf->json_url_map, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_JSON_URL_INVERT, CONF_NUMBER, NULL, &ctx->conf->json_url_invert, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_JSON_HEADER, CONF_STRING_MAP, &ctx->conf->json_header_map_sz, &ctx->conf->json_header_map, val, len);
+    parse_config_value(ctx, AM_AGENTS_CONFIG_JSON_RESPONSE_CODE, CONF_NUMBER, NULL, &ctx->conf->json_url_response_code, val, len);
 
     parse_config_value(ctx, AM_AGENTS_CONFIG_AUDIT_REMOTE_INTERVAL, CONF_NUMBER, NULL, &ctx->conf->audit_remote_interval, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_AUDIT_REMOTE_FILE, CONF_STRING, NULL, &ctx->conf->audit_file_remote, val, len);
