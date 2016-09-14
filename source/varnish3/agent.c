@@ -481,7 +481,7 @@ static am_status_t set_custom_response(am_request_t *ar, const char *text, const
                     if (is_http_status(ar->conf->json_url_response_code)) {
                         req->status = ar->conf->json_url_response_code;
                     } else {
-                        if (rq->conf->json_url_response_code != 0) {
+                        if (ar->conf->json_url_response_code != 0) {
                             AM_LOG_WARNING(ar->instance_id, "set_custom_response(): response status code %d is not valid, sending HTTP_FORBIDDEN",
                                     ar->conf->json_url_response_code);
                         }
