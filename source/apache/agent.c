@@ -255,6 +255,10 @@ static am_status_t get_request_url(am_request_t *req) {
 
     req->orig_url = apr_table_get(rec->notes, amagent_preserve_url_hook_name);
     if (req->orig_url == NULL) {
+        /* ap_hook_translate_name is not invoked for sub-requests, read unparsed url from the current request */
+        req->orig_url = ap_construct_url(rec->pool, rec->unparsed_uri, rec);
+    }
+    if (req->orig_url == NULL) {
         return AM_EINVAL;
     }
 
