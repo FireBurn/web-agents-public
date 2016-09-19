@@ -370,7 +370,7 @@ void *am_shm_get_user_pointer(am_shm_t *am) {
     return NULL;
 }
 
-am_shm_t *am_shm_create(const char *name, uint64_t usize) {
+am_shm_t *am_shm_create(const char *name, uint64_t usize, int bUseNewInitialiser) {
     struct mem_pool *pool = NULL;
     uint64_t size, max_size;
     char opened = AM_FALSE;
@@ -645,27 +645,33 @@ am_shm_t *am_shm_create(const char *name, uint64_t usize) {
 
     pool = (struct mem_pool *) area;
     if (ret->init) {
-        struct mem_chunk *e = (struct mem_chunk *) ((char *) pool + SIZEOF_mem_pool);
         pool->size = size;
         pool->max_size = max_size;
         pool->user_offset = 0;
         pool->open = 1;
 
         initialise_freelist(pool);
+        if (bUseNewInitialiser) {
+            pool->lh.next = pool->lh.prev = 0;
+        }
+        else {
+            /* add all available (free) space as one chunk in a freelist */
+            struct mem_chunk *e = (struct mem_chunk *) ((char *) pool + SIZEOF_mem_pool);
+            e->used = 0;
+            e->usize = 0;
+            e->size = pool->size - SIZEOF_mem_pool;
+            e->lh.next = e->lh.prev = 0;
+            /* update head prev/next pointers */
+            pool->lh.next = pool->lh.prev = AM_GET_OFFSET(pool, e);
 
-        /* add all available (free) space as one chunk in a freelist */
-        e->used = 0;
-        e->usize = 0;
-        e->size = pool->size - SIZEOF_mem_pool;
-        e->lh.next = e->lh.prev = 0;
-        /* update head prev/next pointers */
-        pool->lh.next = pool->lh.prev = AM_GET_OFFSET(pool, e);
+            add_to_freelist(pool, e);
+        }
 
-        add_to_freelist(pool, e);
     } else {
         pool->open++;
     }
 
+    ret->basePtr = (char *) pool + SIZEOF_mem_pool;
     ret->pool = pool;
     ret->error = 0;
     am_shm_unlock(ret);

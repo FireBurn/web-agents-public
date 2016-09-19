@@ -24,8 +24,12 @@
 
 #include <sys/mman.h>
 #include <sys/shm.h>
+#include <semaphore.h>
 
+#include "am.h"
+#include "utility.h"
 #include "share.h"
+#include "error.h"
 
 
 /*
@@ -34,95 +38,38 @@
  * the callack (cb) is called when the block is first opened and it is for initialisaiton of the block
  *
  */
-int get_memory_segment(void **p_addr, char *name, size_t sz, void (*cb)(void *cbdata, void *p), void *cbdata)
+int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz, void (*cb)(void *cbdata, void *p), void *cbdata, int id)
 {
-    int                                     fd;
-    int                                     er = 0, creat = 0;
-
-    fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR, 0666);
-
-    if (0 <= fd)
-    {
-        if (ftruncate(fd, sz) < 0)
-        {
-            er = errno;
-            perror("sizing new shared memory");
-        }
-        else
-        {
-            creat = 1;
-        }
-    }
-    else if (errno == EEXIST)
-    {
-        if (( fd = shm_open(name, O_RDWR, 0666) ) < 0)
-        {   
-            er = errno;
-            perror("opening existing shared memory");
-        }   
-        else
-        {
-            creat = 0;
-        }
-    }
-    else
-    {
-        er = errno;
-        perror("opening shared memory");
+    if (p_addr == NULL) {
+        return AM_FAIL;
     }
 
-//shm_unlink(name);
-
-    if (er == 0)
-    {
-        void                               *p;
-
-        p = mmap(0, sz, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-
-        if (p == MAP_FAILED)
-        {
-            er = errno;
-            perror("mapping memory");
-
-            close(fd);
-        }
-        else
-        {
-            if (creat)
-            {
-                cb(cbdata, p);
-            }
-            *p_addr = p;
-        }
+    *p_addr = am_shm_create(get_global_name(name, id), ((uint64_t) sz), AM_TRUE);
+    if (*p_addr == NULL) {
+        return AM_ERROR;
     }
-    return er;
+    if ((*p_addr)->error != AM_SUCCESS) {
+        return (*p_addr)->error;
+    }
 
+    if ((*p_addr)->init) {
+        cb(cbdata, (*p_addr)->basePtr);
+    }
+
+    return AM_SUCCESS;
 }
 
 /*
  * unmap and optionlly unlink a shared memory segment
  *
  */
-int remove_memory_segment(void *addr, char *name, int unlink, size_t sz)
+int remove_memory_segment(am_shm_t **p_addr)
 {
-    int                                     er = 0;
-
-    if (munmap(addr, sz) < 0)
-    {
-        er = errno;
-        perror("unmapping shared memory");
+    if (p_addr == NULL) {
+        return AM_FAIL;
     }
-
-    if (unlink)
-    {
-        if (shm_unlink(name) < 0 && errno != ENOENT)
-        {
-            er = errno;
-            perror("unlinking shared memory");
-        }
-    }
-
-    return er;
-
+    am_shm_shutdown(*p_addr);
+    *p_addr = NULL;
+    return AM_SUCCESS;
 }
 

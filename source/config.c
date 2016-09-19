@@ -184,7 +184,7 @@ static am_shm_t *conf = NULL;
 int am_configuration_init(int id) {
     if (conf != NULL) return AM_SUCCESS;
 
-    conf = am_shm_create(get_global_name(AM_CONFIG_SHM_NAME, id), sizeof (struct am_instance) * 2048 * AM_MAX_INSTANCES);
+    conf = am_shm_create(get_global_name(AM_CONFIG_SHM_NAME, id), sizeof (struct am_instance) * 2048 * AM_MAX_INSTANCES, AM_FALSE);
     if (conf == NULL) {
         return AM_ERROR;
     }

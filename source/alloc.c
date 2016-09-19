@@ -45,7 +45,11 @@
 #include <errno.h>
 
 #include <sched.h>
+#include <semaphore.h>
 
+#include "am.h"
+
+#include "utility.h"
 #include "alloc.h"
 #include "share.h"
 
@@ -68,9 +72,9 @@
 #define VALIDATION_LOCK                     -1
 
 
-#define HDR(ofs)                            ( (block_header_t *)( ((char *)_base) + (ofs) ) )
-#define OFS(ptr)                            ( (offset) ( ( (char *)(ptr) ) - ( (char *)(_base) ) ) )
-#define USR(ofs)                            ((char *)_base) + ((ofs) + block_data_offset)
+#define HDR(ofs)                            ( (block_header_t *)( ((char *)((char*)(_base->basePtr))) + (ofs) ) )
+#define OFS(ptr)                            ( (offset) ( ( (char *)(ptr) ) - ( (char *)((char*)(_base->basePtr)) ) ) )
+#define USR(ofs)                            ((char *)(char*)(_base->basePtr)) + ((ofs) + block_data_offset)
 
 #define UP64(i)                             ( ((i)+0x7u) & ~ 0x7u )                   /* 8 byte alignment */
 
@@ -124,17 +128,17 @@ typedef struct
 } cluster_header_t;
 
 
-static ctl_header_t                        *_ctlblock;
+static am_shm_t                              *_ctlblock = NULL;
 
-static cluster_header_t                    *_cluster_hdrs;
+static am_shm_t                              *_cluster_hdrs = NULL;
 
 static int32_t                              _cluster_capacity;
 
-void                                       *_base;
+am_shm_t                                     *_base = NULL;
 
-#define cluster_lock(c)                     _cluster_hdrs[c].lock
+#define cluster_lock(c)                     ((cluster_header_t*)(_cluster_hdrs->basePtr))[c].lock
 
-#define cluster_free_lists(c)               _cluster_hdrs[c].free
+#define cluster_free_lists(c)               ((cluster_header_t*)(_cluster_hdrs->basePtr))[c].free
 
 static const size_t                         block_data_offset = offsetof(block_header_t, u.data);
 
@@ -150,7 +154,7 @@ static int process_dead(pid_t pid)
 
 void agent_memory_error()
 {
-    if (cas(&_ctlblock->error, 0, 1))
+    if (cas(&((ctl_header_t*)(_ctlblock->basePtr))->error, 0, 1))
     {
 printf("**** triggering memory cleardown\n");
     }
@@ -163,7 +167,7 @@ printf("**** memory cleardown alredy triggered\n");
 
 int try_validate(pid_t pid)
 {
-    if (_ctlblock->error)
+    if (((ctl_header_t*)(_ctlblock->basePtr))->error)
     {
         return 1;
     }
@@ -186,19 +190,19 @@ void agent_memory_validate(pid_t pid)
 {
     pid_t                                   checker;
 
-    if (_ctlblock->error == 0)
+    if (((ctl_header_t*)(_ctlblock->basePtr))->error == 0)
     {
         return;
     }
 
     do
     {
-        if (( checker = casv(&_ctlblock->checker, 0, pid) ))
+        if (( checker = casv(&((ctl_header_t*)(_ctlblock->basePtr))->checker, 0, pid) ))
         {
             if (process_dead(checker))
             {   
 printf("**** cleardown process %d is dead, %d resetting checker\n", checker, pid);
-                cas(&_ctlblock->checker, checker, 0);   
+                cas(&((ctl_header_t*)(_ctlblock->basePtr))->checker, checker, 0);   
             }
             else
             {
@@ -211,7 +215,7 @@ printf("**** starting recovery process in %d\n", pid);
 
             if (master_recovery_process(pid) == 0)
             {
-                cas(&_ctlblock->error, 1, 0);
+                cas(&((ctl_header_t*)(_ctlblock->basePtr))->error, 1, 0);
 
 printf("**** ending recovery process in %d\n", pid);
             }
@@ -219,11 +223,11 @@ printf("**** ending recovery process in %d\n", pid);
             {
 printf("**** abandoning recovery process in %d\n", pid);
             }
-            cas(&_ctlblock->checker, pid, 0);
+            cas(&((ctl_header_t*)(_ctlblock->basePtr))->checker, pid, 0);
 
         }
 
-    } while (_ctlblock->error);
+    } while (((ctl_header_t*)(_ctlblock->basePtr))->error);
 
 }
 
@@ -233,7 +237,7 @@ printf("**** abandoning recovery process in %d\n", pid);
  */
 int32_t agent_memory_seed()
 {
-    return (incr(&_ctlblock->tx_start.value, 1) & 0xffffffff) % CLUSTERS;
+    return (incr(&((ctl_header_t*)(_ctlblock->basePtr))->tx_start.value, 1) & 0xffffffff) % CLUSTERS;
 
 }
 
@@ -374,19 +378,19 @@ static void reset_headers(void *cbdata, void *p)
  * initialise memory for all clusters
  *
  */
-void agent_memory_initialise(int32_t sz)
+void agent_memory_initialise(int32_t sz, int id)
 {
-    void                                   *p;
+    am_shm_t                                   *p;
 
     _cluster_capacity = sz;
     
-    get_memory_segment(&p, CTLFILE, sizeof(ctl_header_t), reset_ctlblock, 0);
+    get_memory_segment(&p, CTLFILE, sizeof(ctl_header_t), reset_ctlblock, 0, id);
     _ctlblock = p;
 
-    get_memory_segment(&p, BLOCKFILE, sz * CLUSTERS, reset_blocks, 0);
+    get_memory_segment(&p, BLOCKFILE, sz * CLUSTERS, reset_blocks, 0, id);
     _base = p;
 
-    get_memory_segment(&p, HEADERFILE, sizeof(cluster_header_t) * CLUSTERS, reset_headers, 0);
+    get_memory_segment(&p, HEADERFILE, sizeof(cluster_header_t) * CLUSTERS, reset_headers, 0, id);
     _cluster_hdrs = p;
 
 }
@@ -395,13 +399,13 @@ void agent_memory_initialise(int32_t sz)
  * unmap all clusters and optionally destroy shared resource
  *
  */
-void agent_memory_destroy(int unlink)
+void agent_memory_destroy()
 {
-    remove_memory_segment(_ctlblock, CTLFILE, unlink, sizeof(ctl_header_t));
+    remove_memory_segment(&_ctlblock);
 
-    remove_memory_segment(_base, BLOCKFILE, unlink, _cluster_capacity * CLUSTERS);
+    remove_memory_segment(&_base);
 
-    remove_memory_segment(_cluster_hdrs, HEADERFILE, unlink, sizeof(cluster_header_t) * CLUSTERS);
+    remove_memory_segment(&_cluster_hdrs);
  
 }
 

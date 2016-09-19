@@ -105,6 +105,7 @@ typedef struct {
     int32_t error;
 #endif
     void *pool;
+    void *basePtr;  
     char init;
     char name[4][AM_PATH_SIZE];
 } am_shm_t;
@@ -203,7 +204,7 @@ int string_replace(char **original, const char *pattern, const char *replace, si
 uint64_t am_shm_max_pool_size();
 void am_shm_unlock(am_shm_t *);
 int am_shm_lock(am_shm_t *);
-am_shm_t *am_shm_create(const char *, uint64_t);
+am_shm_t *am_shm_create(const char *, uint64_t, int bUseNewInitialiser);
 void am_shm_shutdown(am_shm_t *);
 void *am_shm_alloc(am_shm_t *am, uint64_t usize);
 void *am_shm_alloc_with_gc(am_shm_t *am, uint64_t usize, int (*gc)(unsigned long), unsigned long instance_id);

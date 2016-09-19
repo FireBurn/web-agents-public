@@ -17,9 +17,7 @@
 #ifndef SHM_INCLUDED
 #define SHM_INCLUDED
 
-int get_memory_segment(void **p_addr, char *name, size_t sz, void (*cb)(void *cbdata, void *p), void *cbdata);
-int remove_memory_segment(void *addr, char *name, int unlink, size_t sz);
-
-int get_memory_attach_count(char *name, int *count_addr);
+int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz, void (*cb)(void *cbdata, void *p), void *cbdata, int id);
+int remove_memory_segment(am_shm_t **p_addr);
 
 #endif  /*SHM_INCLUDED*/

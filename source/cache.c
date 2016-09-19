@@ -38,7 +38,11 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sched.h>
+#include <semaphore.h>
 
+#include "am.h"
+
+#include "utility.h"
 #include "alloc.h"
 #include "share.h"
 
@@ -119,11 +123,11 @@ struct stats
 
 static const size_t                         user_hdr_sz = offsetof(struct user_entry, data);
 
-static struct stats                        *stats;
+am_shm_t                                    *stats = NULL;
 
-static struct readlock                     *locks;
+am_shm_t                                    *locks = NULL;
 
-static offset                              *hashtable;
+am_shm_t                                    *hashtable = NULL;
 
 
 static void reset_stats(void *cbdata, void *p)
@@ -166,19 +170,19 @@ static void reset_locks(void *cbdata, void *p)
 
 }
 
-int cache_initialise()
+int cache_initialise(int id)
 {
-    void                                   *p;
+    am_shm_t                                   *p;
 
-    agent_memory_initialise(4096*1024);
+    agent_memory_initialise(4096*1024, id);
 
-    get_memory_segment(&p, STATFILE, sizeof(struct stats), reset_stats, 0);
+    get_memory_segment(&p, STATFILE, sizeof(struct stats), reset_stats, 0, id);
     stats = p;
 
-    get_memory_segment(&p, LOCKFILE, sizeof(struct readlock) * N_LOCKS, reset_locks, 0);
+    get_memory_segment(&p, LOCKFILE, sizeof(struct readlock) * N_LOCKS, reset_locks, 0, id);
     locks = p;
 
-    get_memory_segment(&p, HASHFILE, sizeof(offset) * HASH_SZ, reset_hashtable, 0);
+    get_memory_segment(&p, HASHFILE, sizeof(offset) * HASH_SZ, reset_hashtable, 0, id);
     hashtable = p;
 
     return 0;
@@ -187,25 +191,25 @@ int cache_initialise()
 
 void cache_reinitialise()
 {
-    reset_hashtable(0, hashtable);
+    reset_hashtable(0, ((offset*)(hashtable->basePtr)));
 
 }
 
-int cache_shutdown(int destroy)
+int cache_shutdown()
 {
-    remove_memory_segment(stats, STATFILE, destroy, sizeof(struct stats));
+    remove_memory_segment(&stats);
 
-    remove_memory_segment(locks, LOCKFILE, destroy, sizeof(struct readlock) * N_LOCKS);
+    remove_memory_segment(&locks);
 
-    remove_memory_segment(hashtable, HASHFILE, destroy, sizeof(offset) * HASH_SZ);
+    remove_memory_segment(&hashtable);
 
-    agent_memory_destroy(destroy);
+    agent_memory_destroy();
 
     return 0;
 
 }
 
-#define lock_for_hash(h)                    (locks + ((h) & (N_LOCKS - 1)))
+#define lock_for_hash(h)                    (((struct readlock*)(locks->basePtr)) + ((h) & (N_LOCKS - 1)))
 
 
 int cache_readlock_p(uint32_t hash, pid_t pid)
@@ -250,7 +254,7 @@ void cache_readlock_total_barrier(pid_t pid)
 
     for (i = 0; i < N_LOCKS; i++)
     {
-        wait_for_barrier(locks + i, pid);
+        wait_for_barrier(((struct readlock*)(locks->basePtr)) + i, pid);
     }
 
 }
@@ -261,7 +265,7 @@ int cache_readlock_block_all(pid_t pid)
 
     for (i = 0; i < N_LOCKS; i++)
     {
-        if (read_block(locks + i, pid) == 0)
+        if (read_block(((struct readlock*)(locks->basePtr)) + i, pid) == 0)
         {
             break;
         }
@@ -276,7 +280,7 @@ printf("unable to block cache lock %d\n", i);
 
     while (i--)
     {
-        read_unblock(locks + i, pid);
+        read_unblock(((struct readlock*)(locks->basePtr)) + i, pid);
     }
 
     return 1;
@@ -289,7 +293,7 @@ void cache_readlock_unblock_all(pid_t pid)
 
     while (i--)
     {
-        read_unblock(locks + i, pid);
+        read_unblock(((struct readlock*)(locks->basePtr)) + i, pid);
     }
 
 }
@@ -300,7 +304,7 @@ void cache_readlock_unblock_all(pid_t pid)
  */
 static uint32_t relative_time(int64_t t)
 {
-    return (t - stats->basetime) & 0xffffffff;
+    return (t - ((struct stats*)(stats->basePtr))->basetime) & 0xffffffff;
 
 }
 
@@ -329,11 +333,11 @@ static void purge_identical_entries(pid_t pid, uint32_t hash, struct cache_entry
                         agent_memory_free(pid, p);                                    /* failures here can be gc'd later */
 
                         cache_readlock_release_unique(hash);
-incr_gc_stat(&stats->data.cleared.v, 1);
+incr_gc_stat(&((struct stats*)(stats->basePtr))->data.cleared.v, 1);
                     }
                     else
                     {
-incr_gc_stat(&stats->data.leaked.v, 1);
+incr_gc_stat(&((struct stats*)(stats->basePtr))->data.leaked.v, 1);
                     }
                 }
             }
@@ -370,14 +374,14 @@ static int purge_expired_entries(pid_t pid, uint32_t hash, struct cache_entry *e
                         agent_memory_free(pid, p);                                    /* failures here can be gc'd later */
 
                         cache_readlock_release_unique(hash);
-incr_gc_stat(&stats->data.cleared.v, 1);
+incr_gc_stat(&((struct stats*)(stats->basePtr))->data.cleared.v, 1);
                         n++;
                     }
                     else
                     {
-incr_gc_stat(&stats->data.leaked.v, 1);
+incr_gc_stat(&((struct stats*)(stats->basePtr))->data.leaked.v, 1);
                     }
-incr(&stats->expires.v, 1);
+incr(&((struct stats*)(stats->basePtr))->expires.v, 1);
                 }
             }
         }
@@ -403,7 +407,7 @@ void cache_purge_expired_entries(pid_t pid)
     {
         if (cache_readlock_p(i, pid))
         {
-            if (~ ( ofs = hashtable[i] ))
+            if (~ ( ofs = ((offset*)(hashtable->basePtr))[i] ))
             {
                 n += purge_expired_entries(pid, i, agent_memory_ptr(ofs), time(0));
             }
@@ -468,11 +472,11 @@ int cache_add(uint32_t h, void *data, size_t ln, int64_t expires, int (*identity
         return 1;
     }
 
-    ofs = hashtable[hash];
+    ofs = ((offset*)(hashtable->basePtr))[hash];
 
     if (~ ofs)
     {
-        e = agent_memory_ptr(hashtable[hash]);
+        e = agent_memory_ptr(((offset*)(hashtable->basePtr))[hash]);
     }
     else if (( e = agent_memory_alloc(pid, seed, CACHE, sizeof(struct cache_entry)) ))
     {
@@ -482,7 +486,7 @@ int cache_add(uint32_t h, void *data, size_t ln, int64_t expires, int (*identity
         for (i = 0; i < BUCKET_SZ; i++) e->bucket[i] = ~ 0;
         for (i = 0; i < BUCKET_SZ; i++) e->expires[i] = 0;
 
-        hashtable[hash] = agent_memory_offset(e);
+        ((offset*)(hashtable->basePtr))[hash] = agent_memory_offset(e);
     }
     else
     {
@@ -496,7 +500,7 @@ int cache_add(uint32_t h, void *data, size_t ln, int64_t expires, int (*identity
 
         if (v == ~ 0)
         {
-incr(&stats->writes.v, 1);
+incr(&((struct stats*)(stats->basePtr))->writes.v, 1);
             break;
         }
         else
@@ -517,13 +521,13 @@ incr(&stats->writes.v, 1);
                         agent_memory_free(pid, agent_memory_ptr(v));
 
                         cache_readlock_release_unique(hash);
-incr_gc_stat(&stats->data.cleared.v, 1);
+incr_gc_stat(&((struct stats*)(stats->basePtr))->data.cleared.v, 1);
                     }
                     else
                     {
-incr_gc_stat(&stats->data.leaked.v, 1);
+incr_gc_stat(&((struct stats*)(stats->basePtr))->data.leaked.v, 1);
                     }
-incr(&stats->updates.v, 1);
+incr(&((struct stats*)(stats->basePtr))->updates.v, 1);
                 }
                 break;
             }
@@ -567,14 +571,14 @@ void cache_delete(uint32_t h, void *data, int (*identity)(void *, void *))
 
     if (cache_readlock_p(hash, pid))
     {
-        offset                              ofs = hashtable[hash];
+        offset                              ofs = ((offset*)(hashtable->basePtr))[hash];
 
         if (~ ofs)
         {
             purge_identical_entries(pid, hash, agent_memory_ptr(ofs), 0, data, identity);
         }
         cache_readlock_release_p(hash, pid);
-incr(&stats->deletes.v, 1);
+incr(&((struct stats*)(stats->basePtr))->deletes.v, 1);
     }
 
 }
@@ -601,7 +605,7 @@ int cache_get_readlocked_ptr(uint32_t h, void **addr, uint32_t *ln, void *data, 
         return 1;
     }
 
-    ofs = hashtable[hash];
+    ofs = ((offset*)(hashtable->basePtr))[hash];
 
     if (~ ofs)
     {
@@ -623,7 +627,7 @@ int cache_get_readlocked_ptr(uint32_t h, void **addr, uint32_t *ln, void *data, 
 
                     *addr = p->data;
                     *ln = p->ln;
-incr(&stats->reads.v, 1);
+incr(&((struct stats*)(stats->basePtr))->reads.v, 1);
                     return 0;
                 }
             }
@@ -651,7 +655,7 @@ static int cache_object_reachable(void *data, uint32_t hash)
 {
     const offset                            target = agent_memory_offset(data);
 
-    return target == hashtable[hash];
+    return target == ((offset*)(hashtable->basePtr))[hash];
 
 }
 
@@ -659,7 +663,7 @@ static int user_object_reachable(void *data, uint32_t hash)
 {
     const offset                            target = agent_memory_offset(data);
 
-    offset                                  ofs = hashtable[hash];
+    offset                                  ofs = ((offset*)(hashtable->basePtr))[hash];
 
     if (~ ofs)
     {
@@ -714,7 +718,7 @@ printf("*******that was a potentially corrupt user data hashcode\n");
                     if (cache_readlock_try_unique(hash))
                     {
                         cache_readlock_release_all_p(hash, pid);
-incr_gc_stat(&stats->data.collected.v, 1);
+incr_gc_stat(&((struct stats*)(stats->basePtr))->data.collected.v, 1);
                         
                         return 1;                                             /* no new threads can reach this block, and it isn't being read */
                     }
@@ -744,7 +748,7 @@ printf("*******that was a potentially corrupt internal object hashcode\n");
                     if (cache_readlock_try_unique(hash))
                     {
                         cache_readlock_release_all_p(hash, pid);
-incr_gc_stat(&stats->cache.collected.v, 1);
+incr_gc_stat(&((struct stats*)(stats->basePtr))->cache.collected.v, 1);
 
                         return 1;                                             /* no new threads can reach this block, and it isn't being read */
                     }
@@ -780,22 +784,22 @@ static unsigned long get_and_reset(volatile uint64_t *p)
 void cache_stats()
 {
     printf("throughput:\n");
-    printf("reads: %lu\n", get_and_reset(&stats->reads.v));    
-    printf("writes: %lu\n", get_and_reset(&stats->writes.v));    
-    printf("updates: %lu\n", get_and_reset(&stats->updates.v));    
-    printf("deletes: %lu\n", get_and_reset(&stats->deletes.v));    
-    printf("expires: %lu\n", get_and_reset(&stats->expires.v));    
+    printf("reads: %lu\n", get_and_reset(&((struct stats*)(stats->basePtr))->reads.v));    
+    printf("writes: %lu\n", get_and_reset(&((struct stats*)(stats->basePtr))->writes.v));    
+    printf("updates: %lu\n", get_and_reset(&((struct stats*)(stats->basePtr))->updates.v));    
+    printf("deletes: %lu\n", get_and_reset(&((struct stats*)(stats->basePtr))->deletes.v));    
+    printf("expires: %lu\n", get_and_reset(&((struct stats*)(stats->basePtr))->expires.v));    
 
 #ifdef GC_STATS
     printf("cache objects:\n");
-    printf("leaked: %lu\n", get_and_reset(&stats->cache.leaked.v));    
-    printf("cleared: %lu\n", get_and_reset(&stats->cache.cleared.v));    
-    printf("collected: %lu\n", get_and_reset(&stats->cache.collected.v));    
+    printf("leaked: %lu\n", get_and_reset(&((struct stats*)(stats->basePtr))->cache.leaked.v));    
+    printf("cleared: %lu\n", get_and_reset(&((struct stats*)(stats->basePtr))->cache.cleared.v));    
+    printf("collected: %lu\n", get_and_reset(&((struct stats*)(stats->basePtr))->cache.collected.v));    
 
     printf("user objects:\n");
-    printf("leaked: %lu\n", get_and_reset(&stats->data.leaked.v));    
-    printf("cleared: %lu\n", get_and_reset(&stats->data.cleared.v));    
-    printf("collected: %lu\n", get_and_reset(&stats->data.collected.v));    
+    printf("leaked: %lu\n", get_and_reset(&((struct stats*)(stats->basePtr))->data.leaked.v));    
+    printf("cleared: %lu\n", get_and_reset(&((struct stats*)(stats->basePtr))->data.cleared.v));    
+    printf("collected: %lu\n", get_and_reset(&((struct stats*)(stats->basePtr))->data.collected.v));    
 #endif
 }
 
