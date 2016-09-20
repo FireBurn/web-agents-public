@@ -412,7 +412,7 @@ int am_add_session_policy_cache_entry(am_request_t *request, const char *key, st
 
 int am_cache_init(int instance)
 {
-    (instance);
+    cache_initialise(instance);
     return 0;
 
 }
