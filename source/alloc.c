@@ -51,7 +51,7 @@
 #include "share.h"
 
 #ifndef offsetof                                                                                      /* linux and optionally OS-X */
-#define offsetof(type, field)               ( (char *)(&((type *)0)->field) - (char *)0 )*/
+#define offsetof(type, field)               ( (char *)(&((type *)0)->field) - (char *)0 )
 #endif
 #define spinlock                            volatile int32_t
 #define spinlock_init                       0
