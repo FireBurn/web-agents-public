@@ -18,14 +18,13 @@
 #include <stdlib.h>
 //#include <stdint.h>
 
-#include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
 
-#include <sys/mman.h>
-#include <sys/shm.h>
+
 #include <semaphore.h>
 
+#include "platform.h"
 #include "am.h"
 #include "utility.h"
 #include "share.h"
@@ -53,7 +52,7 @@ int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz, void (*cb)(void
     }
 
     if ((*p_addr)->init) {
-        cb(cbdata, (*p_addr)->basePtr);
+        cb(cbdata, (*p_addr)->base_ptr);
     }
 
     return AM_SUCCESS;

@@ -73,13 +73,16 @@ typedef long                gid_t;
 
 #include <pthread.h>
 #include <unistd.h>
+#include <sched.h>
 
 #if defined(__sun) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200112L 
 #include <sys/mman.h> 
+#include <sys/shm.h>
 #undef _POSIX_C_SOURCE 
 #else
 #include <sys/mman.h> 
+#include <sys/shm.h>
 #endif /* __sun, etc. */
 
 #include <sys/time.h>

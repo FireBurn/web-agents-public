@@ -25,12 +25,9 @@
 
 #include <stdlib.h>
 #include <stdint.h>
-#include <unistd.h>
-
-#include <sched.h>
-#include <signal.h>
 #include <errno.h>
 
+#include "platform.h"
 #include "rwlock.h"
 
 #define cas(p, old, new)                    __sync_bool_compare_and_swap(p, old, new)

@@ -40,21 +40,19 @@
 #include <time.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <unistd.h>
 #include <signal.h>
 #include <errno.h>
 
-#include <sched.h>
-#include <semaphore.h>
-
+#include "platform.h"
 #include "am.h"
 
 #include "utility.h"
 #include "alloc.h"
 #include "share.h"
 
-                                                                                      /* linux and optionally OS-X */
-#define offsetof(type, field)               ( (char *)(&((type *)0)->field) - (char *)0 )
+#ifndef offsetof                                                                                      /* linux and optionally OS-X */
+#define offsetof(type, field)               ( (char *)(&((type *)0)->field) - (char *)0 )*/
+#endif
 #define spinlock                            volatile int32_t
 #define spinlock_init                       0
 
@@ -72,9 +70,9 @@
 #define VALIDATION_LOCK                     -1
 
 
-#define HDR(ofs)                            ( (block_header_t *)( ((char *)((char*)(_base->basePtr))) + (ofs) ) )
-#define OFS(ptr)                            ( (offset) ( ( (char *)(ptr) ) - ( (char *)((char*)(_base->basePtr)) ) ) )
-#define USR(ofs)                            ((char *)(char*)(_base->basePtr)) + ((ofs) + block_data_offset)
+#define HDR(ofs)                            ( (block_header_t *)( ((char *)(_base->base_ptr)) + (ofs) ) )
+#define OFS(ptr)                            ( (offset) ( ( (char *)(ptr) ) - ( (char *)(_base->base_ptr)) ) ) 
+#define USR(ofs)                            ((char *)(_base->base_ptr)) + ((ofs) + block_data_offset)
 
 #define UP64(i)                             ( ((i)+0x7u) & ~ 0x7u )                   /* 8 byte alignment */
 
@@ -136,9 +134,9 @@ static int32_t                              _cluster_capacity;
 
 am_shm_t                                     *_base = NULL;
 
-#define cluster_lock(c)                     ((cluster_header_t*)(_cluster_hdrs->basePtr))[c].lock
+#define cluster_lock(c)                     ((cluster_header_t*)(_cluster_hdrs->base_ptr))[c].lock
 
-#define cluster_free_lists(c)               ((cluster_header_t*)(_cluster_hdrs->basePtr))[c].free
+#define cluster_free_lists(c)               ((cluster_header_t*)(_cluster_hdrs->base_ptr))[c].free
 
 static const size_t                         block_data_offset = offsetof(block_header_t, u.data);
 
@@ -154,7 +152,7 @@ static int process_dead(pid_t pid)
 
 void agent_memory_error()
 {
-    if (cas(&((ctl_header_t*)(_ctlblock->basePtr))->error, 0, 1))
+    if (cas(&((ctl_header_t*)(_ctlblock->base_ptr))->error, 0, 1))
     {
 printf("**** triggering memory cleardown\n");
     }
@@ -167,7 +165,7 @@ printf("**** memory cleardown alredy triggered\n");
 
 int try_validate(pid_t pid)
 {
-    if (((ctl_header_t*)(_ctlblock->basePtr))->error)
+    if (((ctl_header_t*)(_ctlblock->base_ptr))->error)
     {
         return 1;
     }
@@ -190,19 +188,19 @@ void agent_memory_validate(pid_t pid)
 {
     pid_t                                   checker;
 
-    if (((ctl_header_t*)(_ctlblock->basePtr))->error == 0)
+    if (((ctl_header_t*)(_ctlblock->base_ptr))->error == 0)
     {
         return;
     }
 
     do
     {
-        if (( checker = casv(&((ctl_header_t*)(_ctlblock->basePtr))->checker, 0, pid) ))
+        if (( checker = casv(&((ctl_header_t*)(_ctlblock->base_ptr))->checker, 0, pid) ))
         {
             if (process_dead(checker))
             {   
 printf("**** cleardown process %d is dead, %d resetting checker\n", checker, pid);
-                cas(&((ctl_header_t*)(_ctlblock->basePtr))->checker, checker, 0);   
+                cas(&((ctl_header_t*)(_ctlblock->base_ptr))->checker, checker, 0);   
             }
             else
             {
@@ -215,7 +213,7 @@ printf("**** starting recovery process in %d\n", pid);
 
             if (master_recovery_process(pid) == 0)
             {
-                cas(&((ctl_header_t*)(_ctlblock->basePtr))->error, 1, 0);
+                cas(&((ctl_header_t*)(_ctlblock->base_ptr))->error, 1, 0);
 
 printf("**** ending recovery process in %d\n", pid);
             }
@@ -223,11 +221,11 @@ printf("**** ending recovery process in %d\n", pid);
             {
 printf("**** abandoning recovery process in %d\n", pid);
             }
-            cas(&((ctl_header_t*)(_ctlblock->basePtr))->checker, pid, 0);
+            cas(&((ctl_header_t*)(_ctlblock->base_ptr))->checker, pid, 0);
 
         }
 
-    } while (((ctl_header_t*)(_ctlblock->basePtr))->error);
+    } while (((ctl_header_t*)(_ctlblock->base_ptr))->error);
 
 }
 
@@ -237,7 +235,7 @@ printf("**** abandoning recovery process in %d\n", pid);
  */
 int32_t agent_memory_seed()
 {
-    return (incr(&((ctl_header_t*)(_ctlblock->basePtr))->tx_start.value, 1) & 0xffffffff) % CLUSTERS;
+    return (incr(&((ctl_header_t*)(_ctlblock->base_ptr))->tx_start.value, 1) & 0xffffffff) % CLUSTERS;
 
 }
 
@@ -560,6 +558,11 @@ static void *alloc_with_compact(volatile offset *freelists, int32_t seq, int32_t
 
     return p;
     
+}
+
+am_shm_t *agent_get_base_ptr()
+{
+    return _base;
 }
 
 /*

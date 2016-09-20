@@ -370,7 +370,7 @@ void *am_shm_get_user_pointer(am_shm_t *am) {
     return NULL;
 }
 
-am_shm_t *am_shm_create(const char *name, uint64_t usize, int bUseNewInitialiser) {
+am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialiser) {
     struct mem_pool *pool = NULL;
     uint64_t size, max_size;
     char opened = AM_FALSE;
@@ -651,7 +651,7 @@ am_shm_t *am_shm_create(const char *name, uint64_t usize, int bUseNewInitialiser
         pool->open = 1;
 
         initialise_freelist(pool);
-        if (bUseNewInitialiser) {
+        if (use_new_initialiser) {
             pool->lh.next = pool->lh.prev = 0;
         }
         else {
@@ -671,7 +671,7 @@ am_shm_t *am_shm_create(const char *name, uint64_t usize, int bUseNewInitialiser
         pool->open++;
     }
 
-    ret->basePtr = (char *) pool + SIZEOF_mem_pool;
+    ret->base_ptr = (char *) pool + SIZEOF_mem_pool;
     ret->pool = pool;
     ret->error = 0;
     am_shm_unlock(ret);

@@ -23,11 +23,10 @@
 
 typedef uint32_t                                       offset;
 
- extern am_shm_t                                       *_base;
+am_shm_t *agent_get_base_ptr();
+#define agent_memory_offset(ptr)                       ((offset)(((char *)(ptr)) - (char *)(agent_get_base_ptr())))
 
-#define agent_memory_offset(ptr)                       ((offset)(((char *)(ptr)) - (char *)_base))
-
-#define agent_memory_ptr(ofs)                          ((void *)(((char *)_base) + (ofs)))
+#define agent_memory_ptr(ofs)                          ((void *)(((char *)(agent_get_base_ptr()))) + (ofs))
 
 void agent_memory_initialise(int32_t cluster_sz, int id);
 void agent_memory_destroy();
