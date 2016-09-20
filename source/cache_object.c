@@ -425,7 +425,9 @@ int am_cache_shutdown()
 }
 
 void am_cache_destroy() {
-//    cache_initialise(0);
+    #ifdef UNIT_TEST
+    cache_initialise(0);
+    #endif
     cache_shutdown();
 
 }
