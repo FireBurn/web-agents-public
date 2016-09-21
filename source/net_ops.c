@@ -515,7 +515,8 @@ static int send_attribute_request(am_net_t *conn, char **token, char **pxml, siz
     }
 
     if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->data)) {
-        if (stristr(req_data->data, "exception") != NULL) {
+        if (stristr(req_data->data, "<identitydetails>") == NULL ||
+                stristr(req_data->data, "<attribute name=\"") == NULL) {
             status = AM_ERROR;
         } else {
             if (pxml != NULL) {
@@ -866,7 +867,7 @@ static int send_policy_request(am_net_t *conn, const char *token, const char *us
                 conn->http_status, LOGEMPTY(req_data->data));
     }
 
-    if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->data)) {        
+    if (status == AM_SUCCESS && conn->http_status == 200 && ISVALID(req_data->data)) {
         status = parse_exception(req_data->data, token, user_token);
         if (status == AM_SUCCESS && policy_list != NULL) {
             *policy_list = am_parse_policy_xml(conn->instance_id, req_data->data, req_data->data_size,
@@ -907,7 +908,11 @@ static int do_net_connect(am_net_t *conn, struct request_data *req_data,
     conn->is_complete = is_complete;
 
     if (ISINVALID(conn->options->proxy_host)) {
-        return am_net_sync_connect(conn);
+        status = am_net_sync_connect(conn);
+        if (status != AM_SUCCESS) {
+            am_net_close(conn);
+        }
+        return status;
     }
 
     /* proxy mode */
@@ -925,6 +930,7 @@ static int do_net_connect(am_net_t *conn, struct request_data *req_data,
     /* open connection to proxy server */
     status = am_net_sync_connect(conn);
     if (status != AM_SUCCESS) {
+        am_net_close(conn);
         AM_FREE(proxy_url);
         return status;
     }
@@ -949,6 +955,7 @@ static int do_net_connect(am_net_t *conn, struct request_data *req_data,
 
     status = am_net_write(conn, proxy_connect, strlen(proxy_connect));
     if (status != AM_SUCCESS) {
+        am_net_close(conn);
         AM_FREE(proxy_url, proxy_connect, proxy_auth);
         return status;
     }
@@ -989,6 +996,9 @@ static int do_net_connect(am_net_t *conn, struct request_data *req_data,
         status = AM_EHOSTUNREACH;
     }
 
+    if (status != AM_SUCCESS) {
+        am_net_close(conn);
+    }
     conn->proxy = AM_PROXY_NONE;
     reset_complete_cb(req_data);
     AM_FREE(req_data->data, proxy_url, proxy_connect, proxy_auth);

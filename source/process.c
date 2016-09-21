@@ -1955,6 +1955,7 @@ static char *find_active_login_server(am_request_t *r, char add_goto_value) {
     if (local_alloc) {
         AM_CONF_MAP_FREE(map_sz, map);
     }
+    am_free(cdsso_elements);
 
     return login_url;
 }

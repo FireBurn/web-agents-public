@@ -2396,8 +2396,8 @@ static int am_scandir(const char *dirname, struct dirent ***ret_namelist,
  * @param log Pointer to the agentadmin logger, NULL if not available
  */
 int am_create_agent_dir(const char* sep, const char* path,
-                        char** created_name, char** created_name_simple,
-                        uid_t* uid, gid_t* gid, void (*log)(const char *, ...)) {
+        char** created_name, char** created_name_simple,
+        uid_t* uid, gid_t* gid, void (*log)(const char *, ...)) {
 
     struct dirent** instlist = NULL;
     int i, n, result = AM_ERROR, idx = 0;
@@ -2416,6 +2416,8 @@ int am_create_agent_dir(const char* sep, const char* path,
             am_asprintf(created_name_simple, "agent_1");
         }
         if (created_name_simple != NULL && *created_name_simple == NULL) {
+            free(*created_name);
+            *created_name = NULL;
             return AM_ENOMEM;
         }
 
@@ -2425,6 +2427,8 @@ int am_create_agent_dir(const char* sep, const char* path,
         }
         am_asprintf(&p, "%s%sagent_1%sconfig", path, sep, sep);
         if (p == NULL) {
+            AM_FREE(*created_name, *created_name_simple);
+            *created_name = *created_name_simple = NULL;
             return AM_ENOMEM;
         }
         result = am_make_path(p, uid, gid, log);
@@ -2432,6 +2436,8 @@ int am_create_agent_dir(const char* sep, const char* path,
         p = NULL;
         am_asprintf(&p, "%s%sagent_1%slogs%sdebug", path, sep, sep, sep);
         if (p == NULL) {
+            AM_FREE(*created_name, *created_name_simple);
+            *created_name = *created_name_simple = NULL;
             return AM_ENOMEM;
         }
         result = am_make_path(p, uid, gid, log);
@@ -2439,6 +2445,8 @@ int am_create_agent_dir(const char* sep, const char* path,
         p = NULL;
         am_asprintf(&p, "%s%sagent_1%slogs%saudit", path, sep, sep, sep);
         if (p == NULL) {
+            AM_FREE(*created_name, *created_name_simple);
+            *created_name = *created_name_simple = NULL;
             return AM_ENOMEM;
         }
         result = am_make_path(p, uid, gid, log);
@@ -2463,6 +2471,8 @@ int am_create_agent_dir(const char* sep, const char* path,
                     am_asprintf(created_name_simple, "agent_%d", idx + 1);
                 }
                 if (created_name_simple != NULL && *created_name_simple == NULL) {
+                    free(*created_name);
+                    *created_name = NULL;
                     return AM_ENOMEM;
                 }
                 if (created_name != NULL) {
@@ -2470,6 +2480,8 @@ int am_create_agent_dir(const char* sep, const char* path,
                 }
                 am_asprintf(&p, "%s%sagent_%d%sconfig", path, sep, idx + 1, sep);
                 if (p == NULL) {
+                    AM_FREE(*created_name, *created_name_simple);
+                    *created_name = *created_name_simple = NULL;
                     return AM_ENOMEM;
                 }
                 result = am_make_path(p, uid, gid, log);
@@ -2477,6 +2489,8 @@ int am_create_agent_dir(const char* sep, const char* path,
                 p = NULL;
                 am_asprintf(&p, "%s%sagent_%d%slogs%sdebug", path, sep, idx + 1, sep, sep);
                 if (p == NULL) {
+                    AM_FREE(*created_name, *created_name_simple);
+                    *created_name = *created_name_simple = NULL;
                     return AM_ENOMEM;
                 }
                 result = am_make_path(p, uid, gid, log);
@@ -2484,6 +2498,8 @@ int am_create_agent_dir(const char* sep, const char* path,
                 p = NULL;
                 am_asprintf(&p, "%s%sagent_%d%slogs%saudit", path, sep, idx + 1, sep, sep);
                 if (p == NULL) {
+                    AM_FREE(*created_name, *created_name_simple);
+                    *created_name = *created_name_simple = NULL;
                     return AM_ENOMEM;
                 }
                 result = am_make_path(p, uid, gid, log);
