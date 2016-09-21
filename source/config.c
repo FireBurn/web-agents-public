@@ -1558,6 +1558,10 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
                     am_free(cf->proxy_password);
                     cf->proxy_password = strdup(bc->proxy_password);
                 }
+                if (ISVALID(bc->policy_eval_app)) {
+                    am_free(cf->policy_eval_app);
+                    cf->policy_eval_app = strdup(bc->policy_eval_app);
+                }
 
                 ret = am_create_instance_entry_data(hdr_offset, bc, AM_CONF_BOOT); /* store bootstrap properties */
                 ret = am_create_instance_entry_data(hdr_offset, cf, AM_CONF_REMOTE);

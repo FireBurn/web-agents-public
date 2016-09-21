@@ -388,8 +388,6 @@ static void parse_other_options(am_xml_parser_ctx_t *ctx, const char *val, int l
     parse_config_value(ctx, AM_AGENTS_CONFIG_PERSISTENT_COOKIE_ENABLE, CONF_NUMBER, NULL, &ctx->conf->persistent_cookie_enable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_SCHANNEL_DISABLE, CONF_NUMBER, NULL, &ctx->conf->secure_channel_disable, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_SKIP_POST_URL, CONF_STRING_MAP, &ctx->conf->skip_post_url_map_sz, &ctx->conf->skip_post_url_map, val, len);
-    
-    parse_config_value(ctx, AM_AGENTS_CONFIG_POLICY_EVAL_APP, CONF_STRING, NULL, &ctx->conf->policy_eval_app, val, len);
 }
 
 static void end_element(void * userData, const char * name) {
@@ -444,6 +442,8 @@ static void end_element(void * userData, const char * name) {
     parse_config_value(ctx, AM_AGENTS_CONFIG_PROXY_PORT, CONF_NUMBER, NULL, &ctx->conf->proxy_port, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_PROXY_USER, CONF_STRING, NULL, &ctx->conf->proxy_user, val, len);
     parse_config_value(ctx, AM_AGENTS_CONFIG_PROXY_PASSWORD, CONF_STRING, NULL, &ctx->conf->proxy_password, val, len);
+
+    parse_config_value(ctx, AM_AGENTS_CONFIG_POLICY_EVAL_APP, CONF_STRING, NULL, &ctx->conf->policy_eval_app, val, len);
 
     /* other options */
 

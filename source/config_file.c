@@ -469,6 +469,8 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PROXY_PORT, CONF_NUMBER, NULL, &conf->proxy_port, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PROXY_USER, CONF_STRING, NULL, &conf->proxy_user, NULL);
         parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PROXY_PASSWORD, CONF_STRING, NULL, &conf->proxy_password, NULL);
+        
+        parse_config_value(instance_id, line, AM_AGENTS_CONFIG_POLICY_EVAL_APP, CONF_STRING, NULL, &conf->policy_eval_app, NULL);
 
         if (conf->local) { /* do read other options in case configuration is local */
 
@@ -590,7 +592,6 @@ am_config_t *am_get_config_file(unsigned long instance_id, const char *filename)
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_PERSISTENT_COOKIE_ENABLE, CONF_NUMBER, NULL, &conf->persistent_cookie_enable, NULL);
             
             parse_config_value(instance_id, line, AM_AGENTS_CONFIG_SKIP_POST_URL, CONF_STRING_MAP, &conf->skip_post_url_map_sz, &conf->skip_post_url_map, NULL);
-            parse_config_value(instance_id, line, AM_AGENTS_CONFIG_POLICY_EVAL_APP, CONF_STRING, NULL, &conf->policy_eval_app, NULL);
         }
     }
 
