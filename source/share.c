@@ -34,7 +34,7 @@
 /*
  * map entire shared memory into virtual memory
  *
- * the callack (cb) is called when the block is first opened and it is for initialisaiton of the block
+ * the callback (cb) is called when the block is first opened and it is for initialisaiton of the block
  *
  */
 int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz, void (*cb)(void *cbdata, void *p), void *cbdata, int id)
