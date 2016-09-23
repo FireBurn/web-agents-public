@@ -21,23 +21,23 @@
 #define BLOCKFILE                                      "/blocks"
 #define HEADERFILE                                     "/headers"
 
+#define CLUSTERS                                       256u
+
 typedef uint32_t                                       offset;
 
-am_shm_t *agent_get_base_ptr();
-#define agent_memory_offset(ptr)                       ((offset)(((char *)(ptr)) - (char *)(agent_get_base_ptr())))
+offset agent_memory_offset(void *ptr);
+void *agent_memory_ptr(offset ofs);
 
-#define agent_memory_ptr(ofs)                          ((void *)(((char *)(agent_get_base_ptr()))) + (ofs))
-
-void agent_memory_initialise(int32_t cluster_sz, int id);
+void agent_memory_initialise(uint32_t sz, unsigned long id);
 void agent_memory_destroy();
 
 int agent_memory_clusters(void);
 
 void agent_memory_barrier(pid_t pid);
 
-int32_t agent_memory_seed();
+uint32_t agent_memory_seed();
 
-void *agent_memory_alloc(pid_t pid, int32_t seed, int32_t type, int32_t size);
+void *agent_memory_alloc(pid_t pid, uint32_t seed, int32_t type, uint32_t size);
 
 int agent_memory_free(pid_t pid, void *ptr);
 

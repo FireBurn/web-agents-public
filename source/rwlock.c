@@ -25,9 +25,12 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <unistd.h>
+
+#include <sched.h>
+#include <signal.h>
 #include <errno.h>
 
-#include "platform.h"
 #include "rwlock.h"
 
 #define cas(p, old, new)                    __sync_bool_compare_and_swap(p, old, new)
@@ -269,7 +272,7 @@ int wait_for_barrier(struct readlock *lock, pid_t pid)
  * atomically add a pid (which represents a thread in a process) to a fixed size array
  *
  */
-static int cas_array32(volatile int32_t *array, size_t array_ln, int32_t old, int32_t new)
+static int add_pid_to_array(volatile pid_t *array, size_t array_ln, pid_t old, pid_t new)
 {
     int                                     i;
 
@@ -297,7 +300,7 @@ int read_lock(struct readlock *lock, pid_t pid)
 
         ensure_liveness(lock, pid);
                                                                                       /* ensure that any checker can complete */
-        while (cas_array32(lock->pids, THREAD_LIMIT, 0, pid) == 0)
+        while (add_pid_to_array(lock->pids, THREAD_LIMIT, 0, pid) == 0)
         {
             yield();
 
@@ -323,7 +326,7 @@ int read_lock(struct readlock *lock, pid_t pid)
 
         } while (--tries);
 
-        while (cas_array32(lock->pids, THREAD_LIMIT, pid, 0) == 0)                    /* should never fail */
+        while (add_pid_to_array(lock->pids, THREAD_LIMIT, pid, 0) == 0)               /* should never fail */
         {
             yield();
         }
@@ -340,7 +343,7 @@ int read_lock(struct readlock *lock, pid_t pid)
  */
 int read_lock_try(struct readlock *lock, pid_t pid, int tries)
 {
-    if (cas_array32(lock->pids, THREAD_LIMIT, 0, pid) == 0)
+    if (add_pid_to_array(lock->pids, THREAD_LIMIT, 0, pid) == 0)
     {
         return 0;
     }
@@ -358,7 +361,7 @@ int read_lock_try(struct readlock *lock, pid_t pid, int tries)
 
     } while (--tries);
 
-    while (cas_array32(lock->pids, THREAD_LIMIT, pid, 0) == 0)                        /* should never fail */
+    while (add_pid_to_array(lock->pids, THREAD_LIMIT, pid, 0) == 0)                   /* should never fail */
     {
         yield();            
     }
@@ -428,7 +431,7 @@ printf("lock_release_unique: **************** readers -> %d\n", lock->readers); 
 
     } while (1);
 
-    while (cas_array32(lock->pids, THREAD_LIMIT, pid, 0) == 0)                        /* should never fail */
+    while (add_pid_to_array(lock->pids, THREAD_LIMIT, pid, 0) == 0)                   /* should never fail */
     {
         yield();            
     }
@@ -466,7 +469,7 @@ printf("lock_release: *************** count error has occurredn");              
 
     } while (1);
 
-    while (cas_array32(lock->pids, THREAD_LIMIT, pid, 0) == 0)                        /* should never fail */
+    while (add_pid_to_array(lock->pids, THREAD_LIMIT, pid, 0) == 0)                   /* should never fail */
     {
         yield();            
     }

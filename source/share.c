@@ -37,7 +37,7 @@
  * the callback (cb) is called when the block is first opened and it is for initialisaiton of the block
  *
  */
-int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz, void (*cb)(void *cbdata, void *p), void *cbdata, int id)
+int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz, void (*cb)(void *cbdata, void *p), void *cbdata, unsigned long id)
 {
     if (p_addr == NULL) {
         return AM_FAIL;
