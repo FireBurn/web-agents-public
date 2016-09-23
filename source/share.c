@@ -37,7 +37,7 @@
  * the callback (cb) is called when the block is first opened and it is for initialisaiton of the block
  *
  */
-int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz, void (*cb)(void *cbdata, void *p), void *cbdata, unsigned long id)
+int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz, void (*cb)(void *cbdata, void *p), void *cbdata, int id)
 {
     if (p_addr == NULL) {
         return AM_FAIL;
@@ -62,12 +62,16 @@ int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz, void (*cb)(void
  * unmap and optionlly unlink a shared memory segment
  *
  */
-int remove_memory_segment(am_shm_t **p_addr)
+int remove_memory_segment(am_shm_t **p_addr, int destroy)
 {
     if (p_addr == NULL) {
         return AM_FAIL;
     }
-    am_shm_shutdown(*p_addr);
+    if (destroy)
+        am_shm_destroy(*p_addr);
+    else
+        am_shm_shutdown(*p_addr);
+
     *p_addr = NULL;
     return AM_SUCCESS;
 }

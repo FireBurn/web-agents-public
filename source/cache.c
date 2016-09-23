@@ -49,9 +49,9 @@
 #include "cache.h"
 #include "rwlock.h"
 
-#define STATFILE                            "/stats"
-#define LOCKFILE                            "/lockfile"
-#define HASHFILE                            "/hashtable"
+#define STATFILE                            "stats"
+#define LOCKFILE                            "lockfile"
+#define HASHFILE                            "hashtable"
 
 #define MAX_CACHE_MEMORY_SZ                 0x80000000
 
@@ -227,7 +227,7 @@ uint32_t cache_memory_size()
 
 }
 
-int cache_initialise(unsigned long id)
+int cache_initialise(int id)
 {
     uint32_t                                sz = cache_memory_size();
 
@@ -254,11 +254,11 @@ void cache_reinitialise()
 
 int cache_shutdown(int destroy)
 {
-    remove_memory_segment(&stats_pool);
+    remove_memory_segment(&stats_pool, destroy);
 
-    remove_memory_segment(&locks_pool);
+    remove_memory_segment(&locks_pool, destroy);
 
-    remove_memory_segment(&hashtable_pool);
+    remove_memory_segment(&hashtable_pool, destroy);
 
     agent_memory_destroy(destroy);
 

@@ -145,7 +145,7 @@ int main(int argc, char *argv[])
     long                                    t0;
     double                                  dt;
 
-    agent_memory_initialise(4096*1024);
+    agent_memory_initialise(CLUSTERS * 4096 * 1024, 0);
     
     if (argc == 2 && strcmp(argv[1], "--check") == 0)
     {

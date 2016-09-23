@@ -17,7 +17,7 @@
 #ifndef AGENT_CACHE_H
 #define AGENT_CACHE_H
 
-int cache_initialise();
+int cache_initialise(int id);
 void cache_reinitialise();
 int cache_shutdown();
 

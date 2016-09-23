@@ -17,9 +17,9 @@
 #ifndef AM_MEMORY_MANAGER
 #define AM_MEMORY_MANAGER
 
-#define CTLFILE                                        "/ctl"
-#define BLOCKFILE                                      "/blocks"
-#define HEADERFILE                                     "/headers"
+#define CTLFILE                                        "ctl"
+#define BLOCKFILE                                      "blocks"
+#define HEADERFILE                                     "headers"
 
 #define CLUSTERS                                       256u
 
@@ -28,7 +28,7 @@ typedef uint32_t                                       offset;
 offset agent_memory_offset(void *ptr);
 void *agent_memory_ptr(offset ofs);
 
-void agent_memory_initialise(uint32_t sz, unsigned long id);
+void agent_memory_initialise(uint32_t sz, int id);
 void agent_memory_destroy();
 
 int agent_memory_clusters(void);

@@ -388,7 +388,7 @@ static void reset_headers(void *cbdata, void *p)
  * initialise memory for all clusters
  *
  */
-void agent_memory_initialise(uint32_t sz, unsigned long id)
+void agent_memory_initialise(uint32_t sz, int id)
 {
     _cluster_capacity = sz / CLUSTERS;
     
@@ -409,11 +409,11 @@ void agent_memory_initialise(uint32_t sz, unsigned long id)
  */
 void agent_memory_destroy(int unlink)
 {
-    remove_memory_segment(&_ctlblock_pool);
+    remove_memory_segment(&_ctlblock_pool, unlink);
 
-    remove_memory_segment(&_base_pool);
+    remove_memory_segment(&_base_pool, unlink);
 
-    remove_memory_segment(&_cluster_hdrs_pool);
+    remove_memory_segment(&_cluster_hdrs_pool, unlink);
  
 }
 
@@ -575,7 +575,7 @@ static void *alloc_with_compact(volatile offset *freelists, unsigned seq, int32_
  * allocate memory within a cluster
  *
  */
-void *agent_memory_alloc(pid_t pid, unsigned cluster, int32_t type, uint32_t size)
+void *agent_memory_alloc(pid_t pid, uint32_t cluster, int32_t type, uint32_t size)
 {
     uint32_t                                required = UP64(block_data_offset + size);
 

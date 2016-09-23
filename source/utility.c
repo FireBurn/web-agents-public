@@ -223,18 +223,6 @@ void am_secure_zero_memory(void *v, size_t sz) {
 #endif
 }
 
-uint64_t page_size(uint64_t size) {
-    unsigned int p_size;
-#ifdef _WIN32
-    SYSTEM_INFO si;
-    GetSystemInfo(&si);
-    p_size = si.dwPageSize;
-#else
-    p_size = sysconf(_SC_PAGE_SIZE);
-#endif
-    return p_size * ((size + p_size - 1) / p_size);
-}
-
 char is_big_endian() {
 
     union {
@@ -2999,12 +2987,6 @@ void update_agent_configuration_reorder_map_values(am_config_t *conf) {
         qsort(conf->cond_login_url, conf->cond_login_url_sz,
                 sizeof (am_config_map_t), config_map_name_compare);
     }
-}
-
-char *get_global_name(const char *name, int id) {
-    static AM_THREAD_LOCAL char out[AM_PATH_SIZE];
-    snprintf(out, sizeof(out), "%s_%d", name, id);
-    return out;
 }
 
 static uint32_t sdbm_hash(const void *s) {

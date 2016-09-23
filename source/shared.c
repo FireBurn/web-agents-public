@@ -174,6 +174,24 @@ static struct mem_chunk *get_free_chunk_for_size(struct mem_pool *pool, uint64_t
     return NULL;
 }
 
+char *get_global_name(const char *name, int id) {
+    static AM_THREAD_LOCAL char out[AM_PATH_SIZE];
+    snprintf(out, sizeof(out), "%s_%d", name, id);
+    return out;
+}
+
+uint64_t page_size(uint64_t size) {
+    unsigned int p_size;
+#ifdef _WIN32
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    p_size = si.dwPageSize;
+#else
+    p_size = sysconf(_SC_PAGE_SIZE);
+#endif
+    return p_size * ((size + p_size - 1) / p_size);
+}
+
 /**
  * get the max pool size for shared memory
  */

@@ -3,15 +3,15 @@ SRC = ../source
 
 CC = cc
 
-CFLAGS = -D_GNU_SOURCE -std=gnu99 -O3 -pthread -I$(SRC)
+CFLAGS = -D_GNU_SOURCE -std=gnu99 -O0 -g -pthread -I$(SRC)
 
 LDFLAGS = -lpthread 
 
-cache: test_cache.o share.o cache.o alloc.o rwlock.o
-	$(CC) $(CFLAGS) -o cache test_cache.c cache.o share.o alloc.o rwlock.o $(LDFLAGS)
+cache: test_cache.o share.o cache.o alloc.o rwlock.o shared.o 
+	$(CC) $(CFLAGS) -o cache test_cache.c cache.o share.o alloc.o rwlock.o shared.o $(LDFLAGS)
 
-alloc: test_alloc.o alloc.o share.o
-	$(CC) $(CFLAGS) -o alloc test_alloc.c share.o alloc.o $(LDFLAGS)
+alloc: test_alloc.o alloc.o share.o shared.o
+	$(CC) $(CFLAGS) -o alloc test_alloc.c share.o alloc.o shared.o $(LDFLAGS)
 
 rwlock: test_rwlock.o rwlock.o
 	$(CC) $(CFLAGS) -o rwlock test_rwlock.c rwlock.o $(LDFLAGS)
@@ -27,6 +27,9 @@ rwlock.o: $(SRC)/rwlock.h $(SRC)/rwlock.c
 
 share.o: $(SRC)/share.h $(SRC)/share.c
 	$(CC) -c $(CFLAGS) $(SRC)/share.c
+
+shared.o: $(SRC)/shared.c
+	$(CC) -c $(CFLAGS) $(SRC)/shared.c
 
 all: cache alloc rwlock
 

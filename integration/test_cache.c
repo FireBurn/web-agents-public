@@ -178,7 +178,7 @@ int main(int argc, char *argv[])
     long                                    t0;
     double                                  dt;
 
-    if (cache_initialise())
+    if (cache_initialise(0))
     {
         printf("unable to initialise cache\n");
         exit(0);
