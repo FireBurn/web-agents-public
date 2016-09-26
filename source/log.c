@@ -19,6 +19,11 @@
 #include "am.h"
 #include "utility.h"
 #include "version.h"
+#ifndef _WIN32
+#include <libgen.h>
+#endif
+
+#define DEFAULT_LOG_SIZE (1024 * 1024 * 5) /* 5MB */
 
 #if defined(_WIN32)
 #define AM_ATOMIC_ADD_32        InterlockedExchangeAdd
@@ -128,6 +133,8 @@ static struct am_shared_log {
     uint64_t area_size;
     struct log_mutex *mutex[3];
 } *log_handle = NULL;
+
+static char default_log_path[AM_PATH_SIZE] = {0};
 
 static void log_mutex_lock(int type) {
     struct log_mutex *mtx;
@@ -241,21 +248,33 @@ static am_bool_t should_rotate_time(uint64_t ct) {
 #define file_access(name) access(name, F_OK)
 #endif
 
-static void log_file_write(const char *data, unsigned int data_sz,
+static void log_file_write(unsigned long instance_id, const char *data, unsigned int data_sz,
         struct log_files *f, struct log_file *file_cache, am_bool_t is_audit) {
     file_stat_struct st;
     uint64_t wr, file_created, fsize;
     int32_t file_handle, max_size;
     const char *file_name;
     int status;
+        
+    if (ISINVALID(data) || !data_sz || file_cache == NULL) {
+        return;
+    }
 
-    if (f == NULL || ISINVALID(data) || !data_sz || file_cache == NULL) return;
-
-    file_name = is_audit ? f->name_audit : f->name_debug;
-    max_size = is_audit ? f->max_size_audit : f->max_size_debug;
-    file_created = is_audit ? file_cache->created_audit : file_cache->created_debug;
-    file_handle = is_audit ? file_cache->file_audit : file_cache->file_debug;
-
+    if (f != NULL && instance_id > 0) {
+        file_name = is_audit ? f->name_audit : f->name_debug;
+        max_size = is_audit ? f->max_size_audit : f->max_size_debug;
+        file_created = is_audit ? file_cache->created_audit : file_cache->created_debug;
+        file_handle = is_audit ? file_cache->file_audit : file_cache->file_debug;
+    } else if (instance_id == 0 && ISVALID(default_log_path)) {
+        file_name = default_log_path;
+        max_size = DEFAULT_LOG_SIZE;
+        file_created = file_cache->created_debug;
+        file_handle = file_cache->file_debug;
+    } else {
+        /* invalid arguments */
+        return;
+    }
+    
     if (ISINVALID(file_name)) {
         fprintf(stderr, "log_file_write(): invalid file name\n");
         return;
@@ -353,6 +372,8 @@ static void log_file_write(const char *data, unsigned int data_sz,
 static struct log_file *get_cached_file(struct log_file *fc, unsigned long instance_id) {
     int i;
     /* lookup local-cached entry */
+    if (instance_id == 0)
+        return &fc[AM_MAX_INSTANCES];
     for (i = 0; i < AM_MAX_INSTANCES; i++) {
         struct log_file *file = &fc[i];
         if (file->instance_id == instance_id)
@@ -389,9 +410,9 @@ static void log_buffer_read(struct log_file *fc) {
             break;
         }
     }
-
+        
     /* do the actual file write op */
-    log_file_write(block->data, (unsigned int) block->size, file, file_cache,
+    log_file_write(block->instance_id, block->data, (unsigned int) block->size, file, file_cache,
             (block->level & AM_LOG_LEVEL_AUDIT) != 0);
 
     /* set done flag for this block */
@@ -419,7 +440,7 @@ static void log_buffer_read(struct log_file *fc) {
 
 static void log_file_cache_close(struct log_file *fc) {
     int i;
-    for (i = 0; i < AM_MAX_INSTANCES; i++) {
+    for (i = 0; i < AM_MAX_INSTANCES + 1; i++) {
         struct log_file *file = &fc[i];
         if (file->file_audit != -1)
             file_close(file->file_audit);
@@ -430,11 +451,14 @@ static void log_file_cache_close(struct log_file *fc) {
 
 static void *am_log_worker(void *arg) {
     int i;
-    struct log_file *fc = malloc(sizeof (struct log_file) * AM_MAX_INSTANCES);
+    
+    /* local open file descriptor cache; last entry reserved for instanceid 0 */
+    struct log_file *fc = malloc(sizeof (struct log_file) * (AM_MAX_INSTANCES + 1));
     if (fc == NULL)
         return NULL;
-    /* local cache of open file descriptors */
-    for (i = 0; i < AM_MAX_INSTANCES; i++) {
+    
+    /* reset local open file descriptor cache */
+    for (i = 0; i < AM_MAX_INSTANCES + 1; i++) {
         struct log_file *file = &fc[i];
         file->instance_id = 0;
         file->created_debug = file->created_audit = 0;
@@ -521,7 +545,9 @@ void am_log_init(int id) {
 #endif
 
     if (log_handle != NULL) return;
-
+    
+    memset(&default_log_path[0], 0, sizeof(default_log_path));
+    
 #ifdef _WIN32
     SECURITY_DESCRIPTOR sec_descr;
     SECURITY_ATTRIBUTES sec_attr, *sec = NULL;
@@ -539,6 +565,26 @@ void am_log_init(int id) {
     if (log_handle == NULL) {
         return;
     }
+
+#ifndef UNIT_TEST
+#define DEFAULT_AGENT_LOG_FILE "agent.log"
+#ifdef _WIN32
+    HMODULE hm = NULL;
+    void *caller = _ReturnAddress();
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR) caller, &hm) &&
+            GetModuleFileNameA(hm, default_log_path, sizeof (default_log_path) - 1) > 0) {
+        PathRemoveFileSpecA(default_log_path);
+        strcat(default_log_path, "\\..\\log\\"DEFAULT_AGENT_LOG_FILE);
+    }
+#else
+    Dl_info info;
+    if (dladdr((void *) &am_log_init, &info)) {
+        snprintf(default_log_path, sizeof (default_log_path),
+                "%s/../log/"DEFAULT_AGENT_LOG_FILE, dirname((char *) info.dli_fname));
+    }
+#endif
+#endif
 
     log_handle->mutex[LOG_MUTEX] = (struct log_mutex *) calloc(1, sizeof (struct log_mutex));
     log_handle->mutex[LOG_URL_MUTEX] = (struct log_mutex *) calloc(1, sizeof (struct log_mutex));
@@ -707,13 +753,8 @@ int perform_logging(unsigned long instance_id, int level) {
     int32_t log_level = AM_LOG_LEVEL_NONE;
     int32_t audit_level = AM_LOG_LEVEL_NONE;
 
-    /* If the instance id is zero, we are either running a test case, or installing something */
     if (instance_id == 0) {
-#ifdef UNIT_TEST
         return AM_TRUE;
-#else
-        return AM_FALSE;
-#endif
     }
 
     /* We simply cannot log if the shared memory segment is not initialised */
@@ -784,6 +825,7 @@ void am_log_write(unsigned long instance_id, int level, const char* header, int 
     va_list args;
     struct log_block *block;
 
+#ifdef UNIT_TEST
     /**
      * An instance id of zero indicates that we are running in unit test mode, shared memory is not
      * initialised and so our only option, if we want to log, is to write to the standard error.
@@ -797,6 +839,7 @@ void am_log_write(unsigned long instance_id, int level, const char* header, int 
         va_end(args);
         return;
     }
+#endif
 
     if (log_handle == NULL || log_handle->area == NULL || header_sz <= 0) {
         return;
@@ -821,8 +864,8 @@ void am_log_write(unsigned long instance_id, int level, const char* header, int 
     }
 
     block->instance_id = instance_id;
-    block->level = level;
-
+    block->level = instance_id == 0 ? AM_LOG_LEVEL_ALWAYS : level;
+    
     /* push the block back into the queue ready to be consumed */
 
     /* set done flag for this block */
@@ -915,9 +958,6 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
                 strncpy(f->name_debug, debug_log, sizeof (f->name_debug) - 1);
                 strncpy(f->name_audit, audit_log, sizeof (f->name_audit) - 1);
                 f->used = AM_TRUE;
-
-#define DEFAULT_LOG_SIZE (1024 * 1024 * 5) /* 5MB */
-
                 f->max_size_debug = log_size > 0 && log_size < DEFAULT_LOG_SIZE ? DEFAULT_LOG_SIZE : log_size;
                 f->max_size_audit = audit_size > 0 && audit_size < DEFAULT_LOG_SIZE ? DEFAULT_LOG_SIZE : audit_size;
                 f->level_debug = log_level;

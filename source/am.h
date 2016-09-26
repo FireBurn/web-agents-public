@@ -89,7 +89,7 @@ typedef enum {
 #endif
 
 #ifndef AM_LOG_MESSAGE_SIZE
-#define AM_LOG_MESSAGE_SIZE         16384
+#define AM_LOG_MESSAGE_SIZE         8192
 #endif
 
 /* Default agent id.
