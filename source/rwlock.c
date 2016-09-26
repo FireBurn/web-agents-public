@@ -16,8 +16,7 @@
 
 
 /*
- * this is a prototype for a robust, in-memory readlock, which is intended to ensure that readers cannot have
- * still be reading data that is inaccessible after it is unlinked
+ * this is a robust, in-memory read/write lock
  *
  */
 
@@ -37,12 +36,10 @@ const struct readlock                       readlock_init = { .readers = 0, .bar
  * quick test whether all readers are finished with the lock; it is used to ensure that writers are not starved
  *
  */
-static int wait_for_counted_readers(struct readlock *lock, int tries)
-{
-    do
-    {
-        if (lock->readers == 0)
-        {
+static int wait_for_counted_readers(struct readlock *lock, int tries) {
+
+    do {
+        if (lock->readers == 0) {
             return 1;
         }
 
@@ -58,12 +55,10 @@ static int wait_for_counted_readers(struct readlock *lock, int tries)
  * determine whether a process is live
  *
  */
-static int process_dead(pid_t pid)
-{
-    if (kill(pid, 0))
-    {
-        if (errno == ESRCH)
-        {
+static int process_dead(pid_t pid) {
+
+    if (kill(pid, 0)) {
+        if (errno == ESRCH) {
             return 1;
         }
 printf("************** after kill, errno was %d\n", errno);                           /* TODO: remove this, this doesn't happen */
@@ -79,67 +74,46 @@ printf("************** after kill, errno was %d\n", errno);                     
  * this will block all readers, but it should be quick because readers are very transient
  *
  */
-static int wait_for_live_readers(struct readlock *lock, pid_t pid, int unblock) 
-{
-    int                                     i, j;
+static int wait_for_live_readers(struct readlock *lock, pid_t pid, int unblock) {
 
     pid_t                                   checker = 0;
 
-    if (( checker = casv(&lock->barrier, 0, pid) ))
-    {
-        if (checker == pid)
-        {
+    if (( checker = casv(&lock->barrier, 0, pid) )) {
+        if (checker == pid) {
             return 0;                                                                 /* this process is already the checker, wait  */
-        }
-        else if (process_dead(checker))
-        {
-            if (cas(&lock->barrier, checker, pid))
-            {
+        } else if (process_dead(checker)) {
+            if (cas(&lock->barrier, checker, pid)) {
                 printf("rwlock: %d takes over as checker\n", pid);                    /* this process takes over as checker */
-            }
-            else
-            {
+            } else {
                 return 0;                                                             /* another process has become the checker */
             }
-        }
-        else
-        {
+        } else {
             return 0;                                                                 /* a live process is the checker, wait for it to finish */
         }
     }
 
-    do
-    {
+    do {
         int                                 n = 0;
 
-        for (i = 0; i < THREAD_LIMIT; i++)
-        {
+        for (int i = 0; i < THREAD_LIMIT; i++) {
             pid_t                           writer;
 
-            if (( writer = casv(lock->pids + i, 0, -1) ))
-            {
-                if (writer == -1)
-                {
+            if (( writer = casv(lock->pids + i, 0, -1) )) {
+                if (writer == -1) {
                     n++;
-                }
-                else if (process_dead(writer))
-                {
+                } else if (process_dead(writer)) {
 printf("rwlock: %d sees termination of %d\n", pid, writer);                           /* TODO: remove this debug info */
-                    for (j = i; j < THREAD_LIMIT; j++)
-                    {
+                    for (int j = i; j < THREAD_LIMIT; j++) {
                         cas(lock->pids + j, writer, -1);                              /* remove pids for threads of a dead process */
                     }
                     n++;
                 }
-            }
-            else
-            {
+            } else {
                n++;
             }
         }
 
-        if (n == THREAD_LIMIT)
-        {
+        if (n == THREAD_LIMIT) {
             break;
         }
 
@@ -149,17 +123,14 @@ printf("rwlock: %d sees termination of %d\n", pid, writer);                     
 
     int32_t                                 readers = lock->readers;
 
-    while (cas(&lock->readers, readers, 0) == 0)
-    {
+    while (cas(&lock->readers, readers, 0) == 0) {
         yield();
 
         readers = lock->readers;
     }
 
-    if (unblock)
-    {
-        for (i = 0; i < THREAD_LIMIT; i++)
-        {
+    if (unblock) {
+        for (int i = 0; i < THREAD_LIMIT; i++) {
             cas(lock->pids + i, -1, 0);
         }
         cas(&lock->barrier, pid, 0);
@@ -173,8 +144,8 @@ printf("rwlock: %d sees termination of %d\n", pid, writer);                     
  * robust wait for extant readers to complete, leaving the lock blocked
  *
  */
-int read_block(struct readlock *lock, pid_t pid)
-{
+int read_block(struct readlock *lock, pid_t pid) {
+
     return wait_for_live_readers(lock, pid, 0);
 
 }
@@ -183,12 +154,9 @@ int read_block(struct readlock *lock, pid_t pid)
  * unblock the lock after read_block() has succeeded
  *
  */
-int read_unblock(struct readlock *lock, pid_t pid)
-{
-    int                                     i;
+int read_unblock(struct readlock *lock, pid_t pid) {
 
-    for (i = 0; i < THREAD_LIMIT; i++)
-    {
+    for (int i = 0; i < THREAD_LIMIT; i++) {
         cas(lock->pids + i, -1, 0);
     }
 
@@ -200,16 +168,13 @@ int read_unblock(struct readlock *lock, pid_t pid)
  * wait for any lock check to complete, and take over if checker is not live
  *
  */
-static void ensure_liveness(struct readlock *lock, pid_t pid)
-{
+static void ensure_liveness(struct readlock *lock, pid_t pid) {
+
     pid_t                                   checker = lock->barrier;
 
-    if (checker)
-    {
-        do
-        {
-            if (wait_for_live_readers(lock, pid, 1))
-            {
+    if (checker) {
+        do {
+            if (wait_for_live_readers(lock, pid, 1)) {
                 break;
             }
 
@@ -226,14 +191,12 @@ static void ensure_liveness(struct readlock *lock, pid_t pid)
  * wait forever for extant readers to complete
  *
  */
-int wait_for_barrier(struct readlock *lock, pid_t pid)
-{
+int wait_for_barrier(struct readlock *lock, pid_t pid) {
+
     int                                     i = 0;
 
-    do
-    {
-        if (wait_for_counted_readers(lock, 100))
-        {
+    do {
+        if (wait_for_counted_readers(lock, 100)) {
             return 1;
         }
 
@@ -243,10 +206,8 @@ int wait_for_barrier(struct readlock *lock, pid_t pid)
 
     } while (i < 100);
 
-    do
-    {
-        if (wait_for_live_readers(lock, pid, 1))
-        {
+    do {
+        if (wait_for_live_readers(lock, pid, 1)) {
             return 1;
         }
 
@@ -264,14 +225,10 @@ int wait_for_barrier(struct readlock *lock, pid_t pid)
  * atomically add a pid (which represents a thread in a process) to a fixed size array
  *
  */
-static int add_pid_to_array(volatile pid_t *array, size_t array_ln, pid_t old, pid_t new)
-{
-    int                                     i;
+static int add_pid_to_array(volatile pid_t *array, size_t array_ln, pid_t old, pid_t new) {
 
-    for (i = 0; i < array_ln; i++)
-    {
-        if (cas(array + i, old, new))
-        {
+    for (int i = 0; i < array_ln; i++) {
+        if (cas(array + i, old, new)) {
             return 1;
         }
     }
@@ -284,42 +241,34 @@ static int add_pid_to_array(volatile pid_t *array, size_t array_ln, pid_t old, p
  * remove pid and retry with robust barrier if it is taking too long
  *
  */
-int read_lock(struct readlock *lock, pid_t pid)
-{
-    do
-    {
+int read_lock(struct readlock *lock, pid_t pid) {
+
+    do {
         int                                 tries = 1000;
 
         ensure_liveness(lock, pid);
                                                                                       /* ensure that any checker can complete */
-        while (add_pid_to_array(lock->pids, THREAD_LIMIT, 0, pid) == 0)
-        {
+        while (add_pid_to_array(lock->pids, THREAD_LIMIT, 0, pid) == 0) {
             yield();
 
             wait_for_barrier(lock, pid);                                              /* allow write locks by waiting for lockers to complete */
         }
 
-        do
-        {
+        do {
             int32_t                         readers = lock->readers;
     
-            if (readers < THREAD_LIMIT)
-            {
-                if (cas(&lock->readers, readers, readers + 1))
-                {
+            if (readers < THREAD_LIMIT) {
+                if (cas(&lock->readers, readers, readers + 1)) {
                     return 1;
                 }
-            }
-            else if (wait_for_counted_readers(lock, 100) == 0)
-            {
+            } else if (wait_for_counted_readers(lock, 100) == 0) {
                 break;                                                                /* too much contention or blockage */
             }
             yield();
 
         } while (--tries);
 
-        while (add_pid_to_array(lock->pids, THREAD_LIMIT, pid, 0) == 0)               /* should never fail */
-        {
+        while (add_pid_to_array(lock->pids, THREAD_LIMIT, pid, 0) == 0) {             /* should never fail */
             yield();
         }
 
@@ -333,19 +282,16 @@ int read_lock(struct readlock *lock, pid_t pid)
  * non-waiting read lock
  *
  */
-int read_lock_try(struct readlock *lock, pid_t pid, int tries)
-{
-    if (add_pid_to_array(lock->pids, THREAD_LIMIT, 0, pid) == 0)
-    {
+int read_lock_try(struct readlock *lock, pid_t pid, int tries) {
+
+    if (add_pid_to_array(lock->pids, THREAD_LIMIT, 0, pid) == 0) {
         return 0;
     }
 
-    do
-    {
+    do {
         int32_t                             readers = lock->readers;
 
-        if (readers < THREAD_LIMIT && cas(&lock->readers, readers, readers + 1))
-        {
+        if (readers < THREAD_LIMIT && cas(&lock->readers, readers, readers + 1)) {
             return 1;
         }
 
@@ -353,8 +299,7 @@ int read_lock_try(struct readlock *lock, pid_t pid, int tries)
 
     } while (--tries);
 
-    while (add_pid_to_array(lock->pids, THREAD_LIMIT, pid, 0) == 0)                   /* should never fail */
-    {
+    while (add_pid_to_array(lock->pids, THREAD_LIMIT, pid, 0) == 0) {                 /* should never fail */
         yield();            
     }
 
@@ -366,14 +311,12 @@ int read_lock_try(struct readlock *lock, pid_t pid, int tries)
  * non-blocking attempt to get write lock
  *
  */
-int read_try_unique(struct readlock *lock, int tries)
-{
-    do
-    {
+int read_try_unique(struct readlock *lock, int tries) {
+
+    do {
 if (lock->readers == 0) printf("*********** i don't have a readlock\n");              /* TODO: remove this, this doesn't happen */
 
-        if (cas(&lock->readers, 1, THREAD_LIMIT))
-        {
+        if (cas(&lock->readers, 1, THREAD_LIMIT)) {
             return 1;
         }
 
@@ -389,12 +332,10 @@ if (lock->readers == 0) printf("*********** i don't have a readlock\n");        
  * conversion of write lock to read lock
  *
  */
-int read_release_unique(struct readlock *lock)
-{
-    do
-    {
-        if (cas(&lock->readers, THREAD_LIMIT, 1))
-        {
+int read_release_unique(struct readlock *lock) {
+
+    do {
+        if (cas(&lock->readers, THREAD_LIMIT, 1)) {
             return 1;
         }
 printf("lock_release_unique: *************** readers -> %d\n", lock->readers);        /* TODO: remove this, this doesn't happen */
@@ -409,12 +350,10 @@ printf("lock_release_unique: *************** readers -> %d\n", lock->readers);  
  * release of write lock
  *
  */
-int read_release_all(struct readlock *lock, pid_t pid)
-{
-    do
-    {
-        if (cas(&lock->readers, THREAD_LIMIT, 0))
-        {
+int read_release_all(struct readlock *lock, pid_t pid) {
+
+    do {
+        if (cas(&lock->readers, THREAD_LIMIT, 0)) {
             break;
         }
 printf("lock_release_unique: **************** readers -> %d\n", lock->readers);       /* TODO: remove this, this doesn't happen */
@@ -423,8 +362,7 @@ printf("lock_release_unique: **************** readers -> %d\n", lock->readers); 
 
     } while (1);
 
-    while (add_pid_to_array(lock->pids, THREAD_LIMIT, pid, 0) == 0)                   /* should never fail */
-    {
+    while (add_pid_to_array(lock->pids, THREAD_LIMIT, pid, 0) == 0) {                 /* should never fail */
         yield();            
     }
 
@@ -436,21 +374,16 @@ printf("lock_release_unique: **************** readers -> %d\n", lock->readers); 
  * release of read lock
  *
  */
-int read_release(struct readlock *lock, pid_t pid)
-{
+int read_release(struct readlock *lock, pid_t pid) {
+
     int32_t                                 readers = lock->readers;
 
-    do
-    {
-        if (readers)
-        {
-            if (cas(&lock->readers, readers, readers - 1))
-            {
+    do {
+        if (readers) {
+            if (cas(&lock->readers, readers, readers - 1)) {
                 break;
             }
-        }
-        else
-        {
+        } else {
 printf("lock_release: *************** count error has occurredn");                    /* TODO: remove this, this doesn't happen */
             break;
         }
@@ -461,8 +394,7 @@ printf("lock_release: *************** count error has occurredn");              
 
     } while (1);
 
-    while (add_pid_to_array(lock->pids, THREAD_LIMIT, pid, 0) == 0)                   /* should never fail */
-    {
+    while (add_pid_to_array(lock->pids, THREAD_LIMIT, pid, 0) == 0) {                 /* should never fail */
         yield();            
     }
 

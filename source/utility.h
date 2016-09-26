@@ -374,4 +374,7 @@ int am_pdp_entry_deserialise(struct cache_object_ctx *ctx, char **url,
 int am_policy_epoch_deserialise(struct cache_object_ctx *ctx, uint64_t *p_time);
 int am_policy_epoch_serialise(struct cache_object_ctx *ctx, uint64_t time);
 
+int am_cache_worker_init();
+void am_cache_worker_shutdown();
+
 #endif

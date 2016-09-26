@@ -73,8 +73,8 @@
 #define USER                                1
 #define CACHE                               2
 
-struct user_entry
-{
+struct user_entry {
+
     uint32_t                                hash, check, gcdata;
 
     uint32_t                                ln;
@@ -82,8 +82,8 @@ struct user_entry
 
 };
 
-struct cache_entry
-{
+struct cache_entry {
+
     uint32_t                                hash, check, gcdata;
 
     volatile offset                         bucket[BUCKET_SZ];
@@ -94,22 +94,22 @@ struct cache_entry
 
 };
 
-union cache_stat
-{
+union cache_stat {
+
     volatile uint64_t                       v;
 
     uint8_t                                 padding[16];
 
 };
 
-struct cache_gc_stat
-{
+struct cache_gc_stat {
+
     union cache_stat                        leaked, cleared, collected;
 
 };
 
-struct stats
-{
+struct stats {
+
     int64_t                                 basetime;
 
     union cache_stat                        reads, updates, writes, fails, deletes, expires, usage;
@@ -120,20 +120,20 @@ struct stats
 
 static const size_t                         user_hdr_sz = offsetof(struct user_entry, data);
 
-static struct stats                        *stats;
+static struct stats                        *stats = 0;
 
-static struct readlock                     *locks;
+static struct readlock                     *locks = 0;
 
-static offset                              *hashtable;
+static offset                              *hashtable = 0;
 
-static am_shm_t                            *stats_pool, *locks_pool, *hashtable_pool;
+static am_shm_t                            *stats_pool = 0, *locks_pool = 0, *hashtable_pool = 0;
 
 
 #define lock_for_hash(h)                    (locks + ((h) & (N_LOCKS - 1)))
 
 
-static void reset_stats(void *cbdata, void *p)
-{
+static void reset_stats(void *cbdata, void *p) {
+
     struct stats                           *stats = p;
 
     memset(stats, 0, sizeof(struct stats));
@@ -143,28 +143,26 @@ static void reset_stats(void *cbdata, void *p)
     printf("cache stats reset\n");
 }
 
-static void reset_hashtable(void *cbdata, void *p)
-{
+static void reset_hashtable(void *cbdata, void *p) {
+
     offset                                 *table = p;
 
     int                                     i;
 
-    for (i = 0; i < HASH_SZ; i++)
-    {
+    for (i = 0; i < HASH_SZ; i++) {
         table[i] = ~ 0;
     }
 
     printf("cache hashtable reset\n");
 }
 
-static void reset_locks(void *cbdata, void *p)
-{
+static void reset_locks(void *cbdata, void *p) {
+
     struct readlock                        *locks = p;
 
     int                                     i;
 
-    for (i = 0; i < N_LOCKS; i++)
-    {
+    for (i = 0; i < N_LOCKS; i++) {
         locks[i] = readlock_init;
     }
 
@@ -178,8 +176,8 @@ static void reset_locks(void *cbdata, void *p)
  * (taken from https://graphics.stanford.edu/~seander/bithacks.html)
  *
  */
-static uint32_t next_pow_2(uint32_t v)
-{
+static uint32_t next_pow_2(uint32_t v) {
+
     v--;
     v |= v >> 1;
     v |= v >> 2;
@@ -196,17 +194,15 @@ static uint32_t next_pow_2(uint32_t v)
  * the agent cache memory size can be constrained by the AGENT_CACHE_SIZE environment variable
  *
  */
-uint32_t cache_memory_size()
-{
+uint32_t cache_memory_size() {
+
     char                                   *env = getenv("AM_MAX_SESSION_CACHE_SIZE");
 
-    if (env)
-    {
+    if (env) {
         char                               *endp = 0;
         uint32_t                            v = strtoul(env, &endp, 0);
 
-        if (env < endp && *endp == '\0' && 0 < v && v < MAX_CACHE_MEMORY_SZ)
-        {
+        if (env < endp && *endp == '\0' && 0 < v && v < MAX_CACHE_MEMORY_SZ) {
             /* whole string is digits (dec, hex or octal) not 0 and less than our hard max */
 
             return next_pow_2(v);
@@ -218,8 +214,8 @@ uint32_t cache_memory_size()
 
 }
 
-int cache_initialise(int id)
-{
+int cache_initialise(int id) {
+
     uint32_t                                sz = cache_memory_size();
 
     agent_memory_initialise(sz, id);
@@ -237,14 +233,14 @@ int cache_initialise(int id)
 
 }
 
-void cache_reinitialise()
-{
+void cache_reinitialise() {
+
     reset_hashtable(0, hashtable);
 
 }
 
-int cache_shutdown(int destroy)
-{
+int cache_shutdown(int destroy) {
+
     remove_memory_segment(&stats_pool, destroy);
 
     remove_memory_segment(&locks_pool, destroy);
@@ -257,74 +253,67 @@ int cache_shutdown(int destroy)
 
 }
 
-int cache_readlock_p(uint32_t hash, pid_t pid)
-{
+int cache_readlock_p(uint32_t hash, pid_t pid) {
+
     return read_lock(lock_for_hash(hash), pid);
 
 }
 
-int cache_readlock_try_p(uint32_t hash, pid_t pid, int tries)
-{
+int cache_readlock_try_p(uint32_t hash, pid_t pid, int tries) {
+
     return read_lock_try(lock_for_hash(hash), pid, tries);
 
 }
 
-int cache_readlock_release_p(uint32_t hash, pid_t pid)
-{
+int cache_readlock_release_p(uint32_t hash, pid_t pid) {
+
     return read_release(lock_for_hash(hash), pid);
 
 }
 
-int cache_readlock_try_unique(uint32_t hash)
-{
+int cache_readlock_try_unique(uint32_t hash) {
+
     return read_try_unique(lock_for_hash(hash), 5);
 
 }
 
-int cache_readlock_release_unique(uint32_t hash)
-{
+int cache_readlock_release_unique(uint32_t hash) {
+
     return read_release_unique(lock_for_hash(hash));
 
 }
 
-int cache_readlock_release_all_p(uint32_t hash, pid_t pid)
-{
+int cache_readlock_release_all_p(uint32_t hash, pid_t pid) {
+
     return read_release_all(lock_for_hash(hash), pid);
 
 }
 
-void cache_readlock_total_barrier(pid_t pid)
-{
+void cache_readlock_total_barrier(pid_t pid) {
+
     int                                     i;
 
-    for (i = 0; i < N_LOCKS; i++)
-    {
+    for (i = 0; i < N_LOCKS; i++) {
         wait_for_barrier(locks + i, pid);
     }
 
 }
 
-int cache_readlock_block_all(pid_t pid)
-{
+int cache_readlock_block_all(pid_t pid) {
+
     int                                     i;
 
-    for (i = 0; i < N_LOCKS; i++)
-    {
-        if (read_block(locks + i, pid) == 0)
-        {
+    for (i = 0; i < N_LOCKS; i++) {
+        if (read_block(locks + i, pid) == 0) {
             break;
         }
     }
 
-    if (i == N_LOCKS)
-    {
+    if (i == N_LOCKS) {
         return 0;
     }
 
-printf("unable to block cache lock %d\n", i);
-
-    while (i--)
-    {
+    while (i--) {
         read_unblock(locks + i, pid);
     }
 
@@ -332,12 +321,11 @@ printf("unable to block cache lock %d\n", i);
 
 }
 
-void cache_readlock_unblock_all(pid_t pid)
-{
+void cache_readlock_unblock_all(pid_t pid) {
+
     int                                     i = N_LOCKS;
 
-    while (i--)
-    {
+    while (i--) {
         read_unblock(locks + i, pid);
     }
 
@@ -347,32 +335,27 @@ void cache_readlock_unblock_all(pid_t pid)
  * expiry time is represented as a 32 bit seconds value, relative to the cache shared start time
  *
  */
-static uint32_t relative_time(int64_t t)
-{
+static uint32_t relative_time(int64_t t) {
+
     return (t - stats->basetime) & 0xffffffff;
 
 }
 
-static void unlink_entry(pid_t pid, uint32_t hash, struct cache_entry *e, int i, offset ofs)
-{
-    if (cas(e->bucket + i, ofs, ~ 0))
-    {
-        if (cache_readlock_try_unique(hash))
-        {
+static void unlink_entry(pid_t pid, uint32_t hash, struct cache_entry *e, int i, offset ofs) {
+
+    if (cas(e->bucket + i, ofs, ~ 0)) {
+        if (cache_readlock_try_unique(hash)) {
             agent_memory_free(pid, agent_memory_ptr(ofs));                            /* failures here can be gc'd later */
 
             cache_readlock_release_unique(hash);
 incr_gc_stat(&stats->data.cleared.v, 1);
-        }
-        else
-        {
+        } else {
 incr_gc_stat(&stats->data.leaked.v, 1);
         }
 
         uint32_t                            ex = e->expires[i];                       /* expiry time high to avoid immediate expiry when created */
 
-        while (cas(e->expires + i, ex, ~ 0) == 0)
-        {
+        while (cas(e->expires + i, ex, ~ 0) == 0) {
             ex = e->expires[i];
         }
     }
@@ -385,18 +368,15 @@ incr_gc_stat(&stats->data.leaked.v, 1);
  * this doesn't ensure that other entries are not added concurrently
  *
  */
-static void purge_identical_entries(pid_t pid, uint32_t hash, struct cache_entry *e, int i, void *data, int (*identity)(void *, void *))
-{
-    while (i < BUCKET_SZ)
-    {
+static void purge_identical_entries(pid_t pid, uint32_t hash, struct cache_entry *e, int i, void *data, int (*identity)(void *, void *)) {
+
+    while (i < BUCKET_SZ) {
         offset                              ofs = e->bucket[i];
 
-        if (~ ofs)
-        {
+        if (~ ofs) {
             struct user_entry              *p = agent_memory_ptr(ofs);
 
-            if (identity(data, p->data))
-            {
+            if (identity(data, p->data)) {
                 unlink_entry(pid, hash, e, i, ofs);
             }
         }
@@ -411,8 +391,8 @@ static void purge_identical_entries(pid_t pid, uint32_t hash, struct cache_entry
  * (taken from https://graphics.stanford.edu/~seander/bithacks.html)
  *
  */
-static inline uint32_t bits(uint32_t v)
-{
+static inline uint32_t bits(uint32_t v) {
+
     v = v - ((v >> 1) & 0x55555555);
     v = (v & 0x33333333) + ((v >> 2) & 0x33333333);
     return ((v + (v >> 4) & 0xf0f0f0f) * 0x1010101) >> 24;
@@ -424,17 +404,14 @@ static inline uint32_t bits(uint32_t v)
  * not used within 32 cycles
  *
  */
-static int low_usage(uint32_t cycles)
-{
-    if (cycles < 0x200000)                                                             /* not set in recent cycles */
-    {
+static int low_usage(uint32_t cycles) {
+
+    if (cycles < 0x200000) {                                                           /* not set in recent cycles */
         uint32_t                            c = bits(cycles); 
         
-        if (c < 6)
-        {
+        if (c < 6) {
             return 1;                                                                  /* less than 6 accesses in last 32 cycles */
         }
-//printf("high usage: (%u: use cycles = %u) \n", cycles, c);
     }
     return 0;
 
@@ -444,36 +421,28 @@ static int low_usage(uint32_t cycles)
  * remove expired entries from a cache collision list
  *
  */
-static int purge_expired_entries(pid_t pid, uint32_t hash, struct cache_entry *e, int64_t now)
-{
+static int purge_expired_entries(pid_t pid, uint32_t hash, struct cache_entry *e, int64_t now) {
+
     int                                     i, n = 0;
 
     uint32_t                                t = relative_time(now);
 
-    for (i = 0; i < BUCKET_SZ; i++)
-    {
+    for (i = 0; i < BUCKET_SZ; i++) {
         offset                              ofs = e->bucket[i];
 
-        if (~ ofs)
-        {
-            if (e->expires[i] < t)
-            {
+        if (~ ofs) {
+            if (e->expires[i] < t) {
                 unlink_entry(pid, hash, e, i, ofs);
                 n++;
 incr(&stats->expires.v, 1);
-            }
-            else if (low_usage(e->cycles[i]))
-            {
+            } else if (low_usage(e->cycles[i])) {
                 unlink_entry(pid, hash, e, i, ofs);                                   /* low recent use */
                 n++;
 incr(&stats->usage.v, 1);
-            }
-            else                                                                      /* shift entry use counts */
-            {
+            } else {                                                                  /* shift entry use counts */
                 uint32_t                     cycles;
 
-                do
-                {
+                do {
                     cycles = e->cycles[i];
 
                 } while (cas(e->cycles + i, cycles, cycles >> 1) == 0);
@@ -490,27 +459,23 @@ incr(&stats->usage.v, 1);
  * NOTE: this could be done in multiple threads, but the performance problem issue would only be the dispersed memory access
  *
  */
-void cache_purge_expired_entries(pid_t pid)
-{
+void cache_purge_expired_entries(pid_t pid) {
+
     int                                     n = 0;
 
     offset                                  ofs;
     int                                     i;
 
-    for (i = 0; i < HASH_SZ; i++)
-    {
-        if (cache_readlock_p(i, pid))
-        {
-            if (~ ( ofs = hashtable[i] ))
-            {
+    for (i = 0; i < HASH_SZ; i++) {
+        if (cache_readlock_p(i, pid)) {
+            if (~ ( ofs = hashtable[i] )) {
                 n += purge_expired_entries(pid, i, agent_memory_ptr(ofs), time(0));
             }
             cache_readlock_release_p(i, pid);
         }
     }
 
-    if (n)
-    {
+    if (n) {
         printf("******** unlinked expired entries: %d\n", n);
     }
 
@@ -525,8 +490,8 @@ void cache_purge_expired_entries(pid_t pid)
  * they can be purged
  *
  */
-int cache_add(uint32_t h, void *data, size_t ln, int64_t expires, int (*identity)(void *, void *))
-{
+int cache_add(uint32_t h, void *data, size_t ln, int64_t expires, int (*identity)(void *, void *)) {
+
     offset                                  ofs;
     struct cache_entry                     *e;
 
@@ -542,15 +507,13 @@ int cache_add(uint32_t h, void *data, size_t ln, int64_t expires, int (*identity
 
     agent_memory_validate(pid);
 
-    if (cache_readlock_p(hash, pid) == 0)
-    {
+    if (cache_readlock_p(hash, pid) == 0) {
         printf("readlock failure\n");
 
         return 1;
     }
 
-    if (( u = agent_memory_alloc(pid, seed, USER, user_hdr_sz + ln) ))
-    {
+    if (( u = agent_memory_alloc(pid, seed, USER, user_hdr_sz + ln) )) {
         u->hash = hash;
         u->check = ~ hash;                                                           /* this is to validate the hash */
 
@@ -559,9 +522,7 @@ int cache_add(uint32_t h, void *data, size_t ln, int64_t expires, int (*identity
         memcpy(u->data, data, ln);
 
         new = agent_memory_offset(u);
-    }
-    else
-    {
+    } else {
         cache_readlock_release_p(hash, pid);                                          /* agent memory allocation failure */
 incr(&stats->fails.v, 1);
         return 1;
@@ -569,12 +530,10 @@ incr(&stats->fails.v, 1);
 
     ofs = hashtable[hash];
 
-    if (~ ofs)
-    {
+    if (~ ofs) {
         e = agent_memory_ptr(hashtable[hash]);
     }
-    else if (( e = agent_memory_alloc(pid, seed, CACHE, sizeof(struct cache_entry)) ))
-    {
+    else if (( e = agent_memory_alloc(pid, seed, CACHE, sizeof(struct cache_entry)) )) {
         e->hash = hash;
         e->check = ~ hash;                                                            /* this is for validating the hash */
 
@@ -583,45 +542,33 @@ incr(&stats->fails.v, 1);
         for (i = 0; i < BUCKET_SZ; i++) e->cycles[i] = ~ 0;
 
         hashtable[hash] = agent_memory_offset(e);
-    }
-    else
-    {
+    } else {
         cache_readlock_release_p(hash, pid);
 incr(&stats->fails.v, 1);
         return 1;
     }
 
-    for (i = 0; i < BUCKET_SZ; i++)
-    {
+    for (i = 0; i < BUCKET_SZ; i++) {
         offset                              v = casv(e->bucket + i, ~ 0, new);
 
-        if (v == ~ 0)
-        {
+        if (v == ~ 0) {
 incr(&stats->writes.v, 1);
             break;
-        }
-        else
-        {
+        } else {
             struct user_entry              *p = agent_memory_ptr(v);
 
-            if (identity(data, p->data))
-            {
-                while (cas(e->bucket + i, v, new) == 0)
-                {
+            if (identity(data, p->data)) {
+                while (cas(e->bucket + i, v, new) == 0) {
                     v = e->bucket[i];
                 }
 
-                if (~ v)
-                {
-                    if (cache_readlock_try_unique(hash))
-                    {
+                if (~ v) {
+                    if (cache_readlock_try_unique(hash)) {
                         agent_memory_free(pid, agent_memory_ptr(v));
 
                         cache_readlock_release_unique(hash);
 incr_gc_stat(&stats->data.cleared.v, 1);
-                    }
-                    else
-                    {
+                    } else {
 incr_gc_stat(&stats->data.leaked.v, 1);
                     }
 incr(&stats->updates.v, 1);
@@ -631,28 +578,23 @@ incr(&stats->updates.v, 1);
         }
     }
 
-    if (i < BUCKET_SZ)
-    {
+    if (i < BUCKET_SZ) {
         uint32_t                            t = relative_time(expires);
 
         uint32_t                            ex = e->expires[i];
 
-        while (cas(e->expires + i, ex, t) == 0)
-        {
+        while (cas(e->expires + i, ex, t) == 0) {
             ex = e->expires[i];
         }
 
         uint32_t                            cycles = e->cycles[i];
         
-        while (cas(e->cycles + i, cycles, 0x80000000) == 0)
-        {
+        while (cas(e->cycles + i, cycles, 0x80000000) == 0) {
             cycles = e->cycles[i];
         }
 
         purge_identical_entries(pid, hash, e, i + 1, data, identity);
-    }
-    else
-    {
+    } else {
         // printf("out of bucket space\n");
     }
 
@@ -666,20 +608,18 @@ incr(&stats->updates.v, 1);
  * remove anything that matches from the collsion list
  *
  */
-void cache_delete(uint32_t h, void *data, int (*identity)(void *, void *))
-{
+void cache_delete(uint32_t h, void *data, int (*identity)(void *, void *)) {
+
     pid_t                                   pid = getpid();
 
     uint32_t                                hash = h % HASH_SZ;
 
     agent_memory_validate(pid);
 
-    if (cache_readlock_p(hash, pid))
-    {
+    if (cache_readlock_p(hash, pid)) {
         offset                              ofs = hashtable[hash];
 
-        if (~ ofs)
-        {
+        if (~ ofs) {
             purge_identical_entries(pid, hash, agent_memory_ptr(ofs), 0, data, identity);
         }
         cache_readlock_release_p(hash, pid);
@@ -693,8 +633,8 @@ incr(&stats->deletes.v, 1);
  * release this read lock.
  *
  */
-int cache_get_readlocked_ptr(uint32_t h, void **addr, uint32_t *ln, void *data, int64_t now, int (*identity)(void *, void *))
-{
+int cache_get_readlocked_ptr(uint32_t h, void **addr, uint32_t *ln, void *data, int64_t now, int (*identity)(void *, void *)) {
+
     pid_t                                   pid = getpid();
 
     uint32_t                                hash = h % HASH_SZ;
@@ -705,35 +645,29 @@ int cache_get_readlocked_ptr(uint32_t h, void **addr, uint32_t *ln, void *data, 
    
     agent_memory_validate(pid);
 
-    if (cache_readlock_p(hash, pid) == 0)
-    {
+    if (cache_readlock_p(hash, pid) == 0) {
         return 1;
     }
 
     ofs = hashtable[hash];
 
-    if (~ ofs)
-    {
+    if (~ ofs) {
         int                                 i;
         struct cache_entry                 *e = agent_memory_ptr(ofs);
 
-        for (i = 0; i < BUCKET_SZ; i++)
-        {
+        for (i = 0; i < BUCKET_SZ; i++) {
             offset                          u = e->bucket[i];
 
-            if (~ u)
-            {
+            if (~ u) {
                 struct user_entry          *p = agent_memory_ptr(u);
 
-                if (identity(data, p->data))
-                {
+                if (identity(data, p->data)) {
                     if (e->expires[i] < t)
                         break;
 
                     uint32_t                cycles = e->cycles[i];
 
-                    while ((cycles & 0x80000000) == 0)
-                    {
+                    while ((cycles & 0x80000000) == 0) {
                         if (cas(e->cycles + i, cycles, cycles | 0x80000000))
                             break;
 
@@ -755,8 +689,8 @@ incr(&stats->reads.v, 1);
 
 }
 
-void cache_release_readlocked_ptr(uint32_t h)
-{
+void cache_release_readlocked_ptr(uint32_t h) {
+
     pid_t                                   pid = getpid();
 
     uint32_t                                hash = h % HASH_SZ;
@@ -765,30 +699,26 @@ void cache_release_readlocked_ptr(uint32_t h)
 
 }
 
+static int cache_object_reachable(void *data, uint32_t hash) {
 
-static int cache_object_reachable(void *data, uint32_t hash)
-{
     const offset                            target = agent_memory_offset(data);
 
     return target == hashtable[hash];
 
 }
 
-static int user_object_reachable(void *data, uint32_t hash)
-{
+static int user_object_reachable(void *data, uint32_t hash) {
+
     const offset                            target = agent_memory_offset(data);
 
     offset                                  ofs = hashtable[hash];
 
-    if (~ ofs)
-    {
+    if (~ ofs) {
         struct cache_entry                 *e = agent_memory_ptr(ofs);
         int                                 i;
 
-        for (i = 0; i < BUCKET_SZ; i++)
-        {
-            if (target == e->bucket[i])
-            {
+        for (i = 0; i < BUCKET_SZ; i++) {
+            if (target == e->bucket[i]) {
                 return 1;
             }
         }
@@ -806,30 +736,23 @@ static int user_object_reachable(void *data, uint32_t hash)
  * still uninitialised in a subsequent gc sweep (when the marker has been set) then it can be released.
  *
  */
-static int cache_garbage_checker(void *cbdata, pid_t pid, int32_t type, void *p)
-{
+static int cache_garbage_checker(void *cbdata, pid_t pid, int32_t type, void *p) {
     uint32_t                                hash;
 
-    switch (type)
-        {
+    switch (type) {
         case USER:
             hash = ((struct user_entry *)p)->hash;                            /* this is called when the memory cluster is locked */
-            if (hash != ~ ((struct user_entry *)p)->check)
-            {
-                if (((struct user_entry *)p)->gcdata == (hash ^ GC_MARKER))
-                {
+            if (hash != ~ ((struct user_entry *)p)->check) {
+                if (((struct user_entry *)p)->gcdata == (hash ^ GC_MARKER)) {
                     return 1;                                                 /* this has been seen in a prior gc sweep, let it go */
                 }
                 ((struct user_entry *)p)->gcdata = hash ^ GC_MARKER;
                 return 0;                                                     /* this might still be in use, the hash not yet assigned */
             }
 
-            if (cache_readlock_try_p(hash, pid, 10))
-            {
-                if (user_object_reachable(p, hash) == 0)
-                {
-                    if (cache_readlock_try_unique(hash))
-                    {
+            if (cache_readlock_try_p(hash, pid, 10)) {
+                if (user_object_reachable(p, hash) == 0) {
+                    if (cache_readlock_try_unique(hash)) {
                         cache_readlock_release_all_p(hash, pid);
 incr_gc_stat(&stats->data.collected.v, 1);
                         
@@ -842,22 +765,17 @@ incr_gc_stat(&stats->data.collected.v, 1);
 
         case CACHE:
             hash = ((struct cache_entry *)p)->hash;
-            if (hash != ~ ((struct cache_entry *)p)->check)
-            {
-                if (((struct cache_entry *)p)->gcdata == (hash ^ GC_MARKER))  /* as above: wait until its been seen before in this state */
-                {
+            if (hash != ~ ((struct cache_entry *)p)->check) {
+                if (((struct cache_entry *)p)->gcdata == (hash ^ GC_MARKER)) {/* as above: wait until its been seen before in this state */
                     return 1;
                 }
                 ((struct cache_entry *)p)->gcdata = hash ^ GC_MARKER;
                 return 0;
             }
 
-            if (cache_readlock_try_p(hash, pid, 10))
-            {
-                if (cache_object_reachable(p, hash) == 0)
-                {
-                    if (cache_readlock_try_unique(hash))
-                    {
+            if (cache_readlock_try_p(hash, pid, 10)) {
+                if (cache_object_reachable(p, hash) == 0) {
+                    if (cache_readlock_try_unique(hash)) {
                         cache_readlock_release_all_p(hash, pid);
 incr_gc_stat(&stats->cache.collected.v, 1);
 
@@ -873,18 +791,17 @@ incr_gc_stat(&stats->cache.collected.v, 1);
 
 }
 
-void cache_garbage_collect()
-{
+void cache_garbage_collect() {
+
     agent_memory_scan(getpid(), cache_garbage_checker, 0);
 
 }
 
-static unsigned long get_and_reset(volatile uint64_t *p)
-{
+static unsigned long get_and_reset(volatile uint64_t *p) {
+
     uint64_t                                old = *p;
 
-    while (cas(p, old, 0ul) == 0)
-    {
+    while (cas(p, old, 0ul) == 0) {
         yield();
         old = *p;
     }
@@ -892,8 +809,8 @@ static unsigned long get_and_reset(volatile uint64_t *p)
 
 }
 
-void cache_stats()
-{
+void cache_stats() {
+
     printf("throughput:\n");
     printf("reads:   %lu\n", get_and_reset(&stats->reads.v));    
     printf("writes:  %lu\n", get_and_reset(&stats->writes.v));    
@@ -916,11 +833,10 @@ void cache_stats()
 #endif
 }
 
-int master_recovery_process(pid_t pid)
-{
+int master_recovery_process(pid_t pid) {
+
 printf("**** blocking cache locks \n");
-    if (cache_readlock_block_all(pid))
-    {
+    if (cache_readlock_block_all(pid)) {
         return 1;
     }
 

@@ -39,6 +39,7 @@ int am_init(int id) {
     am_audit_processor_init();
     am_url_validator_init();
     rv = am_cache_init(id);
+    am_cache_worker_init();
 #endif
     return rv;
 }
@@ -52,6 +53,7 @@ int am_init_worker(int id) {
     am_configuration_init(id);
     am_audit_init(id);
     rv = am_cache_init(id);
+    am_cache_worker_init();
 #else
     am_worker_pool_init();
 #endif
@@ -67,6 +69,7 @@ int am_shutdown(int id) {
 #else
     am_worker_pool_shutdown_main();
 #endif
+    am_cache_worker_shutdown();
     am_cache_shutdown();
     am_configuration_shutdown();
     am_log_shutdown(id);
@@ -76,6 +79,7 @@ int am_shutdown(int id) {
 
 void am_restart_workers() {
 #ifdef _WIN32
+    am_cache_worker_shutdown();
     am_audit_processor_init();
     am_url_validator_init();
 #endif
