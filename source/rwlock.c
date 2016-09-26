@@ -21,15 +21,7 @@
  *
  */
 
-#include <stdio.h>
-
-#include <stdlib.h>
-#include <stdint.h>
-#include <unistd.h>
-
-#include <sched.h>
-#include <signal.h>
-#include <errno.h>
+#include "platform.h"
 
 #include "rwlock.h"
 
@@ -151,7 +143,7 @@ printf("rwlock: %d sees termination of %d\n", pid, writer);                     
             break;
         }
 
-        usleep(10);                                                                   /* wait for existing readers to complete */
+        yield();                                                                      /* wait for existing readers to complete */
 
     } while (1);
 
@@ -221,7 +213,7 @@ static void ensure_liveness(struct readlock *lock, pid_t pid)
                 break;
             }
 
-            usleep(100);
+            yield();     
 
             checker = lock->barrier;
 
@@ -245,7 +237,7 @@ int wait_for_barrier(struct readlock *lock, pid_t pid)
             return 1;
         }
 
-        usleep(100);
+        yield();     
 
         i++;
 
@@ -258,7 +250,7 @@ int wait_for_barrier(struct readlock *lock, pid_t pid)
             return 1;
         }
 
-        usleep(100);
+        yield();     
 
         i++;
 

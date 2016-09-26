@@ -453,6 +453,7 @@ am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialise
 
     /* enable shm size limits */
     if (max_size < size) {
+printf("size is changed from %llu, %llu to %llu\n", usize, size, max_size);
         size = max_size;
     }
 

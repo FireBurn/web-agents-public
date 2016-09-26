@@ -14,15 +14,7 @@
  * Copyright 2014 - 2016 ForgeRock AS.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
-#include <stdint.h>
-#include <string.h>
-#include <unistd.h>
-
-#include <pthread.h>
-#include <sys/sem.h>
+#include "platform.h"
 
 #include "alloc.h"
 #include "cache.h"
@@ -38,7 +30,9 @@
 
 #define rotate64(v, n)                      (((v) << (n)) | ((v) >> (64 - (n))))
 
+#ifndef offsetof
 #define offsetof(type, field)               ( (char *)(&((type *)0)->field) - (char *)0 )
+#endif
 
 struct bucket
 {
@@ -169,6 +163,54 @@ void *cache_robustness_thread(void *data)
 
 }
 
+void *cache_update_thread(void *data)
+{
+    struct bucket                           bucket;
+    void                                   *ptr;
+    uint32_t                                ln;
+
+    int                                     i;
+
+    int                                     n_iters = 10000, iter;
+    int                                     n_ops = 4096;
+
+    uint32_t                                n_keys = 0x1fffff;
+
+    for (iter = 0; iter < n_iters; iter++)
+    {
+        for (i = 1; i < n_ops; i++)
+        {
+            uint32_t                        key = ((uint32_t)random()) & n_keys;
+
+            bucket.key = key;
+
+            if (i & 0x1)
+            {
+                write_bucket(key, &bucket);
+
+                cache_add(key, &bucket, offsetof(struct bucket, data) + bucket.ln, time(0) + 60, bucket_identity);
+            }
+            else if (cache_get_readlocked_ptr(key, &ptr, &ln, &bucket, time(0), bucket_identity))
+            {
+                write_bucket(key, &bucket);
+
+                cache_add(key, &bucket, offsetof(struct bucket, data) + bucket.ln, time(0) + 60, bucket_identity);
+            }
+            else
+            {
+                if (verify_bucket(ptr) == 0)
+                {
+                    printf("*** bucket verification error\n");
+                }
+                cache_release_readlocked_ptr(key);
+            }
+        }
+    }
+
+    return data;
+
+}
+
 int main(int argc, char *argv[])
 {
     pthread_t                               threads[THREADS];
@@ -235,7 +277,7 @@ int main(int argc, char *argv[])
 
             printf("expiry scan takes %lf secs\n", dt);
 
-            sleep(5);
+            sleep(2);
 
         } while (1);
 

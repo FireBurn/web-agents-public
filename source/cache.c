@@ -34,15 +34,6 @@
 #include "am.h"
 #include "utility.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
-#include <stdint.h>
-#include <string.h>
-#include <unistd.h>
-#include <errno.h>
-#include <sched.h>
-
 #include "alloc.h"
 #include "share.h"
 
@@ -53,7 +44,7 @@
 #define LOCKFILE                            "lockfile"
 #define HASHFILE                            "hashtable"
 
-#define MAX_CACHE_MEMORY_SZ                 0x80000000
+#define MAX_CACHE_MEMORY_SZ                 0x40000000
 
 #define N_LOCKS                             4096
 
@@ -894,7 +885,7 @@ static unsigned long get_and_reset(volatile uint64_t *p)
 
     while (cas(p, old, 0ul) == 0)
     {
-        usleep(1);
+        yield();
         old = *p;
     }
     return (unsigned long)old;

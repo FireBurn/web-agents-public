@@ -38,18 +38,6 @@
 #include "am.h"
 #include "utility.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <unistd.h>
-#include <signal.h>
-#include <errno.h>
-
-#include <sched.h>
-
 #include "alloc.h"
 #include "share.h"
 
@@ -124,8 +112,6 @@ typedef struct
     
     volatile offset                         free[CLUSTER_FREELISTS];
      
-    // int64_t                                 padding[3];
-
 } cluster_header_t;
 
 
@@ -212,7 +198,7 @@ printf("**** cleardown process %d is dead, %d resetting checker\n", checker, pid
             }
             else
             {
-                usleep(1000);
+                yield();
             }
         }
         else
@@ -296,6 +282,8 @@ static inline int spinlock_lock(spinlock *l, uint32_t pid)
         {
             return 1;
         }
+
+        yield();
 
     } while (1);
 
@@ -852,7 +840,7 @@ printf("***** memory barrier: locking thread %d is dead\n", locker);
             else
             {
 printf("***** memory barrier: locking thread %d is active\n", locker);
-                usleep(1000);
+                yield();
             }
         }
 

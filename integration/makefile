@@ -3,17 +3,17 @@ SRC = ../source
 
 CC = cc
 
-CFLAGS = -D_GNU_SOURCE -std=gnu99 -O0 -g -pthread -I$(SRC)
+CFLAGS = -D_GNU_SOURCE -std=gnu99 -O3 -pthread -I$(SRC)
 
 LDFLAGS = -lpthread 
 
-cache: test_cache.o share.o cache.o alloc.o rwlock.o shared.o 
+cache: share.o cache.o alloc.o rwlock.o shared.o 
 	$(CC) $(CFLAGS) -o cache test_cache.c cache.o share.o alloc.o rwlock.o shared.o $(LDFLAGS)
 
-alloc: test_alloc.o alloc.o share.o shared.o
+alloc: alloc.o share.o shared.o
 	$(CC) $(CFLAGS) -o alloc test_alloc.c share.o alloc.o shared.o $(LDFLAGS)
 
-rwlock: test_rwlock.o rwlock.o
+rwlock: rwlock.o
 	$(CC) $(CFLAGS) -o rwlock test_rwlock.c rwlock.o $(LDFLAGS)
 
 cache.o: $(SRC)/cache.h share.o alloc.o rwlock.o
