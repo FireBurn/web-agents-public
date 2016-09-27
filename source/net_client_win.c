@@ -173,7 +173,10 @@ static int net_write(am_net_t *net, const char *buf, int len) {
 
 void wnet_close_ssl(am_net_t *net) {
     static const char *thisfunc = "wnet_close_ssl():";
-    struct win_net *n = (struct win_net *) net->ssl.ssl_handle;
+    struct win_net *n;
+    if (net == NULL || net->ssl.ssl_handle == NULL)
+        return;
+    n = (struct win_net *) net->ssl.ssl_handle;
     if (n->connected) {
         SecBufferDesc buff_desc;
         SecBuffer buffer;
@@ -220,12 +223,15 @@ void wnet_close_ssl(am_net_t *net) {
     }
 
     if (n->cert_ctxt) CertFreeCertificateContext(n->cert_ctxt);
+    n->cert_ctxt = NULL;
     if (n->cert_store) CertCloseStore(n->cert_store, 0);
+    n->cert_store = NULL;
 
     n->enc_buf_size = n->enc_buf_offset = 0;
     n->dec_buf_size = n->dec_buf_offset = 0;
 
     AM_FREE(n->enc_buf, n->dec_buf);
+    n->enc_buf = n->dec_buf = NULL;
 }
 
 static int net_read(am_net_t *net, char *buf, int len) {
@@ -419,6 +425,11 @@ static int net_client_handshake_loop(am_net_t *net, int initial) {
                     n->enc_buf_size - n->enc_buf_offset);
             if (ret < 0) {
                 AM_LOG_ERROR(net->instance_id, "%s error reading handshake response", thisfunc);
+                HANDSHAKE_CLEANUP_RETURN(AM_EFAULT);
+            }
+            if (ret == 0) {
+                AM_LOG_DEBUG(net->instance_id, "%s connection closed", thisfunc);
+                n->connection_closed = 1;
                 HANDSHAKE_CLEANUP_RETURN(AM_EFAULT);
             }
             n->enc_buf_offset += ret;
