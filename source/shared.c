@@ -465,6 +465,33 @@ printf("size is changed from %llu, %llu to %llu\n", usize, size, max_size);
         sec_attr.bInheritHandle = TRUE;
         sec = &sec_attr;
     }
+    
+    char init_sync_name[MAX_PATH];
+    snprintf(init_sync_name, sizeof (init_sync_name), "Global\\%s_x", name);
+    HANDLE first = CreateSemaphoreA(sec, 0, 1, init_sync_name);
+    snprintf(init_sync_name, sizeof (init_sync_name), "Global\\%s_y", name);
+    HANDLE second = CreateSemaphoreA(sec, 1, 1, init_sync_name);
+    if (first != NULL && second != NULL) {
+        LONG ival = -1;
+        /* release semaphore immediately, storing its initial value */
+        ReleaseSemaphore(first, 1, &ival);
+        if (ival == 0) {
+            /* if value is 0 - we (process) were the first one here,
+             * delete shared memory file prior creating/opening it below.
+             */
+            WaitForSingleObject(second, INFINITE);
+            DeleteFileA(ret->name[2]);
+            ReleaseSemaphore(second, 1, NULL);
+        }
+        /* The system closes the handle automatically when the process terminates. 
+         * The semaphore object is destroyed when its last handle has been closed. 
+         */
+    }
+
+    if (second != NULL) {
+        WaitForSingleObject(second, INFINITE);
+        ReleaseSemaphore(second, 1, NULL);
+    }
 
     ret->h[0] = CreateMutexA(sec, TRUE, ret->name[0]);
     error = GetLastError();
@@ -1031,4 +1058,31 @@ void am_shm_info(am_shm_t *am) {
     fprintf(stdout, "\n");
 
     am_shm_freelist_info(am, "shm_info");
+}
+
+/* Returns system memory size in bytes */
+uint64_t get_total_system_memory() {
+#ifdef _WIN32
+    MEMORYSTATUSEX status;
+    status.dwLength = sizeof (status);
+    GlobalMemoryStatusEx(&status);
+    return status.ullTotalPhys;
+#elif defined(_SC_AIX_REALMEM)
+    return (uint64_t) (sysconf(_SC_AIX_REALMEM) * 1024L);
+#elif defined(_SC_PHYS_PAGES) && defined(_SC_PAGESIZE)
+    return (uint64_t) (sysconf(_SC_PHYS_PAGES) *
+            sysconf(_SC_PAGESIZE));
+#elif defined(_SC_PHYS_PAGES) && defined(_SC_PAGE_SIZE)
+    return (uint64_t) (sysconf(_SC_PHYS_PAGES) *
+            sysconf(_SC_PAGE_SIZE));
+#elif defined(__APPLE__)
+    int mib[2] = {CTL_HW, HW_MEMSIZE};
+    uint64_t size = 0;
+    size_t len = sizeof ( size);
+    if (sysctl(mib, 2, &size, &len, NULL, 0) == 0)
+        return size;
+    return 0L;
+#else
+    return 0L;
+#endif
 }
