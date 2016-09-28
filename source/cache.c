@@ -54,16 +54,30 @@
 
 #define GC_MARKER                           0xa4420810u
 
-#define cas(p, old, new)                    __sync_bool_compare_and_swap((p), (old), (new))
-#define casv(p, old, new)                   __sync_val_compare_and_swap((p), (old), (new))
+#if defined _WIN32
 
-#define incr(p, v)                          __sync_fetch_and_add((p), (v))
+#define incr(p)                             InterlockedIncrement64(p)
+#define reset(p)                            InterlockedExchange64(p, 0)
+
+#define casv(p, old, new)                   InterlockedCompareExchange(p, new, old)
+#define cas(p, old, new)                    (casv(p, old, new) == (old))
+#define yield()                             SwitchToThread()
+
+#else
+
+#define incr(p)                             __sync_fetch_and_add(p, 1)
+#define reset(p)                            __sync_fetch_and_and(p, 0)
+
+#define casv(p, old, new)                   __sync_val_compare_and_swap(p, old, new)
+#define cas(p, old, new)                    __sync_bool_compare_and_swap(p, old, new)
 #define yield()                             sched_yield()
 
+#endif
+
 #ifdef GC_STATS
-#define incr_gc_stat(p, v)                  incr(p, v)
+#define incr_gc_stat(p)                     incr(p)
 #else
-#define incr_gc_stat(p, v)
+#define incr_gc_stat(p)
 #endif
 
 #ifndef offsetof
@@ -98,7 +112,7 @@ union cache_stat {
 
     volatile uint64_t                       v;
 
-    uint8_t                                 padding[16];
+    uint8_t                                 padding[64];
 
 };
 
@@ -348,9 +362,9 @@ static void unlink_entry(pid_t pid, uint32_t hash, struct cache_entry *e, int i,
             agent_memory_free(pid, agent_memory_ptr(ofs));                            /* failures here can be gc'd later */
 
             cache_readlock_release_unique(hash);
-incr_gc_stat(&stats->data.cleared.v, 1);
+incr_gc_stat(&stats->data.cleared.v);
         } else {
-incr_gc_stat(&stats->data.leaked.v, 1);
+incr_gc_stat(&stats->data.leaked.v);
         }
 
         uint32_t                            ex = e->expires[i];                       /* expiry time high to avoid immediate expiry when created */
@@ -391,7 +405,7 @@ static void purge_identical_entries(pid_t pid, uint32_t hash, struct cache_entry
  * (taken from https://graphics.stanford.edu/~seander/bithacks.html)
  *
  */
-static inline uint32_t bits(uint32_t v) {
+static uint32_t bits(uint32_t v) {
 
     v = v - ((v >> 1) & 0x55555555);
     v = (v & 0x33333333) + ((v >> 2) & 0x33333333);
@@ -434,11 +448,11 @@ static int purge_expired_entries(pid_t pid, uint32_t hash, struct cache_entry *e
             if (e->expires[i] < t) {
                 unlink_entry(pid, hash, e, i, ofs);
                 n++;
-incr(&stats->expires.v, 1);
+incr(&stats->expires.v);
             } else if (low_usage(e->cycles[i])) {
                 unlink_entry(pid, hash, e, i, ofs);                                   /* low recent use */
                 n++;
-incr(&stats->usage.v, 1);
+incr(&stats->usage.v);
             } else {                                                                  /* shift entry use counts */
                 uint32_t                     cycles;
 
@@ -524,7 +538,7 @@ int cache_add(uint32_t h, void *data, size_t ln, int64_t expires, int (*identity
         new = agent_memory_offset(u);
     } else {
         cache_readlock_release_p(hash, pid);                                          /* agent memory allocation failure */
-incr(&stats->fails.v, 1);
+incr(&stats->fails.v);
         return 1;
     }
 
@@ -544,7 +558,7 @@ incr(&stats->fails.v, 1);
         hashtable[hash] = agent_memory_offset(e);
     } else {
         cache_readlock_release_p(hash, pid);
-incr(&stats->fails.v, 1);
+incr(&stats->fails.v);
         return 1;
     }
 
@@ -552,7 +566,7 @@ incr(&stats->fails.v, 1);
         offset                              v = casv(e->bucket + i, ~ 0, new);
 
         if (v == ~ 0) {
-incr(&stats->writes.v, 1);
+incr(&stats->writes.v);
             break;
         } else {
             struct user_entry              *p = agent_memory_ptr(v);
@@ -567,11 +581,11 @@ incr(&stats->writes.v, 1);
                         agent_memory_free(pid, agent_memory_ptr(v));
 
                         cache_readlock_release_unique(hash);
-incr_gc_stat(&stats->data.cleared.v, 1);
+incr_gc_stat(&stats->data.cleared.v);
                     } else {
-incr_gc_stat(&stats->data.leaked.v, 1);
+incr_gc_stat(&stats->data.leaked.v);
                     }
-incr(&stats->updates.v, 1);
+incr(&stats->updates.v);
                 }
                 break;
             }
@@ -595,7 +609,7 @@ incr(&stats->updates.v, 1);
 
         purge_identical_entries(pid, hash, e, i + 1, data, identity);
     } else {
-        // printf("out of bucket space\n");
+                                                                              /* out of space in cache bucket */
     }
 
     cache_readlock_release_p(hash, pid);
@@ -623,7 +637,7 @@ void cache_delete(uint32_t h, void *data, int (*identity)(void *, void *)) {
             purge_identical_entries(pid, hash, agent_memory_ptr(ofs), 0, data, identity);
         }
         cache_readlock_release_p(hash, pid);
-incr(&stats->deletes.v, 1);
+incr(&stats->deletes.v);
     }
 
 }
@@ -676,7 +690,7 @@ int cache_get_readlocked_ptr(uint32_t h, void **addr, uint32_t *ln, void *data, 
 
                     *addr = p->data;
                     *ln = p->ln;
-incr(&stats->reads.v, 1);
+incr(&stats->reads.v);
                     return 0;
                 }
             }
@@ -754,7 +768,7 @@ static int cache_garbage_checker(void *cbdata, pid_t pid, int32_t type, void *p)
                 if (user_object_reachable(p, hash) == 0) {
                     if (cache_readlock_try_unique(hash)) {
                         cache_readlock_release_all_p(hash, pid);
-incr_gc_stat(&stats->data.collected.v, 1);
+incr_gc_stat(&stats->data.collected.v);
                         
                         return 1;                                             /* no new threads can reach this block, and it isn't being read */
                     }
@@ -777,7 +791,7 @@ incr_gc_stat(&stats->data.collected.v, 1);
                 if (cache_object_reachable(p, hash) == 0) {
                     if (cache_readlock_try_unique(hash)) {
                         cache_readlock_release_all_p(hash, pid);
-incr_gc_stat(&stats->cache.collected.v, 1);
+incr_gc_stat(&stats->cache.collected.v);
 
                         return 1;                                             /* no new threads can reach this block, and it isn't being read */
                     }
@@ -799,12 +813,8 @@ void cache_garbage_collect() {
 
 static unsigned long get_and_reset(volatile uint64_t *p) {
 
-    uint64_t                                old = *p;
+    uint64_t                                old = reset(p);
 
-    while (cas(p, old, 0ul) == 0) {
-        yield();
-        old = *p;
-    }
     return (unsigned long)old;
 
 }

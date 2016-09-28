@@ -14,21 +14,12 @@
  * Copyright 2014 - 2016 ForgeRock AS.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-//#include <stdint.h>
-
-#include <errno.h>
-#include <fcntl.h>
-
-
-#include <semaphore.h>
-
 #include "platform.h"
 #include "am.h"
 #include "utility.h"
-#include "share.h"
 #include "error.h"
+
+#include "share.h"
 
 
 /*

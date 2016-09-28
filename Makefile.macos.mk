@@ -26,7 +26,7 @@ CFLAGS  += -std=c99 -fPIC -fno-common -D_REENTRANT -arch x86_64 -Wno-unused-valu
 ifdef DEBUG
  CFLAGS += -g3 -fno-inline -O0 -DDEBUG -Wall
 else
- CFLAGS += -g -O2 -DNDEBUG
+ CFLAGS += -g -O3 -DNDEBUG
 endif
 
 ifndef 64

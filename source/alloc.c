@@ -17,8 +17,9 @@
 
 /*
  * This is an allocator for shared memory that divides the memory into clusters and directs threads to use
- * a cluster largely in isolation from eachother to avoid contention. It uses course-grained atomic locking 
- * on each cluster. Each cluster has free lists embedded in the free memory blocks. 
+ * clusters largely in isolation from eachother to avoid contention. It uses course-grained atomic locking 
+ * on each cluster. Each cluster has variable sized memory blocks and multiple free lists embedded in the free
+ * memory blocks. 
  *
  * The CAS lock operations are performed for each cluster, so since the locks and the free list are used
  * together, they are combined into a single structre (cluster_header_t) to take account of hardware cache lines.
@@ -30,7 +31,7 @@
  * This is faster than the OS X allocator (magazine_malloc) for small allocations (< 4K). Problems with
  * larger allocations are addressed by separate free lists for different block sizes.
  *
- * Note: this uses the idiom (~ value) and ~ 0 to test and set -1.
+ * Note: this uses the idiom ~value and ~0 to test and set 0xffffffffu.
  *
  */
 
@@ -45,44 +46,61 @@
 #define offsetof(type, field)               ( (char *)(&((type *)0)->field) - (char *)0 )
 #endif
 
-#define spinlock                            volatile int32_t
-#define spinlock_init                       0
+#if defined _WIN32
 
-#define spinlock_unlock(l)                  __sync_lock_release(l)
+#define incr(p)                             InterlockedIncrement(p)
+#define casv(p, old, new)                   InterlockedCompareExchange(p, new, old)
+#define cas(p, old, new)                    (casv(p, old, new) == (old))
+#define yield()                             SwitchToThread()
+#define pause(n)                            Sleep((n) / 1000)
 
-#define incr(p, v)                          __sync_fetch_and_add((p), (v))
-#define cas(p, old, new)                    __sync_bool_compare_and_swap(p, old, new)
+#else
+
+#define incr(p)                             __sync_fetch_and_add(p, 1)
 #define casv(p, old, new)                   __sync_val_compare_and_swap(p, old, new)
+#define cas(p, old, new)                    __sync_bool_compare_and_swap(p, old, new)
 #define yield()                             sched_yield()
+#define pause(n)                            usleep(n)
 
+#endif
 
 #define CLUSTER_FREELISTS                   4
 #define MIN_SPLIT_BLOCKSIZE                 24
 #define VALIDATION_LOCK                     -1
 
 
-#define HDR(ofs)                            ( (block_header_t *)( ((char *)_base) + (ofs) ) )
-#define OFS(ptr)                            ( (offset) ( ( (char *)(ptr) ) - ( (char *)(_base) ) ) )
-#define USR(ofs)                            ((char *)_base) + ((ofs) + block_data_offset)
+#define HDR(ofs)                            ( (block_header_t *)( ((char *)cluster_base) + (ofs) ) )
+#define OFS(ptr)                            ( (offset) ( ( (char *)(ptr) ) - ( (char *)(cluster_base) ) ) )
+#define USR(ofs)                            ((char *)cluster_base) + ((ofs) + block_data_offset)
 
 #define UP64(i)                             ( ((i)+0x7u) & ~ 0x7u )                   /* 8 byte alignment */
 
 
-typedef union {
+#define spinlock                            volatile int32_t
+#define spinlock_init                       0
 
-    volatile uint64_t                       value;
+#if defined _WIN32
+#define spinlock_unlock(l)                  InterlockedExchange(l, 0)
+#else
+#define spinlock_unlock(l)                  __sync_lock_release(l)
+#endif
 
-    unsigned char                           padding[32];
-
-} padded_counter_t;
+#if defined _WIN32
+#define align_win(n)                        __declspec(align(n))
+#define align_attr(n)                       
+#else
+#define align_win(n)                   
+#define align_attr(n)                       __attribute__((aligned(n)))
+#endif
 
 
 typedef struct {
 
-    padded_counter_t                        tx_start;
+    align_win(64) volatile uint32_t         seed align_attr(64);
 
-    volatile int32_t                        error;
-    volatile pid_t                          checker;
+    align_win(64) volatile int32_t          error align_attr(64);
+
+    align_win(64) volatile pid_t            checker align_attr(64);
 
 } ctl_header_t;
 
@@ -108,29 +126,29 @@ typedef struct {
 
 typedef struct {
 
-    spinlock                                lock  __attribute__((aligned(256)));
+    align_win(256)  spinlock                lock align_attr(256);
     
     volatile offset                         free[CLUSTER_FREELISTS];
      
 } cluster_header_t;
 
 
-static uint32_t                             _cluster_capacity;
+static uint32_t                             cluster_capacity;
 
 
-static ctl_header_t                        *_ctlblock = 0;
+static ctl_header_t                        *ctlblock = 0;
 
-static cluster_header_t                    *_cluster_hdrs = 0;
+static cluster_header_t                    *cluster_hdrs = 0;
 
-static void                                *_base = 0;
+static void                                *cluster_base = 0;
 
-static am_shm_t                            *_ctlblock_pool = 0, *_cluster_hdrs_pool = 0, *_base_pool = 0;
+static am_shm_t                            *ctlblock_pool = 0, *cluster_hdrs_pool = 0, *cluster_base_pool = 0;
 
 
 
-#define cluster_lock(c)                     _cluster_hdrs[c].lock
+#define cluster_lock(c)                     cluster_hdrs[c].lock
 
-#define cluster_free_lists(c)               _cluster_hdrs[c].free
+#define cluster_free_lists(c)               cluster_hdrs[c].free
 
 static const size_t                         block_data_offset = offsetof(block_header_t, u.data);
 
@@ -143,9 +161,32 @@ extern int master_recovery_process(pid_t pid);
  *
  */
 static int process_dead(pid_t pid) {
-
-    return kill(pid, 0) && errno == ESRCH;
-
+#if defined _WIN32
+    HANDLE                                  h;
+    if (( h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid) )) {         /* expected error is ERROR_INVALID_PARAMETER */
+        int                                 exitcode, done = 0;
+        if (GetExitCodeProcess(h, &exitcode)) {
+            if (exitcode != STILL_ACTIVE)
+                done = 1;
+        } else {
+                                                                                      /* permissions error */
+        }
+        CloseHandle(h);
+        return done;
+    } else if (GetLastError() == ERROR_ACCESS_DENIED) {
+                                                                                      /* permissions error */
+    }
+    return 1;
+#else
+    if (kill(pid, 0)) {
+        if (errno == ESRCH) {
+            return 1;
+        } else {
+                                                                                      /* permissions error */
+        }
+    }
+    return 0;
+#endif
 }
 
 /*
@@ -154,7 +195,7 @@ static int process_dead(pid_t pid) {
  */
 void agent_memory_error() {
 
-    if (cas(&_ctlblock->error, 0, 1)) {
+    if (cas(&ctlblock->error, 0, 1)) {
 printf("**** triggering memory cleardown\n");
     } else {
 printf("**** memory cleardown alredy triggered\n");
@@ -168,7 +209,7 @@ printf("**** memory cleardown alredy triggered\n");
  */
 int try_validate(pid_t pid) {
 
-    if (_ctlblock->error) {
+    if (ctlblock->error) {
         return 1;
     } else {
 printf("%d checking memory slowdown\n", pid);
@@ -191,15 +232,15 @@ void agent_memory_validate(pid_t pid) {
 
     pid_t                                   checker;
 
-    if (_ctlblock->error == 0) {
+    if (ctlblock->error == 0) {
         return;
     }
 
     do {
-        if (( checker = casv(&_ctlblock->checker, 0, pid) )) {
+        if (( checker = casv(&ctlblock->checker, 0, pid) )) {
             if (process_dead(checker)) {   
 printf("**** cleardown process %d is dead, %d resetting checker\n", checker, pid);
-                cas(&_ctlblock->checker, checker, 0);   
+                cas(&ctlblock->checker, checker, 0);   
             } else {
                 yield();
             }
@@ -207,27 +248,27 @@ printf("**** cleardown process %d is dead, %d resetting checker\n", checker, pid
 printf("**** starting recovery process in %d\n", pid);
 
             if (master_recovery_process(pid) == 0) {
-                cas(&_ctlblock->error, 1, 0);
+                cas(&ctlblock->error, 1, 0);
 
 printf("**** ending recovery process in %d\n", pid);
             } else {
 printf("**** abandoning recovery process in %d\n", pid);
             }
-            cas(&_ctlblock->checker, pid, 0);
+            cas(&ctlblock->checker, pid, 0);
 
         }
 
-    } while (_ctlblock->error);
+    } while (ctlblock->error);
 
 }
 
 /*
- * get new seed for cache transactions, distributed on round-robin basis
+ * get new seed for memory operations, distributing operations to clusters on round-robin basis
  *
  */
 uint32_t agent_memory_seed() {
 
-     return (incr(&_ctlblock->tx_start.value, 1) & 0xffffffff) % CLUSTERS;
+     return incr(&ctlblock->seed) % CLUSTERS;
 
 }
 
@@ -235,7 +276,7 @@ uint32_t agent_memory_seed() {
  * free list choice: 4 lists, returns 3, 2, 1, 0 depending on whether size > 3072, > 2048, > 1024, or smaller (respectively)
  *
  */
-inline static uint32_t free_list_offset_for_size(uint32_t size) {
+static uint32_t free_list_offset_for_size(uint32_t size) {
 
     uint32_t                                n = size >> 10;
 
@@ -247,7 +288,7 @@ inline static uint32_t free_list_offset_for_size(uint32_t size) {
  * acquire a spinlock, but backout and check global errors after a while
  *
  */
-static inline int spinlock_lock(spinlock *l, uint32_t pid) {
+static int spinlock_lock(spinlock *l, uint32_t pid) {
 
     int                                     i = 0;
 
@@ -262,7 +303,7 @@ static inline int spinlock_lock(spinlock *l, uint32_t pid) {
     i = 10;
 
     do {
-        usleep(i);
+        pause(i);
 
         if (cas(l, 0, pid)) {
             return 0;
@@ -284,7 +325,7 @@ static inline int spinlock_lock(spinlock *l, uint32_t pid) {
  * add block to freelist with header
  *
  */
-inline static void push_free_ptr(volatile offset *header, offset ofs) {
+static void push_free_ptr(volatile offset *header, offset ofs) {
 
     block_header_t                         *h = HDR(ofs);
 
@@ -302,7 +343,7 @@ inline static void push_free_ptr(volatile offset *header, offset ofs) {
  * remove block from freelist with header
  *
  */
-inline static void unlink_free_ptr(volatile offset *header, block_header_t *h) {
+static void unlink_free_ptr(volatile offset *header, block_header_t *h) {
 
     if (~ h->u.free.p)
         HDR(h->u.free.p)->u.free.n = h->u.free.n;
@@ -322,7 +363,7 @@ static void reset_ctlblock(void *cbdata, void *p) {
 
     ctl_header_t                          *ctl = p;
 
-    *ctl = (ctl_header_t) { .tx_start.value = 0, .checker = 0, .error = 0 };
+    *ctl = (ctl_header_t) { .seed = 0, .checker = 0, .error = 0 };
 
 }
 
@@ -332,13 +373,13 @@ static void reset_ctlblock(void *cbdata, void *p) {
  */
 static void reset_blocks(void *cbdata, void *p) {
 
-    unsigned char                          *base = p;
+    unsigned char                          *b = p;
 
     for (unsigned i = 0; i < CLUSTERS; i++) {
-        offset                              ofs = i * _cluster_capacity;
-        block_header_t                     *h = (block_header_t *)(base + ofs);
+        offset                              ofs = i * cluster_capacity;
+        block_header_t                     *h = (block_header_t *)(b + ofs);
 
-        *h = (block_header_t) { .locks = 0, .size = _cluster_capacity, .u.free = { ~ 0, ~ 0 } };
+        *h = (block_header_t) { .locks = 0, .size = cluster_capacity, .u.free = { ~ 0, ~ 0 } };
     }
 }
 
@@ -351,13 +392,13 @@ static void reset_headers(void *cbdata, void *p) {
     cluster_header_t                       *ch = p;
 
     for (unsigned i = 0; i < CLUSTERS; i++, ch++) {   
-        offset                              ofs = i * _cluster_capacity;
+        offset                              ofs = i * cluster_capacity;
  
         ch->lock = spinlock_init;
 
         for (int x = 0; x < CLUSTER_FREELISTS; x++) ch->free[x] = ~ 0;
 
-        push_free_ptr(ch->free + free_list_offset_for_size(_cluster_capacity), ofs);
+        push_free_ptr(ch->free + free_list_offset_for_size(cluster_capacity), ofs);
     }
 }
 
@@ -367,16 +408,16 @@ static void reset_headers(void *cbdata, void *p) {
  */
 void agent_memory_initialise(uint32_t sz, int id)
 {
-    _cluster_capacity = sz / CLUSTERS;
+    cluster_capacity = sz / CLUSTERS;
     
-    get_memory_segment(&_ctlblock_pool, CTLFILE, sizeof(ctl_header_t), reset_ctlblock, 0, id);
-    _ctlblock = _ctlblock_pool->base_ptr;
+    get_memory_segment(&ctlblock_pool, CTLFILE, sizeof(ctl_header_t), reset_ctlblock, 0, id);
+    ctlblock = ctlblock_pool->base_ptr;
 
-    get_memory_segment(&_base_pool, BLOCKFILE, sz, reset_blocks, 0, id);
-    _base = _base_pool->base_ptr;
+    get_memory_segment(&cluster_base_pool, BLOCKFILE, sz, reset_blocks, 0, id);
+    cluster_base = cluster_base_pool->base_ptr;
 
-    get_memory_segment(&_cluster_hdrs_pool, HEADERFILE, sizeof(cluster_header_t) * CLUSTERS, reset_headers, 0, id);
-    _cluster_hdrs = _cluster_hdrs_pool->base_ptr;
+    get_memory_segment(&cluster_hdrs_pool, HEADERFILE, sizeof(cluster_header_t) * CLUSTERS, reset_headers, 0, id);
+    cluster_hdrs = cluster_hdrs_pool->base_ptr;
 
 }
 
@@ -386,11 +427,11 @@ void agent_memory_initialise(uint32_t sz, int id)
  */
 void agent_memory_destroy(int unlink) {
 
-    remove_memory_segment(&_ctlblock_pool, unlink);
+    remove_memory_segment(&ctlblock_pool, unlink);
 
-    remove_memory_segment(&_base_pool, unlink);
+    remove_memory_segment(&cluster_base_pool, unlink);
 
-    remove_memory_segment(&_cluster_hdrs_pool, unlink);
+    remove_memory_segment(&cluster_hdrs_pool, unlink);
  
 }
 
@@ -429,7 +470,7 @@ static int offset_comparator_reverse(const void *a, const void *b) {
  */
 static int compact_cluster(volatile offset *freelists) {
 
-    offset                                 *buffer = malloc(sizeof(offset) * (_cluster_capacity / sizeof(block_header_t)));
+    offset                                 *buffer = malloc(sizeof(offset) * (cluster_capacity / sizeof(block_header_t)));
     size_t                                  n = 0;
     
     for (int x = 0; x < CLUSTER_FREELISTS; x++)
@@ -516,9 +557,8 @@ static void *alloc_with_compact(volatile offset *freelists, unsigned seq, int32_
     
     while (freelists[s] == ~ 0) {
         s++;
-        if (s == CLUSTER_FREELISTS) {
+        if (s == CLUSTER_FREELISTS)
             return 0;
-        }
     }
     
     if (( p = alloc(freelists, s, type, required) ) == 0) {
@@ -563,12 +603,12 @@ int agent_memory_free(pid_t pid, void *p) {
     offset                                  ofs = OFS(p) - block_data_offset;
     block_header_t                         *h = HDR(ofs);
 
-    unsigned                                cluster = ofs / _cluster_capacity;
+    unsigned                                cluster = ofs / cluster_capacity;
     
     if (spinlock_lock(&cluster_lock(cluster), pid))
         return 0;
     
-    h->size += coalesce(cluster_free_lists(cluster), ofs, (cluster + 1) * _cluster_capacity);
+    h->size += coalesce(cluster_free_lists(cluster), ofs, (cluster + 1) * cluster_capacity);
     h->locks = 0;
     
     push_free_ptr(cluster_free_lists(cluster) + free_list_offset_for_size(h->size), ofs);
@@ -588,7 +628,7 @@ int agent_memory_locks(pid_t pid, void *p) {
     offset                                  ofs = OFS(p) - block_data_offset;
     block_header_t                         *h = HDR(ofs);
 
-    unsigned                                cluster = ofs / _cluster_capacity;
+    unsigned                                cluster = ofs / cluster_capacity;
 
     if (spinlock_lock(&cluster_lock(cluster), pid))
         return 0;
@@ -608,12 +648,12 @@ int agent_memory_locks(pid_t pid, void *p) {
  */
 static int validate_cluster_format(unsigned cluster) {
 
-    offset                                  base = cluster * _cluster_capacity, end = base + _cluster_capacity;
+    offset                                  base = cluster * cluster_capacity, end = base + cluster_capacity;
 
     uint32_t                                used = 0, released = 0;
     int                                     err = 0;
 
-    offset                                 *buffer = malloc(sizeof(offset) * (_cluster_capacity / sizeof(block_header_t)));
+    offset                                 *buffer = malloc(sizeof(offset) * (cluster_capacity / sizeof(block_header_t)));
     size_t                                  n = 0;
 
     offset                                  ofs;
@@ -687,8 +727,8 @@ static int validate_cluster_format(unsigned cluster) {
             }
         }
 
-        if (used + released != _cluster_capacity) {
-            printf("------ missing memory: cluster %d used %u, free %u, (%u out of %d)\n", cluster, used, released, used + released, _cluster_capacity);
+        if (used + released != cluster_capacity) {
+            printf("------ missing memory: cluster %d used %u, free %u, (%u out of %d)\n", cluster, used, released, used + released, cluster_capacity);
             err = 1;
         }
 
@@ -727,9 +767,9 @@ int agent_memory_check(pid_t pid, int verbose, int clearup) {
 
         if (locker == 0) {
             if (clearup) {
-                offset                      base = cluster * _cluster_capacity;
+                offset                      base = cluster * cluster_capacity;
 
-                HDR(base)->size = coalesce(cluster_free_lists(cluster), base, base + _cluster_capacity);
+                HDR(base)->size = coalesce(cluster_free_lists(cluster), base, base + cluster_capacity);
             }
             spinlock_unlock(&cluster_lock(cluster));
         } else if (locker == VALIDATION_LOCK) {
@@ -781,10 +821,10 @@ printf("***** memory barrier: locking thread %d is active\n", locker);
 
         int                                 i;
 
-        offset                              ofs = cluster * _cluster_capacity;
+        offset                              ofs = cluster * cluster_capacity;
         block_header_t                     *h = HDR(ofs);
 
-        *h = (block_header_t) { .locks = 0, .size = _cluster_capacity, .u.free = { ~ 0, ~ 0 } };
+        *h = (block_header_t) { .locks = 0, .size = cluster_capacity, .u.free = { ~ 0, ~ 0 } };
 
         for (i = 0; i < CLUSTER_FREELISTS; i++)
             cluster_free_lists(cluster)[i] = ~ 0;
@@ -808,7 +848,7 @@ void agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_
     uint32_t                                free = 0;
 
     for (cluster = 0; cluster < CLUSTERS; cluster++) {
-        const offset                        base = cluster * _cluster_capacity, end = base + _cluster_capacity;
+        const offset                        base = cluster * cluster_capacity, end = base + cluster_capacity;
         offset                              ofs = base;
 
         if (spinlock_lock(&cluster_lock(cluster), pid)) {
@@ -843,7 +883,7 @@ void agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_
     }
 
     printf("unlinked memory blocks -> %d \n", c);
-    printf("free -> %f \n", (float)free / (float)(CLUSTERS * _cluster_capacity));
+    printf("free -> %f \n", (float)free / (float)(CLUSTERS * cluster_capacity));
 
 }
 
@@ -853,7 +893,7 @@ void agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_
  */
 static void analyse_cluster(int cluster, uint32_t *use_ptr, uint32_t *free_ptr, uint32_t *block_ptr, uint32_t *freelists) {
 
-    offset                                  base = cluster * _cluster_capacity, end = base + _cluster_capacity;
+    offset                                  base = cluster * cluster_capacity, end = base + cluster_capacity;
 
     uint32_t                                used = 0, free = 0, blocks = 0;
 
@@ -920,13 +960,13 @@ void agent_memory_print(pid_t pid) {
 
 offset agent_memory_offset(void *ptr) {
 
-    return (offset)(((char *)ptr) - (char *)_base);
+    return (offset)(((char *)ptr) - (char *)cluster_base);
 
 }
 
 void *agent_memory_ptr(offset ofs) {
 
-    return ((char *)_base) + ofs;
+    return ((char *)cluster_base) + ofs;
 
 }
 

@@ -24,13 +24,56 @@
 
 #include "rwlock.h"
 
-#define cas(p, old, new)                    __sync_bool_compare_and_swap(p, old, new)
+#if defined _WIN32
+
+#define casv(p, old, new)                   InterlockedCompareExchange(p, new, old)
+#define cas(p, old, new)                    (casv(p, old, new) == (old))
+#define yield()                             SwitchToThread()
+
+#else
+
 #define casv(p, old, new)                   __sync_val_compare_and_swap(p, old, new)
-#define inc(p)                              __sync_fetch_and_add((p), 1)
+#define cas(p, old, new)                    __sync_bool_compare_and_swap(p, old, new)
 #define yield()                             sched_yield()
+
+#endif
+
 
 const struct readlock                       readlock_init = { .readers = 0, .barrier = 0, .pids = { 0 } };
 
+
+/*
+ * check whether a process is dead
+ *
+ */
+static int process_dead(pid_t pid) {
+#if defined _WIN32
+    HANDLE                                  h;
+    if (( h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid) )) {         /* expected error is ERROR_INVALID_PARAMETER */
+        int                                 exitcode, done = 0;
+        if (GetExitCodeProcess(h, &exitcode)) {
+            if (exitcode != STILL_ACTIVE)
+                done = 1;
+        } else {
+                                                                                      /* permissions error */
+        }
+        CloseHandle(h);
+        return done;
+    } else if (GetLastError() == ERROR_ACCESS_DENIED) {
+                                                                                      /* permissions error */
+    }
+    return 1;
+#else
+    if (kill(pid, 0)) {
+        if (errno == ESRCH) {
+            return 1;
+        } else {
+                                                                                      /* permissions error */
+        }
+    }
+    return 0;
+#endif
+}
 
 /*
  * quick test whether all readers are finished with the lock; it is used to ensure that writers are not starved
@@ -47,22 +90,6 @@ static int wait_for_counted_readers(struct readlock *lock, int tries) {
 
     } while (--tries);                                                                /* NOTE: tries must be a positive number */
 
-    return 0;
-
-}
-
-/*
- * determine whether a process is live
- *
- */
-static int process_dead(pid_t pid) {
-
-    if (kill(pid, 0)) {
-        if (errno == ESRCH) {
-            return 1;
-        }
-printf("************** after kill, errno was %d\n", errno);                           /* TODO: remove this, this doesn't happen */
-    }
     return 0;
 
 }

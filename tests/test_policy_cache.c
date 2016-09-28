@@ -691,7 +691,11 @@ static void* test_gc_procedure(void * params)
         printf("*************gc start\n");
         cache_purge_expired_entries(getpid());
         printf("*************gc end\n");
+#if defined _WIN32
+        Sleep(500);
+#else 
         usleep(500000);
+#endif
     }
 
     printf("gc thread exiting\n");

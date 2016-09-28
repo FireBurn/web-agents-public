@@ -24,6 +24,7 @@
  **/
 
 #include "platform.h"
+#include "thread.h"
 
 #include "alloc.h"
 
@@ -131,7 +132,7 @@ void *mem_control_thread(void * data)
 
 int main(int argc, char *argv[])
 {
-    pthread_t                               threads[THREADS];
+    am_thread_t                             threads[THREADS];
     
     long                                    args[THREADS];
     
@@ -157,16 +158,13 @@ int main(int argc, char *argv[])
     for (int i = 0; i < THREADS; i++)
     {
         args [i] = 0;
-        if (pthread_create(threads + i, NULL, mem_test_thread, args + i))
-            perror("create thread");
+
+        AM_THREAD_CREATE(threads[i],  mem_test_thread, args + i);
     }
 
     for (int i = 0; i < THREADS; i++)
     {
-        void                               *arg = 0;
-        
-        if (pthread_join(threads [i], &arg))
-            perror("create thread");
+        AM_THREAD_JOIN(threads[i]);
     }
     
     dt = ((double) (clock() - t0)) / CLOCKS_PER_SEC;

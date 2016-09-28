@@ -7,13 +7,13 @@ CFLAGS = -D_GNU_SOURCE -std=gnu99 -O3 -pthread -I$(SRC)
 
 LDFLAGS = -lpthread 
 
-cache: share.o cache.o alloc.o rwlock.o shared.o 
+cache: test_cache.c share.o cache.o alloc.o rwlock.o shared.o 
 	$(CC) $(CFLAGS) -o cache test_cache.c cache.o share.o alloc.o rwlock.o shared.o $(LDFLAGS)
 
-alloc: alloc.o share.o shared.o
+alloc: test_alloc.c alloc.o share.o shared.o
 	$(CC) $(CFLAGS) -o alloc test_alloc.c share.o alloc.o shared.o $(LDFLAGS)
 
-rwlock: rwlock.o
+rwlock: test_rwlock.c rwlock.o
 	$(CC) $(CFLAGS) -o rwlock test_rwlock.c rwlock.o $(LDFLAGS)
 
 cache.o: $(SRC)/cache.h share.o alloc.o rwlock.o

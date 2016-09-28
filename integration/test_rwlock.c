@@ -21,6 +21,7 @@
  **/
 
 #include "platform.h"
+#include "thread.h"
 
 #include "rwlock.h"
 
@@ -63,11 +64,11 @@ void update_bucket(struct bucket *bucket)
     uint64_t                                checksum = 0x43f42a71e03;
     int                                     i;
 
-    bucket->ln = random() % MAX_DATA_LN;
+    bucket->ln = rand() % MAX_DATA_LN;
 
     for (i = 0; i < bucket->ln; i++)
     {
-        bucket->data[i] = random();
+        bucket->data[i] = rand();
 
         checksum = rotate64(checksum, 3) ^ bucket->data[i];
     }
@@ -92,8 +93,8 @@ int verify_bucket(struct bucket *bucket)
 
 void *multi_lock_thread(void *data)
 {
+    int                                     self = *(int *)data;
     pid_t                                   pid = getpid();
-    void                                   *self = pthread_self();
 
     int                                     i;
     int                                     updates = 0, busy = 0;
@@ -109,13 +110,13 @@ void *multi_lock_thread(void *data)
                 if (verify_bucket(&bucket) == 0)
                 {
                     printf("******** bucket not stable, lock counter -> %d\n", locks[l].readers);
-                    pthread_exit(0);
+                    return 0;
                 }
                 read_release(locks + l, pid);
             }
             else
             {
-                printf("%d:%p failed lock %d readlock\n", pid, self, (int)l);
+                printf("%d:%d failed lock %d readlock\n", pid, self, (int)l);
             }
         }
         else
@@ -137,13 +138,13 @@ void *multi_lock_thread(void *data)
             }
             else
             {
-                printf("%d:%p failed lock %d writelock\n", pid, self, (int)l);
+                printf("%d:%d failed lock %d writelock\n", pid, self, (int)l);
             }
         }
 
         if (i % 1000000 == 0)
         {
-            printf("%d:%p iteration %d, updates %d out of %d\n", pid, self, i, updates, busy);
+            printf("%d:%d iteration %d, updates %d out of %d\n", pid, self, i, updates, busy);
         }
     }
 
@@ -153,8 +154,8 @@ void *multi_lock_thread(void *data)
 
 void *single_lock_thread(void *data)
 {
+    int                                     self = *(int *)data;
     pid_t                                   pid = getpid();
-    void                                   *self = pthread_self();
 
     int                                     i;
     int                                     updates = 0, busy = 0, blocks = 0;
@@ -162,7 +163,7 @@ void *single_lock_thread(void *data)
     for (i = 0; i < 10000000; i++)
     {
         int                                 l = 0;
-        int                                 r = random() & 1;
+        int                                 r = rand() & 3;
 
         if (r == 0)
         {
@@ -176,23 +177,24 @@ void *single_lock_thread(void *data)
             }
             else
             {
-                printf("%d:%p failed lock %d readlock\n", pid, self, (int)l);
+                printf("%d:%d failed lock %d readlock\n", pid, self, (int)l);
             }
         }
-        else if (0 && r == 1)
+        else if (r == 1)
         {
             if (read_block(locks + l, pid))
             {
                 update_bucket(&bucket);
 
                 //usleep(1000);
+
                 if (read_unblock(locks + l, pid) == 0)
-                    printf("read unblock failed\n");
+                    printf("********* read unblock failed\n");
 
                 blocks++;
             }
         }
-        else
+        else if (r == 2)
         {
             if (read_lock_try(locks + l, pid, 1))
             {
@@ -212,13 +214,13 @@ void *single_lock_thread(void *data)
             }
             else
             {
-                //printf("%d:%p failed lock %d writelock\n", pid, self, (int)l);
+                //printf("%d:%d failed lock %d writelock\n", pid, self, (int)l);
             }
         }
 
         if (i % 100000 == 0)
         {
-            printf("%d:%p iteration %d, updates %d out of %d, blocks %d\n", pid, self, i, updates, busy, blocks);
+            printf("%d:%d iteration %d, wr %d (busy %d), blocks %d\n", pid, self, i, updates, busy, blocks);
         }
     }
 
@@ -229,8 +231,8 @@ void *single_lock_thread(void *data)
 
 int main(int argc, char *argv[])
 {
-    pthread_t                               threads[THREADS];
-    long                                    args[THREADS];
+    am_thread_t                             threads[THREADS];
+    int                                     args[THREADS];
     
     int                                     i;
     long                                    t0;
@@ -244,18 +246,14 @@ int main(int argc, char *argv[])
     
     for (i = 0; i < THREADS; i++)
     {
-        args [i] = 0;
+        args [i] = i;
 
-        if (pthread_create(threads + i, NULL, single_lock_thread, args + i))
-            perror("create thread");
+        AM_THREAD_CREATE(threads[i], single_lock_thread, args + i);
     }
 
     for (i = 0; i < THREADS; i++)
     {
-        void                               *arg = 0;
-        
-        if (pthread_join(threads[i], &arg))
-            perror("join thread");
+        AM_THREAD_JOIN(threads[i]);
     }
     
     dt = ((double) (clock() - t0)) / CLOCKS_PER_SEC;

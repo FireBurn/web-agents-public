@@ -15,6 +15,7 @@
  */
 
 #include "platform.h"
+#include "thread.h"
 
 #include "alloc.h"
 #include "cache.h"
@@ -56,7 +57,7 @@ static void initialise_random_buffer()
 
     for (i = 0; i < RANDOM_BUFFER_SZ; i++)
     {
-        random_buffer[i] = random() & 0xff;
+        random_buffer[i] = rand() & 0xff;
     }
 
 }
@@ -65,7 +66,7 @@ static void initialise_random_buffer()
 void write_bucket(uint32_t key, struct bucket *bucket)
 {
     uint64_t                                checksum = 0x43f42a71e03;
-    uint32_t                                seed = random();
+    uint32_t                                seed = rand();
     int                                     i;
 
     bucket->key = key;
@@ -119,7 +120,7 @@ void *cache_robustness_thread(void *data)
     {
         for (i = 1; i < n_ops; i++)
         {
-            uint32_t                        key = ((uint32_t)random()) & n_keys;
+            uint32_t                        key = ((uint32_t)rand()) & n_keys;
 
             write_bucket(key, &bucket);
 
@@ -131,7 +132,7 @@ void *cache_robustness_thread(void *data)
 
         for (i = 1; i < n_ops; i++)
         {
-            uint32_t                        key = ((uint32_t)random()) & n_keys;
+            uint32_t                        key = ((uint32_t)rand()) & n_keys;
 
             bucket.key = key;
 
@@ -151,7 +152,7 @@ void *cache_robustness_thread(void *data)
 
         for (i = 1; i < n_ops; i++)
         {
-            uint32_t                        key = ((uint32_t)random()) & n_keys;
+            uint32_t                        key = ((uint32_t)rand()) & n_keys;
 
             bucket.key = key;
 
@@ -180,7 +181,7 @@ void *cache_update_thread(void *data)
     {
         for (i = 1; i < n_ops; i++)
         {
-            uint32_t                        key = ((uint32_t)random()) & n_keys;
+            uint32_t                        key = ((uint32_t)rand()) & n_keys;
 
             bucket.key = key;
 
@@ -213,7 +214,7 @@ void *cache_update_thread(void *data)
 
 int main(int argc, char *argv[])
 {
-    pthread_t                               threads[THREADS];
+    am_thread_t                             threads[THREADS];
     long                                    args[THREADS];
 
     int                                     i;
@@ -299,16 +300,12 @@ int main(int argc, char *argv[])
     {
         args [i] = 0;
 
-        if (pthread_create(threads + i, NULL, cache_robustness_thread, args + i))
-            perror("create thread");
+        AM_THREAD_CREATE(threads[i], cache_robustness_thread, args + i);
     }
 
     for (i = 0; i < THREADS; i++)
     {
-        void                               *arg = 0;
-
-        if (pthread_join(threads[i], &arg))
-            perror("join thread");
+        AM_THREAD_JOIN(threads[i]);
     }
 
     dt = ((double) (clock() - t0)) / CLOCKS_PER_SEC;
