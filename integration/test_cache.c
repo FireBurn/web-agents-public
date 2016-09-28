@@ -18,7 +18,7 @@
 #include "thread.h"
 
 #include "alloc.h"
-#include "cache.h"
+#include "agent_cache.h"
 
 #define THREADS                             5
 

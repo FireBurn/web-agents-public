@@ -37,7 +37,7 @@
 #include "alloc.h"
 #include "share.h"
 
-#include "cache.h"
+#include "agent_cache.h"
 #include "rwlock.h"
 
 #define STATFILE                            "stats"
@@ -56,8 +56,8 @@
 
 #if defined _WIN32
 
-#define incr(p)                             InterlockedIncrement64(p)
-#define reset(p)                            InterlockedExchange64(p, 0)
+#define incr(p)                             InterlockedIncrement(p)
+#define reset(p)                            InterlockedExchange(p, 0)
 
 #define casv(p, old, new)                   InterlockedCompareExchange(p, new, old)
 #define cas(p, old, new)                    (casv(p, old, new) == (old))
@@ -110,7 +110,7 @@ struct cache_entry {
 
 union cache_stat {
 
-    volatile uint64_t                       v;
+    volatile uint32_t                       v;
 
     uint8_t                                 padding[64];
 
@@ -126,7 +126,7 @@ struct stats {
 
     int64_t                                 basetime;
 
-    union cache_stat                        reads, updates, writes, fails, deletes, expires, usage;
+    union cache_stat                        reads, updates, writes, failures, deletes, expires, lru;
 
     struct cache_gc_stat                    cache, data;
 
@@ -418,7 +418,7 @@ static uint32_t bits(uint32_t v) {
  * not used within 32 cycles
  *
  */
-static int low_usage(uint32_t cycles) {
+static int low_recent_usage(uint32_t cycles) {
 
     if (cycles < 0x200000) {                                                           /* not set in recent cycles */
         uint32_t                            c = bits(cycles); 
@@ -449,10 +449,10 @@ static int purge_expired_entries(pid_t pid, uint32_t hash, struct cache_entry *e
                 unlink_entry(pid, hash, e, i, ofs);
                 n++;
 incr(&stats->expires.v);
-            } else if (low_usage(e->cycles[i])) {
+            } else if (low_recent_usage(e->cycles[i])) {
                 unlink_entry(pid, hash, e, i, ofs);                                   /* low recent use */
                 n++;
-incr(&stats->usage.v);
+incr(&stats->lru.v);
             } else {                                                                  /* shift entry use counts */
                 uint32_t                     cycles;
 
@@ -538,7 +538,7 @@ int cache_add(uint32_t h, void *data, size_t ln, int64_t expires, int (*identity
         new = agent_memory_offset(u);
     } else {
         cache_readlock_release_p(hash, pid);                                          /* agent memory allocation failure */
-incr(&stats->fails.v);
+incr(&stats->failures.v);
         return 1;
     }
 
@@ -558,7 +558,7 @@ incr(&stats->fails.v);
         hashtable[hash] = agent_memory_offset(e);
     } else {
         cache_readlock_release_p(hash, pid);
-incr(&stats->fails.v);
+incr(&stats->failures.v);
         return 1;
     }
 
@@ -811,36 +811,35 @@ void cache_garbage_collect() {
 
 }
 
-static unsigned long get_and_reset(volatile uint64_t *p) {
+static uint32_t get_and_reset(volatile uint32_t *p) {
 
-    uint64_t                                old = reset(p);
-
-    return (unsigned long)old;
+    return reset(p);
 
 }
 
 void cache_stats() {
 
-    printf("throughput:\n");
-    printf("reads:   %lu\n", get_and_reset(&stats->reads.v));    
-    printf("writes:  %lu\n", get_and_reset(&stats->writes.v));    
-    printf("updates: %lu\n", get_and_reset(&stats->updates.v));    
-    printf("deletes: %lu\n", get_and_reset(&stats->deletes.v));    
-    printf("fails:   %lu\n", get_and_reset(&stats->fails.v));    
-    printf("expires: %lu\n", get_and_reset(&stats->expires.v));    
-    printf("usage:   %lu\n", get_and_reset(&stats->usage.v));    
+    printf("cache throughput:\n");
+    printf("reads:   %u\n", get_and_reset(&stats->reads.v));    
+    printf("writes:  %u\n", get_and_reset(&stats->writes.v));    
+    printf("updates: %u\n", get_and_reset(&stats->updates.v));    
+    printf("deletes: %u\n", get_and_reset(&stats->deletes.v));    
+    printf("failures:%u\n", get_and_reset(&stats->failures.v));    
+    printf("expires: %u\n", get_and_reset(&stats->expires.v));    
+    printf("lru:     %u\n", get_and_reset(&stats->lru.v));    
 
 #ifdef GC_STATS
     printf("cache objects:\n");
-    printf("leaked: %lu\n", get_and_reset(&stats->cache.leaked.v));    
-    printf("cleared: %lu\n", get_and_reset(&stats->cache.cleared.v));    
-    printf("collected: %lu\n", get_and_reset(&stats->cache.collected.v));    
+    printf("leaked: %u\n", get_and_reset(&stats->cache.leaked.v));    
+    printf("cleared: %u\n", get_and_reset(&stats->cache.cleared.v));    
+    printf("collected: %u\n", get_and_reset(&stats->cache.collected.v));    
 
     printf("user objects:\n");
-    printf("leaked: %lu\n", get_and_reset(&stats->data.leaked.v));    
-    printf("cleared: %lu\n", get_and_reset(&stats->data.cleared.v));    
-    printf("collected: %lu\n", get_and_reset(&stats->data.collected.v));    
+    printf("leaked: %u\n", get_and_reset(&stats->data.leaked.v));    
+    printf("cleared: %u\n", get_and_reset(&stats->data.cleared.v));    
+    printf("collected: %u\n", get_and_reset(&stats->data.collected.v));    
 #endif
+
 }
 
 int master_recovery_process(pid_t pid) {

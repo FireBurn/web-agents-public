@@ -11,8 +11,8 @@ LDFLAGS =
 
 LIBS = kernel32.lib user32.lib ws2_32.lib crypt32.lib advapi32.lib shlwapi.lib
 
-cache: shared.obj share.obj cache.obj alloc.obj
-	$(CC) $(CFLAGS) -o cache test_cache.c cache.obj shared.obj share.obj alloc.obj rwlock.obj $(LDFLAGS) $(LIBS)
+cache: shared.obj share.obj agent_cache.obj alloc.obj
+	$(CC) $(CFLAGS) -o cache test_cache.c agent_cache.obj shared.obj share.obj alloc.obj rwlock.obj $(LDFLAGS) $(LIBS)
 
 alloc: alloc.obj shared.obj share.obj
 	$(CC) $(CFLAGS) -o alloc test_alloc.c shared.obj share.obj alloc.obj $(LDFLAGS) $(LIBS)
@@ -20,8 +20,8 @@ alloc: alloc.obj shared.obj share.obj
 rwlock: rwlock.obj
 	$(CC) $(CFLAGS) -o rwlock test_rwlock.c rwlock.obj $(LDFLAGS) $(LIBS)
 
-cache.obj: $(SRC)\cache.h $(SRC)\cache.c alloc.obj rwlock.obj
-	$(CC) /c $(CFLAGS) $(SRC)\cache.c
+agent_cache.obj: $(SRC)\agent_cache.h $(SRC)\agent_cache.c alloc.obj rwlock.obj
+	$(CC) /c $(CFLAGS) $(SRC)\agent_cache.c
 
 alloc.obj: $(SRC)\alloc.h $(SRC)\alloc.c 
 	$(CC) /c $(CFLAGS) $(SRC)\alloc.c

@@ -18,7 +18,7 @@
 #include "am.h"
 #include "utility.h"
 #include "list.h"
-#include "cache.h"
+#include "agent_cache.h"
 
 /*
  * Session and Policy response attribute cache
@@ -49,6 +49,7 @@ static void cache_cleanup_event(void *arg) {
     cache_readlock_total_barrier(pid);                                                /* check that all rw locks can go past 0 locks */
     cache_purge_expired_entries(pid);                                                 /* purge expired cache entries, then deleted entries */
     cache_garbage_collect();
+    cache_stats();
 
 }
 

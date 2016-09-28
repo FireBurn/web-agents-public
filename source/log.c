@@ -22,6 +22,49 @@
 #ifndef _WIN32
 #include <libgen.h>
 #endif
+#if defined(AIX)
+#include <sys/ldr.h>
+
+typedef struct {
+    const char *dli_fname;
+} Dl_info;
+
+static int dladdr(void *s, Dl_info *i) {
+#define DLADDR_BUFF_SZ      4096
+    void *buf = malloc(DLADDR_BUFF_SZ);
+    if (buf == NULL) {
+        i->dli_fname = NULL;
+        return 0;
+    }
+    
+    char *pldi = (char *) buf;
+    int r = loadquery(L_GETINFO, pldi, DLADDR_BUFF_SZ);
+    if (r == -1) {
+        i->dli_fname = NULL;
+        free(buf);
+        return 0;
+    }
+
+    struct ld_info *ldi = (struct ld_info *) pldi;
+    while (ldi->ldinfo_next) {
+        pldi += ldi->ldinfo_next;
+        ldi = (struct ld_info *) pldi;
+        char *begin = (char *) ldi->ldinfo_textorg;
+        if (begin < s) {
+            char *end = begin + ldi->ldinfo_textsize;
+            if (end > s) {
+                i->dli_fname = ldi->ldinfo_filename;
+                free(buf);
+                return 1;
+            }
+        }
+    }
+    i->dli_fname = NULL;
+    free(buf);
+    return 0;
+}
+
+#endif
 
 #define DEFAULT_LOG_SIZE (1024 * 1024 * 5) /* 5MB */
 
@@ -255,7 +298,7 @@ static void log_file_write(unsigned long instance_id, const char *data, unsigned
     int32_t file_handle, max_size;
     const char *file_name;
     int status;
-        
+
     if (ISINVALID(data) || !data_sz || file_cache == NULL) {
         return;
     }
@@ -274,7 +317,7 @@ static void log_file_write(unsigned long instance_id, const char *data, unsigned
         /* invalid arguments */
         return;
     }
-    
+
     if (ISINVALID(file_name)) {
         fprintf(stderr, "log_file_write(): invalid file name\n");
         return;
@@ -410,7 +453,7 @@ static void log_buffer_read(struct log_file *fc) {
             break;
         }
     }
-        
+
     /* do the actual file write op */
     log_file_write(block->instance_id, block->data, (unsigned int) block->size, file, file_cache,
             (block->level & AM_LOG_LEVEL_AUDIT) != 0);
@@ -451,12 +494,12 @@ static void log_file_cache_close(struct log_file *fc) {
 
 static void *am_log_worker(void *arg) {
     int i;
-    
+
     /* local open file descriptor cache; last entry reserved for instanceid 0 */
     struct log_file *fc = malloc(sizeof (struct log_file) * (AM_MAX_INSTANCES + 1));
     if (fc == NULL)
         return NULL;
-    
+
     /* reset local open file descriptor cache */
     for (i = 0; i < AM_MAX_INSTANCES + 1; i++) {
         struct log_file *file = &fc[i];
@@ -545,9 +588,9 @@ void am_log_init(int id) {
 #endif
 
     if (log_handle != NULL) return;
-    
+
     memset(&default_log_path[0], 0, sizeof(default_log_path));
-    
+
 #ifdef _WIN32
     SECURITY_DESCRIPTOR sec_descr;
     SECURITY_ATTRIBUTES sec_attr, *sec = NULL;
@@ -579,7 +622,13 @@ void am_log_init(int id) {
     }
 #else
     Dl_info info;
-    if (dladdr((void *) &am_log_init, &info)) {
+    if (dladdr(
+#ifdef AIX
+            (void*) *((ulong *) & am_log_init)
+#else
+            (void *) &am_log_init
+#endif
+            , &info)) {
         snprintf(default_log_path, sizeof (default_log_path),
                 "%s/../log/"DEFAULT_AGENT_LOG_FILE, dirname((char *) info.dli_fname));
     }
@@ -865,7 +914,7 @@ void am_log_write(unsigned long instance_id, int level, const char* header, int 
 
     block->instance_id = instance_id;
     block->level = instance_id == 0 ? AM_LOG_LEVEL_ALWAYS : level;
-    
+
     /* push the block back into the queue ready to be consumed */
 
     /* set done flag for this block */

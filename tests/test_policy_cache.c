@@ -24,7 +24,7 @@
 #include "utility.h"
 #include "list.h"
 #include "thread.h"
-#include "cache.h"
+#include "agent_cache.h"
 #include "cmocka.h"
 
 void* am_parse_policy_xml(unsigned long instance_id, const char* xml, size_t xml_sz, int scope);
