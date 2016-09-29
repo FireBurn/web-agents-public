@@ -145,7 +145,7 @@ int main(int argc, char *argv[])
     {
         agent_memory_check(getpid(), 0, 0);
 
-        agent_memory_destroy(0);
+        agent_memory_shutdown(0);
 
         exit(0);
     }
@@ -172,7 +172,7 @@ int main(int argc, char *argv[])
     
     agent_memory_check(getpid(), 0, 0);
 
-    agent_memory_destroy(1);
+    agent_memory_shutdown(1);
 
     exit(0);
 }

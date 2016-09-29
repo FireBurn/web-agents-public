@@ -3,7 +3,7 @@ SRC = ..\source
 
 CC = cl
 
-CFLAGS = /O2 /Oi /GL /Gy /GT /D _WIN32 /D UNIT_TEST /I$(SRC) /I..\pcre
+CFLAGS = /O2 /Oi /GL /Gy /GT /D _WIN32 /D UNIT_TEST /D INTEGRATION_TEST /I$(SRC) /I..\pcre
 
 LDFLAGS =
 

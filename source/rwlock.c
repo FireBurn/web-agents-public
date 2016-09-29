@@ -113,7 +113,7 @@ static int wait_for_live_readers(struct readlock *lock, pid_t pid, int unblock) 
             return 0;                                                                 /* this process is already the checker, wait  */
         } else if (process_dead(checker)) {
             if (cas(&lock->barrier, checker, pid)) {
-                AM_LOG_DEBUG(0, "%s rwlock: %d takes over as checker", thisfunc, pid);                    /* this process takes over as checker */
+                AM_LOG_DEBUG(0, "%s rwlock check: %d takes over from %d", thisfunc, pid, checker); /* this process takes over as checker */
             } else {
                 return 0;                                                             /* another process has become the checker */
             }

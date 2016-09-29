@@ -198,9 +198,9 @@ void agent_memory_error() {
     static const char                      *thisfunc = "agent_memory_error():";
 
     if (cas(&ctlblock->error, 0, 1)) {
-        AM_LOG_DEBUG(0, "%s **** triggering memory cleardown", thisfunc);
+        AM_LOG_ERROR(0, "%s triggering memory cleardown", thisfunc);
     } else {
-        AM_LOG_DEBUG(0, "%s **** memory cleardown alredy triggered", thisfunc);
+        AM_LOG_DEBUG(0, "%s memory cleardown already triggered", thisfunc);
     }
 
 }
@@ -215,7 +215,7 @@ int try_validate(pid_t pid) {
     if (ctlblock->error) {
         return 1;
     } else {
-        AM_LOG_DEBUG(0, "%s %d checking memory slowdown", thisfunc, pid);
+        AM_LOG_DEBUG(0, "%s process %d checking memory slowdown", thisfunc, (int)pid);
 
         if (agent_memory_check(pid, 0, 0)) {
             agent_memory_error();
@@ -243,20 +243,20 @@ void agent_memory_validate(pid_t pid) {
     do {
         if (( checker = casv(&ctlblock->checker, 0, pid) )) {
             if (process_dead(checker)) {   
-                AM_LOG_DEBUG(0, "%s **** cleardown process %d is dead, %d resetting checker", thisfunc, checker, pid);
+                AM_LOG_DEBUG(0, "%s recovery: recovery process %d is dead, trying process %d", thisfunc, (int)checker, (int)pid);
                 cas(&ctlblock->checker, checker, 0);   
             } else {
-                yield();
+                yield();                                                              /* NOTE: this is quite a tight loop, monitoring recovery */
             }
         } else {
-            AM_LOG_DEBUG(0, "%s **** starting recovery process in %d", thisfunc, pid);
+            AM_LOG_DEBUG(0, "%s recovery: starting recovery process in %d", thisfunc, (int)pid);
 
             if (master_recovery_process(pid) == 0) {
                 cas(&ctlblock->error, 1, 0);
 
-                AM_LOG_DEBUG(0, "%s **** ending recovery process in %d", thisfunc, pid);
+                AM_LOG_DEBUG(0, "%s recovery: ending recovery in process %d", thisfunc, (int)pid);
             } else {
-                AM_LOG_DEBUG(0, "%s **** abandoning recovery process in %d", thisfunc, pid);
+                AM_LOG_DEBUG(0, "%s recovery: abandoning recovery in process %d", thisfunc, (int)pid);
             }
             cas(&ctlblock->checker, pid, 0);
 
@@ -429,7 +429,7 @@ void agent_memory_initialise(uint32_t sz, int id)
  * unmap all clusters and optionally destroy shared resource
  *
  */
-void agent_memory_destroy(int unlink) {
+void agent_memory_shutdown(int unlink) {
 
     remove_memory_segment(&ctlblock_pool, unlink);
 
@@ -437,6 +437,27 @@ void agent_memory_destroy(int unlink) {
 
     remove_memory_segment(&cluster_hdrs_pool, unlink);
  
+}
+
+/*
+ * try to remove all shared memory resources
+ *
+ */
+int agent_memory_cleanup(int id) {
+
+    int                                     errors = 0;
+
+    if (delete_memory_segment(CTLFILE, id))
+        errors++;
+
+    if (delete_memory_segment(BLOCKFILE, id))
+        errors++;
+
+    if (delete_memory_segment(HEADERFILE, id))
+        errors++;
+
+    return errors;
+
 }
 
 /*
@@ -664,21 +685,21 @@ static int validate_cluster_format(unsigned cluster) {
     offset                                  ofs;
 
     if (buffer == 0) {
-        AM_LOG_ERROR(0, "%s allocating memory for validation", thisfunc);
+        AM_LOG_ERROR(0, "%s block validation: unable to allocate memory", thisfunc);
 
         return 1;
     }
 
     for (ofs = base; ofs != end; ofs += HDR(ofs)->size) {
         if (ofs < base || end < ofs) {
-            AM_LOG_DEBUG(0, "%s ------ cluster %d block range range error after %d: %d", thisfunc, cluster, base, ofs);
+            AM_LOG_DEBUG(0, "%s block validation: cluster %u block range error after %d: %d", thisfunc, cluster, base, ofs);
             err = 1;
 
             break;
         }
 
         if (HDR(ofs)->size < sizeof(block_header_t)) {
-            AM_LOG_DEBUG(0, "%s ------ cluster %d block range range error after %d: %d", thisfunc, cluster, base, ofs);
+            AM_LOG_DEBUG(0, "%s block validation: cluster %u block range error after %d: %d", thisfunc, cluster, base, ofs);
             err = 1;
 
             break;
@@ -704,7 +725,7 @@ static int validate_cluster_format(unsigned cluster) {
 
             for (ofs = cluster_free_lists(cluster)[freelist_offset]; ~ ofs; ofs = HDR(ofs)->u.free.n) {
                 if (( ptr = bsearch(&ofs, buffer, n, sizeof(offset), offset_comparator_reverse) ) == 0) {
-                    AM_LOG_DEBUG(0, "%s ------ cluster %d free list %d: entry is not a block offset", thisfunc, cluster, freelist_offset);
+                    AM_LOG_DEBUG(0, "%s block validation: cluster %u free list %d: entry is not a block offset", thisfunc, cluster, freelist_offset);
                     err = 1;
 
                     break;
@@ -713,7 +734,7 @@ static int validate_cluster_format(unsigned cluster) {
                 unsigned                    v = ptr - buffer;
 
                 if (visits[v]) {
-                    AM_LOG_DEBUG(0, "%s ------ cluster %d, free list %d: cycle detected", thisfunc, cluster, freelist_offset);
+                    AM_LOG_DEBUG(0, "%s block validation: cluster %u, free list %u: cycle detected", thisfunc, cluster, freelist_offset);
                     err = 1;
 
                     break;
@@ -723,7 +744,7 @@ static int validate_cluster_format(unsigned cluster) {
                 released += HDR(ofs)->size;
 
                 if (HDR(ofs)->u.free.p != prior) {
-                    AM_LOG_DEBUG(0, "%s ------ cluster %d, unexepected value for 'prior': %u", thisfunc, cluster, HDR(ofs)->u.free.p);
+                    AM_LOG_DEBUG(0, "%s block validation: cluster %u, unexepected prior offset: %u", thisfunc, cluster, HDR(ofs)->u.free.p);
                     err = 1;
 
                     break;
@@ -733,7 +754,7 @@ static int validate_cluster_format(unsigned cluster) {
         }
 
         if (used + released != cluster_capacity) {
-            AM_LOG_DEBUG(0, "%s ------ missing memory: cluster %d used %u, free %u, (%u out of %d)", thisfunc, cluster, used, released, used + released, cluster_capacity);
+            AM_LOG_DEBUG(0, "%s block validation: missing memory: cluster %u used %u, free %u, (%u out of %d)", thisfunc, cluster, used, released, used + released, cluster_capacity);
             err = 1;
         }
 
@@ -779,17 +800,17 @@ int agent_memory_check(pid_t pid, int verbose, int clearup) {
             }
             spinlock_unlock(&cluster_lock(cluster));
         } else if (locker == VALIDATION_LOCK) {
-            AM_LOG_DEBUG(0, "%s cluster %d: validating: validation lock was set", thisfunc, cluster);
+            AM_LOG_DEBUG(0, "%s cluster %u: validating: validation lock was set", thisfunc, cluster);
         } else if (process_dead(locker)) {
             if (cas(&cluster_lock(cluster), locker, VALIDATION_LOCK)) {
-                AM_LOG_DEBUG(0, "%s cluster %d: validating: locking process %d is dead", thisfunc, cluster, locker);
+                AM_LOG_DEBUG(0, "%s cluster %u: validating: locking process %d is dead", thisfunc, cluster, (int)locker);
 
                 if (validate_cluster_format(cluster)) {
                     err = 1;
                 } else if (cas(&cluster_lock(cluster), VALIDATION_LOCK, 0)) {
-                    AM_LOG_DEBUG(0, "%s cluster %d: unlocking cluster", thisfunc, cluster);
+                    AM_LOG_DEBUG(0, "%s cluster %u: unlocking cluster", thisfunc, cluster);
                 } else {
-                    AM_LOG_ERROR(0, "%s cluster %d: unlocking cluster failed", thisfunc, cluster);
+                    AM_LOG_ERROR(0, "%s cluster %u: unlocking cluster failed", thisfunc, cluster);
                 }
             }
         }
@@ -816,12 +837,12 @@ void agent_memory_reset(pid_t pid) {
                     break;
                 }
             } else if (process_dead(locker)) {
-AM_LOG_DEBUG(0, "%s ***** memory barrier: locking thread %d is dead", thisfunc, locker);
+                AM_LOG_DEBUG(0, "%s memory barrier: locking process %d is dead", thisfunc, (int)locker);
                 if (cas(&cluster_lock(cluster), locker, pid)) {
                     break;
                 }
             } else {
-AM_LOG_DEBUG(0, "%s ***** memory barrier: locking thread %d is active", thisfunc, locker);
+                AM_LOG_DEBUG(0, "%s memory barrier: locking process %d is active", thisfunc, (int)locker);
                 yield();
             }
         }
@@ -860,7 +881,7 @@ void agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_
         offset                              ofs = base;
 
         if (spinlock_lock(&cluster_lock(cluster), pid)) {
-            AM_LOG_ERROR(0, "%s ************ unable to scan cluster %d, getting out", thisfunc, cluster);
+            AM_LOG_ERROR(0, "%s unable to scan cluster %u, abandoning gc scan", thisfunc, cluster);
 
             return;
         }
@@ -887,8 +908,7 @@ void agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_
         spinlock_unlock(&cluster_lock(cluster));
     }
 
-    AM_LOG_DEBUG(0, "%s unlinked memory blocks -> %d ", thisfunc, c);
-    AM_LOG_DEBUG(0, "%s free -> %f \n", thisfunc, (float)free / (float)(CLUSTERS * cluster_capacity));
+    AM_LOG_DEBUG(0, "%s blocks unlinked during scan: %d, current memory free: %f", thisfunc, c, (float)free / (float)(CLUSTERS * cluster_capacity));
 
 }
 
@@ -924,8 +944,8 @@ static void analyse_cluster(int cluster, uint32_t *use_ptr, uint32_t *free_ptr, 
         blocks++;
     }
 
-    AM_LOG_DEBUG(0, "%s cluster %5d: used %8u, free %8u, blocks %5u ", thisfunc, cluster, used, free, blocks);
-    AM_LOG_DEBUG(0, "%s locks:  [%5u, %5u, %5u, %5u] (other %u)", thisfunc, locks[0], locks[1], locks[2], locks[3], overflows);
+    AM_LOG_DEBUG(0, "%s cluster %5u: used %8u, free %8u, blocks %5u %s locks:  [%5u, %5u, %5u, %5u] (other %u)",
+                      thisfunc, cluster, used, free, blocks, thisfunc, locks[0], locks[1], locks[2], locks[3], overflows);
 
     *use_ptr += used;
     *free_ptr += free;
@@ -950,7 +970,7 @@ void agent_memory_print(pid_t pid) {
 
     for (unsigned cluster = 0; cluster < CLUSTERS; cluster++) {
         if (spinlock_lock(&cluster_lock(cluster), pid)) {
-            AM_LOG_ERROR(0, "%s ************ unable to scan cluster %d, getting out", thisfunc, cluster);
+            AM_LOG_ERROR(0, "%s abandoning scan of cluster %u", thisfunc, cluster);
 
             break;
         }
@@ -961,10 +981,8 @@ void agent_memory_print(pid_t pid) {
     }
 
     AM_LOG_DEBUG(0, "%s avg %f blocks per cluster, in use %u, free %u", thisfunc, (float)blocks / CLUSTERS, used, free);
-    AM_LOG_DEBUG(0, "%s free list sizes: [", thisfunc); 
     for (int x = 0; x < CLUSTER_FREELISTS; x++) {
-        AM_LOG_DEBUG(0, "%s %u", thisfunc, freelists[x]); 
-        AM_LOG_DEBUG(0, "%s ]", thisfunc);
+        AM_LOG_DEBUG(0, "%s blocks in all freelists type %d: %u ", thisfunc, x, freelists[x]); 
     }
 
 }

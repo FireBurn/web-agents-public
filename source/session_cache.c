@@ -453,3 +453,8 @@ void am_cache_destroy() {
 
 }
 
+int am_cache_cleanup(int instance) {
+    return cache_cleanup(instance);
+
+}
+

@@ -28,17 +28,20 @@
  * the callback (cb) is called when the block is first opened and it is for initialisaiton of the block
  *
  */
-int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz, void (*cb)(void *cbdata, void *p), void *cbdata, int id)
-{
+int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz, void (*cb)(void *cbdata, void *p), void *cbdata, int id) {
+    static const char *thisfunc = "get_memory_segment():";
+
     if (p_addr == NULL) {
         return AM_FAIL;
     }
 
     *p_addr = am_shm_create(get_global_name(name, id), ((uint64_t) sz), AM_TRUE);
     if (*p_addr == NULL) {
+        AM_LOG_ERROR(0, "%s shared memory error: %s\n", thisfunc, name);
         return AM_ERROR;
     }
     if ((*p_addr)->error != AM_SUCCESS) {
+        AM_LOG_ERROR(0, "%s shared memory error %d: %s\n", thisfunc, (*p_addr)->error, name);
         return (*p_addr)->error;
     }
 
@@ -50,11 +53,11 @@ int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz, void (*cb)(void
 }
 
 /*
- * unmap and optionlly unlink a shared memory segment
+ * unmap and optionally unlink a shared memory segment
  *
  */
-int remove_memory_segment(am_shm_t **p_addr, int destroy)
-{
+int remove_memory_segment(am_shm_t **p_addr, int destroy) {
+
     if (p_addr == NULL) {
         return AM_FAIL;
     }
@@ -65,5 +68,23 @@ int remove_memory_segment(am_shm_t **p_addr, int destroy)
 
     *p_addr = NULL;
     return AM_SUCCESS;
+}
+
+/*
+ * delete memory segment
+ *
+ */
+int delete_memory_segment(const char *name, int id) {
+    static const char *thisfunc = "delete_memory_segment():";
+
+    int status = am_shm_delete(get_global_name(name, id));
+
+    if (status == AM_NOT_FOUND) {
+        status = AM_SUCCESS;
+    } else if (status) {
+        AM_LOG_ERROR(0, "%s error deleting shared memory: %s\n", thisfunc, name);
+    }
+
+    return status;
 }
 

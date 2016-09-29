@@ -3,7 +3,7 @@ SRC = ../source
 
 CC = cc
 
-CFLAGS = -D_GNU_SOURCE -std=gnu99 -O3 -pthread -I$(SRC)
+CFLAGS = -D_GNU_SOURCE -DINTEGRATION_TEST -std=gnu99 -O3 -pthread -I$(SRC) -I../pcre
 
 LDFLAGS = -lpthread 
 

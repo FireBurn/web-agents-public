@@ -206,8 +206,8 @@ void am_shm_unlock(am_shm_t *);
 int am_shm_lock(am_shm_t *);
 am_shm_t *am_shm_create(const char *, uint64_t, int use_new_initialiser);
 void am_shm_shutdown(am_shm_t *);
+int am_shm_delete(char *name);
 void *am_shm_alloc(am_shm_t *am, uint64_t usize);
-void *am_shm_alloc_with_gc(am_shm_t *am, uint64_t usize, int (*gc)(unsigned long), unsigned long instance_id);
 void am_shm_free(am_shm_t *am, void *ptr);
 void *am_shm_realloc(am_shm_t *am, void *ptr, uint64_t size);
 void am_shm_set_user_offset(am_shm_t *r, unsigned int s);
@@ -376,5 +376,6 @@ int am_policy_epoch_serialise(struct cache_object_ctx *ctx, uint64_t time);
 
 int am_cache_worker_init();
 void am_cache_worker_shutdown();
+int am_cache_cleanup(int id);
 
 #endif

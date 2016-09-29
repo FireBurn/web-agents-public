@@ -18,8 +18,8 @@
 #define AGENT_CACHE_H
 
 int cache_initialise(int id);
-void cache_reinitialise();
 int cache_shutdown();
+int cache_cleanup(int id);
 
 int cache_add(uint32_t hash, void *data, size_t ln, int64_t expires, int (*identity)(void *, void *));
 

@@ -388,6 +388,54 @@ void *am_shm_get_user_pointer(am_shm_t *am) {
     return NULL;
 }
 
+int am_shm_delete(char *name) {
+    char shm_name[AM_PATH_SIZE];
+
+#ifdef _WIN32
+    char dll_path[AM_URI_SIZE];
+    void *address = _ReturnAddress();
+    HMODULE hm = NULL;
+#ifdef UNIT_TEST
+    const char *format = "%s"FILE_PATH_SEP"%s_f";
+    if (GetModuleFileNameA(NULL, dll_path, sizeof (dll_path) - 1) > 0) {
+#else
+    const char *format = "%s.."FILE_PATH_SEP"log"FILE_PATH_SEP"%s_f";
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR) address, &hm) &&
+            GetModuleFileNameA(hm, dll_path, sizeof (dll_path) - 1) > 0) {
+#endif
+        PathRemoveFileSpecA(dll_path);
+        strcat(dll_path, FILE_PATH_SEP);
+        snprintf(shm_name, sizeof (shm_name), format, dll_path, name);
+
+        if (DeleteFile(shm_name) == 0) {
+            if (GetLastError() == ERROR_FILE_NOT_FOUND)
+                return AM_NOT_FOUND;
+            else
+                return AM_ERROR;
+        }
+    } else {
+        return AM_ERROR;
+    }
+#else
+#ifdef __sun
+    const char *format = "/%s_s":
+#else
+    const char *format  = "%s_s";
+#endif
+    snprintf(shm_name, sizeof (shm_name), format, name);
+
+    if (shm_unlink(shm_name)) {
+        if (errno == ENOENT)
+            return AM_NOT_FOUND;
+        else
+            return AM_ERROR;
+    }
+#endif
+    return AM_SUCCESS;
+
+}
+
 am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialiser) {
     struct mem_pool *pool = NULL;
     uint64_t size, max_size;

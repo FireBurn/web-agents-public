@@ -19,5 +19,6 @@
 
 int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz, void (*cb)(void *cbdata, void *p), void *cbdata, int id);
 int remove_memory_segment(am_shm_t **p_addr, int destroy);
+int delete_memory_segment(const char *name, int it);
 
 #endif  /*SHM_INCLUDED*/

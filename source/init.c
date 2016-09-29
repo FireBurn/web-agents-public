@@ -90,71 +90,35 @@ int am_shutdown_worker() {
     return 0;
 }
 
-#ifndef _WIN32
-
-/*
- * get shared memory name, as opened by am_shm_create
- */
-static am_bool_t get_shm_name(const char *root, int id, char *buffer, size_t buffer_sz) {
-    char *global_name = get_global_name(root, id);
-    int sz;
-
-    if (global_name == NULL)
-        return AM_FALSE;
-
-    sz = snprintf(buffer, buffer_sz,
-#ifdef __sun
-            "/%s_s"
-#else
-            "%s_s"
-#endif
-            , global_name);
-
-    return 0 <= sz && sz < buffer_sz;
-}
-
-static am_bool_t unlink_shm(char *shm_name, void (*log_cb)(void *arg, char *name, int error), void *cb_arg) {
-    errno = 0;
-    if (shm_unlink(shm_name) == 0) {
-        // warn: shared memory was present but successfully cleared
-        log_cb(cb_arg, shm_name, 0);
-    } else if (errno != ENOENT) {
-        // failure: shared memory was not cleared
-        log_cb(cb_arg, shm_name, errno);
-        return AM_FALSE;
-    }
-    return AM_TRUE;
-}
-
-#endif
-
 /*
  * Remove all shared memory and semaphore resources that might be left open if the agent terminates
  * abnormally
  */
 am_status_t am_remove_shm_and_locks(int id, void (*log_cb)(void *arg, char *name, int error), void *cb_arg) {
-#ifdef _WIN32
-    return AM_SUCCESS;
-#else
-    am_status_t status = AM_SUCCESS;
-    char name [AM_PATH_SIZE];
+    int status;
+    int errors = 0;
 
-    if (!(get_shm_name(AM_AUDIT_SHM_NAME, id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg))) {
-        status = AM_ERROR;
+    if (am_cache_cleanup(id)) {
+        errors++;
     }
 
-    if (!(get_shm_name(AM_CACHE_SHM_NAME, id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg))) {
-        status = AM_ERROR;
+    status = am_shm_delete(get_global_name(AM_AUDIT_SHM_NAME, id));
+    if (status) {
+        log_cb(cb_arg, AM_AUDIT_SHM_NAME, status);
+        errors++;
     }
 
-    if (!(get_shm_name(AM_CONFIG_SHM_NAME, id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg))) {
-        status = AM_ERROR;
+    status = am_shm_delete(get_global_name(AM_CONFIG_SHM_NAME, id));
+    if (status) {
+        log_cb(cb_arg, AM_CONFIG_SHM_NAME, status);
+        errors++;
     }
 
-    if (!(get_shm_name(AM_LOG_SHM_NAME, id, name, sizeof (name)) && unlink_shm(name, log_cb, cb_arg))) {
-        status = AM_ERROR;
+    status = am_shm_delete(get_global_name(AM_LOG_SHM_NAME, id));
+    if (status) {
+        log_cb(cb_arg, AM_LOG_SHM_NAME, status);
+        errors++;
     }
 
-    return status;
-#endif
+    return errors ? AM_ERROR : AM_SUCCESS;
 }

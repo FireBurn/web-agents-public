@@ -270,9 +270,29 @@ int cache_shutdown(int destroy) {
 
     remove_memory_segment(&hashtable_pool, destroy);
 
-    agent_memory_destroy(destroy);
+    agent_memory_shutdown(destroy);
 
     return 0;
+
+}
+
+int cache_cleanup(int id) {
+
+    int                                     errors = 0;
+
+    if (delete_memory_segment(STATFILE, id))
+        errors++;
+
+    if (delete_memory_segment(LOCKFILE, id))
+        errors++;
+
+    if (delete_memory_segment(HASHFILE, id))
+        errors++;
+
+    if (agent_memory_cleanup(id))
+        errors++;
+
+    return errors;
 
 }
 
@@ -501,7 +521,7 @@ void cache_purge_expired_entries(pid_t pid) {
     }
 
     if (n) {
-        AM_LOG_DEBUG(0, "%s ******** unlinked expired entries: %d", thisfunc, n);
+        AM_LOG_DEBUG(0, "%s expired cache entries unlinked: %d", thisfunc, n);
     }
 
 }
@@ -861,18 +881,18 @@ int master_recovery_process(pid_t pid) {
 
     static const char                      *thisfunc = "master_recovery_process():";
 
-    AM_LOG_DEBUG(0, "%s **** blocking cache locks", thisfunc);
+    AM_LOG_DEBUG(0, "%s blocking cache locks", thisfunc);
     if (cache_readlock_block_all(pid)) {
         return 1;
     }
 
-    AM_LOG_DEBUG(0, "%s **** reinitialising cache", thisfunc);
+    AM_LOG_DEBUG(0, "%s reinitialising cache", thisfunc);
     cache_reinitialise();
 
-    AM_LOG_DEBUG(0, "%s **** resetting memory clusters", thisfunc);
+    AM_LOG_DEBUG(0, "%s resetting memory clusters", thisfunc);
     agent_memory_reset(pid);
 
-    AM_LOG_DEBUG(0, "%s **** unblocking cache locks", thisfunc);
+    AM_LOG_DEBUG(0, "%s unblocking cache locks", thisfunc);
     cache_readlock_unblock_all(pid);
 
     return 0;

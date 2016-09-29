@@ -80,16 +80,14 @@ char *log_header(int log_level, int *header_sz, const char *file, int line);
 #else /* INTEGRATION_TEST */
 #include <stdio.h>
 
-#define AM_LOG_DEBUG(instance, format, thisfunc, ...) \
+#define AM_LOG_DEBUG(instance, format, ...) \
     do {\
-        printf(format, "", ##__VA_ARGS__);\
-        }\
+        printf(format"\n", ##__VA_ARGS__);\
     } while (0)
 
-#define AM_LOG_ERROR(instance, format, thisfunc, ...) \
+#define AM_LOG_ERROR(instance, format, ...) \
     do {\
-        printf(format, "", ##__VA_ARGS__);\
-        }\
+        printf(format"\n", ##__VA_ARGS__);\
     } while (0)
 
 #endif /* INTEGRATION_TEST */
