@@ -21,6 +21,8 @@
  */
 
 #include "platform.h"
+#include "am.h"
+#include "log.h"
 
 #include "rwlock.h"
 
@@ -102,6 +104,7 @@ static int wait_for_counted_readers(struct readlock *lock, int tries) {
  *
  */
 static int wait_for_live_readers(struct readlock *lock, pid_t pid, int unblock) {
+    static const char *thisfunc = "wait_for_live_readers(struct readlock *lock, pid_t pid, int unblock):";
 
     pid_t                                   checker = 0;
 
@@ -110,7 +113,7 @@ static int wait_for_live_readers(struct readlock *lock, pid_t pid, int unblock) 
             return 0;                                                                 /* this process is already the checker, wait  */
         } else if (process_dead(checker)) {
             if (cas(&lock->barrier, checker, pid)) {
-                printf("rwlock: %d takes over as checker\n", pid);                    /* this process takes over as checker */
+                AM_LOG_DEBUG(0, "%s rwlock: %d takes over as checker", thisfunc, pid);                    /* this process takes over as checker */
             } else {
                 return 0;                                                             /* another process has become the checker */
             }
@@ -129,7 +132,6 @@ static int wait_for_live_readers(struct readlock *lock, pid_t pid, int unblock) 
                 if (writer == -1) {
                     n++;
                 } else if (process_dead(writer)) {
-printf("rwlock: %d sees termination of %d\n", pid, writer);                           /* TODO: remove this debug info */
                     for (int j = i; j < THREAD_LIMIT; j++) {
                         cas(lock->pids + j, writer, -1);                              /* remove pids for threads of a dead process */
                     }
@@ -341,7 +343,6 @@ int read_lock_try(struct readlock *lock, pid_t pid, int tries) {
 int read_try_unique(struct readlock *lock, int tries) {
 
     do {
-if (lock->readers == 0) printf("*********** i don't have a readlock\n");              /* TODO: remove this, this doesn't happen */
 
         if (cas(&lock->readers, 1, THREAD_LIMIT)) {
             return 1;
@@ -365,7 +366,6 @@ int read_release_unique(struct readlock *lock) {
         if (cas(&lock->readers, THREAD_LIMIT, 1)) {
             return 1;
         }
-printf("lock_release_unique: *************** readers -> %d\n", lock->readers);        /* TODO: remove this, this doesn't happen */
 
         yield();            
 
@@ -383,7 +383,6 @@ int read_release_all(struct readlock *lock, pid_t pid) {
         if (cas(&lock->readers, THREAD_LIMIT, 0)) {
             break;
         }
-printf("lock_release_unique: **************** readers -> %d\n", lock->readers);       /* TODO: remove this, this doesn't happen */
 
         yield();            
 
@@ -411,7 +410,6 @@ int read_release(struct readlock *lock, pid_t pid) {
                 break;
             }
         } else {
-printf("lock_release: *************** count error has occurredn");                    /* TODO: remove this, this doesn't happen */
             break;
         }
         
