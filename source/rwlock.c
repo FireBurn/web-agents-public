@@ -104,7 +104,7 @@ static int wait_for_counted_readers(struct readlock *lock, int tries) {
  *
  */
 static int wait_for_live_readers(struct readlock *lock, pid_t pid, int unblock) {
-    static const char *thisfunc = "wait_for_live_readers(struct readlock *lock, pid_t pid, int unblock):";
+    static const char                      *thisfunc = "wait_for_live_readers():";
 
     pid_t                                   checker = 0;
 

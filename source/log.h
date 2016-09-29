@@ -17,6 +17,8 @@
 #ifndef LOG_H
 #define LOG_H
 
+#ifndef INTEGRATION_TEST
+
 int perform_logging(unsigned long instance_id, int level);
 void am_log_write(unsigned long instance_id, int level, const char* header, int header_sz, const char *format, ...);
 char *log_header(int log_level, int *header_sz, const char *file, int line);
@@ -75,4 +77,21 @@ char *log_header(int log_level, int *header_sz, const char *file, int line);
         }\
     } while (0)
 
-#endif
+#else /* INTEGRATION_TEST */
+#include "stdio.h"
+
+#define AM_LOG_DEBUG(instance, format, thisfunc, ...) \
+    do {\
+        printf(format, "", ##__VA_ARGS__);\
+        }\
+    } while (0)
+
+#define AM_LOG_ERROR(instance, format, thisfunc, ...) \
+    do {\
+        printf(format, "", ##__VA_ARGS__);\
+        }\
+    } while (0)
+
+#endif /* INTEGRATION_TEST */
+
+#endif /* LOG_H */ 

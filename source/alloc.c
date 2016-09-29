@@ -195,12 +195,12 @@ static int process_dead(pid_t pid) {
  *
  */
 void agent_memory_error() {
-    static const char *thisfunc = "agent_memory_error():";
+    static const char                      *thisfunc = "agent_memory_error():";
 
     if (cas(&ctlblock->error, 0, 1)) {
-AM_LOG_DEBUG(0, "%s **** triggering memory cleardown", thisfunc);
+        AM_LOG_DEBUG(0, "%s **** triggering memory cleardown", thisfunc);
     } else {
-AM_LOG_DEBUG(0, "%s **** memory cleardown alredy triggered", thisfunc);
+        AM_LOG_DEBUG(0, "%s **** memory cleardown alredy triggered", thisfunc);
     }
 
 }
@@ -210,12 +210,12 @@ AM_LOG_DEBUG(0, "%s **** memory cleardown alredy triggered", thisfunc);
  *
  */
 int try_validate(pid_t pid) {
-    static const char *thisfunc = "try_validate(pid_t pid):";
+    static const char                      *thisfunc = "try_validate():";
 
     if (ctlblock->error) {
         return 1;
     } else {
-AM_LOG_DEBUG(0, "%s %d checking memory slowdown", thisfunc, pid);
+        AM_LOG_DEBUG(0, "%s %d checking memory slowdown", thisfunc, pid);
 
         if (agent_memory_check(pid, 0, 0)) {
             agent_memory_error();
@@ -232,7 +232,7 @@ AM_LOG_DEBUG(0, "%s %d checking memory slowdown", thisfunc, pid);
  *
  */
 void agent_memory_validate(pid_t pid) {
-    static const char *thisfunc = "agent_memory_validate(pid_t pid):";
+    static const char                      *thisfunc = "agent_memory_validate():";
 
     pid_t                                   checker;
 
@@ -243,20 +243,20 @@ void agent_memory_validate(pid_t pid) {
     do {
         if (( checker = casv(&ctlblock->checker, 0, pid) )) {
             if (process_dead(checker)) {   
-AM_LOG_DEBUG(0, "%s **** cleardown process %d is dead, %d resetting checker", thisfunc, checker, pid);
+                AM_LOG_DEBUG(0, "%s **** cleardown process %d is dead, %d resetting checker", thisfunc, checker, pid);
                 cas(&ctlblock->checker, checker, 0);   
             } else {
                 yield();
             }
         } else {
-AM_LOG_DEBUG(0, "%s **** starting recovery process in %d", thisfunc, pid);
+            AM_LOG_DEBUG(0, "%s **** starting recovery process in %d", thisfunc, pid);
 
             if (master_recovery_process(pid) == 0) {
                 cas(&ctlblock->error, 1, 0);
 
-AM_LOG_DEBUG(0, "%s **** ending recovery process in %d", thisfunc, pid);
+                AM_LOG_DEBUG(0, "%s **** ending recovery process in %d", thisfunc, pid);
             } else {
-AM_LOG_DEBUG(0, "%s **** abandoning recovery process in %d", thisfunc, pid);
+                AM_LOG_DEBUG(0, "%s **** abandoning recovery process in %d", thisfunc, pid);
             }
             cas(&ctlblock->checker, pid, 0);
 
@@ -651,7 +651,7 @@ int agent_memory_locks(pid_t pid, void *p) {
  *
  */
 static int validate_cluster_format(unsigned cluster) {
-    static const char *thisfunc = "validate_cluster_format(unsigned cluster):";
+    static const char                      *thisfunc = "validate_cluster_format():";
 
     offset                                  base = cluster * cluster_capacity, end = base + cluster_capacity;
 
@@ -753,7 +753,7 @@ static int validate_cluster_format(unsigned cluster) {
  *
  */
 int agent_memory_check(pid_t pid, int verbose, int clearup) {
-    static const char *thisfunc = "agent_memory_check(pid_t pid, int verbose, int clearup):";
+    static const char                      *thisfunc = "agent_memory_check():";
 
     int                                     err = 0;
     
@@ -804,7 +804,7 @@ int agent_memory_check(pid_t pid, int verbose, int clearup) {
  *
  */
 void agent_memory_reset(pid_t pid) {
-    static const char *thisfunc = "agent_memory_reset(pid_t pid):";
+    static const char                      *thisfunc = "agent_memory_reset():";
 
     unsigned                                cluster;
     pid_t                                   locker;
@@ -847,7 +847,7 @@ AM_LOG_DEBUG(0, "%s ***** memory barrier: locking thread %d is active", thisfunc
  *
  */
 void agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_t type, void *p), void *cbdata) {
-    static const char *thisfunc = "agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_t type, void *p), void *cbdata):";
+    static const char                      *thisfunc = "agent_memory_scan():";
 
     unsigned                                cluster;
 
@@ -897,7 +897,7 @@ void agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_
  *
  */
 static void analyse_cluster(int cluster, uint32_t *use_ptr, uint32_t *free_ptr, uint32_t *block_ptr, uint32_t *freelists) {
-    static const char *thisfunc = "analyse_cluster(int cluster, uint32_t *use_ptr, uint32_t *free_ptr, uint32_t *block_ptr, uint32_t *freelists):";
+    static const char                      *thisfunc = "analyse_cluster():";
 
     offset                                  base = cluster * cluster_capacity, end = base + cluster_capacity;
 
@@ -938,7 +938,7 @@ static void analyse_cluster(int cluster, uint32_t *use_ptr, uint32_t *free_ptr, 
  *
  */
 void agent_memory_print(pid_t pid) {
-    static const char *thisfunc = "agent_memory_print(pid_t pid):";
+    static const char                      *thisfunc = "agent_memory_print():";
 
     uint32_t                                used = 0, free = 0, blocks = 0;
 
@@ -963,8 +963,8 @@ void agent_memory_print(pid_t pid) {
     AM_LOG_DEBUG(0, "%s avg %f blocks per cluster, in use %u, free %u", thisfunc, (float)blocks / CLUSTERS, used, free);
     AM_LOG_DEBUG(0, "%s free list sizes: [", thisfunc); 
     for (int x = 0; x < CLUSTER_FREELISTS; x++) {
-        AM_LOG_DEBUG(0, "%u ", freelists[x]); 
-        AM_LOG_DEBUG(0, "]");
+        AM_LOG_DEBUG(0, "%s %u", thisfunc, freelists[x]); 
+        AM_LOG_DEBUG(0, "%s ]", thisfunc);
     }
 
 }

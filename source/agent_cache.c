@@ -149,7 +149,7 @@ static am_shm_t                            *stats_pool = 0, *locks_pool = 0, *ha
 
 static void reset_stats(void *cbdata, void *p) {
 
-    static const char *thisfunc = "reset_stats(void *cbdata, void *p):";
+    static const char                      *thisfunc = "reset_stats():";
 
     struct stats                           *stats = p;
 
@@ -162,7 +162,7 @@ static void reset_stats(void *cbdata, void *p) {
 
 static void reset_hashtable(void *cbdata, void *p) {
 
-    static const char *thisfunc = "reset_hashtable(void *cbdata, void *p):";
+    static const char                      *thisfunc = "reset_hashtable():";
 
     offset                                 *table = p;
 
@@ -177,7 +177,7 @@ static void reset_hashtable(void *cbdata, void *p) {
 
 static void reset_locks(void *cbdata, void *p) {
 
-    static const char *thisfunc = "reset_locks(void *cbdata, void *p):";
+    static const char                      *thisfunc = "reset_locks():";
 
     struct readlock                        *locks = p;
 
@@ -217,7 +217,7 @@ static uint32_t next_pow_2(uint32_t v) {
  */
 uint32_t cache_memory_size() {
 
-    static const char *thisfunc = "cache_memory_size():";
+    static const char                      *thisfunc = "cache_memory_size():";
 
     char                                   *env = getenv("AM_MAX_SESSION_CACHE_SIZE");
 
@@ -484,7 +484,7 @@ incr(&stats->lru.v);
  */
 void cache_purge_expired_entries(pid_t pid) {
 
-    static const char *thisfunc = "cache_purge_expired_entries(pid_t pid):";
+    static const char                      *thisfunc = "cache_purge_expired_entries():";
 
     int                                     n = 0;
 
@@ -517,7 +517,7 @@ void cache_purge_expired_entries(pid_t pid) {
  */
 int cache_add(uint32_t h, void *data, size_t ln, int64_t expires, int (*identity)(void *, void *)) {
 
-    static const char *thisfunc = "cache_add(uint32_t h, void *data, size_t ln, int64_t expires, int (*identity)(void *, void *)):";
+    static const char                      *thisfunc = "cache_add():";
 
     offset                                  ofs;
     struct cache_entry                     *e;
@@ -831,48 +831,48 @@ static uint32_t get_and_reset(volatile uint32_t *p) {
 }
 
 void cache_stats() {
+#ifdef INTEGRATION_TEST
 
-    static const char *thisfunc = "cache_stats():";
-
-    AM_LOG_DEBUG(0, "%s cache throughput:", thisfunc);
-    AM_LOG_DEBUG(0, "reads:   %u", get_and_reset(&stats->reads.v));    
-    AM_LOG_DEBUG(0, "writes:  %u", get_and_reset(&stats->writes.v));    
-    AM_LOG_DEBUG(0, "updates: %u", get_and_reset(&stats->updates.v));    
-    AM_LOG_DEBUG(0, "deletes: %u", get_and_reset(&stats->deletes.v));    
-    AM_LOG_DEBUG(0, "failures:%u", get_and_reset(&stats->failures.v));    
-    AM_LOG_DEBUG(0, "expires: %u", get_and_reset(&stats->expires.v));    
-    AM_LOG_DEBUG(0, "lru:     %u", get_and_reset(&stats->lru.v));    
+    printf("cache throughput:\n");
+    printf("reads:   %u\n", get_and_reset(&stats->reads.v));    
+    printf("writes:  %u\n", get_and_reset(&stats->writes.v));    
+    printf("updates: %u\n", get_and_reset(&stats->updates.v));    
+    printf("deletes: %u\n", get_and_reset(&stats->deletes.v));    
+    printf("failures:%u\n", get_and_reset(&stats->failures.v));    
+    printf("expires: %u\n", get_and_reset(&stats->expires.v));    
+    printf("lru:     %u\n", get_and_reset(&stats->lru.v));    
 
 #ifdef GC_STATS
-    AM_LOG_DEBUG(0, "%s cache objects:", thisfunc);
-    AM_LOG_DEBUG(0, "leaked: %u", get_and_reset(&stats->cache.leaked.v));    
-    AM_LOG_DEBUG(0, "cleared: %u", get_and_reset(&stats->cache.cleared.v));    
-    AM_LOG_DEBUG(0, "collected: %u", get_and_reset(&stats->cache.collected.v));    
+    printf("cache objects:\n");
+    printf("leaked: %u\n", get_and_reset(&stats->cache.leaked.v));    
+    printf("cleared: %u\n", get_and_reset(&stats->cache.cleared.v));    
+    printf("collected: %u\n", get_and_reset(&stats->cache.collected.v));    
 
-    AM_LOG_DEBUG(0, "%s user objects:", thisfunc);
-    AM_LOG_DEBUG(0, "leaked: %u", get_and_reset(&stats->data.leaked.v));    
-    AM_LOG_DEBUG(0, "cleared: %u", get_and_reset(&stats->data.cleared.v));    
-    AM_LOG_DEBUG(0, "collected: %u", get_and_reset(&stats->data.collected.v));    
-#endif
+    printf("user objects:\n");
+    printf("leaked: %u\n", get_and_reset(&stats->data.leaked.v));    
+    printf("cleared: %u\n", get_and_reset(&stats->data.cleared.v));    
+    printf("collected: %u\n", get_and_reset(&stats->data.collected.v));    
+#endif /* GC_STATS */
+#endif /* INTEGRATION_TEST */
 
 }
 
 int master_recovery_process(pid_t pid) {
 
-    static const char *thisfunc = "master_recovery_process(pid_t pid):";
+    static const char                      *thisfunc = "master_recovery_process():";
 
-AM_LOG_DEBUG(0, "%s **** blocking cache locks", thisfunc);
+    AM_LOG_DEBUG(0, "%s **** blocking cache locks", thisfunc);
     if (cache_readlock_block_all(pid)) {
         return 1;
     }
 
-AM_LOG_DEBUG(0, "%s **** reinitialising cache", thisfunc);
+    AM_LOG_DEBUG(0, "%s **** reinitialising cache", thisfunc);
     cache_reinitialise();
 
-AM_LOG_DEBUG(0, "%s **** resetting memory clusters", thisfunc);
+    AM_LOG_DEBUG(0, "%s **** resetting memory clusters", thisfunc);
     agent_memory_reset(pid);
 
-AM_LOG_DEBUG(0, "%s **** unblocking cache locks", thisfunc);
+    AM_LOG_DEBUG(0, "%s **** unblocking cache locks", thisfunc);
     cache_readlock_unblock_all(pid);
 
     return 0;
