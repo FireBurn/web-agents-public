@@ -78,7 +78,7 @@ char *log_header(int log_level, int *header_sz, const char *file, int line);
     } while (0)
 
 #else /* INTEGRATION_TEST */
-#include "stdio.h"
+#include <stdio.h>
 
 #define AM_LOG_DEBUG(instance, format, thisfunc, ...) \
     do {\
