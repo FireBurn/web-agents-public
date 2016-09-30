@@ -68,7 +68,7 @@
 
 #include <sys/atomic.h>
 #define incr(p)                             atomic_add_32_nv(p, 1)
-#define reset(p)                            atomic_add_32_nv(p, 0)
+#define reset(p)                            atomic_swap_32(p, 0)
 
 #define casv(p, old, new)                   atomic_cas_32(p, old, new)
 #define cas(p, old, new)                    (atomic_cas_32(p, old, new) == (old))
