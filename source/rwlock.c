@@ -49,6 +49,7 @@ const struct readlock                       readlock_init = { .readers = 0, .bar
  *
  */
 static int process_dead(pid_t pid) {
+    static const char                      *thisfunc = "process_dead():";
 #if defined _WIN32
     HANDLE                                  h;
     if (( h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid) )) {         /* expected error is ERROR_INVALID_PARAMETER */
@@ -57,12 +58,14 @@ static int process_dead(pid_t pid) {
             if (exitcode != STILL_ACTIVE)
                 done = 1;
         } else {
-                                                                                      /* permissions error */
+            AM_LOG_DEBUG(0, "%s unable to verify liveness of locking process %"PR_L64" (error %d)",
+                             thisfunc, (int64_t)pid, GetLastError());                 /* permissions error */
         }
         CloseHandle(h);
         return done;
     } else if (GetLastError() == ERROR_ACCESS_DENIED) {
-                                                                                      /* permissions error */
+        AM_LOG_DEBUG(0, "%s unable to verify liveness of locking process %"PR_L64" (error %d)",
+                         thisfunc, (int64_t)pid, GetLastError());                     /* permissions error */
     }
     return 1;
 #else
@@ -70,7 +73,8 @@ static int process_dead(pid_t pid) {
         if (errno == ESRCH) {
             return 1;
         } else {
-                                                                                      /* permissions error */
+            AM_LOG_DEBUG(0, "%s unable to verify liveness of locking process %"PR_L64" (error %d)",
+                             thisfunc, (int64_t)pid, errno);                         /* permissions error */
         }
     }
     return 0;
@@ -113,7 +117,8 @@ static int wait_for_live_readers(struct readlock *lock, pid_t pid, int unblock) 
             return 0;                                                                 /* this process is already the checker, wait  */
         } else if (process_dead(checker)) {
             if (cas(&lock->barrier, checker, pid)) {
-                AM_LOG_DEBUG(0, "%s rwlock check: %d takes over from %d", thisfunc, pid, checker); /* this process takes over as checker */
+                AM_LOG_DEBUG(0, "%s rwlock recovery: %"PR_L64" takes over from %"PR_L64"",
+                                 thisfunc, (int64_t)pid, (int64_t)checker);           /* this process takes over as checker */
             } else {
                 return 0;                                                             /* another process has become the checker */
             }

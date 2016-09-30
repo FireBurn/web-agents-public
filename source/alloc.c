@@ -161,7 +161,12 @@ extern int master_recovery_process(pid_t pid);
  * check whether a process is dead
  *
  */
+/*
+ * check whether a process is dead
+ *
+ */
 static int process_dead(pid_t pid) {
+    static const char                      *thisfunc = "process_dead():";
 #if defined _WIN32
     HANDLE                                  h;
     if (( h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid) )) {         /* expected error is ERROR_INVALID_PARAMETER */
@@ -170,12 +175,14 @@ static int process_dead(pid_t pid) {
             if (exitcode != STILL_ACTIVE)
                 done = 1;
         } else {
-                                                                                      /* permissions error */
+            AM_LOG_DEBUG(0, "%s unable to verify liveness of locking process %"PR_L64" (error %d)",
+                             thisfunc, (int64_t)pid, GetLastError());                 /* permissions error */
         }
         CloseHandle(h);
         return done;
     } else if (GetLastError() == ERROR_ACCESS_DENIED) {
-                                                                                      /* permissions error */
+        AM_LOG_DEBUG(0, "%s unable to verify liveness of locking process %"PR_L64" (error %d)",
+                         thisfunc, (int64_t)pid, GetLastError());                     /* permissions error */
     }
     return 1;
 #else
@@ -183,7 +190,8 @@ static int process_dead(pid_t pid) {
         if (errno == ESRCH) {
             return 1;
         } else {
-                                                                                      /* permissions error */
+            AM_LOG_DEBUG(0, "%s unable to verify liveness of locking process %"PR_L64" (error %d)",
+                             thisfunc, (int64_t)pid, errno);                         /* permissions error */
         }
     }
     return 0;
@@ -215,7 +223,7 @@ int try_validate(pid_t pid) {
     if (ctlblock->error) {
         return 1;
     } else {
-        AM_LOG_DEBUG(0, "%s process %d checking memory slowdown", thisfunc, (int)pid);
+        AM_LOG_DEBUG(0, "%s process %"PR_L64" checking memory slowdown", thisfunc, (int64_t)pid);
 
         if (agent_memory_check(pid, 0, 0)) {
             agent_memory_error();
@@ -243,20 +251,21 @@ void agent_memory_validate(pid_t pid) {
     do {
         if (( checker = casv(&ctlblock->checker, 0, pid) )) {
             if (process_dead(checker)) {   
-                AM_LOG_DEBUG(0, "%s recovery: recovery process %d is dead, trying process %d", thisfunc, (int)checker, (int)pid);
+                AM_LOG_DEBUG(0, "%s recovery: recovery process %"PR_L64" is dead, trying process %"PR_L64"",
+                                thisfunc, (int64_t)checker, (int64_t)pid);
                 cas(&ctlblock->checker, checker, 0);   
             } else {
                 yield();                                                              /* NOTE: this is quite a tight loop, monitoring recovery */
             }
         } else {
-            AM_LOG_DEBUG(0, "%s recovery: starting recovery process in %d", thisfunc, (int)pid);
+            AM_LOG_ERROR(0, "%s recovery: starting recovery process in %"PR_L64"", thisfunc, (int64_t)pid);
 
             if (master_recovery_process(pid) == 0) {
                 cas(&ctlblock->error, 1, 0);
 
-                AM_LOG_DEBUG(0, "%s recovery: ending recovery in process %d", thisfunc, (int)pid);
+                AM_LOG_ERROR(0, "%s recovery: ending recovery in process %"PR_L64"", thisfunc, (int64_t)pid);
             } else {
-                AM_LOG_DEBUG(0, "%s recovery: abandoning recovery in process %d", thisfunc, (int)pid);
+                AM_LOG_ERROR(0, "%s recovery: abandoning recovery in process %"PR_L64"", thisfunc, (int64_t)pid);
             }
             cas(&ctlblock->checker, pid, 0);
 
@@ -725,7 +734,8 @@ static int validate_cluster_format(unsigned cluster) {
 
             for (ofs = cluster_free_lists(cluster)[freelist_offset]; ~ ofs; ofs = HDR(ofs)->u.free.n) {
                 if (( ptr = bsearch(&ofs, buffer, n, sizeof(offset), offset_comparator_reverse) ) == 0) {
-                    AM_LOG_DEBUG(0, "%s block validation: cluster %u free list %d: entry is not a block offset", thisfunc, cluster, freelist_offset);
+                    AM_LOG_DEBUG(0, "%s block validation: cluster %u free list %d: entry is not a block offset",
+                                     thisfunc, cluster, freelist_offset);
                     err = 1;
 
                     break;
@@ -754,7 +764,8 @@ static int validate_cluster_format(unsigned cluster) {
         }
 
         if (used + released != cluster_capacity) {
-            AM_LOG_DEBUG(0, "%s block validation: missing memory: cluster %u used %u, free %u, (%u out of %d)", thisfunc, cluster, used, released, used + released, cluster_capacity);
+            AM_LOG_DEBUG(0, "%s block validation: missing memory: cluster %u used %u, free %u, (%u out of %d)",
+                             thisfunc, cluster, used, released, used + released, cluster_capacity);
             err = 1;
         }
 
@@ -803,7 +814,8 @@ int agent_memory_check(pid_t pid, int verbose, int clearup) {
             AM_LOG_DEBUG(0, "%s cluster %u: validating: validation lock was set", thisfunc, cluster);
         } else if (process_dead(locker)) {
             if (cas(&cluster_lock(cluster), locker, VALIDATION_LOCK)) {
-                AM_LOG_DEBUG(0, "%s cluster %u: validating: locking process %d is dead", thisfunc, cluster, (int)locker);
+                AM_LOG_DEBUG(0, "%s cluster %u: validating: locking process %"PR_L64" is dead",
+                                 thisfunc, cluster, (int64_t)locker);
 
                 if (validate_cluster_format(cluster)) {
                     err = 1;
@@ -837,12 +849,12 @@ void agent_memory_reset(pid_t pid) {
                     break;
                 }
             } else if (process_dead(locker)) {
-                AM_LOG_DEBUG(0, "%s memory barrier: locking process %d is dead", thisfunc, (int)locker);
+                AM_LOG_DEBUG(0, "%s memory barrier: locking process %"PR_L64" is dead", thisfunc, (int64_t)locker);
                 if (cas(&cluster_lock(cluster), locker, pid)) {
                     break;
                 }
             } else {
-                AM_LOG_DEBUG(0, "%s memory barrier: locking process %d is active", thisfunc, (int)locker);
+                AM_LOG_DEBUG(0, "%s memory barrier: locking process %"PR_L64" is active", thisfunc, (int64_t)locker);
                 yield();
             }
         }
@@ -944,8 +956,8 @@ static void analyse_cluster(int cluster, uint32_t *use_ptr, uint32_t *free_ptr, 
         blocks++;
     }
 
-    AM_LOG_DEBUG(0, "%s cluster %5u: used %8u, free %8u, blocks %5u %s locks:  [%5u, %5u, %5u, %5u] (other %u)",
-                      thisfunc, cluster, used, free, blocks, thisfunc, locks[0], locks[1], locks[2], locks[3], overflows);
+    AM_LOG_DEBUG(0, "%s cluster %5u: used %8u, free %8u, blocks %5u locks types [%5u, %5u, %5u, %5u, (%u)]",
+                      thisfunc, cluster, used, free, blocks, locks[0], locks[1], locks[2], locks[3], overflows);
 
     *use_ptr += used;
     *free_ptr += free;
@@ -980,9 +992,9 @@ void agent_memory_print(pid_t pid) {
         spinlock_unlock(&cluster_lock(cluster));
     }
 
-    AM_LOG_DEBUG(0, "%s avg %f blocks per cluster, in use %u, free %u", thisfunc, (float)blocks / CLUSTERS, used, free);
+    AM_LOG_DEBUG(0, "%s avg blocks per cluster %f, blocks in use %u, free %u", thisfunc, (float)blocks / CLUSTERS, used, free);
     for (int x = 0; x < CLUSTER_FREELISTS; x++) {
-        AM_LOG_DEBUG(0, "%s blocks in all freelists type %d: %u ", thisfunc, x, freelists[x]); 
+        AM_LOG_DEBUG(0, "%s blocks in freelists type %d: %u ", thisfunc, x, freelists[x]); 
     }
 
 }

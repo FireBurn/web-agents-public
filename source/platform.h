@@ -69,6 +69,8 @@ typedef long                gid_t;
 #define FILE_PATH_SEP       "\\"
 #define AM_GLOBAL_PREFIX    "Global\\"
 
+#define PR_L64              "I64d"
+
 #else /* _WIN32 */
 
 #include <pthread.h>
@@ -106,6 +108,7 @@ typedef long                gid_t;
 #include <pwd.h>
 #include <grp.h>
 #include <strings.h>
+#include <inttypes.h>
 
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
@@ -128,6 +131,8 @@ typedef long                gid_t;
 #define INETNTOP            inet_ntop
 #define FILE_PATH_SEP       "/"
 #define AM_GLOBAL_PREFIX    ""
+
+#define PR_L64              PRId64
 
 #endif /* _WIN32 */
 
