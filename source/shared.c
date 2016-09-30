@@ -388,6 +388,10 @@ void *am_shm_get_user_pointer(am_shm_t *am) {
     return NULL;
 }
 
+/*
+ * delete a named shared memory object, failing if the object exists and could not be deleted.
+ * NOTE: this succeeds if the shared memory object does not exist.
+ */
 int am_shm_delete(char *name) {
     char shm_name[AM_PATH_SIZE];
 
@@ -409,13 +413,11 @@ int am_shm_delete(char *name) {
         snprintf(shm_name, sizeof (shm_name), format, dll_path, name);
 
         if (DeleteFile(shm_name) == 0) {
-            if (GetLastError() == ERROR_FILE_NOT_FOUND)
-                return AM_NOT_FOUND;
-            else
-                return AM_ERROR;
+            if (GetLastError() != ERROR_FILE_NOT_FOUND)
+                return AM_ERROR; /* shared memory mapped file exists, but cannot delete */
         }
     } else {
-        return AM_ERROR;
+        return AM_ERROR; /* cannot create the shared memory mapped file path */
     }
 #else
 #ifdef __sun
@@ -426,10 +428,8 @@ int am_shm_delete(char *name) {
     snprintf(shm_name, sizeof (shm_name), format, name);
 
     if (shm_unlink(shm_name)) {
-        if (errno == ENOENT)
-            return AM_NOT_FOUND;
-        else
-            return AM_ERROR;
+        if (errno != ENOENT)
+            return AM_ERROR; /* shm object exists, but cannot delete */
     }
 #endif
     return AM_SUCCESS;
