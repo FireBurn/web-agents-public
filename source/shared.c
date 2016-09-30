@@ -419,7 +419,7 @@ int am_shm_delete(char *name) {
     }
 #else
 #ifdef __sun
-    const char *format = "/%s_s":
+    const char *format = "/%s_s";
 #else
     const char *format  = "%s_s";
 #endif

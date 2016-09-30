@@ -64,6 +64,16 @@
 #define cas(p, old, new)                    (casv(p, old, new) == (old))
 #define yield()                             SwitchToThread()
 
+#elif defined(__sun)
+
+#include <sys/atomic.h>
+#define incr(p)                             atomic_add_32_nv(p, 1)
+#define reset(p)                            atomic_add_32_nv(p, 0)
+
+#define casv(p, old, new)                   atomic_cas_32(p, old, new)
+#define cas(p, old, new)                    (atomic_cas_32(p, old, new) == (old))
+#define yield()                             sched_yield()
+
 #else
 
 #define incr(p)                             __sync_fetch_and_add(p, 1)
@@ -93,7 +103,7 @@ struct user_entry {
     uint32_t                                hash, check, gcdata;
 
     uint32_t                                ln;
-    uint8_t                                 data[0];                                  /* NOTE: this is 64 bit aligned */
+    uint8_t                                 data[1];                                  /* NOTE: this is 64 bit aligned */
 
 };
 

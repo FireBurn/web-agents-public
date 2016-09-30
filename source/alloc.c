@@ -55,6 +55,15 @@
 #define yield()                             SwitchToThread()
 #define pause(n)                            Sleep((n) / 1000)
 
+#elif defined(__sun)
+
+#include <sys/atomic.h>
+#define incr(p)                             atomic_add_32_nv((volatile uint32_t *)(p), 1)
+#define casv(p, old, new)                   atomic_cas_32((volatile uint32_t *)(p), (uint32_t)(old), (uint32_t)(new))
+#define cas(p, old, new)                    (atomic_cas_32((volatile uint32_t *)(p), (uint32_t)(old), (uint32_t)(new)) == (old))
+#define yield()                             sched_yield()
+#define pause(n)                            usleep(n)
+
 #else
 
 #define incr(p)                             __sync_fetch_and_add(p, 1)
@@ -82,6 +91,8 @@
 
 #if defined _WIN32
 #define spinlock_unlock(l)                  InterlockedExchange(l, 0)
+#elif defined(__sun)
+#define spinlock_unlock(l)                  atomic_swap_32((volatile uint32_t *)(l), 0)
 #else
 #define spinlock_unlock(l)                  __sync_lock_release(l)
 #endif
@@ -112,7 +123,7 @@ typedef struct {
     
     union {
 
-        uint8_t                             data[0];
+        uint8_t                             data[1];
         
         struct {
 
@@ -392,7 +403,7 @@ static void reset_blocks(void *cbdata, void *p) {
         offset                              ofs = i * cluster_capacity;
         block_header_t                     *h = (block_header_t *)(b + ofs);
 
-        *h = (block_header_t) { .locks = 0, .size = cluster_capacity, .u.free = { ~ 0, ~ 0 } };
+        *h = (block_header_t) { .locks = 0, .size = cluster_capacity, .u.free = { ~ 0u, ~ 0u } };
     }
 }
 
@@ -730,7 +741,7 @@ static int validate_cluster_format(unsigned cluster) {
         qsort(buffer, n, sizeof(offset), offset_comparator_reverse);
 
         for (freelist_offset = 0; freelist_offset < CLUSTER_FREELISTS; freelist_offset++) {
-            offset                          prior = ~ 0;
+            offset                          prior = ~ 0u;
 
             for (ofs = cluster_free_lists(cluster)[freelist_offset]; ~ ofs; ofs = HDR(ofs)->u.free.n) {
                 if (( ptr = bsearch(&ofs, buffer, n, sizeof(offset), offset_comparator_reverse) ) == 0) {
@@ -864,7 +875,7 @@ void agent_memory_reset(pid_t pid) {
         offset                              ofs = cluster * cluster_capacity;
         block_header_t                     *h = HDR(ofs);
 
-        *h = (block_header_t) { .locks = 0, .size = cluster_capacity, .u.free = { ~ 0, ~ 0 } };
+        *h = (block_header_t) { .locks = 0, .size = cluster_capacity, .u.free = { ~ 0u, ~ 0u } };
 
         for (i = 0; i < CLUSTER_FREELISTS; i++)
             cluster_free_lists(cluster)[i] = ~ 0;
