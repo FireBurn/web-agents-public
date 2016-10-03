@@ -981,7 +981,7 @@ int am_log_cleanup(int id) {
     /* on windows, logger shared memory is mapped into the page file, and not deleted */
 #else
     if (shm_unlink(get_global_name(AM_LOG_SHM_NAME_INT, id))) {
-        if (errno == ENOENT)
+        if (errno != ENOENT)
             return AM_ERROR;
     }
 #endif
