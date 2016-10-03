@@ -976,6 +976,18 @@ void am_log_shutdown(int id) {
     log_handle = NULL;
 }
 
+int am_log_cleanup(int id) {
+#ifdef _WIN32
+    /* on windows, logger shared memory is mapped into the page file, and not deleted */
+#else
+    if (shm_unlink(get_global_name(AM_LOG_SHM_NAME_INT, id))) {
+        if (errno == ENOENT)
+            return AM_ERROR;
+    }
+#endif
+    return AM_SUCCESS;
+}
+
 void am_log_register_instance(unsigned long instance_id, const char *debug_log, int log_level, int log_size,
         const char *audit_log, int audit_level, int audit_size, const char *config_file) {
     int i, exist = AM_NOT_FOUND;

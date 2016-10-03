@@ -114,7 +114,7 @@ am_status_t am_remove_shm_and_locks(int id, void (*log_cb)(void *arg, char *name
         errors++;
     }
 
-    status = am_shm_delete(get_global_name(AM_LOG_SHM_NAME, id));
+    status = am_log_cleanup(id);
     if (status) {
         log_cb(cb_arg, AM_LOG_SHM_NAME, status);
         errors++;
