@@ -638,8 +638,8 @@ void am_log_init(int id) {
     log_handle->mutex[LOG_MUTEX] = (struct log_mutex *) calloc(1, sizeof (struct log_mutex));
     log_handle->mutex[LOG_URL_MUTEX] = (struct log_mutex *) calloc(1, sizeof (struct log_mutex));
     log_handle->mutex[LOG_INIT_MUTEX] = (struct log_mutex *) calloc(1, sizeof (struct log_mutex));
-    if (log_handle->mutex[LOG_MUTEX] == NULL || log_handle->mutex[LOG_MUTEX] == NULL ||
-            log_handle->mutex[LOG_MUTEX] == NULL) {
+    if (log_handle->mutex[LOG_MUTEX] == NULL || log_handle->mutex[LOG_URL_MUTEX] == NULL ||
+            log_handle->mutex[LOG_INIT_MUTEX] == NULL) {
         AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
                 log_handle->mutex[LOG_INIT_MUTEX], log_handle);
         log_handle = NULL;
