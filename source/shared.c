@@ -518,7 +518,7 @@ printf("size is changed from %llu, %llu to %llu\n", usize, size, max_size);
     snprintf(init_sync_name, sizeof (init_sync_name), "Global\\%s_x", name);
     HANDLE first = CreateSemaphoreA(sec, 0, 1, init_sync_name);
     snprintf(init_sync_name, sizeof (init_sync_name), "Global\\%s_y", name);
-    HANDLE second = CreateSemaphoreA(sec, 1, 1, init_sync_name);
+    HANDLE second = CreateSemaphoreA(sec, 0, 1, init_sync_name);
     if (first != NULL && second != NULL) {
         LONG ival = -1;
         /* release semaphore immediately, storing its initial value */
@@ -527,8 +527,11 @@ printf("size is changed from %llu, %llu to %llu\n", usize, size, max_size);
             /* if value is 0 - we (process) were the first one here,
              * delete shared memory file prior creating/opening it below.
              */
-            WaitForSingleObject(second, INFINITE);
             DeleteFileA(ret->name[2]);
+
+            /* release anything waiting at the WaitForSingleObject call on the second
+             * semaphore below
+             */
             ReleaseSemaphore(second, 1, NULL);
         }
         /* The system closes the handle automatically when the process terminates. 
@@ -537,6 +540,10 @@ printf("size is changed from %llu, %llu to %llu\n", usize, size, max_size);
     }
 
     if (second != NULL) {
+        /* Everything will wait here until the semaphore is released by the first process
+         * in the release call above. This will happen once the file has been deleted - thus
+         * ensuring synchronisation.
+         */
         WaitForSingleObject(second, INFINITE);
         ReleaseSemaphore(second, 1, NULL);
     }
