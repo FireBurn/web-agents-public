@@ -18,6 +18,7 @@
 #include "am.h"
 #include "utility.h"
 #include "list.h"
+#include "alloc.h"
 
 #define AM_ALIGNMENT 8
 #define AM_ALIGN(size) (((size) + (AM_ALIGNMENT-1)) & ~(AM_ALIGNMENT-1))
@@ -190,22 +191,6 @@ uint64_t page_size(uint64_t size) {
     p_size = sysconf(_SC_PAGE_SIZE);
 #endif
     return p_size * ((size + p_size - 1) / p_size);
-}
-
-/**
- * get the max pool size for shared memory
- */
-uint64_t am_shm_max_pool_size() {
-    char *env = getenv(AM_SHARED_MAX_SIZE_VAR);
-    if (ISVALID(env)) {
-        char *endp = NULL;
-        uint64_t v = strtoull(env, &endp, 0);
-        if (env < endp && *endp == '\0' && 0 < v && v < AM_SHARED_MAX_SIZE) {
-            /* whole string is digits (dec, hex or octal) not 0 and less than our hard max */
-            return v;
-        }
-    }
-    return AM_SHARED_MAX_SIZE;
 }
 
 int am_shm_lock(am_shm_t *am) {
@@ -436,9 +421,10 @@ int am_shm_delete(char *name) {
 
 }
 
-am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialiser) {
+am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialiser, uint64_t *limit) {
+    static const char *thisfunc = "am_shm_create():";
     struct mem_pool *pool = NULL;
-    uint64_t size, max_size;
+    uint64_t size, max_size, sys_size;
     char opened = AM_FALSE;
     void *area = NULL;
     am_shm_t *ret = NULL;
@@ -497,12 +483,39 @@ am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialise
 #endif
 
     size = page_size(usize + SIZEOF_mem_pool); /* need at least the size of the mem_pool header */
-    max_size = am_shm_max_pool_size();
+    
+    if (use_new_initialiser && strncmp(name, BLOCKFILE, strlen(BLOCKFILE)) == 0) {
+        max_size = cache_memory_size();
+        sys_size = get_total_system_memory();
+#ifdef UNIT_TEST
+        printf("system memory size is %llu\n", sys_size);
+#endif
+        if (sys_size > 0 && sys_size < 0x1000000) {
+            AM_LOG_WARNING(0, "%s system memory size is %"PR_L64" bytes\n",
+                    thisfunc, sys_size);
+        }
+        sys_size /= 4;
 
+        if (max_size == MAX_CACHE_MEMORY_SZ && sys_size > 0 && sys_size < AM_SHARED_MAX_SIZE) {
+            /* no environment variable is set; 
+             * use 1/4 of the system memory, not exceeding AM_SHARED_MAX_SIZE */
+            max_size = page_size(sys_size);
+        }
+    } else {
+        max_size = size;
+        /* config and audit shared memory is resized automatically; 
+         * the rest of shared memory segments do not need size adjustment */
+    }
+    
     /* enable shm size limits */
     if (max_size < size) {
-printf("size is changed from %llu, %llu to %llu\n", usize, size, max_size);
+#ifdef UNIT_TEST
+        printf("size is changed from %llu, %llu to %llu\n", usize, size, max_size);
+#endif
         size = max_size;
+        if (limit != NULL) {
+            *limit = max_size;
+        }
     }
 
 #ifdef _WIN32

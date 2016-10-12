@@ -201,10 +201,12 @@ size_t am_bin_path(char* buffer, size_t len);
 
 int string_replace(char **original, const char *pattern, const char *replace, size_t *sz);
 
-uint64_t am_shm_max_pool_size();
+uint32_t next_pow_2(uint32_t v);
+uint32_t prev_pow_2(uint32_t v);
+uint64_t get_total_system_memory();
 void am_shm_unlock(am_shm_t *);
 int am_shm_lock(am_shm_t *);
-am_shm_t *am_shm_create(const char *, uint64_t, int use_new_initialiser);
+am_shm_t *am_shm_create(const char *, uint64_t, int use_new_initialiser, uint64_t *);
 void am_shm_shutdown(am_shm_t *);
 int am_shm_delete(char *name);
 void *am_shm_alloc(am_shm_t *am, uint64_t usize);

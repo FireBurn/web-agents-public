@@ -45,8 +45,6 @@
 #define LOCKFILE                            "lockfile"
 #define HASHFILE                            "hashtable"
 
-#define MAX_CACHE_MEMORY_SZ                 0x40000000
-
 #define N_LOCKS                             4096
 
 #define HASH_SZ                             6151
@@ -202,12 +200,12 @@ static void reset_locks(void *cbdata, void *p) {
 }
 
 /*
- * next power of 2 for a uint32
+ * next/prev power of 2 for a uint32
  *
  * (taken from https://graphics.stanford.edu/~seander/bithacks.html)
  *
  */
-static uint32_t next_pow_2(uint32_t v) {
+uint32_t next_pow_2(uint32_t v) {
 
     v--;
     v |= v >> 1;
@@ -219,6 +217,18 @@ static uint32_t next_pow_2(uint32_t v) {
 
     return v;
 
+}
+
+uint32_t prev_pow_2(uint32_t v) {
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v++;
+    v >>= 1;
+    return v;
 }
 
 /*
@@ -249,17 +259,17 @@ uint32_t cache_memory_size() {
 
 int cache_initialise(int id) {
 
-    uint32_t                                sz = cache_memory_size();
+    uint32_t sz = cache_memory_size();
 
     agent_memory_initialise(sz, id);
 
-    get_memory_segment(&stats_pool, STATFILE, sizeof(struct stats), reset_stats, 0, id);
+    get_memory_segment(&stats_pool, STATFILE, sizeof (struct stats), reset_stats, NULL, id);
     stats = stats_pool->base_ptr;
 
-    get_memory_segment(&locks_pool, LOCKFILE, sizeof(struct readlock) * N_LOCKS, reset_locks, 0, id);
+    get_memory_segment(&locks_pool, LOCKFILE, sizeof (struct readlock) * N_LOCKS, reset_locks, NULL, id);
     locks = locks_pool->base_ptr;
 
-    get_memory_segment(&hashtable_pool, HASHFILE, sizeof(offset) * HASH_SZ, reset_hashtable, 0, id);
+    get_memory_segment(&hashtable_pool, HASHFILE, sizeof (offset) * HASH_SZ, reset_hashtable, NULL, id);
     hashtable = hashtable_pool->base_ptr;
 
     return 0;

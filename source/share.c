@@ -18,24 +18,23 @@
 #include "am.h"
 #include "utility.h"
 #include "error.h"
-
 #include "share.h"
-
 
 /*
  * map entire shared memory into virtual memory
  *
- * the callback (cb) is called when the block is first opened and it is for initialisaiton of the block
+ * the callback (cb) is called when the block is first opened and it is for initialization of the block
  *
  */
 int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz, void (*cb)(void *cbdata, void *p), void *cbdata, int id) {
     static const char *thisfunc = "get_memory_segment():";
+    uint64_t size_limit = 0;
 
     if (p_addr == NULL) {
         return AM_FAIL;
     }
 
-    *p_addr = am_shm_create(get_global_name(name, id), ((uint64_t) sz), AM_TRUE);
+    *p_addr = am_shm_create(get_global_name(name, id), (uint64_t) sz, AM_TRUE, &size_limit);
     if (*p_addr == NULL) {
         AM_LOG_ERROR(0, "%s shared memory error: %s\n", thisfunc, name);
         return AM_ERROR;
@@ -44,8 +43,16 @@ int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz, void (*cb)(void
         AM_LOG_ERROR(0, "%s shared memory error %d: %s\n", thisfunc, (*p_addr)->error, name);
         return (*p_addr)->error;
     }
+    if (size_limit > 0) {
+        AM_LOG_DEBUG(0, "%s shared memory '%s' segment size limited to %"PR_L64" bytes\n", 
+                thisfunc, name, size_limit);
+    }
 
     if ((*p_addr)->init) {
+        if (cbdata != NULL) {
+            cluster_limit_t *limit = (cluster_limit_t *) cbdata;
+            limit->size_limit = size_limit;
+        }
         cb(cbdata, (*p_addr)->base_ptr);
     }
 

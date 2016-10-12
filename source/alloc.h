@@ -22,8 +22,11 @@
 #define HEADERFILE                                     "headers"
 
 #define CLUSTERS                                       256u
+#define MAX_CACHE_MEMORY_SZ                            0x40000000
 
 typedef uint32_t                                       offset;
+
+uint32_t cache_memory_size();
 
 offset agent_memory_offset(void *ptr);
 void *agent_memory_ptr(offset ofs);

@@ -94,7 +94,7 @@ int am_audit_init(int id) {
 
     /* allocate memory: average audit entry size * 2048 */
     audit_shm = am_shm_create(get_global_name(AM_AUDIT_SHM_NAME, id),
-            sizeof (struct am_audit) + ((sizeof (struct am_audit_entry) + 800) * 2048), AM_FALSE);
+            sizeof (struct am_audit) + ((sizeof (struct am_audit_entry) + 800) * 2048), AM_FALSE, NULL);
     if (audit_shm == NULL) {
         return AM_ERROR;
     }
