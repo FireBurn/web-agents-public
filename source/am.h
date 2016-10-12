@@ -61,7 +61,11 @@ typedef enum {
 #endif
 
 #ifndef AM_SHARED_MAX_SIZE
-#define AM_SHARED_MAX_SIZE          0x7FFFF000 /* maximim shared memory pool allocation */
+#define AM_SHARED_MAX_SIZE          0x7FFFF000 /* maximum shared memory pool allocation */
+#endif
+
+#ifndef AM_SHARED_MAX_SIZE_VAR      
+#define AM_SHARED_MAX_SIZE_VAR      "AM_MAX_SHARED_POOL_SIZE" /* env var used to limit resizable pool maximum size */
 #endif
 
 #ifndef AM_MAX_INSTANCES

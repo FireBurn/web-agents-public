@@ -421,6 +421,22 @@ int am_shm_delete(char *name) {
 
 }
 
+/**
+ * get the max pool size for shared memory
+ */
+static uint64_t am_shm_max_pool_size() {
+    char *env = getenv(AM_SHARED_MAX_SIZE_VAR);
+    if (ISVALID(env)) {
+        char *endp = NULL;
+        uint64_t v = strtoull(env, &endp, 0);
+        if (env < endp && *endp == '\0' && 0 < v && v < AM_SHARED_MAX_SIZE) {
+            /* whole string is digits (dec, hex or octal) not 0 and less than our hard max */
+            return v;
+        }
+    }
+    return AM_SHARED_MAX_SIZE;
+}
+
 am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialiser, uint64_t *limit) {
     static const char *thisfunc = "am_shm_create():";
     struct mem_pool *pool = NULL;
@@ -502,7 +518,7 @@ am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialise
             max_size = page_size(sys_size);
         }
     } else {
-        max_size = size;
+        max_size = page_size(am_shm_max_pool_size());
         /* config and audit shared memory is resized automatically; 
          * the rest of shared memory segments do not need size adjustment */
     }

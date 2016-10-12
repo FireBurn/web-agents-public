@@ -402,14 +402,14 @@ static void reset_blocks(void *cbdata, void *p) {
 
     if (cbdata != NULL) {
         cluster_limit_t *limit = (cluster_limit_t *) cbdata;
-        if (limit->size_limit == 0 || limit->size_limit >= 0x40000000 ||
-                (limit->size_limit / 0x400000) >= CLUSTERS) {
+        if (limit->size_limit == 0 || limit->size_limit >= MAX_CACHE_MEMORY_SZ ||
+                (limit->size_limit / MAX_CLUSTER_SIZE) >= CLUSTERS) {
             /* when the size is not limited by the system/environment, 
              * use default number of clusters and their capacity */
             number_of_clusters = CLUSTERS;
             cluster_capacity = limit->orig_size / number_of_clusters;
         } else {
-            number_of_clusters = prev_pow_2((limit->size_limit * CLUSTERS) / 0x40000000);
+            number_of_clusters = prev_pow_2((limit->size_limit * CLUSTERS) / MAX_CACHE_MEMORY_SZ);
             cluster_capacity = prev_pow_2((uint32_t) limit->size_limit) / number_of_clusters;
         }
         AM_LOG_DEBUG(0, "%s shared memory '%s' segment cluster_capacity: %lu bytes, number_of_clusters: %lu \n",

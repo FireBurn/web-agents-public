@@ -23,6 +23,7 @@
 
 #define CLUSTERS                                       256u
 #define MAX_CACHE_MEMORY_SZ                            0x40000000
+#define MAX_CLUSTER_SIZE                               0x400000             
 
 typedef uint32_t                                       offset;
 
