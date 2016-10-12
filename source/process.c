@@ -2024,46 +2024,47 @@ static am_return_t handle_exit(am_request_t *r) {
                 do_header_set(r, AM_FALSE);
                 do_cookie_set(r, AM_FALSE, AM_TRUE);
 
-                if (ISVALID(r->token) && r->conf->logout_redirect_disable) {
-                    /* logout.redirect.disable is set - do a background logout and cache cleanup */
-                    struct logout_worker_data *wd = malloc(sizeof (struct logout_worker_data));
-                    if (wd != NULL) {
-                        const char *oam = get_valid_openam_url(r);
-                        wd->instance_id = r->instance_id;
-                        /* find an active OpenAM service URL */
-                        if (oam != NULL) {
-                            wd->token = strdup(r->token);
-                            wd->openam = strdup(oam);
-                            wd->options = malloc(sizeof (am_net_options_t));
-                            am_net_options_create(r->conf, wd->options, NULL);
-                            if (wd->options != NULL) {
-                                wd->options->server_id = r->conf->lb_enable && ISVALID(r->session_info.si) ? strdup(r->session_info.si) : NULL;
-                            }
+                if (r->conf->logout_redirect_disable) {
+                    /* logout.redirect.disable is set */
+                    if (ISVALID(r->token)) {
+                        /* do background logout and cache cleanup if token is available */
+                        struct logout_worker_data *wd = malloc(sizeof (struct logout_worker_data));
+                        if (wd != NULL) {
+                            const char *oam = get_valid_openam_url(r);
+                            wd->instance_id = r->instance_id;
+                            /* find an active OpenAM service URL */
+                            if (oam != NULL) {
+                                wd->token = strdup(r->token);
+                                wd->openam = strdup(oam);
+                                wd->options = malloc(sizeof (am_net_options_t));
+                                am_net_options_create(r->conf, wd->options, NULL);
+                                if (wd->options != NULL) {
+                                    wd->options->server_id = r->conf->lb_enable && ISVALID(r->session_info.si) ? strdup(r->session_info.si) : NULL;
+                                }
 
-                            if (am_worker_dispatch(session_logout_worker, wd) != 0) {
-                                am_net_options_delete(wd->options);
-                                AM_FREE(wd->token, wd->openam, wd->options, wd);
+                                if (am_worker_dispatch(session_logout_worker, wd) != 0) {
+                                    am_net_options_delete(wd->options);
+                                    AM_FREE(wd->token, wd->openam, wd->options, wd);
+                                    r->status = AM_ERROR;
+                                    AM_LOG_WARNING(r->instance_id, "%s failed to dispatch logout worker", thisfunc);
+                                    break;
+                                }
+                            } else {
                                 r->status = AM_ERROR;
-                                AM_LOG_WARNING(r->instance_id, "%s failed to dispatch logout worker", thisfunc);
-                                break;
+                                free(wd);
+                                AM_LOG_WARNING(r->instance_id, "%s logout failed (could not find a valid OpenAM URL)", thisfunc);
                             }
                         } else {
-                            r->status = AM_ERROR;
-                            free(wd);
-                            AM_LOG_WARNING(r->instance_id, "%s logout failed (could not find a valid OpenAM URL)", thisfunc);
+                            r->status = AM_ENOMEM;
+                            break;
                         }
-                    } else {
-                        r->status = AM_ENOMEM;
-                        break;
                     }
 
                     r->status = AM_SUCCESS;
                     break; /* early exit - we're done with this resource */
                 }
 
-                /* do OpenAM logout redirect with a goto value of logout_redirect_url; 
-                 * will land here if no session token is available too.
-                 */
+                /* do OpenAM logout redirect with a goto value of logout_redirect_url */
                 valid_idx = get_valid_url_index(r->instance_id);
                 if (r->conf->openam_logout_map_sz > 0) {
                     am_config_map_t *m = (valid_idx >= r->conf->openam_logout_map_sz) ?
