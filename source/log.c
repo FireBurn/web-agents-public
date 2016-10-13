@@ -36,7 +36,7 @@ static int dladdr(void *s, Dl_info *i) {
         i->dli_fname = NULL;
         return 0;
     }
-    
+
     char *pldi = (char *) buf;
     int r = loadquery(L_GETINFO, pldi, DLADDR_BUFF_SZ);
     if (r == -1) {
@@ -178,6 +178,7 @@ static struct am_shared_log {
 } *log_handle = NULL;
 
 static char default_log_path[AM_PATH_SIZE] = {0};
+static int32_t default_log_level = AM_LOG_LEVEL_NONE;
 
 static void log_mutex_lock(int type) {
     struct log_mutex *mtx;
@@ -633,6 +634,18 @@ void am_log_init(int id) {
                 "%s/../log/"DEFAULT_AGENT_LOG_FILE, dirname((char *) info.dli_fname));
     }
 #endif
+    char *env = getenv("AM_DEFAULT_LOG_LEVEL");
+    if (ISVALID(env)) {
+        if (strncasecmp(env, "all", 3) == 0 || strcasecmp(env, "debug") == 0) {
+            default_log_level = AM_LOG_LEVEL_DEBUG;
+        } else if (strcasecmp(env, "error") == 0) {
+            default_log_level = AM_LOG_LEVEL_ERROR;
+        } else if (strcasecmp(env, "info") == 0) {
+            default_log_level = AM_LOG_LEVEL_INFO;
+        } else if (strcasecmp(env, "message") == 0 || strcasecmp(env, "warning") == 0) {
+            default_log_level = AM_LOG_LEVEL_WARNING;
+        }
+    }
 #endif
 
     log_handle->mutex[LOG_MUTEX] = (struct log_mutex *) calloc(1, sizeof (struct log_mutex));
@@ -802,26 +815,32 @@ int perform_logging(unsigned long instance_id, int level) {
     int32_t log_level = AM_LOG_LEVEL_NONE;
     int32_t audit_level = AM_LOG_LEVEL_NONE;
 
+#ifdef UNIT_TEST
     if (instance_id == 0) {
         return AM_TRUE;
     }
+#endif
 
     /* We simply cannot log if the shared memory segment is not initialised */
     if (log_handle == NULL || log_handle->area == NULL) {
         return AM_FALSE;
     }
 
-    log_mutex_lock(LOG_MUTEX);
+    if (instance_id == 0) {
+        log_level = default_log_level;
+    } else {
+        log_mutex_lock(LOG_MUTEX);
 
-    for (i = 0; i < AM_MAX_INSTANCES; i++) {
-        if (log_handle->area->files[i].instance_id == instance_id) {
-            log_level = log_handle->area->files[i].level_debug;
-            audit_level = log_handle->area->files[i].level_audit;
-            break;
+        for (i = 0; i < AM_MAX_INSTANCES; i++) {
+            if (log_handle->area->files[i].instance_id == instance_id) {
+                log_level = log_handle->area->files[i].level_debug;
+                audit_level = log_handle->area->files[i].level_audit;
+                break;
+            }
         }
-    }
 
-    log_mutex_unlock(LOG_MUTEX);
+        log_mutex_unlock(LOG_MUTEX);
+    }
 
     /* Do not log in the following cases:
      *
@@ -829,7 +848,7 @@ int perform_logging(unsigned long instance_id, int level) {
      *  or
      * selected (in a configuration) log level is LEVEL_NONE and requested log level is not LEVEL_AUDIT
      *  or
-     * selected audit level is LEVE_NONE and requested log level is LEVEL_AUDIT
+     * selected audit level is LEVEL_NONE and requested log level is LEVEL_AUDIT
      */
     if (level == AM_LOG_LEVEL_NONE ||
             (log_level == AM_LOG_LEVEL_NONE && (level & AM_LOG_LEVEL_AUDIT) != AM_LOG_LEVEL_AUDIT) ||
@@ -913,7 +932,7 @@ void am_log_write(unsigned long instance_id, int level, const char* header, int 
     }
 
     block->instance_id = instance_id;
-    block->level = instance_id == 0 ? AM_LOG_LEVEL_ALWAYS : level;
+    block->level = level;
 
     /* push the block back into the queue ready to be consumed */
 
