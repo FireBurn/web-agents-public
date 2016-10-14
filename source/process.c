@@ -2517,6 +2517,9 @@ static am_return_t handle_exit(am_request_t *r) {
                             strchr(r->conf->access_denied_url, '?') == NULL ? "?" : "&",
                             ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
                             NOTNULL(goto_encoded));
+                    
+                    AM_LOG_DEBUG(r->instance_id, "%s access denied redirect to %s", thisfunc,
+                            LOGEMPTY(url));
 
                     am_free(goto_encoded);
                 } else {
