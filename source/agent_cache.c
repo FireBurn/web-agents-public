@@ -347,13 +347,12 @@ int cache_readlock_release_all_p(uint32_t hash, pid_t pid) {
 }
 
 void cache_readlock_total_barrier(pid_t pid) {
-
-    int                                     i;
-
+    int i;
+    if (locks == NULL)
+        return;
     for (i = 0; i < N_LOCKS; i++) {
         wait_for_barrier(locks + i, pid);
     }
-
 }
 
 int cache_readlock_block_all(pid_t pid) {
@@ -517,17 +516,16 @@ incr(&stats->lru.v);
  *
  */
 void cache_purge_expired_entries(pid_t pid) {
+    static const char *thisfunc = "cache_purge_expired_entries():";
+    int n = 0;
+    offset ofs;
+    int i;
 
-    static const char                      *thisfunc = "cache_purge_expired_entries():";
-
-    int                                     n = 0;
-
-    offset                                  ofs;
-    int                                     i;
-
+    if (hashtable == NULL)
+        return;
     for (i = 0; i < HASH_SZ; i++) {
         if (cache_readlock_p(i, pid)) {
-            if (~ ( ofs = hashtable[i] )) {
+            if (~(ofs = hashtable[i])) {
                 n += purge_expired_entries(pid, i, agent_memory_ptr(ofs), time(0));
             }
             cache_readlock_release_p(i, pid);
@@ -537,13 +535,12 @@ void cache_purge_expired_entries(pid_t pid) {
     if (n) {
         AM_LOG_DEBUG(0, "%s expired cache entries unlinked: %d", thisfunc, n);
     }
-
 }
 
 /*
  * replace any existing entry, then purge subsequent entries; if existing entry was found, link newentry to the
  * head of the hash table collision list (so that it will override) and the purge subsequent entries (which might have
- * appeared recenty).
+ * appeared recently).
  *
  * NOTE: it might be better to just have a new entry with the data, then subsequent versions will be unreachable so that
  * they can be purged
@@ -865,30 +862,31 @@ static uint32_t get_and_reset(volatile uint32_t *p) {
 }
 
 void cache_stats() {
+    if (stats == NULL)
+        return;
 #ifdef INTEGRATION_TEST
 
     printf("cache throughput:\n");
-    printf("reads:   %u\n", get_and_reset(&stats->reads.v));    
-    printf("writes:  %u\n", get_and_reset(&stats->writes.v));    
-    printf("updates: %u\n", get_and_reset(&stats->updates.v));    
-    printf("deletes: %u\n", get_and_reset(&stats->deletes.v));    
-    printf("failures:%u\n", get_and_reset(&stats->failures.v));    
-    printf("expires: %u\n", get_and_reset(&stats->expires.v));    
-    printf("lru:     %u\n", get_and_reset(&stats->lru.v));    
+    printf("reads:   %u\n", get_and_reset(&stats->reads.v));
+    printf("writes:  %u\n", get_and_reset(&stats->writes.v));
+    printf("updates: %u\n", get_and_reset(&stats->updates.v));
+    printf("deletes: %u\n", get_and_reset(&stats->deletes.v));
+    printf("failures:%u\n", get_and_reset(&stats->failures.v));
+    printf("expires: %u\n", get_and_reset(&stats->expires.v));
+    printf("lru:     %u\n", get_and_reset(&stats->lru.v));
 
 #ifdef GC_STATS
     printf("cache objects:\n");
-    printf("leaked: %u\n", get_and_reset(&stats->cache.leaked.v));    
-    printf("cleared: %u\n", get_and_reset(&stats->cache.cleared.v));    
-    printf("collected: %u\n", get_and_reset(&stats->cache.collected.v));    
+    printf("leaked: %u\n", get_and_reset(&stats->cache.leaked.v));
+    printf("cleared: %u\n", get_and_reset(&stats->cache.cleared.v));
+    printf("collected: %u\n", get_and_reset(&stats->cache.collected.v));
 
     printf("user objects:\n");
-    printf("leaked: %u\n", get_and_reset(&stats->data.leaked.v));    
-    printf("cleared: %u\n", get_and_reset(&stats->data.cleared.v));    
-    printf("collected: %u\n", get_and_reset(&stats->data.collected.v));    
+    printf("leaked: %u\n", get_and_reset(&stats->data.leaked.v));
+    printf("cleared: %u\n", get_and_reset(&stats->data.cleared.v));
+    printf("collected: %u\n", get_and_reset(&stats->data.collected.v));
 #endif /* GC_STATS */
 #endif /* INTEGRATION_TEST */
-
 }
 
 int master_recovery_process(pid_t pid) {

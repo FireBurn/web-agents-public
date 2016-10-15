@@ -105,15 +105,12 @@
 #define align_attr(n)                       __attribute__((aligned(n)))
 #endif
 
-
 typedef struct {
-
-    align_win(64) volatile uint32_t         seed align_attr(64);
-
-    align_win(64) volatile int32_t          error align_attr(64);
-
-    align_win(64) volatile pid_t            checker align_attr(64);
-
+    align_win(64) volatile uint32_t cluster_capacity align_attr(64);
+    align_win(64) volatile uint32_t number_of_clusters align_attr(64);
+    align_win(64) volatile uint32_t seed align_attr(64);
+    align_win(64) volatile int32_t error align_attr(64);
+    align_win(64) volatile pid_t checker align_attr(64);
 } ctl_header_t;
 
 
@@ -144,11 +141,6 @@ typedef struct {
      
 } cluster_header_t;
 
-
-static uint32_t                             cluster_capacity;
-static uint32_t                             number_of_clusters;
-
-
 static ctl_header_t                        *ctlblock = 0;
 
 static cluster_header_t                    *cluster_hdrs = 0;
@@ -156,8 +148,6 @@ static cluster_header_t                    *cluster_hdrs = 0;
 static void                                *cluster_base = 0;
 
 static am_shm_t                            *ctlblock_pool = 0, *cluster_hdrs_pool = 0, *cluster_base_pool = 0;
-
-
 
 #define cluster_lock(c)                     cluster_hdrs[c].lock
 
@@ -292,9 +282,7 @@ void agent_memory_validate(pid_t pid) {
  *
  */
 uint32_t agent_memory_seed() {
-
-     return incr(&ctlblock->seed) % number_of_clusters;
-
+     return incr(&ctlblock->seed) % ctlblock->number_of_clusters;
 }
 
 /*
@@ -385,11 +373,14 @@ static void unlink_free_ptr(volatile offset *header, block_header_t *h) {
  *
  */
 static void reset_ctlblock(void *cbdata, void *p) {
-
-    ctl_header_t                          *ctl = p;
-
-    *ctl = (ctl_header_t) { .seed = 0, .checker = 0, .error = 0 };
-
+    ctl_header_t *ctl = p;
+    *ctl = (ctl_header_t){
+        .seed = 0,
+        .checker = 0,
+        .error = 0,
+        .cluster_capacity = 0,
+        .number_of_clusters = 0
+    };
 }
 
 /*
@@ -402,25 +393,29 @@ static void reset_blocks(void *cbdata, void *p) {
 
     if (cbdata != NULL) {
         cluster_limit_t *limit = (cluster_limit_t *) cbdata;
-        if (limit->size_limit == 0 || limit->size_limit >= MAX_CACHE_MEMORY_SZ ||
-                (limit->size_limit / MAX_CLUSTER_SIZE) >= CLUSTERS) {
-            /* when the size is not limited by the system/environment, 
-             * use default number of clusters and their capacity */
-            number_of_clusters = CLUSTERS;
-            cluster_capacity = limit->orig_size / number_of_clusters;
+        if (ctlblock != NULL) {
+            if (limit->size_limit == 0 || limit->size_limit >= MAX_CACHE_MEMORY_SZ ||
+                    (limit->size_limit / MAX_CLUSTER_SIZE) >= CLUSTERS) {
+                /* when the size is not limited by the system/environment, 
+                 * use default number of clusters and their capacity */
+                ctlblock->number_of_clusters = CLUSTERS;
+                ctlblock->cluster_capacity = limit->orig_size / ctlblock->number_of_clusters;
+            } else {
+                ctlblock->number_of_clusters = prev_pow_2((limit->size_limit * CLUSTERS) / MAX_CACHE_MEMORY_SZ);
+                ctlblock->cluster_capacity = prev_pow_2((uint32_t) limit->size_limit) / ctlblock->number_of_clusters;
+            }
+            AM_LOG_DEBUG(0, "%s shared memory '%s' segment cluster_capacity: %lu bytes, number_of_clusters: %lu \n",
+                    thisfunc, BLOCKFILE, ctlblock->cluster_capacity, ctlblock->number_of_clusters);
         } else {
-            number_of_clusters = prev_pow_2((limit->size_limit * CLUSTERS) / MAX_CACHE_MEMORY_SZ);
-            cluster_capacity = prev_pow_2((uint32_t) limit->size_limit) / number_of_clusters;
+            AM_LOG_WARNING(0, "%s ctlblock is not available", thisfunc);
         }
-        AM_LOG_DEBUG(0, "%s shared memory '%s' segment cluster_capacity: %lu bytes, number_of_clusters: %lu \n",
-                thisfunc, BLOCKFILE, cluster_capacity, number_of_clusters);
     }
 
-    for (unsigned i = 0; i < number_of_clusters; i++) {
-        offset ofs = i * cluster_capacity;
+    for (unsigned i = 0; i < ctlblock->number_of_clusters; i++) {
+        offset ofs = i * ctlblock->cluster_capacity;
         block_header_t *h = (block_header_t *) (b + ofs);
 
-        *h = (block_header_t){.locks = 0, .size = cluster_capacity, .u.free =
+        *h = (block_header_t){.locks = 0, .size = ctlblock->cluster_capacity, .u.free =
             { ~0u, ~0u}};
     }
 }
@@ -433,14 +428,14 @@ static void reset_headers(void *cbdata, void *p) {
 
     cluster_header_t                       *ch = p;
 
-    for (unsigned i = 0; i < number_of_clusters; i++, ch++) {   
-        offset                              ofs = i * cluster_capacity;
+    for (unsigned i = 0; i < ctlblock->number_of_clusters; i++, ch++) {   
+        offset                              ofs = i * ctlblock->cluster_capacity;
  
         ch->lock = spinlock_init;
 
         for (int x = 0; x < CLUSTER_FREELISTS; x++) ch->free[x] = ~ 0;
 
-        push_free_ptr(ch->free + free_list_offset_for_size(cluster_capacity), ofs);
+        push_free_ptr(ch->free + free_list_offset_for_size(ctlblock->cluster_capacity), ofs);
     }
 }
 
@@ -534,7 +529,7 @@ static int offset_comparator_reverse(const void *a, const void *b) {
  */
 static int compact_cluster(volatile offset *freelists) {
 
-    offset                                 *buffer = malloc(sizeof(offset) * (cluster_capacity / sizeof(block_header_t)));
+    offset                                 *buffer = malloc(sizeof(offset) * (ctlblock->cluster_capacity / sizeof(block_header_t)));
     size_t                                  n = 0;
     
     for (int x = 0; x < CLUSTER_FREELISTS; x++)
@@ -667,12 +662,12 @@ int agent_memory_free(pid_t pid, void *p) {
     offset                                  ofs = OFS(p) - block_data_offset;
     block_header_t                         *h = HDR(ofs);
 
-    unsigned                                cluster = ofs / cluster_capacity;
+    unsigned                                cluster = ofs / ctlblock->cluster_capacity;
     
     if (spinlock_lock(&cluster_lock(cluster), pid))
         return 0;
     
-    h->size += coalesce(cluster_free_lists(cluster), ofs, (cluster + 1) * cluster_capacity);
+    h->size += coalesce(cluster_free_lists(cluster), ofs, (cluster + 1) * ctlblock->cluster_capacity);
     h->locks = 0;
     
     push_free_ptr(cluster_free_lists(cluster) + free_list_offset_for_size(h->size), ofs);
@@ -692,7 +687,7 @@ int agent_memory_locks(pid_t pid, void *p) {
     offset                                  ofs = OFS(p) - block_data_offset;
     block_header_t                         *h = HDR(ofs);
 
-    unsigned                                cluster = ofs / cluster_capacity;
+    unsigned                                cluster = ofs / ctlblock->cluster_capacity;
 
     if (spinlock_lock(&cluster_lock(cluster), pid))
         return 0;
@@ -713,12 +708,12 @@ int agent_memory_locks(pid_t pid, void *p) {
 static int validate_cluster_format(unsigned cluster) {
     static const char                      *thisfunc = "validate_cluster_format():";
 
-    offset                                  base = cluster * cluster_capacity, end = base + cluster_capacity;
+    offset                                  base = cluster * ctlblock->cluster_capacity, end = base + ctlblock->cluster_capacity;
 
     uint32_t                                used = 0, released = 0;
     int                                     err = 0;
 
-    offset                                 *buffer = malloc(sizeof(offset) * (cluster_capacity / sizeof(block_header_t)));
+    offset                                 *buffer = malloc(sizeof(offset) * (ctlblock->cluster_capacity / sizeof(block_header_t)));
     size_t                                  n = 0;
 
     offset                                  ofs;
@@ -793,9 +788,9 @@ static int validate_cluster_format(unsigned cluster) {
             }
         }
 
-        if (used + released != cluster_capacity) {
+        if (used + released != ctlblock->cluster_capacity) {
             AM_LOG_DEBUG(0, "%s block validation: missing memory: cluster %u used %u, free %u, (%u out of %d)",
-                             thisfunc, cluster, used, released, used + released, cluster_capacity);
+                             thisfunc, cluster, used, released, used + released, ctlblock->cluster_capacity);
             err = 1;
         }
 
@@ -819,7 +814,7 @@ int agent_memory_check(pid_t pid, int verbose, int clearup) {
 
     int                                     err = 0;
     
-    for (unsigned cluster = 0; cluster < number_of_clusters; cluster++) {
+    for (unsigned cluster = 0; cluster < ctlblock->number_of_clusters; cluster++) {
         pid_t                               locker;
 
         int                                 tries = 1000;
@@ -835,9 +830,9 @@ int agent_memory_check(pid_t pid, int verbose, int clearup) {
 
         if (locker == 0) {
             if (clearup) {
-                offset                      base = cluster * cluster_capacity;
+                offset                      base = cluster * ctlblock->cluster_capacity;
 
-                HDR(base)->size = coalesce(cluster_free_lists(cluster), base, base + cluster_capacity);
+                HDR(base)->size = coalesce(cluster_free_lists(cluster), base, base + ctlblock->cluster_capacity);
             }
             spinlock_unlock(&cluster_lock(cluster));
         } else if (locker == VALIDATION_LOCK) {
@@ -872,7 +867,7 @@ void agent_memory_reset(pid_t pid) {
     unsigned                                cluster;
     pid_t                                   locker;
 
-    for (cluster = 0; cluster < number_of_clusters; cluster++) {
+    for (cluster = 0; cluster < ctlblock->number_of_clusters; cluster++) {
         while (( locker = casv(&cluster_lock(cluster), 0, pid) )) {
             if (locker == VALIDATION_LOCK) {
                 if (cas(&cluster_lock(cluster), locker, pid)) {
@@ -891,10 +886,10 @@ void agent_memory_reset(pid_t pid) {
 
         int                                 i;
 
-        offset                              ofs = cluster * cluster_capacity;
+        offset                              ofs = cluster * ctlblock->cluster_capacity;
         block_header_t                     *h = HDR(ofs);
 
-        *h = (block_header_t) { .locks = 0, .size = cluster_capacity, .u.free = { ~ 0u, ~ 0u } };
+        *h = (block_header_t) { .locks = 0, .size = ctlblock->cluster_capacity, .u.free = { ~ 0u, ~ 0u } };
 
         for (i = 0; i < CLUSTER_FREELISTS; i++)
             cluster_free_lists(cluster)[i] = ~ 0;
@@ -910,17 +905,17 @@ void agent_memory_reset(pid_t pid) {
  *
  */
 void agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_t type, void *p), void *cbdata) {
-    static const char                      *thisfunc = "agent_memory_scan():";
+    static const char *thisfunc = "agent_memory_scan():";
+    unsigned cluster;
+    int c = 0;
+    uint32_t free = 0;
 
-    unsigned                                cluster;
+    if (ctlblock == NULL)
+        return;
 
-    int                                     c = 0;
-
-    uint32_t                                free = 0;
-
-    for (cluster = 0; cluster < number_of_clusters; cluster++) {
-        const offset                        base = cluster * cluster_capacity, end = base + cluster_capacity;
-        offset                              ofs = base;
+    for (cluster = 0; cluster < ctlblock->number_of_clusters; cluster++) {
+        const offset base = cluster * ctlblock->cluster_capacity, end = base + ctlblock->cluster_capacity;
+        offset ofs = base;
 
         if (spinlock_lock(&cluster_lock(cluster), pid)) {
             AM_LOG_ERROR(0, "%s unable to scan cluster %u, abandoning gc scan", thisfunc, cluster);
@@ -929,7 +924,7 @@ void agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_
         }
 
         while (ofs != end) {
-            block_header_t             *h = HDR(ofs);
+            block_header_t *h = HDR(ofs);
 
             if (h->locks) {
                 if (checker(cbdata, pid, h->locks, USR(ofs))) {
@@ -950,8 +945,8 @@ void agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_
         spinlock_unlock(&cluster_lock(cluster));
     }
 
-    AM_LOG_DEBUG(0, "%s blocks unlinked during scan: %d, current memory free: %f", thisfunc, c, (float)free / (float)(number_of_clusters * cluster_capacity));
-
+    AM_LOG_DEBUG(0, "%s blocks unlinked during scan: %d, current memory free: %f", thisfunc, c,
+            (float) free / (float) (ctlblock->number_of_clusters * ctlblock->cluster_capacity));
 }
 
 /*
@@ -961,7 +956,7 @@ void agent_memory_scan(pid_t pid, int (*checker)(void *cbdata, pid_t pid, int32_
 static void analyse_cluster(int cluster, uint32_t *use_ptr, uint32_t *free_ptr, uint32_t *block_ptr, uint32_t *freelists) {
     static const char                      *thisfunc = "analyse_cluster():";
 
-    offset                                  base = cluster * cluster_capacity, end = base + cluster_capacity;
+    offset                                  base = cluster * ctlblock->cluster_capacity, end = base + ctlblock->cluster_capacity;
 
     uint32_t                                used = 0, free = 0, blocks = 0;
 
@@ -1010,7 +1005,7 @@ void agent_memory_print(pid_t pid) {
         freelists[hdr] = 0;
     }
 
-    for (unsigned cluster = 0; cluster < number_of_clusters; cluster++) {
+    for (unsigned cluster = 0; cluster < ctlblock->number_of_clusters; cluster++) {
         if (spinlock_lock(&cluster_lock(cluster), pid)) {
             AM_LOG_ERROR(0, "%s abandoning scan of cluster %u", thisfunc, cluster);
 
@@ -1022,7 +1017,7 @@ void agent_memory_print(pid_t pid) {
         spinlock_unlock(&cluster_lock(cluster));
     }
 
-    AM_LOG_DEBUG(0, "%s avg blocks per cluster %f, blocks in use %u, free %u", thisfunc, (float)blocks / number_of_clusters, used, free);
+    AM_LOG_DEBUG(0, "%s avg blocks per cluster %f, blocks in use %u, free %u", thisfunc, (float)blocks / ctlblock->number_of_clusters, used, free);
     for (int x = 0; x < CLUSTER_FREELISTS; x++) {
         AM_LOG_DEBUG(0, "%s blocks in freelists type %d: %u ", thisfunc, x, freelists[x]); 
     }

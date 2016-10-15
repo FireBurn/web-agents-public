@@ -268,7 +268,7 @@ int wait_for_barrier(struct readlock *lock, pid_t pid) {
  */
 static int add_pid_to_array(volatile pid_t *array, size_t array_ln, pid_t old, pid_t new) {
 
-    for (int i = 0; i < array_ln; i++) {
+    for (size_t i = 0; i < array_ln; i++) {
         if (cas(array + i, old, new)) {
             return 1;
         }
