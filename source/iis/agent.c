@@ -744,18 +744,21 @@ static am_status_t get_request_body(am_request_t *rq) {
     IHttpContext *ctx = (IHttpContext *) (rq != NULL ? rq->ctx : NULL);
     IHttpRequest *r = ctx != NULL ? ctx->GetRequest() : NULL;
 #define REQ_DATA_BUFF_SZ 1024
-    DWORD read_bytes = 0, rc = REQ_DATA_BUFF_SZ;
+    DWORD read_bytes = 0, rc = REQ_DATA_BUFF_SZ, fpos, wrote, tmp_sz = 0;
     HRESULT hr;
     am_status_t status = AM_ERROR;
-    char *out = NULL, *out_tmp;
+    char *out = NULL, *out_tmp, *tmp, *file_name = NULL;
     void *data;
     HANDLE fd = INVALID_HANDLE_VALUE;
-    char *file_name = NULL;
-    BOOL to_file = FALSE, first_run = TRUE;
-    DWORD fpos, wrote;
+    BOOL to_file = FALSE, tmp_writes = TRUE, write_status = FALSE;
 
     if (r == NULL)
         return AM_EINVAL;
+
+#define TEMP_BUFFER_SZ  (REQ_DATA_BUFF_SZ * 2) 
+    tmp = (char *) alloc_request(ctx, TEMP_BUFFER_SZ);
+    if (tmp == NULL)
+        return AM_ENOMEM;
 
     data = alloc_request(ctx, rc);
     if (data == NULL)
@@ -779,62 +782,101 @@ static am_status_t get_request_body(am_request_t *rq) {
             break;
         }
 
-        if (first_run) {
-            to_file = rc > 5 && memcmp(data, "LARES=", 6) != 0;
-            first_run = FALSE;
+        if (tmp_writes && (tmp_sz + rc) <= TEMP_BUFFER_SZ) {
+            /* stream initial data into the temp buffer */
+            memcpy(tmp + tmp_sz, data, rc);
+            tmp_sz += rc;
         }
 
-        if (to_file) {
+        AM_LOG_DEBUG(rq->instance_id, "%s read: %ld, temp: %ld bytes",
+                thisfunc, rc, tmp_sz);
 
-            if (fd == INVALID_HANDLE_VALUE) {
-                char key[37];
+        if (tmp_writes) {
+            /* try to analyze temp buffer data - see if we can spot our key */
+            if (tmp_sz > 5) {
+                /* we've got enough data - check if that's 
+                 * LARES POST or should it be stored into a file */
+                tmp_writes = FALSE;
+                to_file = memcmp(tmp, "LARES=", 6) != 0;
+            } else {
+                /* too little was read in */
+                rc = REQ_DATA_BUFF_SZ;
+                continue;
+            }
+        }
 
-                if (ISINVALID(rq->conf->pdp_dir)) {
-                    AM_LOG_ERROR(rq->instance_id, "%s invalid POST preservation configuration",
-                            thisfunc);
-                    return AM_EINVAL;
-                }
+        AM_LOG_DEBUG(rq->instance_id, "%s storing into: %s, temp writes: %s",
+                thisfunc, to_file ? "file" : "memory", !tmp_writes ? "done" : "working");
 
-                file_name = (char *) alloc_request(ctx, strlen(rq->conf->pdp_dir) + strlen(key) + 2);
-                if (file_name == NULL) {
-                    return AM_ENOMEM;
-                }
-                uuid(key, sizeof (key));
-                sprintf(file_name, "%s/%s", rq->conf->pdp_dir, key);
+        if (!tmp_writes) {
+            /* no more temp buffer screening - write data directly into a file (heap buffer) */
+            if (to_file) {
 
-                fd = CreateFileA(file_name, FILE_GENERIC_WRITE,
-                        FILE_SHARE_READ | FILE_SHARE_WRITE,
-                        NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
                 if (fd == INVALID_HANDLE_VALUE) {
-                    AM_LOG_ERROR(rq->instance_id, "%s unable to create POST preservation file: %s (%d)",
+                    char key[37];
+
+                    if (ISINVALID(rq->conf->pdp_dir)) {
+                        AM_LOG_ERROR(rq->instance_id, "%s invalid POST preservation configuration",
+                                thisfunc);
+                        return AM_EINVAL;
+                    }
+
+                    file_name = (char *) alloc_request(ctx, strlen(rq->conf->pdp_dir) + strlen(key) + 2);
+                    if (file_name == NULL) {
+                        return AM_ENOMEM;
+                    }
+                    uuid(key, sizeof (key));
+                    sprintf(file_name, "%s/%s", rq->conf->pdp_dir, key);
+
+                    fd = CreateFileA(file_name, FILE_GENERIC_WRITE,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE,
+                            NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                    if (fd == INVALID_HANDLE_VALUE) {
+                        AM_LOG_ERROR(rq->instance_id, "%s unable to create POST preservation file: %s (%d)",
+                                thisfunc, file_name, GetLastError());
+                        return AM_FILE_ERROR;
+                    }
+                }
+
+                fpos = SetFilePointer(fd, 0, NULL, FILE_END);
+                if (tmp_sz > 0) {
+                    /* write down whatever we have stored in the temp buffer */
+                    write_status = WriteFile(fd, tmp, tmp_sz, &wrote, NULL);
+                    read_bytes += tmp_sz;
+                    tmp_sz = 0;
+                } else {
+                    write_status = WriteFile(fd, data, rc, &wrote, NULL);
+                    read_bytes += rc;
+                }
+                if (!write_status) {
+                    AM_LOG_ERROR(rq->instance_id, "%s unable to write to POST preservation file: %s (%d)",
                             thisfunc, file_name, GetLastError());
+                    CloseHandle(fd);
                     return AM_FILE_ERROR;
                 }
-            }
 
-            fpos = SetFilePointer(fd, 0, NULL, FILE_END);
-            if (!WriteFile(fd, data, rc, &wrote, NULL)) {
-                AM_LOG_ERROR(rq->instance_id, "%s unable to write to POST preservation file: %s (%d)",
-                        thisfunc, file_name, GetLastError());
-                CloseHandle(fd);
-                return AM_FILE_ERROR;
-            }
-            read_bytes += rc;
-
-        } else {
-
-            /* process in-memory data */
-            out_tmp = (char *) realloc(out, read_bytes + rc + 1);
-            if (out_tmp == NULL) {
-                am_free(out);
-                return AM_ENOMEM;
             } else {
+
+                /* process in-memory data */
+                out_tmp = (char *) realloc(out, read_bytes + (tmp_sz > 0 ? tmp_sz : rc) + 1);
+                if (out_tmp == NULL) {
+                    am_free(out);
+                    return AM_ENOMEM;
+                }
                 out = out_tmp;
+                if (tmp_sz > 0) {
+                    /* write down whatever we have stored in the temp buffer */
+                    memcpy(out + read_bytes, tmp, tmp_sz);
+                    read_bytes += tmp_sz;
+                    tmp_sz = 0;
+                } else {
+                    memcpy(out + read_bytes, data, rc);
+                    read_bytes += rc;
+                }
+                out[read_bytes] = 0;
             }
-            memcpy(out + read_bytes, data, rc);
-            read_bytes += rc;
-            out[read_bytes] = 0;
         }
+
         status = AM_SUCCESS;
         rc = REQ_DATA_BUFF_SZ;
     }
@@ -848,7 +890,7 @@ static am_status_t get_request_body(am_request_t *rq) {
     }
 
     if (status == AM_SUCCESS) {
-        AM_LOG_DEBUG(rq->instance_id, "%s read %d bytes \n%s", thisfunc,
+        AM_LOG_DEBUG(rq->instance_id, "%s processed %d bytes\n%s", thisfunc,
                 read_bytes, ISVALID(out) ? out : LOGEMPTY(file_name));
         r->DeleteHeader("CONTENT_LENGTH");
     }

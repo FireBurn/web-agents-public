@@ -598,13 +598,13 @@ static am_status_t set_custom_response(am_request_t *ar, const char *text, const
 static am_status_t get_request_body(am_request_t *ar) {
     static const char *thisfunc = "get_request_body():";
     struct request *req = (struct request *) ar->ctx;
-    size_t content_length, wrote, total_read = 0;
+    size_t content_length, wrote, total_read = 0, tmp_sz = 0;
     const char *content_length_s;
-    char *body = NULL, *tmp, *file_name = NULL;
+    char *body = NULL, *tmp_body, *tmp, *file_name = NULL;
     int bytes_read;
     char *buf;
     FILE *fd = NULL;
-    am_bool_t to_file = AM_FALSE, first_run = AM_TRUE;
+    am_bool_t to_file = AM_FALSE, tmp_writes = AM_TRUE;
 
     if (req == NULL || req->ctx == NULL) return AM_EINVAL;
 
@@ -635,6 +635,13 @@ static am_status_t get_request_body(am_request_t *ar) {
         return AM_ENOMEM;
     }
 
+#define TEMP_BUFFER_SZ  (REQ_DATA_BUFF_SZ * 2)     
+    tmp = WS_Alloc(req->ctx->ws, TEMP_BUFFER_SZ);
+    if (tmp == NULL) {
+        AM_LOG_ERROR(ar->instance_id, "%s memory allocation failure", thisfunc);
+        return AM_ENOMEM;
+    }
+
     while (content_length) {
         bytes_read = HTC_Read(req->ctx->wrk, req->ctx->htc, buf,
                 content_length > REQ_DATA_BUFF_SZ ? REQ_DATA_BUFF_SZ : content_length);
@@ -643,59 +650,99 @@ static am_status_t get_request_body(am_request_t *ar) {
             return AM_ERROR;
         }
 
-        if (first_run) {
-            to_file = bytes_read > 5 && memcmp(buf, "LARES=", 6) != 0;
-            first_run = AM_FALSE;
-        }
-
         content_length -= bytes_read;
 
-        if (to_file) {
+        if (tmp_writes && (tmp_sz + bytes_read) <= TEMP_BUFFER_SZ) {
+            /* stream initial data into the temp buffer */
+            memcpy(tmp + tmp_sz, buf, bytes_read);
+            tmp_sz += bytes_read;
+        }
 
-            if (fd == NULL) {
-                char key[37];
+        AM_LOG_DEBUG(ar->instance_id, "%s read: %ld, temp: %ld bytes",
+                thisfunc, bytes_read, tmp_sz);
 
-                if (ISINVALID(ar->conf->pdp_dir)) {
-                    AM_LOG_ERROR(ar->instance_id, "%s invalid POST preservation configuration",
-                            thisfunc);
-                    return AM_EINVAL;
-                }
+        if (tmp_writes) {
+            /* try to analyze temp buffer data - see if we can spot our key */
+            if (tmp_sz > 5) {
+                /* we've got enough data - check if that's 
+                 * LARES POST or should it be stored into a file */
+                tmp_writes = AM_FALSE;
+                to_file = memcmp(tmp, "LARES=", 6) != 0;
+            } else {
+                /* too little was read in */
+                continue;
+            }
+        }
 
-                uuid(key, sizeof (key));
-                file_name = WS_Printf(req->ctx->ws, "%s/%s", ar->conf->pdp_dir, key);
-                if (file_name == NULL) {
-                    return AM_ENOMEM;
-                }
+        AM_LOG_DEBUG(ar->instance_id, "%s storing into: %s, temp writes: %s",
+                thisfunc, to_file ? "file" : "memory", !tmp_writes ? "done" : "working");
 
-                fd = fopen(file_name, "a");
+        if (!tmp_writes) {
+            /* no more temp buffer screening - write data directly into a file (heap buffer) */
+            if (to_file) {
+
                 if (fd == NULL) {
-                    AM_LOG_ERROR(ar->instance_id, "%s unable to open POST preservation file: %s (%d)",
-                            thisfunc, file_name, errno);
+                    char key[37];
+
+                    if (ISINVALID(ar->conf->pdp_dir)) {
+                        AM_LOG_ERROR(ar->instance_id, "%s invalid POST preservation configuration",
+                                thisfunc);
+                        return AM_EINVAL;
+                    }
+
+                    uuid(key, sizeof (key));
+                    file_name = WS_Printf(req->ctx->ws, "%s/%s", ar->conf->pdp_dir, key);
+                    if (file_name == NULL) {
+                        return AM_ENOMEM;
+                    }
+
+                    fd = fopen(file_name, "a");
+                    if (fd == NULL) {
+                        AM_LOG_ERROR(ar->instance_id, "%s unable to open POST preservation file: %s (%d)",
+                                thisfunc, file_name, errno);
+                        return AM_FILE_ERROR;
+                    }
+                }
+
+                if (tmp_sz > 0) {
+                    /* write down whatever we have stored in the temp buffer */
+                    wrote = fwrite(tmp, 1, tmp_sz, fd);
+                    total_read += tmp_sz;
+                    tmp_sz = 0;
+                } else {
+                    wrote = fwrite(buf, 1, bytes_read, fd);
+                    total_read += bytes_read;
+                }
+                if (ferror(fd)) {
+                    fclose(fd);
+                    unlink(file_name);
+                    AM_LOG_ERROR(ar->instance_id, "%s unable to write to POST preservation file: %s",
+                            thisfunc, file_name);
                     return AM_FILE_ERROR;
                 }
-            }
 
-            wrote = fwrite(buf, 1, bytes_read, fd);
-            if (ferror(fd)) {
-                fclose(fd);
-                unlink(file_name);
-                AM_LOG_ERROR(ar->instance_id, "%s unable to write to POST preservation file: %s",
-                        thisfunc, file_name);
-                return AM_FILE_ERROR;
-            }
-            total_read += bytes_read;
+            } else {
 
-        } else {
-            tmp = realloc(body, total_read + bytes_read + 1);
-            if (tmp == NULL) {
-                am_free(body);
-                AM_LOG_ERROR(ar->instance_id, "%s memory allocation failure", thisfunc);
-                return AM_ENOMEM;
+                /* process in-memory data */
+                tmp_body = realloc(body, total_read + (tmp_sz > 0 ? tmp_sz : bytes_read) + 1);
+                if (tmp_body == NULL) {
+                    am_free(body);
+                    AM_LOG_ERROR(ar->instance_id, "%s memory allocation failure", thisfunc);
+                    return AM_ENOMEM;
+                }
+                body = tmp_body;
+                
+                if (tmp_sz > 0) {
+                    /* write down whatever we have stored in the temp buffer */
+                    memcpy(body + total_read, tmp, tmp_sz);
+                    total_read += tmp_sz;
+                    tmp_sz = 0;
+                } else {
+                    memcpy(body + total_read, buf, bytes_read);
+                    total_read += bytes_read;
+                }
+                body[total_read] = '\0';
             }
-            body = tmp;
-            memcpy(body + total_read, buf, bytes_read);
-            total_read += bytes_read;
-            body[total_read] = '\0';
         }
     }
 
@@ -706,7 +753,7 @@ static am_status_t get_request_body(am_request_t *ar) {
     ar->post_data = body;
     ar->post_data_fn = ISVALID(file_name) ? strdup(file_name) : NULL;
     ar->post_data_sz = total_read;
-    AM_LOG_DEBUG(ar->instance_id, "%s read %d bytes \n%s",
+    AM_LOG_DEBUG(ar->instance_id, "%s processed %ld bytes\n%s",
             thisfunc, total_read, ISVALID(body) ? body : LOGEMPTY(file_name));
     return AM_SUCCESS;
 }

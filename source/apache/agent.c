@@ -634,13 +634,13 @@ static am_status_t get_request_body(am_request_t *rq) {
     static const char *thisfunc = "get_request_body():";
     request_rec *r;
     apr_bucket_brigade *bb;
-    int eos_found = 0, read_bytes = 0;
-    am_bool_t to_file = AM_FALSE, first_run = AM_TRUE;
-    apr_status_t read_status = 0, ret;
+    int eos_found = 0;
+    size_t read_bytes = 0, tmp_sz = 0;
+    am_bool_t to_file = AM_FALSE;
+    apr_status_t read_status = 0, ret, tmp_writes = APR_SUCCESS;
     am_status_t status = AM_ERROR;
-    char *out = NULL, *out_tmp = NULL;
+    char *out = NULL, *out_tmp, *file_name = NULL, *tmp;
     apr_file_t *fd = NULL;
-    char *file_name = NULL;
     char buferr[50];
 
     if (rq == NULL || rq->ctx == NULL) {
@@ -648,6 +648,13 @@ static am_status_t get_request_body(am_request_t *rq) {
     }
 
     r = (request_rec *) rq->ctx;
+
+    /* reserve twice the size of the bytes read from input filter/brigade in one go */
+#define TEMP_BUFFER_SZ  (HUGE_STRING_LEN * 2) 
+    tmp = apr_palloc(r->pool, TEMP_BUFFER_SZ);
+    if (tmp == NULL)
+        return AM_ENOMEM;
+
     bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
 
     do {
@@ -661,8 +668,8 @@ static am_status_t get_request_body(am_request_t *rq) {
 
         ob = APR_BRIGADE_FIRST(bb);
         while (ob != APR_BRIGADE_SENTINEL(bb)) {
-            const char *data;
-            apr_size_t data_size;
+            const char *data = NULL;
+            apr_size_t data_size = 0;
 
             if (APR_BUCKET_IS_EOS(ob)) {
                 eos_found = 1;
@@ -677,67 +684,116 @@ static am_status_t get_request_body(am_request_t *rq) {
             /* read data */
             apr_bucket_read(ob, &data, &data_size, APR_BLOCK_READ);
 
-            if (first_run) {
-                to_file = data != NULL && data_size > 5 && memcmp(data, "LARES=", 6) != 0;
-                first_run = AM_FALSE;
-            }
+            if (data != NULL && data_size > 0) {
 
-            if (to_file) {
-                apr_size_t nbytes_written;
+                if (tmp_writes != APR_EOF && (tmp_sz + data_size) <= TEMP_BUFFER_SZ) {
+                    /* stream initial data into the temp buffer */
+                    memcpy(tmp + tmp_sz, data, data_size);
+                    tmp_sz += data_size;
+                }
 
-                if (fd == NULL) {
-                    char key[37];
+                AM_LOG_DEBUG(rq->instance_id, "%s read: %ld, temp: %ld bytes",
+                        thisfunc, data_size, tmp_sz);
 
-                    if (ISINVALID(rq->conf->pdp_dir)) {
-                        AM_LOG_ERROR(rq->instance_id, "%s invalid POST preservation configuration",
-                                thisfunc);
-                        status = AM_EINVAL;
-                        eos_found = 1;
-                        break;
-                    }
-
-                    uuid(key, sizeof (key));
-                    file_name = apr_psprintf(r->pool, "%s/%s", rq->conf->pdp_dir, key);
-                    ret = apr_file_open(&fd, file_name,
-                            APR_FOPEN_CREATE | APR_FOPEN_APPEND | APR_FOPEN_WRITE | APR_FOPEN_BINARY
-                            , APR_OS_DEFAULT, r->pool);
-                    if (ret != APR_SUCCESS) {
-                        apr_strerror(ret, buferr, sizeof (buferr));
-                        AM_LOG_ERROR(rq->instance_id, "%s unable to open POST preservation file: %s, %s",
-                                thisfunc, file_name, buferr);
-                        status = AM_FILE_ERROR;
-                        eos_found = 1;
-                        break;
+                if (tmp_writes != APR_EOF) {
+                    /* try to analyze temp buffer data - see if we can spot our key */
+                    if (tmp_sz > 5) {
+                        /* we've got enough data - check if that's 
+                         * LARES POST or should it be stored into a file */
+                        tmp_writes = APR_EOF;
+                        to_file = memcmp(tmp, "LARES=", 6) != 0;
+                    } else {
+                        /* too little was read in */
+                        ob = APR_BUCKET_NEXT(ob);
+                        continue;
                     }
                 }
 
-                ret = apr_file_write_full(fd, data, data_size, &nbytes_written);
-                if (ret != APR_SUCCESS) {
-                    apr_strerror(ret, buferr, sizeof (buferr));
-                    AM_LOG_ERROR(rq->instance_id, "%s unable to write to POST preservation file: %s, %s",
-                            thisfunc, file_name, buferr);
-                    status = AM_FILE_ERROR;
-                    eos_found = 1;
-                    break;
+                AM_LOG_DEBUG(rq->instance_id, "%s storing into: %s, temp writes: %s",
+                        thisfunc, to_file ? "file" : "memory", tmp_writes == APR_EOF ? "done" : "working");
+
+                if (tmp_writes == APR_EOF) {
+                    /* no more temp buffer screening - write data directly into a file (heap buffer) */
+
+                    if (to_file) {
+                        apr_size_t nbytes_written;
+
+                        if (fd == NULL) {
+                            char key[37];
+
+                            if (ISINVALID(rq->conf->pdp_dir)) {
+                                AM_LOG_ERROR(rq->instance_id, "%s invalid POST preservation configuration",
+                                        thisfunc);
+                                status = AM_EINVAL;
+                                eos_found = 1;
+                                break;
+                            }
+
+                            uuid(key, sizeof (key));
+                            file_name = apr_psprintf(r->pool, "%s/%s", rq->conf->pdp_dir, key);
+                            ret = apr_file_open(&fd, file_name,
+                                    APR_FOPEN_CREATE | APR_FOPEN_APPEND | APR_FOPEN_WRITE | APR_FOPEN_BINARY,
+                                    APR_OS_DEFAULT, r->pool);
+                            if (ret != APR_SUCCESS) {
+                                apr_strerror(ret, buferr, sizeof (buferr));
+                                AM_LOG_ERROR(rq->instance_id, "%s unable to open POST preservation file %s for write, %s",
+                                        thisfunc, file_name, buferr);
+                                status = AM_FILE_ERROR;
+                                eos_found = 1;
+                                break;
+                            }
+                        }
+
+                        if (tmp_sz > 0) {
+                            /* write down whatever we have stored in the temp buffer */
+                            ret = apr_file_write_full(fd, tmp, tmp_sz, &nbytes_written);
+                            if (ret != APR_SUCCESS) {
+                                apr_strerror(ret, buferr, sizeof (buferr));
+                                AM_LOG_ERROR(rq->instance_id, "%s unable to write to POST preservation file: %s, %s",
+                                        thisfunc, file_name, buferr);
+                                status = AM_FILE_ERROR;
+                                eos_found = 1;
+                                break;
+                            }
+                            read_bytes += tmp_sz;
+                            tmp_sz = 0;
+                        } else {
+                            ret = apr_file_write_full(fd, data, data_size, &nbytes_written);
+                            if (ret != APR_SUCCESS) {
+                                apr_strerror(ret, buferr, sizeof (buferr));
+                                AM_LOG_ERROR(rq->instance_id, "%s unable to write to POST preservation file: %s, %s",
+                                        thisfunc, file_name, buferr);
+                                status = AM_FILE_ERROR;
+                                eos_found = 1;
+                                break;
+                            }
+                            read_bytes += data_size;
+                        }
+
+                    } else {
+
+                        /* process in-memory data */
+                        out_tmp = realloc(out, read_bytes + (tmp_sz > 0 ? tmp_sz : data_size) + 1);
+                        if (out_tmp == NULL) {
+                            am_free(out);
+                            status = AM_ENOMEM;
+                            eos_found = 1;
+                            break;
+                        }
+                        out = out_tmp;
+
+                        if (tmp_sz > 0) {
+                            /* write down whatever we have stored in the temp buffer */
+                            memcpy(out + read_bytes, tmp, tmp_sz);
+                            read_bytes += tmp_sz;
+                            tmp_sz = 0;
+                        } else {
+                            memcpy(out + read_bytes, data, data_size);
+                            read_bytes += data_size;
+                        }
+                        out[read_bytes] = 0;
+                    }
                 }
-                read_bytes += (int) data_size;
-
-            } else {
-
-                /* process in-memory data */
-                out_tmp = realloc(out, read_bytes + data_size + 1);
-                if (out_tmp == NULL) {
-                    am_free(out);
-                    status = AM_ENOMEM;
-                    eos_found = 1;
-                    break;
-                } else {
-                    out = out_tmp;
-                }
-
-                memcpy(out + read_bytes, data, data_size);
-                read_bytes += (int) data_size;
-                out[read_bytes] = 0;
             }
 
             ob = APR_BUCKET_NEXT(ob);
@@ -758,7 +814,7 @@ static am_status_t get_request_body(am_request_t *rq) {
     }
 
     if (status == AM_SUCCESS) {
-        AM_LOG_DEBUG(rq->instance_id, "%s read %d bytes \n%s", thisfunc,
+        AM_LOG_DEBUG(rq->instance_id, "%s processed %ld bytes\n%s", thisfunc,
                 read_bytes, ISVALID(out) ? out : LOGEMPTY(file_name));
         /* remove Content-Length since the body has been read */
         r->clength = 0;
