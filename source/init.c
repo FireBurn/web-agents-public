@@ -79,7 +79,7 @@ int am_shutdown(int id) {
 
 void am_restart_workers() {
 #ifdef _WIN32
-    am_cache_worker_shutdown();
+    am_cache_worker_init();
     am_audit_processor_init();
     am_url_validator_init();
 #endif
