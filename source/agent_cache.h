@@ -21,6 +21,9 @@ int cache_initialise(int id);
 int cache_shutdown();
 int cache_cleanup(int id);
 
+int is_agent_cache_ready();
+int is_agent_memory_ready();
+
 int cache_add(uint32_t hash, void *data, size_t ln, int64_t expires, int (*identity)(void *, void *));
 
 void cache_delete(uint32_t hash, void *data, int (*identity)(void *, void *));

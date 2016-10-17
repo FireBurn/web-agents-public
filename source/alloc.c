@@ -459,6 +459,23 @@ void agent_memory_initialise(uint32_t sz, int id) {
     cluster_hdrs = cluster_hdrs_pool->base_ptr;
 }
 
+int is_agent_memory_ready() {
+    static const char *thisfunc = "is_agent_memory_ready():";
+    if (ctlblock == NULL) {
+        AM_LOG_WARNING(0, "%s shared memory '%s' is not ready", thisfunc, CTLFILE);
+        return AM_ERROR;
+    }
+    if (cluster_base == NULL) {
+        AM_LOG_WARNING(0, "%s shared memory '%s' is not ready", thisfunc, BLOCKFILE);
+        return AM_ERROR;
+    }
+    if (cluster_hdrs == NULL) {
+        AM_LOG_WARNING(0, "%s shared memory '%s' is not ready", thisfunc, HEADERFILE);
+        return AM_ERROR;
+    }
+    return AM_SUCCESS;
+}
+
 /*
  * unmap all clusters and optionally destroy shared resource
  *

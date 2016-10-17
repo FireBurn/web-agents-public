@@ -44,13 +44,15 @@
 static am_timer_event_t                 *cache_timer = NULL;
 
 static void cache_cleanup_event(void *arg) {
-    pid_t                                pid = getpid();
+    pid_t pid;
 
-    cache_readlock_total_barrier(pid);                                                /* check that all rw locks can go past 0 locks */
-    cache_purge_expired_entries(pid);                                                 /* purge expired cache entries, then deleted entries */
-    cache_garbage_collect();
-    cache_stats();
-
+    if (is_agent_memory_ready() == AM_SUCCESS && is_agent_cache_ready() == AM_SUCCESS) {
+        pid = getpid();
+        cache_readlock_total_barrier(pid); /* check that all rw locks can go past 0 locks */
+        cache_purge_expired_entries(pid); /* purge expired cache entries, then deleted entries */
+        cache_garbage_collect();
+        cache_stats();
+    }
 }
 
 int am_cache_worker_init() {

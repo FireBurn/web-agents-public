@@ -270,6 +270,23 @@ int cache_initialise(int id) {
 
 }
 
+int is_agent_cache_ready() {
+    static const char *thisfunc = "is_agent_cache_ready():";
+    if (stats == NULL) {
+        AM_LOG_WARNING(0, "%s shared memory '%s' is not ready", thisfunc, STATFILE);
+        return AM_ERROR;
+    }
+    if (locks == NULL) {
+        AM_LOG_WARNING(0, "%s shared memory '%s' is not ready", thisfunc, LOCKFILE);
+        return AM_ERROR;
+    }
+    if (hashtable == NULL) {
+        AM_LOG_WARNING(0, "%s shared memory '%s' is not ready", thisfunc, HASHFILE);
+        return AM_ERROR;
+    }
+    return AM_SUCCESS;
+}
+
 void cache_reinitialise() {
 
     reset_hashtable(0, hashtable);
