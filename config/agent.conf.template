@@ -18,18 +18,18 @@
 # Web Agents Property file
 # 
 # For documentation relating to these properties, see
-# https://backstage.forgerock.com/#!/docs/openam-policy-agents/4.0.0/web-users-guide
+# https://backstage.forgerock.com/#!/docs/openam-policy-agents/4.1.0/web-users-guide
 #
 # OpenAM Policy Agent
 #
-# Version: 4.0
+# Version: 4.1
 
 #------------------------------------------------------------------------------
 # Bootstrap Properties
 #
 # OpenAM Policy Agent
 #
-# Version: 4.0
+# Version: 4.1
 
 com.sun.identity.agents.config.repository.location = centralized
 com.sun.identity.agents.config.naming.url = AM_OPENAM_URL
@@ -70,7 +70,7 @@ com.sun.identity.agents.config.forward.proxy.password = AM_PROXY_PASSWORD
 #
 # OpenAM Policy Agent 
 #
-# Version: 4.0
+# Version: 4.1
 
 com.forgerock.agents.agent.invalid.url.regex =
 com.forgerock.agents.cache_control_header.enable = false
@@ -167,4 +167,15 @@ org.forgerock.agents.config.json.url =
 org.forgerock.agents.config.notenforced.ext.regex.enable =
 org.forgerock.agents.config.notenforced.ipurl =
 org.forgerock.agents.pdp.javascript.repost =
-org.forgerock.agents.config.cdsso.persistent.cookie.enable = false
+org.forgerock.agents.config.cdsso.persistent.cookie.enable = false 
+
+com.forgerock.agents.notenforced.url.regex.enable = 
+com.sun.identity.agents.config.cdsso.enable = 
+org.forgerock.agents.config.logout.regex.enable =
+com.forgerock.agents.agent.logout.url.regex =
+com.forgerock.agents.config.logout.redirect.disable = 
+org.forgerock.agents.config.json.url.invert = 
+org.forgerock.agents.config.json.header =  
+org.forgerock.agents.config.json.response.code =  
+org.forgerock.agents.config.skip.post.url =
+org.forgerock.openam.agents.config.policy.evaluation.application =
