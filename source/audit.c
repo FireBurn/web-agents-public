@@ -21,7 +21,9 @@
 #include "thread.h"
 #include "net_client.h"
 
-#define BATCH_SIZE 25
+#define AUDIT_SHM_LOCK_TIMEOUT 500 /* msec */
+#define THROTTLE_CNTRL 50 /* default max number of batch messages per second */
+#define BATCH_SIZE 20
 #define DEFAULT_RUN_INTERVAL 5 /* minutes */
 
 #define AUDIT_ENTRY_LINKS(offset) (&((struct am_audit_entry *) AM_GET_POINTER(audit_shm->pool, (offset)))->lh)
@@ -69,6 +71,7 @@ struct am_audit {
 };
 
 struct am_audit_entry {
+    uint64_t size;
     unsigned long instance_id;
     struct offset_list lh;
     char server_id[12];
@@ -88,6 +91,19 @@ static am_shm_t *audit_shm = NULL;
 static const char *AUDIT_REQ_MSG = "<Request><![CDATA[<logRecWrite reqid=\"%%d\"><log logName=\"%s\" sid=\"%s\">"
         "</log><logRecord><level>800</level><recMsg>%s</recMsg><logInfoMap><logInfo><infoKey>LoginIDSid</infoKey>"
         "<infoValue>%s</infoValue></logInfo></logInfoMap></logRecord></logRecWrite>]]></Request>%%s";
+
+static int throttle_ratio() {
+    char *env = getenv("AM_AUDIT_SUBMIT_RATIO");
+    if (ISVALID(env)) {
+        char *endp = NULL;
+        int v = strtol(env, &endp, 0);
+        if (env < endp && *endp == '\0' && 0 < v) {
+            /* whole string is digits (dec, hex or octal) and not 0 */
+            return v;
+        }
+    }
+    return THROTTLE_CNTRL;
+}
 
 int am_audit_init(int id) {
     if (audit_shm != NULL) return AM_SUCCESS;
@@ -157,6 +173,7 @@ static am_status_t add_audit_entry(unsigned long instance_id,
     }
     memcpy(audit_entry->value, message, size);
     audit_entry->value[size] = '\0';
+    audit_entry->size = size;
     audit_entry->instance_id = instance_id;
 
     audit_entry->lh.next = audit_entry->lh.prev = 0;
@@ -166,7 +183,7 @@ static am_status_t add_audit_entry(unsigned long instance_id,
         am_shm_free(audit_shm, audit_entry);
         return AM_EINVAL;
     }
-    
+
     offset = AM_GET_OFFSET(audit_shm->pool, audit_entry);
     OFFSET_LIST_APPEND(&config->list_hdr, AUDIT_ENTRY_LINKS, offset);
     return AM_SUCCESS;
@@ -209,7 +226,7 @@ int am_add_remote_audit_entry(unsigned long instance_id, const char *agent_token
     }
     size = msg_size;
 
-    status = am_shm_lock(audit_shm);
+    status = am_shm_lock_timeout(audit_shm, AUDIT_SHM_LOCK_TIMEOUT);
     if (status != AM_SUCCESS) {
         AM_FREE(tmp, message, message_b64);
         return status;
@@ -232,8 +249,11 @@ am_status_t extract_audit_entries(unsigned long instance_id,
     struct am_audit_entry *e;
     unsigned int offset = 0;
     struct am_audit_config *config;
-    int i, c = 0;
+    int i, c = 0, total = 0, ratio;
     struct am_audit_transfer *batch;
+    uint64_t batch_size = 0;
+    am_timer_t tm;
+    double elapsed;
 
     batch = malloc(BATCH_SIZE * sizeof (struct am_audit_transfer));
     if (batch == NULL) {
@@ -253,6 +273,9 @@ am_status_t extract_audit_entries(unsigned long instance_id,
         return AM_EINVAL;
     }
 
+    ratio = throttle_ratio();
+    am_timer_start(&tm);
+
     AM_OFFSET_LIST_FOR_EACH_OFFSET(audit_shm->pool, &config->list_hdr, e, offset) {
         batch[c].message = strdup(e->value);
         batch[c].instance_id = e->instance_id;
@@ -260,27 +283,59 @@ am_status_t extract_audit_entries(unsigned long instance_id,
         batch[c].config_file = strdup(config->config_file);
 
         c++;
+        total++;
+        batch_size += e->size;
 
-        if (c == BATCH_SIZE) {
+        /* estimate the size of the next message (and overall batch_size) */
+        if ((batch_size + (e->size * 2)) >= 0x4000 || c == BATCH_SIZE) {
+#ifdef UNIT_TEST
+            printf("sending batch size: %lld bytes, count: %d\n", batch_size, c);
+#endif
             AM_LOG_DEBUG(instance_id, "%s sending %d audit log messages to %s", thisfunc, c, config->openam);
             callback(config->openam, c, batch);
             for (i = 0; i < c; i++) {
                 AM_FREE(batch[i].message, batch[i].server_id, batch[i].config_file);
+                batch[i].message = batch[i].server_id = batch[i].config_file = NULL;
             }
             c = 0;
+            batch_size = 0;
         }
 
         OFFSET_LIST_UNLINK(&config->list_hdr, AUDIT_ENTRY_LINKS, offset);
         am_shm_free(audit_shm, e);
+
+        elapsed = am_timer_elapsed(&tm);
+        if (elapsed > 1 && (total / elapsed) > ratio) {
+#ifdef UNIT_TEST
+            printf("total: %d, elapsed: %f\n", total, elapsed);
+#endif
+            for (i = 0; i < c; i++) {
+                AM_FREE(batch[i].message, batch[i].server_id, batch[i].config_file);
+                batch[i].message = batch[i].server_id = batch[i].config_file = NULL;
+            }
+            c = 0;
+            break;
+        }
     }
 
     if (c) {
+        total += c;
         AM_LOG_DEBUG(instance_id, "%s sending %d audit log messages to %s", thisfunc, c, config->openam);
         callback(config->openam, c, batch);
         for (i = 0; i < c; i++) {
             AM_FREE(batch[i].message, batch[i].server_id, batch[i].config_file);
         }
     }
+
+    if (total > 0) {
+        AM_LOG_DEBUG(instance_id, "%s processed %d entries (%f seconds)",
+                thisfunc, total, am_timer_elapsed(&tm));
+#ifdef UNIT_TEST
+        printf("processed %d entries (%f seconds)\n", total, am_timer_elapsed(&tm));
+#endif
+    }
+
+    am_timer_stop(&tm);
 
     am_shm_unlock(audit_shm);
 

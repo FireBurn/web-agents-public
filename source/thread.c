@@ -131,7 +131,7 @@ static void work_cleanup(void *arg) {
     }
 }
 
-static void am_clock_gettime(struct timespec *ts) {
+void am_clock_gettime(struct timespec *ts) {
 #ifdef __APPLE__ 
     clock_serv_t cclock;
     mach_timespec_t mts;

@@ -61,6 +61,12 @@ static am_status_t write_entries_to_server(const char *openam, int count, struct
 
     proc += count;
 
+#define WRITE_TEST_SLEEP 1000 /* msec */
+#ifdef _WIN32
+    SleepEx(WRITE_TEST_SLEEP, FALSE)
+#else
+    usleep(WRITE_TEST_SLEEP * 1000);
+#endif
     return AM_SUCCESS;
 }
 

@@ -206,6 +206,7 @@ uint32_t prev_pow_2(uint32_t v);
 uint64_t get_total_system_memory();
 void am_shm_unlock(am_shm_t *);
 int am_shm_lock(am_shm_t *);
+int am_shm_lock_timeout(am_shm_t *am, int timeout_msec);
 am_shm_t *am_shm_create(const char *, uint64_t, int use_new_initialiser, uint64_t *);
 void am_shm_shutdown(am_shm_t *);
 int am_shm_delete(char *name);

@@ -255,6 +255,122 @@ int am_shm_lock(am_shm_t *am) {
         am->error = pthread_mutex_consistent_np(lock);
     }
 #endif
+    if (am->error != 0) return AM_ERROR;
+    
+    if (am->local_size != *(am->global_size)) {
+        am->error = munmap(am->pool, am->local_size);
+        if (am->error == -1) {
+            am->error = errno;
+            rv = AM_EFAULT;
+        }
+        am->pool = mmap(NULL, *(am->global_size), PROT_READ | PROT_WRITE, MAP_SHARED, am->fd, 0);
+        if (am->pool == MAP_FAILED) {
+            am->error = errno;
+            rv = AM_EFAULT;
+        }
+
+        am->local_size = *(am->global_size);
+    }
+#endif
+    return rv;
+}
+
+#ifdef __APPLE__
+int pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *abs_timeout) {
+    int pthread_rc;
+    struct timespec remaining, slept, ts;
+    remaining = *abs_timeout;
+    while ((pthread_rc = pthread_mutex_trylock(mutex)) == EBUSY) {
+        ts.tv_sec = 0;
+        ts.tv_nsec = (remaining.tv_sec > 0 ? 10000000 : MIN(remaining.tv_nsec, 10000000));
+        nanosleep(&ts, &slept);
+        ts.tv_nsec -= slept.tv_nsec;
+        if (ts.tv_nsec <= remaining.tv_nsec) {
+            remaining.tv_nsec -= ts.tv_nsec;
+        } else {
+            remaining.tv_sec--;
+            remaining.tv_nsec = (1000000 - (ts.tv_nsec - remaining.tv_nsec));
+        }
+        if (remaining.tv_sec < 0 || (!remaining.tv_sec && remaining.tv_nsec <= 0)) {
+            return ETIMEDOUT;
+        }
+    }
+    return pthread_rc;
+}
+#endif
+
+int am_shm_lock_timeout(am_shm_t *am, int timeout_msec) {
+    int rv = AM_SUCCESS;
+#ifdef _WIN32
+    uint64_t global_size;
+    SECURITY_DESCRIPTOR sec_descr;
+    SECURITY_ATTRIBUTES sec_attr, *sec = NULL;
+#endif
+
+    /* once we enter the critical section, check if any other process hasn't 
+     * re-mapped our segment somewhere else (compare local_size to global_size which
+     * will differ after successful am_shm_resize)
+     */
+
+#ifdef _WIN32
+    do {
+        am->error = WaitForSingleObject(am->h[0], timeout_msec);
+    } while (am->error == WAIT_ABANDONED);
+
+    if (am->error == WAIT_TIMEOUT) return AM_ETIMEDOUT;
+    if (am->error == WAIT_FAILED) return AM_ERROR;
+
+    if (am->local_size != *(am->global_size)) {
+
+        if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
+                SetSecurityDescriptorDacl(&sec_descr, TRUE, (PACL) NULL, FALSE)) {
+            sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
+            sec_attr.lpSecurityDescriptor = &sec_descr;
+            sec_attr.bInheritHandle = TRUE;
+            sec = &sec_attr;
+        }
+
+        if (UnmapViewOfFile(am->pool) == 0) {
+            am->error = GetLastError();
+            return AM_EFAULT;
+        }
+        if (CloseHandle(am->h[2]) == 0) {
+            am->error = GetLastError();
+            return AM_EFAULT;
+        }
+        global_size = *(am->global_size);
+        am->h[2] = CreateFileMappingA(am->h[1], sec, PAGE_READWRITE,
+                (DWORD) ((global_size >> 32) & 0xFFFFFFFFul), (DWORD) (global_size & 0xFFFFFFFFul), NULL);
+        am->error = GetLastError();
+        if (am->h[2] == NULL) {
+            return AM_EFAULT;
+        }
+        am->pool = (struct mem_pool *) MapViewOfFile(am->h[2], FILE_MAP_ALL_ACCESS, 0, 0, 0);
+        am->error = GetLastError();
+        if (am->pool == NULL || (am->error != 0 && am->error != ERROR_ALREADY_EXISTS)) {
+            return AM_EFAULT;
+        }
+
+        am->local_size = *(am->global_size);
+    }
+
+#else
+    struct timespec ts;
+    pthread_mutex_t *lock = (pthread_mutex_t *) am->lock;
+    am_clock_gettime(&ts);
+    ts.tv_sec = timeout_msec / 1000;
+    ts.tv_nsec = timeout_msec % 1000 * 1000000;
+    
+    am->error = pthread_mutex_timedlock(lock, &ts);
+    
+    if (am->error == ETIMEDOUT) return AM_ETIMEDOUT;
+#if !defined(__APPLE__) && !defined(AIX)
+    if (am->error == EOWNERDEAD) {
+        am->error = pthread_mutex_consistent_np(lock);
+    }
+#endif
+    if (am->error != 0) return AM_ERROR;
+    
     if (am->local_size != *(am->global_size)) {
         am->error = munmap(am->pool, am->local_size);
         if (am->error == -1) {

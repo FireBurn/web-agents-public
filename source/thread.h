@@ -79,6 +79,10 @@ typedef struct {
     am_event_t *exit_ev;
 } am_timer_event_t;
 
+#ifndef _WIN32
+void am_clock_gettime(struct timespec *ts);
+#endif
+
 am_event_t *create_event();
 am_event_t *create_named_event(const char *name, void *sm);
 int wait_for_event(am_event_t *e, int timeout);
