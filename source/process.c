@@ -2365,6 +2365,10 @@ static am_return_t handle_exit(am_request_t *r) {
                 if (pdp_status == AM_SUCCESS) {
                     char *repost_uri = NULL, *goto_value = NULL, *goto_encoded = NULL;
                     am_bool_t pdp_sess_mode, pdp_sess_mode_url, pdp_sess_mode_cookie;
+                    char *goto_proto = r->url.proto;
+                    char *goto_host = r->url.host;
+                    unsigned int goto_port = r->url.port;
+                    struct url goto_url;
 
                     /* get post data identifier out of pdp file name */
                     const char *fs = ISVALID(r->post_data_fn) ? strrchr(r->post_data_fn, '/') : NULL;
@@ -2394,15 +2398,25 @@ static am_return_t handle_exit(am_request_t *r) {
                     pdp_sess_mode_url = pdp_sess_mode && strcmp(r->conf->pdp_sess_mode, "URL") == 0;
                     pdp_sess_mode_cookie = pdp_sess_mode && strcmp(r->conf->pdp_sess_mode, "COOKIE") == 0;
 
-                    /* create a goto value */
+                    /* create "goto" value for PDP redirect */
+                    
+                    if (parse_url(r->overridden_url, &goto_url) == 0) {
+                        goto_proto = goto_url.proto;
+                        goto_host = goto_url.host;
+                        goto_port = goto_url.port;
+                    } 
+                    
                     am_asprintf(&goto_value, "%s://%s:%d%s%s"POST_PRESERVE_URI"?%s%s%s",
-                            r->url.proto, r->url.host, r->url.port,
+                            goto_proto, goto_host, goto_port,
                             ISVALID(r->conf->pdp_uri_prefix) && r->conf->pdp_uri_prefix[0] != '/' ? "/" : "",
                             NOTNULL(r->conf->pdp_uri_prefix),
                             key,
                             pdp_sess_mode_url ? "&" : "",
                             pdp_sess_mode_url ? r->conf->pdp_sess_value : ""
                             );
+                    
+                    AM_LOG_DEBUG(r->instance_id, "%s unencoded pdp redirect goto value: %s", 
+                            thisfunc, LOGEMPTY(goto_value));
                     goto_encoded = url_encode(goto_value);
 
                     /* create a redirect url value */
