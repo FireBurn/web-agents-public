@@ -283,13 +283,14 @@ int pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *abs_t
     while ((pthread_rc = pthread_mutex_trylock(mutex)) == EBUSY) {
         ts.tv_sec = 0;
         ts.tv_nsec = (remaining.tv_sec > 0 ? 10000000 : MIN(remaining.tv_nsec, 10000000));
+        memset(&slept, 0, sizeof (struct timespec));
         nanosleep(&ts, &slept);
         ts.tv_nsec -= slept.tv_nsec;
         if (ts.tv_nsec <= remaining.tv_nsec) {
             remaining.tv_nsec -= ts.tv_nsec;
         } else {
             remaining.tv_sec--;
-            remaining.tv_nsec = (1000000 - (ts.tv_nsec - remaining.tv_nsec));
+            remaining.tv_nsec = (1000000000 - (ts.tv_nsec - remaining.tv_nsec));
         }
         if (remaining.tv_sec < 0 || (!remaining.tv_sec && remaining.tv_nsec <= 0)) {
             return ETIMEDOUT;
