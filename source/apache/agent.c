@@ -433,7 +433,6 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
         case AM_REDIRECT:
         {
             apr_table_add(r->headers_out, "Location", text);
-            ap_custom_response(r, HTTP_MOVED_TEMPORARILY, text);
             break;
         }
         case AM_PDP_DONE:

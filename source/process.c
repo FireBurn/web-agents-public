@@ -615,16 +615,98 @@ static am_return_t handle_not_enforced(am_request_t *r) {
 
     /* access denied url is not enforced */
     if (ISVALID(r->conf->access_denied_url)) {
-        int compare_status = r->conf->url_eval_case_ignore ?
-                strncasecmp(url, r->conf->access_denied_url, strlen(r->conf->access_denied_url)) :
-                strncmp(url, r->conf->access_denied_url, strlen(r->conf->access_denied_url));
-        if (compare_status == 0) {
-            r->not_enforced = AM_TRUE;
-            if (!r->conf->not_enforced_fetch_attr) {
-                r->status = AM_SUCCESS;
-                return AM_QUIT;
+        static const char* fragment_query_chrs = "?#";
+
+        /* This access denied URL can either be absolute or relative.
+         * If relative, then it either is a path as /val/val.../val.htm or similar
+         * or filename.htm or similar - so either starts with a / - in which case it must match
+         * the complete path or, if simply a filename, then it must match /filename at the end - excluding
+         * parameters etc
+         */
+        if (r->conf->access_denied_url[0] == '/' || NULL == strchr(r->conf->access_denied_url, '/')) {
+            /* relative with full path match - find the length to use for the path portion or
+             * relative path with no / so this is the end value therefore math the path from the / onwards 
+             */
+            int search_length = 0;
+            int compare_status = 0;
+            char* start_of_path_match = NULL;
+            char* end_chr_psn = strpbrk(r->conf->access_denied_url, fragment_query_chrs);
+            AM_LOG_DEBUG(r->instance_id, "%s attempting match with relative access denied url %s", thisfunc, r->conf->access_denied_url);
+            search_length = (end_chr_psn != NULL)?(end_chr_psn - r->conf->access_denied_url):strlen(r->conf->access_denied_url);
+            
+            start_of_path_match = strrchr (r->url.path, '/');
+            if (r->conf->access_denied_url[0] == '/' || NULL == start_of_path_match) {
+                /* match full path in this instance including leading / */
+                start_of_path_match = &(r->url.path[0]);
             }
-            return AM_OK;
+            else {
+                /* currently points to the / so move forward by 1 position for name only matching - in worse case to the NULL str end */
+                start_of_path_match++;
+            }
+            
+            AM_LOG_DEBUG(r->instance_id, "%s looking for match %s with %s", thisfunc, start_of_path_match, r->conf->access_denied_url);
+            compare_status = r->conf->url_eval_case_ignore ?
+                strncasecmp(start_of_path_match, r->conf->access_denied_url, search_length) :
+                strncmp(start_of_path_match, r->conf->access_denied_url, search_length);
+            if (compare_status == 0) {
+                AM_LOG_DEBUG(r->instance_id, "%s have found a match, setting not enforced on this URL", thisfunc);
+                r->not_enforced = AM_TRUE;
+                if (!r->conf->not_enforced_fetch_attr) {
+                    r->status = AM_SUCCESS;
+                    return AM_QUIT;
+                }
+                return AM_OK;
+            }
+        }
+        else {
+            /* absolute URL - use parseurl to normalise and then do a full compare*/
+            char* normalised_access_denied_url = NULL;
+            struct url* parsed_url = malloc(sizeof(struct url));
+            AM_LOG_DEBUG(r->instance_id, "%s attempting match with absolute access denied url %s", thisfunc, r->conf->access_denied_url);
+            if (NULL == parsed_url) 
+            {
+                AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
+                r->status = AM_ENOMEM;
+                return AM_FAIL;
+            }
+
+            if (parse_url(r->conf->access_denied_url, parsed_url)) {
+                AM_LOG_ERROR(r->instance_id, "%s failed to normalize access denied url: %s (%s)",
+                        thisfunc, r->conf->access_denied_url, am_strerror(parsed_url->error));
+                AM_FREE(parsed_url);
+                return AM_FAIL;
+            }
+
+            /* create the normalised url and free the parsing structure */
+            am_asprintf(&normalised_access_denied_url, "%s://%s:%d%s%s", parsed_url->proto, parsed_url->host,
+            parsed_url->port, parsed_url->path, parsed_url->query);
+            AM_FREE(parsed_url);
+            parsed_url = NULL;
+
+            if (normalised_access_denied_url == NULL) {
+                AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
+                r->status = AM_ENOMEM;
+                return AM_FAIL;
+            }
+
+            AM_LOG_DEBUG(r->instance_id, "%s created normalised access denied url %s ready for matching with %s", thisfunc, normalised_access_denied_url, url);
+
+            /* Now compare the normalised URL with that provided to determine the match */
+            int compare_status = r->conf->url_eval_case_ignore ?
+                        strncasecmp(url, normalised_access_denied_url, strlen(normalised_access_denied_url)) :
+                        strncmp(url, normalised_access_denied_url, strlen(normalised_access_denied_url));
+            AM_FREE(normalised_access_denied_url);
+            
+            if (compare_status == 0) {
+                AM_LOG_DEBUG(r->instance_id, "%s have found a match, setting not enforced on this URL", thisfunc);
+                r->not_enforced = AM_TRUE;
+                if (!r->conf->not_enforced_fetch_attr) {
+                    r->status = AM_SUCCESS;
+                    return AM_QUIT;
+                }
+                return AM_OK;
+            }
+
         }
     }
 
