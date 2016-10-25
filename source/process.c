@@ -663,8 +663,7 @@ static am_return_t handle_not_enforced(am_request_t *r) {
             char* normalised_access_denied_url = NULL;
             struct url* parsed_url = malloc(sizeof(struct url));
             AM_LOG_DEBUG(r->instance_id, "%s attempting match with absolute access denied url %s", thisfunc, r->conf->access_denied_url);
-            if (NULL == parsed_url) 
-            {
+            if (NULL == parsed_url) {
                 AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
                 r->status = AM_ENOMEM;
                 return AM_FAIL;
