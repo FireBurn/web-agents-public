@@ -1136,6 +1136,11 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
         f->max_size_audit = audit_size > 0 && audit_size < DEFAULT_LOG_SIZE ? DEFAULT_LOG_SIZE : audit_size;
         f->level_debug = log_level;
         f->level_audit = audit_level;
+        
+        /* update local log level cache */
+        log_level_cache[i].instance_id = instance_id;
+        log_level_cache[i].level_debug = f->level_debug;
+        log_level_cache[i].level_audit = f->level_audit;
     }
 
     log_mutex_unlock(LOG_MUTEX);
