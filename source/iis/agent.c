@@ -974,7 +974,7 @@ static void send_custom_data(IHttpResponse *res, const char *payload, int payloa
 class OpenAMHttpModule : public CHttpModule{
     public :
 
-    OpenAMHttpModule() {
+    OpenAMHttpModule(int status) {
         doLogOn = FALSE;
         showPassword = FALSE;
         userName = NULL;
@@ -987,6 +987,7 @@ class OpenAMHttpModule : public CHttpModule{
         pdp_file_data = NULL;
         pdp_file_map = NULL;
         pdp_file_name = NULL;
+        init_status = status;
     }
 
     REQUEST_NOTIFICATION_STATUS OnAsyncCompletion(IHttpContext * ctx, DWORD dwNotification,
@@ -1020,6 +1021,13 @@ class OpenAMHttpModule : public CHttpModule{
         hr = OpenAMStoredConfig::GetConfig(ctx, &conf);
         if (FAILED(hr) || conf->IsEnabled() == FALSE) {
             return RQ_NOTIFICATION_CONTINUE;
+        }
+        
+        if (init_status != AM_SUCCESS) {
+            AM_LOG_ERROR(0, "%s agent init for site %d failed (error: %d)",
+                    thisfunc, site->GetSiteId(), init_status);
+            res->SetStatus(AM_HTTP_STATUS_500, "Internal Server Error");
+            return RQ_NOTIFICATION_FINISH_REQUEST;
         }
 
         boot = conf->GetBootConf();
@@ -1188,6 +1196,7 @@ class OpenAMHttpModule : public CHttpModule{
     HANDLE pdp_file_map;
     LPVOID pdp_file_data;
     char *pdp_file_name;
+    int init_status;
 };
 
 static am_status_t set_request_body(am_request_t *rq) {
@@ -1528,7 +1537,7 @@ class OpenAMHttpModuleFactory : public IHttpModuleFactory{
     public :
 
     OpenAMHttpModuleFactory() {
-        am_init_worker(AM_DEFAULT_AGENT_ID);
+        status = am_init_worker(AM_DEFAULT_AGENT_ID);
     }
 
     virtual HRESULT GetHttpModule(CHttpModule **mm, IModuleAllocator * ma) {
@@ -1538,7 +1547,7 @@ class OpenAMHttpModuleFactory : public IHttpModuleFactory{
             return HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER);
         }
 
-        mod = new OpenAMHttpModule();
+        mod = new OpenAMHttpModule(status);
         if (mod == NULL) {
             return HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY);
         }
@@ -1553,6 +1562,9 @@ class OpenAMHttpModuleFactory : public IHttpModuleFactory{
         am_shutdown(AM_DEFAULT_AGENT_ID);
         delete this;
     }
+    
+    private:
+        int status;
 };
 
 HRESULT __stdcall RegisterModule(DWORD dwServerVersion,

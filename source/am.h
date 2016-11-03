@@ -329,7 +329,7 @@ int am_cache_shutdown();
 void am_cache_destroy();
 
 void am_restart_workers();
-void am_log_init(int id);
+int am_log_init(int id);
 void am_log_shutdown(int id);
 int am_log_cleanup(int id);
 void am_log_register_instance(unsigned long instance_id, const char *debug_log, int log_level, int log_size,

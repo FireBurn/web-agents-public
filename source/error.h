@@ -11,13 +11,15 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014 - 2015 ForgeRock AS.
+ * Copyright 2014 - 2016 ForgeRock AS.
  */
 
 #ifndef ERROR_H
 #define ERROR_H
 
-#define AM__UNKNOWN                 (-30)
+#define AM__UNKNOWN                 (-32)
+#define AM__ENOSPC                  (-31)
+#define AM__SHM_ERROR               (-30)
 #define AM__ENOTSTARTED             (-29)
 #define AM__EINPROGRESS             (-28)
 #define AM__JSON_RESPONSE           (-27)
@@ -57,6 +59,8 @@
 
 #define AM_ERRNO_MAP(AE) \
   AE(EINVAL, "invalid argument") \
+  AE(ENOSPC, "no space left on device") \
+  AE(SHM_ERROR, "shared memory error") \
   AE(ENOTSTARTED, "operation not started") \
   AE(EINPROGRESS, "operation in progress") \
   AE(JSON_RESPONSE, "json response") \

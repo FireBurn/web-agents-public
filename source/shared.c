@@ -19,6 +19,14 @@
 #include "utility.h"
 #include "list.h"
 #include "alloc.h"
+#ifndef _WIN32
+#if defined(__APPLE__)
+#include <sys/param.h>
+#include <sys/mount.h>
+#else
+#include <sys/statvfs.h>
+#endif
+#endif
 
 #define AM_ALIGNMENT 8
 #define AM_ALIGN(size) (((size) + (AM_ALIGNMENT-1)) & ~(AM_ALIGNMENT-1))
@@ -193,6 +201,26 @@ uint64_t page_size(uint64_t size) {
     return p_size * ((size + p_size - 1) / p_size);
 }
 
+/* Returns free disk space in bytes */
+uint64_t get_disk_free_space(const char *vol) {
+#ifdef _WIN32
+    ULARGE_INTEGER fs;
+    if (GetDiskFreeSpaceExA(vol, NULL, NULL, &fs) == 0)
+        return 0L;
+    return fs.QuadPart;
+#elif defined(__APPLE__)
+    struct statfs fs;
+    if (statfs(vol, &fs) != 0)
+        return 0L;
+    return fs.f_bfree * fs.f_bsize;
+#else
+    struct statvfs fs;
+    if (statvfs(vol, &fs) != 0)
+        return 0L;
+    return fs.f_bsize * fs.f_bavail;
+#endif
+}
+
 int am_shm_lock(am_shm_t *am) {
     int rv = AM_SUCCESS;
 #ifdef _WIN32
@@ -205,6 +233,8 @@ int am_shm_lock(am_shm_t *am) {
      * re-mapped our segment somewhere else (compare local_size to global_size which
      * will differ after successful am_shm_resize)
      */
+    
+    if (am == NULL) return AM_EINVAL;
 
 #ifdef _WIN32
     do {
@@ -312,6 +342,8 @@ int am_shm_lock_timeout(am_shm_t *am, int timeout_msec) {
      * re-mapped our segment somewhere else (compare local_size to global_size which
      * will differ after successful am_shm_resize)
      */
+    
+    if (am == NULL) return AM_EINVAL;
 
 #ifdef _WIN32
     do {
@@ -391,6 +423,7 @@ int am_shm_lock_timeout(am_shm_t *am, int timeout_msec) {
 }
 
 void am_shm_unlock(am_shm_t *am) {
+    if (am == NULL) return;
 #ifdef _WIN32
     ReleaseMutex(am->h[0]);
 #else
@@ -557,7 +590,7 @@ static uint64_t am_shm_max_pool_size() {
 am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialiser, uint64_t *limit) {
     static const char *thisfunc = "am_shm_create():";
     struct mem_pool *pool = NULL;
-    uint64_t size, max_size, sys_size;
+    uint64_t size, max_size, sys_size, disk_size;
     char opened = AM_FALSE;
     void *area = NULL;
     am_shm_t *ret = NULL;
@@ -649,6 +682,24 @@ am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialise
         if (limit != NULL) {
             *limit = max_size;
         }
+    }
+
+    disk_size = get_disk_free_space(
+#ifdef _WIN32
+            dll_path
+#elif defined(LINUX)
+            "/dev/shm/"
+#elif defined(__sun)   
+            "/tmp/"
+#else
+            "/"
+#endif
+            );
+    if (size > (disk_size >> 1)) {
+        AM_LOG_ERROR(0, "%s free disk space on the system is only %"PR_L64" bytes\n",
+                thisfunc, disk_size);
+        free(ret);
+        return NULL;
     }
 
 #ifdef _WIN32

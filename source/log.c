@@ -178,10 +178,7 @@ static struct am_shared_log {
 } *log_handle = NULL;
 
 static char default_log_path[AM_PATH_SIZE] = {0};
-static int32_t default_log_level = AM_LOG_LEVEL_NONE;
-static struct log_files log_level_cache[AM_MAX_INSTANCES] = {
-    {0}
-};
+static int32_t default_log_level = AM_LOG_LEVEL_ERROR;
 
 static void log_mutex_lock(int type) {
     struct log_mutex *mtx;
@@ -213,48 +210,6 @@ static void log_mutex_lock(int type) {
 #endif
     }
     ++(mtx->count);
-}
-
-static int log_mutex_trylock(int type) {
-    struct log_mutex *mtx;
-    if (log_handle == NULL || (mtx = log_handle->mutex[type]) == NULL)
-        return AM_EINVAL;
-
-    if (
-#ifdef _WIN32
-            TryEnterCriticalSection(&mtx->lock) == 0
-#else
-            pthread_mutex_trylock(&mtx->lock) != 0
-#endif
-            ) {
-        return AM_ERROR;
-    }
-
-    for (;;) {
-        while (AM_ATOMIC_SWAP_32(&log_handle->area->lock[type], 1) != 0) {
-#ifdef _WIN32
-            Sleep(0);
-#else
-            sched_yield();
-#endif
-        }
-        if (log_handle->area->lock_owner[type] == 0 || log_handle->area->lock_owner[type] == mtx->pid) {
-            log_handle->area->lock_owner[type] = mtx->pid;
-            AM_ATOMIC_SWAP_32(&log_handle->area->lock[type], 0);
-            break;
-        }
-        AM_ATOMIC_SWAP_32(&log_handle->area->lock[type], 0);
-#ifdef _WIN32
-        Sleep(1);
-#else
-
-        nanosleep((const struct timespec[]){
-            {0, 1000000L}
-        }, NULL);
-#endif
-    }
-    ++(mtx->count);
-    return AM_SUCCESS;
 }
 
 static void log_mutex_unlock(int type) {
@@ -592,10 +547,9 @@ am_bool_t is_process_running(unsigned long pid) {
 #endif
 }
 
-static void log_worker_register(int lock) {
+static void log_worker_register() {
     uint32_t pid = getpid();
-    if (lock)
-        log_mutex_lock(LOG_MUTEX);
+    log_mutex_lock(LOG_MUTEX);
     if (log_handle->area->owner == 0 || (log_handle->area->owner != pid &&
             !is_process_running(log_handle->area->owner))) {
 
@@ -608,8 +562,7 @@ static void log_worker_register(int lock) {
         /* and all the rest of worker threads */
         am_restart_workers();
     }
-    if (lock)
-        log_mutex_unlock(LOG_MUTEX);
+    log_mutex_unlock(LOG_MUTEX);
 }
 
 static void log_mutex_init(am_mutex_t *mutex) {
@@ -624,8 +577,9 @@ static void log_mutex_init(am_mutex_t *mutex) {
 #endif
 }
 
-void am_log_init(int id) {
+int am_log_init(int id) {
     am_bool_t opened = AM_FALSE;
+    uint64_t disk_size;
 
 #define AM_LOG_EVENT_AVAILABLE      AM_GLOBAL_PREFIX AM_LOG_SHM_NAME "_avlb_ev"
 #define AM_LOG_EVENT_FILL           AM_GLOBAL_PREFIX AM_LOG_SHM_NAME "_fill_ev"
@@ -635,9 +589,9 @@ void am_log_init(int id) {
 #define AM_LOG_SHM_NAME_INT         AM_GLOBAL_PREFIX AM_LOG_SHM_NAME "_s"
 #endif
 
-    if (log_handle != NULL) return;
+    if (log_handle != NULL) return AM_SUCCESS;
 
-    memset(&default_log_path[0], 0, sizeof (default_log_path));
+    memset(&default_log_path[0], 0, sizeof(default_log_path));
 
 #ifdef _WIN32
     SECURITY_DESCRIPTOR sec_descr;
@@ -650,11 +604,27 @@ void am_log_init(int id) {
         sec_attr.bInheritHandle = TRUE;
         sec = &sec_attr;
     }
+#else
+
+    disk_size = get_disk_free_space(
+#if defined(LINUX)
+            "/dev/shm/"
+#elif defined(__sun)   
+            "/tmp/"
+#else
+            "/"
+#endif
+            );
+    if (sizeof (struct log_buffer) > (disk_size >> 1)) {
+        fprintf(stderr, "am_log_init() free disk space on the system is only %"PR_L64" bytes\n",
+                disk_size);
+        return AM_ENOSPC;
+    }
 #endif
 
     log_handle = (struct am_shared_log *) calloc(1, sizeof (struct am_shared_log));
     if (log_handle == NULL) {
-        return;
+        return AM_ENOMEM;
     }
 
 #ifndef UNIT_TEST
@@ -703,7 +673,7 @@ void am_log_init(int id) {
         AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
                 log_handle->mutex[LOG_INIT_MUTEX], log_handle);
         log_handle = NULL;
-        return;
+        return AM_ENOMEM;
     }
 
     log_handle->mutex[LOG_MUTEX]->pid = log_handle->mutex[LOG_URL_MUTEX]->pid =
@@ -729,7 +699,7 @@ void am_log_init(int id) {
         AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
                 log_handle->mutex[LOG_INIT_MUTEX], log_handle);
         log_handle = NULL;
-        return;
+        return AM_SHM_ERROR;
     }
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         opened = AM_TRUE;
@@ -746,7 +716,7 @@ void am_log_init(int id) {
         AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
                 log_handle->mutex[LOG_INIT_MUTEX], log_handle);
         log_handle = NULL;
-        return;
+        return AM_SHM_ERROR;
     }
 
 #else
@@ -761,7 +731,7 @@ void am_log_init(int id) {
         AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
                 log_handle->mutex[LOG_INIT_MUTEX], log_handle);
         log_handle = NULL;
-        return;
+        return AM_SHM_ERROR;
     }
     if (log_handle->mapping == -1) {
         log_handle->mapping = shm_open(get_global_name(AM_LOG_SHM_NAME_INT, id), O_RDWR, 0666);
@@ -773,7 +743,7 @@ void am_log_init(int id) {
             AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
                     log_handle->mutex[LOG_INIT_MUTEX], log_handle);
             log_handle = NULL;
-            return;
+            return AM_SHM_ERROR;
         }
         opened = AM_TRUE;
     } else if (ftruncate(log_handle->mapping, log_handle->area_size) == -1) {
@@ -786,7 +756,7 @@ void am_log_init(int id) {
         AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
                 log_handle->mutex[LOG_INIT_MUTEX], log_handle);
         log_handle = NULL;
-        return;
+        return AM_SHM_ERROR;
     }
 
     log_handle->area = mmap(NULL, log_handle->area_size,
@@ -801,7 +771,7 @@ void am_log_init(int id) {
         AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
                 log_handle->mutex[LOG_INIT_MUTEX], log_handle);
         log_handle = NULL;
-        return;
+        return AM_SHM_ERROR;
     }
 
 #endif
@@ -848,7 +818,8 @@ void am_log_init(int id) {
         }
     }
 
-    log_worker_register(AM_TRUE);
+    log_worker_register();
+    return AM_SUCCESS;
 }
 
 /**
@@ -876,28 +847,17 @@ int perform_logging(unsigned long instance_id, int level) {
     if (instance_id == 0) {
         log_level = default_log_level;
     } else {
-        if (log_mutex_trylock(LOG_MUTEX) == AM_SUCCESS) {
+        log_mutex_lock(LOG_MUTEX);
 
-            for (i = 0; i < AM_MAX_INSTANCES; i++) {
-                if (log_handle->area->files[i].instance_id == instance_id) {
-                    log_level = log_handle->area->files[i].level_debug;
-                    audit_level = log_handle->area->files[i].level_audit;
-                    break;
-                }
-            }
-
-            log_mutex_unlock(LOG_MUTEX);
-
-        } else {
-            /* No lock can be acquired - try to use earlier cached version */
-            for (i = 0; i < AM_MAX_INSTANCES; i++) {
-                if (log_level_cache[i].instance_id == instance_id) {
-                    log_level = log_level_cache[i].level_debug;
-                    audit_level = log_level_cache[i].level_audit;
-                    break;
-                }
+        for (i = 0; i < AM_MAX_INSTANCES; i++) {
+            if (log_handle->area->files[i].instance_id == instance_id) {
+                log_level = log_handle->area->files[i].level_debug;
+                audit_level = log_handle->area->files[i].level_audit;
+                break;
             }
         }
+
+        log_mutex_unlock(LOG_MUTEX);
     }
 
     /* Do not log in the following cases:
@@ -1075,10 +1035,11 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
         return;
     }
 
-    log_mutex_lock(LOG_MUTEX);
 #ifdef _WIN32
-    log_worker_register(AM_FALSE);
+    log_worker_register();
 #endif
+
+    log_mutex_lock(LOG_MUTEX);
 
     for (i = 0; i < AM_MAX_INSTANCES; i++) {
         f = &log_handle->area->files[i];
@@ -1099,19 +1060,7 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
                 f->max_size_audit = audit_size > 0 && audit_size < DEFAULT_LOG_SIZE ? DEFAULT_LOG_SIZE : audit_size;
                 f->level_debug = log_level;
                 f->level_audit = audit_level;
-
-                /* Update local log level cache */
-                log_level_cache[i].instance_id = instance_id;
-                log_level_cache[i].level_debug = f->level_debug;
-                log_level_cache[i].level_audit = f->level_audit;
-
-#define AM_LOG_HEADER "\r\n\r\n\t######################################################\r\n\t# %-51s#\r\n\t# Version: %-42s#\r\n\t# %-51s#\r\n\t# Container: %-40s#\r\n\t# Build date: %s %-27s#\r\n\t######################################################\r\n"
-
-                AM_LOG_ALWAYS(instance_id, AM_LOG_HEADER, DESCRIPTION, VERSION,
-                        VERSION_VCS, CONTAINER, __DATE__, __TIME__);
-
-                /* This is an unknown instance - set it to uninitialized state */
-                am_agent_init_set_value(instance_id, AM_UNKNOWN);
+                exist = AM_DONE;
                 break;
             }
         }
@@ -1136,14 +1085,20 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
         f->max_size_audit = audit_size > 0 && audit_size < DEFAULT_LOG_SIZE ? DEFAULT_LOG_SIZE : audit_size;
         f->level_debug = log_level;
         f->level_audit = audit_level;
-        
-        /* update local log level cache */
-        log_level_cache[i].instance_id = instance_id;
-        log_level_cache[i].level_debug = f->level_debug;
-        log_level_cache[i].level_audit = f->level_audit;
     }
 
     log_mutex_unlock(LOG_MUTEX);
+
+    if (exist == AM_DONE) {
+#define AM_LOG_HEADER "\r\n\r\n\t######################################################\r\n\t# %-51s#\r\n\t# Version: %-42s#\r\n\t# %-51s#\r\n\t# Container: %-40s#\r\n\t# Build date: %s %-27s#\r\n\t######################################################\r\n"
+
+        AM_LOG_ALWAYS(instance_id, AM_LOG_HEADER, DESCRIPTION, VERSION,
+                VERSION_VCS, CONTAINER, __DATE__, __TIME__);
+
+        log_mutex_lock(LOG_INIT_MUTEX);
+        am_agent_init_set_value(instance_id, AM_UNKNOWN);
+        log_mutex_unlock(LOG_INIT_MUTEX);
+    }
 }
 
 /***************************************************************************/

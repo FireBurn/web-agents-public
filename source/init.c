@@ -31,32 +31,56 @@
 int am_init(int id) {
     int rv = AM_SUCCESS;
 #ifndef _WIN32
-    am_net_init();
-    am_worker_pool_init_main();
-    am_log_init(id);
-    am_configuration_init(id);
-    am_audit_init(id);
-    am_audit_processor_init();
-    am_url_validator_init();
-    rv = am_cache_init(id);
-    am_cache_worker_init();
+    do {
+        am_net_init();
+        am_worker_pool_init_main();
+        rv = am_log_init(id);
+        if (rv != 0)
+            break;
+        rv = am_configuration_init(id);
+        if (rv != 0)
+            break;
+        rv = am_audit_init(id);
+        if (rv != 0)
+            break;
+        rv = am_audit_processor_init();
+        if (rv != 0)
+            break;
+        rv = am_url_validator_init();
+        if (rv != 0)
+            break;
+        rv = am_cache_init(id);
+        if (rv != 0)
+            break;
+        rv = am_cache_worker_init();
+    } while (0);
 #endif
     return rv;
 }
 
 int am_init_worker(int id) {
     int rv = AM_SUCCESS;
+    do {
 #ifdef _WIN32
-    am_net_init();
-    am_worker_pool_init();
-    am_log_init(id);
-    am_configuration_init(id);
-    am_audit_init(id);
-    rv = am_cache_init(id);
-    am_cache_worker_init();
+        am_net_init();
+        am_worker_pool_init();
+        rv = am_log_init(id);
+        if (rv != 0)
+            break;
+        rv = am_configuration_init(id);
+        if (rv != 0)
+            break;
+        rv = am_audit_init(id);
+        if (rv != 0)
+            break;
+        rv = am_cache_init(id);
+        if (rv != 0)
+            break;
+        rv = am_cache_worker_init();
 #else
-    am_worker_pool_init();
+        am_worker_pool_init();
 #endif
+    } while (0);
     return rv;
 }
 

@@ -186,9 +186,17 @@ static apr_status_t amagent_worker_cleanup(void *arg) {
 
 static void amagent_worker_init(apr_pool_t *p, server_rec *s) {
     /* worker process init */
+    int status;
     amagent_config_t *config = ap_get_module_config(s->module_config, &amagent_module);
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "amagent_worker_init() %d", getpid());
-    am_init_worker(config->agent_id);
+    status = am_init_worker(config->agent_id);
+#ifdef _WIN32
+    if (status != AM_SUCCESS) {
+        ap_log_error(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, s, "amagent_worker_init() status: %s",
+                am_strerror(status));
+        config->error = status;
+    }
+#endif
     apr_pool_cleanup_register(p, s, amagent_worker_cleanup, apr_pool_cleanup_null);
 }
 
