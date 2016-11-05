@@ -18,7 +18,7 @@
 #define AGENT_CACHE_H
 
 int cache_initialise(int id);
-int cache_shutdown();
+int cache_shutdown(int destroy);
 int cache_cleanup(int id);
 
 int is_agent_cache_ready();

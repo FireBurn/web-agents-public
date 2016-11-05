@@ -441,18 +441,15 @@ int am_cache_init(int instance) {
 }
 
 int am_cache_shutdown() {
-
-    cache_shutdown();
+    cache_shutdown(AM_FALSE);
     return 0;
-
 }
 
 void am_cache_destroy() {
     #ifdef UNIT_TEST
     cache_initialise(0);
     #endif
-    cache_shutdown();
-
+    cache_shutdown(AM_TRUE);
 }
 
 int am_cache_cleanup(int instance) {

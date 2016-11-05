@@ -348,4 +348,9 @@ char *am_json_escape(const char *str, size_t *escaped_sz);
 
 char *am_normalize_pattern(const char *url);
 
+#if defined(_MSC_VER) && _MSC_VER < 1900
+int am_vsnprintf(char *s, size_t n, const char *format, va_list ap);
+int am_snprintf(char *s, size_t n, const char *format, ...);
+#endif
+
 #endif

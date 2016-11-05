@@ -649,6 +649,28 @@ char *url_decode(const char *str) {
     return dest;
 }
 
+#if defined(_MSC_VER) && _MSC_VER < 1900
+
+int am_vsnprintf(char *s, size_t size, const char *format, va_list ap) {
+    int count = -1;
+    if (size != 0)
+        count = _vsnprintf_s(s, size, _TRUNCATE, format, ap);
+    if (count == -1)
+        count = _vscprintf(format, ap);
+    return count;
+}
+
+int am_snprintf(char *s, size_t n, const char *format, ...) {
+    va_list ap;
+    int ret;
+    va_start(ap, format);
+    ret = am_vsnprintf(s, n, format, ap);
+    va_end(ap);
+    return ret;
+}
+
+#endif
+
 /**
  * am_vasprintf allocates sufficient dynamic memory to hold the arguments specified by the printf
  * style arguments and returns the number of bytes allocated.  If dynamic memory allocation fails,

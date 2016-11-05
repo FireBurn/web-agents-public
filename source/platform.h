@@ -38,7 +38,8 @@
 #include <shellapi.h>
 
 #if (_MSC_VER < 1900)
-#define snprintf            sprintf_s
+#define snprintf            am_snprintf
+#define vsnprintf           am_vsnprintf
 #endif
 #define mkdir(a,b)          _mkdir(a)
 #define getpid              GetCurrentProcessId

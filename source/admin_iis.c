@@ -1040,7 +1040,7 @@ static char *get_site_name(const char *sid) {
                         for (p = name; *p != '\0'; ++p) {
                             *p = toupper(*p);
                         }
-                        sprintf_s(cpath, sizeof (cpath), "MACHINE/WEBROOT/APPHOST/%s", name);
+                        snprintf(cpath, sizeof (cpath), "MACHINE/WEBROOT/APPHOST/%s", name);
                         ret = strdup(cpath);
                         i = num;
                     }
@@ -1470,7 +1470,7 @@ static char *get_site_application_pool(const char *site_id) {
                                     if (path_str != NULL && strcmp(path_str, "/") == 0) {
                                         char *pool_str = get_property_value_byname(app_element, &app_pool_value, AM_IIS_EPOOL, VT_BSTR);
                                         if (pool_str != NULL) {
-                                            sprintf_s(app_pool, sizeof (app_pool), "IIS APPPOOL\\%s", pool_str);
+                                            snprintf(app_pool, sizeof (app_pool), "IIS APPPOOL\\%s", pool_str);
                                             free(pool_str);
                                         }
                                     }
