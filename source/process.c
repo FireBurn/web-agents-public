@@ -1685,7 +1685,7 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
     }
 
     /* set cookie path value */
-    if (cookie != NULL) {
+    if (cookie != NULL && stristr(cookie, ";Path=") == NULL) {
         am_asprintf(&cookie, "%s;Path=/%s", cookie, NOTNULL(path));
     }
 
