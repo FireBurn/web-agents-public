@@ -279,6 +279,43 @@ static am_bool_t validate_os_version() {
 #endif
 }
 
+static int check_system_resources(int report) {
+    uint64_t max_size, sys_size, disk_size;
+    disk_size = get_disk_free_space(
+#ifdef _WIN32
+            app_path
+#elif defined(LINUX)
+            "/dev/shm/"
+#elif defined(__sun)   
+            "/tmp/"
+#else
+            "/"
+#endif
+            );
+
+    sys_size = get_total_system_memory();
+    max_size = sys_size / 4; /* max size for a segment */
+    if (max_size > AM_SHARED_MAX_SIZE) {
+        max_size = AM_SHARED_MAX_SIZE;
+    }
+
+    if (report) {
+        fprintf(stdout, "System Resources:\n");
+        fprintf(stdout, " memory size: %"PR_L64" bytes\n", sys_size);
+        fprintf(stdout, " max shared memory segment allocation size: %"PR_L64" bytes\n", max_size);
+#if defined(LINUX) || defined(__sun)
+#define VOL_NAME "(tmpfs/swap) "
+#else
+#define VOL_NAME ""
+#endif        
+        fprintf(stdout, " free disk "VOL_NAME"space size: %"PR_L64" bytes\n", disk_size);
+    }
+    if (max_size > disk_size) {
+        return AM_ENOSPC;
+    }
+    return AM_SUCCESS;
+}
+
 static void show_version(int argc, char **argv) {
     static const char *server_version =
 #ifdef SERVER_VERSION
@@ -292,6 +329,7 @@ static void show_version(int argc, char **argv) {
     fprintf(stdout, " %s\n", VERSION_VCS);
     fprintf(stdout, " Build machine: %s\n", BUILD_MACHINE);
     fprintf(stdout, " Build date: %s %s\n\n", __DATE__, __TIME__);
+    check_system_resources(AM_TRUE);
 }
 
 static int am_read_instances(const char *path, struct am_conf_entry **list) {
