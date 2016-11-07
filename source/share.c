@@ -30,15 +30,16 @@ int get_memory_segment(am_shm_t **p_addr, char *name, size_t sz,
         void (*cb)(void *cbdata, void *p), void *cbdata, int id) {
     static const char *thisfunc = "get_memory_segment():";
     uint64_t size_limit = 0;
+    int shm_status = AM_ERROR;
 
     if (p_addr == NULL) {
         return AM_FAIL;
     }
 
-    *p_addr = am_shm_create(get_global_name(name, id), (uint64_t) sz, AM_TRUE, &size_limit);
+    *p_addr = am_shm_create(get_global_name(name, id), (uint64_t) sz, AM_TRUE, &size_limit, &shm_status);
     if (*p_addr == NULL) {
         AM_LOG_ERROR(0, "%s shared memory error: %s\n", thisfunc, name);
-        return AM_ERROR;
+        return shm_status;
     }
     if ((*p_addr)->error != AM_SUCCESS) {
         AM_LOG_ERROR(0, "%s shared memory error %d: %s\n", thisfunc, (*p_addr)->error, name);

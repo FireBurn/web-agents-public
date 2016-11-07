@@ -252,22 +252,29 @@ uint32_t cache_memory_size() {
 }
 
 int cache_initialise(int id) {
-
+    int rv;
     uint32_t sz = cache_memory_size();
 
-    agent_memory_initialise(sz, id);
+    rv = agent_memory_initialise(sz, id);
+    if (rv != AM_SUCCESS)
+        return rv;
 
-    get_memory_segment(&stats_pool, STATFILE, sizeof (struct stats), reset_stats, NULL, id);
+    rv = get_memory_segment(&stats_pool, STATFILE, sizeof (struct stats), reset_stats, NULL, id);
+    if (rv != AM_SUCCESS)
+        return rv;
     stats = stats_pool->base_ptr;
 
-    get_memory_segment(&locks_pool, LOCKFILE, sizeof (struct readlock) * N_LOCKS, reset_locks, NULL, id);
+    rv = get_memory_segment(&locks_pool, LOCKFILE, sizeof (struct readlock) * N_LOCKS, reset_locks, NULL, id);
+    if (rv != AM_SUCCESS)
+        return rv;
     locks = locks_pool->base_ptr;
 
-    get_memory_segment(&hashtable_pool, HASHFILE, sizeof (offset) * HASH_SZ, reset_hashtable, NULL, id);
+    rv = get_memory_segment(&hashtable_pool, HASHFILE, sizeof (offset) * HASH_SZ, reset_hashtable, NULL, id);
+    if (rv != AM_SUCCESS)
+        return rv;
     hashtable = hashtable_pool->base_ptr;
 
-    return 0;
-
+    return AM_SUCCESS;
 }
 
 int is_agent_cache_ready() {

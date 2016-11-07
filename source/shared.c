@@ -587,7 +587,7 @@ static uint64_t am_shm_max_pool_size() {
     return AM_SHARED_MAX_SIZE;
 }
 
-am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialiser, uint64_t *limit) {
+am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialiser, uint64_t *limit, int *ret_status) {
     static const char *thisfunc = "am_shm_create():";
     struct mem_pool *pool = NULL;
     uint64_t size, max_size, sys_size, disk_size;
@@ -607,7 +607,10 @@ am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialise
 #endif
 
     ret = calloc(1, sizeof (am_shm_t));
-    if (ret == NULL) return NULL;
+    if (ret == NULL) {
+        if (ret_status != NULL) *ret_status = AM_ENOMEM;
+        return NULL;
+    }
 
 #ifdef _WIN32
 #ifdef UNIT_TEST
@@ -695,10 +698,11 @@ am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialise
             "/"
 #endif
             );
-    if (size > (disk_size >> 1)) {
-        AM_LOG_ERROR(0, "%s free disk space on the system is only %"PR_L64" bytes\n",
-                thisfunc, disk_size);
+    if (size > disk_size) {
+        AM_LOG_ERROR(0, "%s free disk space on the system is only %"PR_L64" bytes, required %"PR_L64" bytes",
+                thisfunc, disk_size, size);
         free(ret);
+        if (ret_status != NULL) *ret_status = AM_ENOSPC;
         return NULL;
     }
 

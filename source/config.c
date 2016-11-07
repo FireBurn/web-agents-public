@@ -182,12 +182,13 @@ struct am_instance_entry_data {
 static am_shm_t *conf = NULL;
 
 int am_configuration_init(int id) {
+    int shm_status = AM_ERROR;
     if (conf != NULL) return AM_SUCCESS;
 
     conf = am_shm_create(get_global_name(AM_CONFIG_SHM_NAME, id),
-            sizeof (struct am_instance) * 2048 * AM_MAX_INSTANCES, AM_FALSE, NULL);
+            sizeof (struct am_instance) * 2048 * AM_MAX_INSTANCES, AM_FALSE, NULL, &shm_status);
     if (conf == NULL) {
-        return AM_ERROR;
+        return shm_status;
     }
     if (conf->error != AM_SUCCESS) {
         return conf->error;

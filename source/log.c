@@ -662,9 +662,9 @@ int am_log_init(int id) {
             "/"
 #endif
             );
-    if (sizeof (struct log_buffer) > (disk_size >> 1)) {
-        fprintf(stderr, "am_log_init() free disk space on the system is only %"PR_L64" bytes\n",
-                disk_size);
+    if (sizeof (struct log_buffer) > disk_size) {
+        fprintf(stderr, "am_log_init() free disk space on the system is only %"PR_L64" bytes, required %ld bytes\n",
+                disk_size, sizeof (struct log_buffer));
         return AM_ENOSPC;
     }
 #endif

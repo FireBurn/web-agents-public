@@ -443,20 +443,27 @@ static void reset_headers(void *cbdata, void *p) {
  * initialise memory for all clusters
  *
  */
-void agent_memory_initialise(uint32_t sz, int id) {
-
+int agent_memory_initialise(uint32_t sz, int id) {
+    int rv;
     cluster_limit_t limit = {.size_limit = 0u, .orig_size = sz};
 
-    get_memory_segment(&ctlblock_pool, CTLFILE,
+    rv = get_memory_segment(&ctlblock_pool, CTLFILE,
             sizeof (ctl_header_t), reset_ctlblock, NULL, id);
+    if (rv != AM_SUCCESS)
+        return rv;
     ctlblock = ctlblock_pool->base_ptr;
 
-    get_memory_segment(&cluster_base_pool, BLOCKFILE, sz, reset_blocks, &limit, id);
+    rv = get_memory_segment(&cluster_base_pool, BLOCKFILE, sz, reset_blocks, &limit, id);
+    if (rv != AM_SUCCESS)
+        return rv;
     cluster_base = cluster_base_pool->base_ptr;
 
-    get_memory_segment(&cluster_hdrs_pool, HEADERFILE,
+    rv = get_memory_segment(&cluster_hdrs_pool, HEADERFILE,
             sizeof (cluster_header_t) * CLUSTERS, reset_headers, NULL, id);
+    if (rv != AM_SUCCESS)
+        return rv;
     cluster_hdrs = cluster_hdrs_pool->base_ptr;
+    return AM_SUCCESS;
 }
 
 int is_agent_memory_ready() {

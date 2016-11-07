@@ -434,10 +434,7 @@ int am_add_session_policy_cache_entry(am_request_t *request, const char *key, st
 }
 
 int am_cache_init(int instance) {
-
-    cache_initialise(instance);
-    return 0;
-
+    return cache_initialise(instance);
 }
 
 int am_cache_shutdown() {
@@ -454,6 +451,4 @@ void am_cache_destroy() {
 
 int am_cache_cleanup(int instance) {
     return cache_cleanup(instance);
-
 }
-

@@ -208,7 +208,7 @@ uint64_t get_disk_free_space(const char *vol);
 void am_shm_unlock(am_shm_t *);
 int am_shm_lock(am_shm_t *);
 int am_shm_lock_timeout(am_shm_t *am, int timeout_msec);
-am_shm_t *am_shm_create(const char *, uint64_t, int use_new_initialiser, uint64_t *);
+am_shm_t *am_shm_create(const char *, uint64_t, int use_new_initialiser, uint64_t *, int *);
 void am_shm_shutdown(am_shm_t *);
 int am_shm_delete(char *name);
 void *am_shm_alloc(am_shm_t *am, uint64_t usize);

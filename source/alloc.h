@@ -32,7 +32,7 @@ uint32_t cache_memory_size();
 offset agent_memory_offset(void *ptr);
 void *agent_memory_ptr(offset ofs);
 
-void agent_memory_initialise(uint32_t sz, int id);
+int agent_memory_initialise(uint32_t sz, int id);
 void agent_memory_shutdown();
 int agent_memory_cleanup(int id);
 
