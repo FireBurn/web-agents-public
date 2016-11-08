@@ -333,9 +333,9 @@ static int check_system_resources(int report) {
     }
     
     if (report && (max_size + log_buffer_size + AM_SHARED_MAX_SIZE) < disk_size) {
-        fprintf(stdout, "\nSystem contains sufficient resources (remote audit log feature is enabled).\n\n");
+        fprintf(stdout, "\nSystem contains sufficient resources (with remote audit log feature enabled).\n\n");
     } else if (report && (max_size + log_buffer_size) < disk_size) {
-        fprintf(stdout, "\nSystem contains sufficient resources (remote audit log feature is disabled).\n\n");
+        fprintf(stdout, "\nSystem contains sufficient resources (with remote audit log feature disabled).\n\n");
     } else if (report) {
         fprintf(stderr, "\nWarning! System does not contain sufficient resources.\n\n");
     }
