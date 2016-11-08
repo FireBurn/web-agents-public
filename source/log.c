@@ -183,6 +183,10 @@ static struct log_files log_level_cache[AM_MAX_INSTANCES] = {
     {0}
 };
 
+uint64_t get_log_buffer_size() {
+    return page_size(sizeof (struct log_buffer));
+}
+
 static void log_mutex_lock(int type) {
     struct log_mutex *mtx;
     if (log_handle == NULL || (mtx = log_handle->mutex[type]) == NULL)
@@ -661,7 +665,7 @@ int am_log_init(int id) {
 #else
             "/"
 #endif
-            );
+            , NULL);
     if (sizeof (struct log_buffer) > disk_size) {
         fprintf(stderr, "am_log_init() free disk space on the system is only %"PR_L64" bytes, required %ld bytes\n",
                 disk_size, sizeof (struct log_buffer));

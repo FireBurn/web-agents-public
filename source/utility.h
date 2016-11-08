@@ -204,7 +204,8 @@ int string_replace(char **original, const char *pattern, const char *replace, si
 uint32_t next_pow_2(uint32_t v);
 uint32_t prev_pow_2(uint32_t v);
 uint64_t get_total_system_memory();
-uint64_t get_disk_free_space(const char *vol);
+uint64_t get_disk_free_space(const char *vol, uint64_t *);
+uint64_t get_log_buffer_size();
 void am_shm_unlock(am_shm_t *);
 int am_shm_lock(am_shm_t *);
 int am_shm_lock_timeout(am_shm_t *am, int timeout_msec);

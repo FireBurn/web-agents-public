@@ -21,6 +21,7 @@
 #include "list.h"
 #include "version.h"
 #include "zip.h"
+#include "alloc.h"
 
 #ifdef _WIN32
 #include <objbase.h>
@@ -279,8 +280,25 @@ static am_bool_t validate_os_version() {
 #endif
 }
 
+static char *bytes_to_size(uint64_t value) {
+    static char res[256];
+    uint64_t rem = 0, bytes = value;
+    size_t div = 0;
+    static const char *sizes[] = {" bytes", "KB", "MB", "GB", "TB", "PB"};
+
+    while (bytes >= 1024 && div < ARRAY_SIZE(sizes)) {
+        rem = (bytes % 1024);
+        div++;
+        bytes /= 1024;
+    }
+
+    snprintf(res, sizeof (res), "%.1f%s", (float) bytes + (float) rem / 1024.0, sizes[div]);
+    return res;
+}
+
 static int check_system_resources(int report) {
-    uint64_t max_size, sys_size, disk_size;
+    uint64_t max_size, sys_size, disk_size, total_disk_size = 0;
+    uint64_t log_buffer_size = get_log_buffer_size();
     disk_size = get_disk_free_space(
 #ifdef _WIN32
             app_path
@@ -291,26 +309,38 @@ static int check_system_resources(int report) {
 #else
             "/"
 #endif
-            );
+            , &total_disk_size);
 
     sys_size = get_total_system_memory();
     max_size = sys_size / 4; /* max size for a segment */
-    if (max_size > AM_SHARED_MAX_SIZE) {
-        max_size = AM_SHARED_MAX_SIZE;
+    if (max_size > MAX_CACHE_MEMORY_SZ) {
+        max_size = MAX_CACHE_MEMORY_SZ;
     }
 
     if (report) {
         fprintf(stdout, "System Resources:\n");
-        fprintf(stdout, " memory size: %"PR_L64" bytes\n", sys_size);
-        fprintf(stdout, " max shared memory segment allocation size: %"PR_L64" bytes\n", max_size);
+        fprintf(stdout, " total memory size: %s\n", bytes_to_size(sys_size));
+        fprintf(stdout, " pre-allocated session/policy cache size: %s\n", bytes_to_size(max_size));
+        fprintf(stdout, " log buffer size: %s\n", bytes_to_size(log_buffer_size));
+        fprintf(stdout, " min audit log buffer size: 2MB, max %s\n", bytes_to_size(AM_SHARED_MAX_SIZE));
 #if defined(LINUX) || defined(__sun)
 #define VOL_NAME "(tmpfs/swap) "
 #else
 #define VOL_NAME ""
 #endif        
-        fprintf(stdout, " free disk "VOL_NAME"space size: %"PR_L64" bytes\n", disk_size);
+        fprintf(stdout, " total disk "VOL_NAME"size: %s\n", bytes_to_size(total_disk_size));
+        fprintf(stdout, " free disk "VOL_NAME"space size: %s\n", bytes_to_size(disk_size));
     }
-    if (max_size > disk_size) {
+    
+    if (report && (max_size + log_buffer_size + AM_SHARED_MAX_SIZE) < disk_size) {
+        fprintf(stdout, "\nSystem contains sufficient resources (remote audit log feature is enabled).\n\n");
+    } else if (report && (max_size + log_buffer_size) < disk_size) {
+        fprintf(stdout, "\nSystem contains sufficient resources (remote audit log feature is disabled).\n\n");
+    } else if (report) {
+        fprintf(stderr, "\nWarning! System does not contain sufficient resources.\n\n");
+    }
+        
+    if ((max_size + log_buffer_size) > disk_size) {
         return AM_ENOSPC;
     }
     return AM_SUCCESS;

@@ -202,21 +202,28 @@ uint64_t page_size(uint64_t size) {
 }
 
 /* Returns free disk space in bytes */
-uint64_t get_disk_free_space(const char *vol) {
+uint64_t get_disk_free_space(const char *vol, uint64_t *total_sz) {
 #ifdef _WIN32
     ULARGE_INTEGER fs;
-    if (GetDiskFreeSpaceExA(vol, NULL, NULL, &fs) == 0)
+    ULARGE_INTEGER ts;
+    if (GetDiskFreeSpaceExA(vol, NULL, &ts, &fs) == 0)
         return 0L;
+    if (total_sz != NULL) 
+        *total_sz = ts.QuadPart;
     return fs.QuadPart;
 #elif defined(__APPLE__)
     struct statfs fs;
     if (statfs(vol, &fs) != 0)
         return 0L;
+    if (total_sz != NULL) 
+        *total_sz = fs.f_blocks * fs.f_bsize;
     return fs.f_bfree * fs.f_bsize;
 #else
     struct statvfs fs;
     if (statvfs(vol, &fs) != 0)
         return 0L;
+    if (total_sz != NULL) 
+        *total_sz = fs.f_blocks * fs.f_frsize;
     return fs.f_bsize * fs.f_bavail;
 #endif
 }
@@ -697,7 +704,7 @@ am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialise
 #else
             "/"
 #endif
-            );
+            , NULL);
     if (size > disk_size) {
         AM_LOG_ERROR(0, "%s free disk space on the system is only %"PR_L64" bytes, required %"PR_L64" bytes",
                 thisfunc, disk_size, size);
