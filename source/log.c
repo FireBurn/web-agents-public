@@ -179,6 +179,7 @@ static struct am_shared_log {
 
 static char default_log_path[AM_PATH_SIZE] = {0};
 static int32_t default_log_level = AM_LOG_LEVEL_ERROR;
+static int file_write_enabled = AM_TRUE;
 static struct log_files log_level_cache[AM_MAX_INSTANCES] = {
     {0}
 };
@@ -280,8 +281,10 @@ static void log_mutex_unlock(int type) {
     AM_MUTEX_UNLOCK(&mtx->lock);
 }
 
+#define LOGGER_RW_RETRY_LIMIT 1000
+
 static struct log_block *get_write_block() {
-    for (;;) {
+    for (int i = 0; i < LOGGER_RW_RETRY_LIMIT; i++) {
         if (log_handle == NULL || log_handle->area == NULL ||
                 AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
             return NULL;
@@ -300,10 +303,11 @@ static struct log_block *get_write_block() {
             return block;
         /* it didn't work out - someone has taken that slot already, retry */
     }
+    return NULL;
 }
 
 static struct log_block *get_read_block() {
-    for (;;) {
+    for (int i = 0; i < LOGGER_RW_RETRY_LIMIT; i++) {
         if (log_handle == NULL || log_handle->area == NULL ||
                 AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
             return NULL;
@@ -317,6 +321,7 @@ static struct log_block *get_read_block() {
         if (AM_ATOMIC_CAS_32(&log_handle->area->read_start, block->next, index) == index)
             return block;
     }
+    return NULL;
 }
 
 static am_bool_t should_rotate_time(uint64_t ct) {
@@ -504,9 +509,11 @@ static void log_buffer_read(struct log_file *fc) {
         }
     }
 
-    /* do the actual file write op */
-    log_file_write(block->instance_id, block->data, (unsigned int) block->size, file, file_cache,
-            (block->level & AM_LOG_LEVEL_AUDIT) != 0);
+    if (file_write_enabled) {
+        /* do the actual file write op */
+        log_file_write(block->instance_id, block->data, (unsigned int) block->size, file, file_cache,
+                (block->level & AM_LOG_LEVEL_AUDIT) != 0);
+    }
 
     /* set done flag for this block */
     block->done_read = 1;
@@ -549,7 +556,7 @@ static void *am_log_worker(void *arg) {
     struct log_file *fc = malloc(sizeof (struct log_file) * (AM_MAX_INSTANCES + 1));
     if (fc == NULL)
         return NULL;
-
+    
     /* reset local open file descriptor cache */
     for (i = 0; i < AM_MAX_INSTANCES + 1; i++) {
         struct log_file *file = &fc[i];
@@ -713,6 +720,10 @@ int am_log_init(int id) {
         } else if (strcasecmp(env, "message") == 0 || strcasecmp(env, "warning") == 0) {
             default_log_level = AM_LOG_LEVEL_WARNING;
         }
+    }
+    char *write_env = getenv("AM_LOG_WRITE_DISABLE");
+    if (ISVALID(write_env)) {
+        file_write_enabled = AM_FALSE;
     }
 #endif
 
@@ -1052,7 +1063,6 @@ void am_log_shutdown(int id) {
 #ifdef _WIN32
         CloseHandle(log_handle->worker);
 #endif
-        AM_ATOMIC_SWAP_32(&log_handle->area->owner, 0);
     }
 
     close_event(&log_handle->log_buffer_filled);

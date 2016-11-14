@@ -59,6 +59,8 @@ enum {
 };
 
 typedef struct {
+    volatile uint32_t running;
+    volatile uint32_t stop;
     int type;
     unsigned int interval;
     void *args;

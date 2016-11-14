@@ -21,6 +21,7 @@
 #include "thread.h"
 #if defined(__sun)
 #include <port.h>
+#include <sys/atomic.h>
 #endif
 #if defined(__APPLE__)
 #include <mach/clock.h>
@@ -32,6 +33,8 @@
 
 /* helper structure to wrap various callbacks, args and platforms */
 struct am_callback_args {
+    volatile uint32_t *running;
+    volatile uint32_t *stop;
     void *args;
     void (*callback)(void *);
 };
@@ -701,7 +704,12 @@ void close_event(am_event_t **e) {
 static void CALLBACK timer_callback(void *args, BOOLEAN tw_fired) {
     struct am_callback_args *cba = (struct am_callback_args *) args;
     if (cba != NULL && cba->callback != NULL) {
-        cba->callback(cba->args);
+        if (InterlockedExchangeAdd(cba->stop, 0) == 1)
+            return;
+        if (InterlockedExchangeAdd(cba->running, 1) == 0) {
+            cba->callback(cba->args);
+            InterlockedExchange(cba->running, 0);
+        }
     }
 }
 
@@ -710,7 +718,12 @@ static void CALLBACK timer_callback(void *args, BOOLEAN tw_fired) {
 static void timer_callback(union sigval si) {
     struct am_callback_args *cba = (struct am_callback_args *) si.sival_ptr;
     if (cba != NULL && cba->callback != NULL) {
-        cba->callback(cba->args);
+        if (__sync_fetch_and_add(cba->stop, 0) == 1)
+            return;
+        if (__sync_fetch_and_add(cba->running, 1) == 0) {
+            cba->callback(cba->args);
+            __sync_fetch_and_add(cba->running, -1);
+        }
     }
 }
 
@@ -729,6 +742,8 @@ am_timer_event_t *am_create_timer_event(int type, unsigned int interval, void *a
             e->error = AM_EINVAL;
             return e;
         }
+        e->running = AM_FALSE;
+        e->stop = AM_FALSE;
         e->init_status = AM_ENOTSTARTED;
         e->type = type;
         e->interval = interval;
@@ -737,6 +752,8 @@ am_timer_event_t *am_create_timer_event(int type, unsigned int interval, void *a
             e->error = AM_ENOMEM;
             return e;
         }
+        ((struct am_callback_args *) e->args)->running = &e->running;
+        ((struct am_callback_args *) e->args)->stop = &e->stop;
         ((struct am_callback_args *) e->args)->args = args;
         ((struct am_callback_args *) e->args)->callback = callback;
 
@@ -823,7 +840,12 @@ static void *timer_event_loop(void *args) {
         if (cba == NULL || cba->callback == NULL) {
             break;
         }
-        cba->callback(cba->args);
+        if (atomic_add_32_nv(cba->stop, 0) == 1)
+            break;
+        if (atomic_add_32_nv(cba->running, 1) == 0) {
+            cba->callback(cba->args);
+            atomic_swap_32(cba->running, 0);
+        }
     }
 
 #elif defined(__APPLE__)
@@ -894,10 +916,43 @@ void am_start_timer_event(am_timer_event_t *e) {
 #endif
 }
 
+static void wait_for_timer_worker(am_timer_event_t *e) {
+    int tries = 1000;
+    
+    /* Stop any upcoming timer callback method from executing */
+#ifdef _WIN32
+    InterlockedExchange(&e->stop, 1);
+#elif (__sun)
+    atomic_swap_32(&e->stop, 1);
+#else
+    __sync_fetch_and_add(&e->stop, 1);
+#endif
+    
+    /* Wait till any outstanding callback is finished */
+    do {
+        if (
+#ifdef _WIN32        
+                InterlockedExchangeAdd
+#elif defined(__sun)
+                atomic_add_32_nv
+#else
+                __sync_fetch_and_add
+#endif
+                (&e->running, 0) == 0)
+            break;
+#ifdef _WIN32
+        Sleep(100); /* 100 msec */
+#else
+        usleep(100000L);
+#endif
+    } while (--tries);
+}
+
 void am_close_timer_event(am_timer_event_t *e) {
     if (e == NULL) return;
 
     set_event(e->exit_ev);
+    wait_for_timer_worker(e);
 
 #if defined(__sun)
 
