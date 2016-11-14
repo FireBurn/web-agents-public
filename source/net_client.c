@@ -41,13 +41,14 @@ static short connect_ev = POLLWRNORM;
 static short connected_ev = POLLWRNORM;
 static short read_ev = POLLRDNORM;
 static short read_avail_ev = POLLRDNORM | POLLHUP;
+static am_bool_t openssl_init = AM_FALSE;
 #else
 static short connect_ev = POLLOUT | POLLNVAL | POLLERR | POLLHUP;
 static short connected_ev = POLLOUT;
 static short read_ev = POLLIN | POLLNVAL | POLLERR | POLLHUP;
 static short read_avail_ev = POLLIN | POLLHUP;
-#endif
 static am_bool_t openssl_init = AM_TRUE;
+#endif
 
 #ifdef _WIN32
 #define net_log_error(i,e) \
@@ -105,8 +106,8 @@ void am_net_init() {
     WSADATA w;
     WSAStartup(MAKEWORD(2, 2), &w);
     char *env = getenv("AM_SSL_SCHANNEL");
-    if (ISINVALID(env) || !strcmp(env, "1") || !strcasecmp(env, "on") || !strcasecmp(env, "true")) {
-        openssl_init = AM_FALSE;
+    if (ISVALID(env) && (!strcmp(env, "0") || !strcasecmp(env, "off") || !strcasecmp(env, "false"))) {
+        openssl_init = AM_TRUE;
     }
 #endif
     if (openssl_init) {
