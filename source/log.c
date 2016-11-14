@@ -724,6 +724,8 @@ int am_log_init(int id) {
     char *write_env = getenv("AM_LOG_WRITE_DISABLE");
     if (ISVALID(write_env)) {
         file_write_enabled = AM_FALSE;
+    } else {
+        file_write_enabled = AM_TRUE;
     }
 #endif
 
