@@ -578,8 +578,14 @@ static char get_method_num(request_rec *r, unsigned long instance_id) {
     AM_LOG_DEBUG(instance_id, "%s method %s (%s, %d)", thisfunc, LOGEMPTY(r->method),
             LOGEMPTY(mthd), r->method_number);
 
-    if (r->method_number == M_GET && r->header_only > 0) {
-        method_num = AM_REQUEST_HEAD;
+    /* Check to see if the method number is M_GET */
+    if (r->method_number == M_GET) {
+        /* If the request is header_only set method_num to AM_REQUEST_HEAD */
+        if (r->header_only > 0) {
+            method_num = AM_REQUEST_HEAD;
+        } else {
+            method_num = AM_REQUEST_GET;
+        }
     } else {
         method_num = am_method_str_to_num(mthd);
     }
