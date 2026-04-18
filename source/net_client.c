@@ -723,7 +723,7 @@ static int am_net_write_internal(am_net_t *n, const char *data, size_t data_sz) 
 
 static int get_req_method(const char *data, size_t data_sz) {
     int ret = AM_REQUEST_UNKNOWN;
-    char *method, *sep;
+    char *method; const char *sep;
 
     sep = memchr(data, ' ', data_sz);
     if (sep == NULL) return ret;

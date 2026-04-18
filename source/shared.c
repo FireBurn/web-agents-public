@@ -113,13 +113,13 @@ static void am_shm_freelist_info(am_shm_t * am, char * action) {
         for (i = pool->freelist_hdrs[hdr_offset]; i != FREELIST_END; i = FREELIST_FROM_CHUNK(AM_GET_POINTER(pool, i))->next) {
             struct mem_chunk * chunk = AM_GET_POINTER(pool, i);
             struct freelist *fl = FREELIST_FROM_CHUNK(chunk);
-            fprintf(stdout, "\tchunk %u [%llu] (%d,%d)\n", i, chunk->size, fl->prev, fl->next);
+            fprintf(stdout, "\tchunk %u [%llu] (%d,%d)\n", i, (unsigned long long)chunk->size, fl->prev, fl->next);
         }
         fprintf(stdout, "-----------\n");
         hdr_offset++;
     }
     free_sz = verify_freelists(pool, action);
-    fprintf(stdout, "free size %llu\n", free_sz);
+    fprintf(stdout, "free size %llu\n", (unsigned long long)free_sz);
 }
 
 /**
@@ -289,7 +289,7 @@ int am_shm_lock(am_shm_t *am) {
     am->error = pthread_mutex_lock(lock);
 #if !defined(__APPLE__) && !defined(AIX)
     if (am->error == EOWNERDEAD) {
-        am->error = pthread_mutex_consistent_np(lock);
+        am->error = pthread_mutex_consistent(lock);
     }
 #endif
     if (am->error != 0) return AM_ERROR;
@@ -406,7 +406,7 @@ int am_shm_lock_timeout(am_shm_t *am, int timeout_msec) {
     if (am->error == ETIMEDOUT) return AM_ETIMEDOUT;
 #if !defined(__APPLE__) && !defined(AIX)
     if (am->error == EOWNERDEAD) {
-        am->error = pthread_mutex_consistent_np(lock);
+        am->error = pthread_mutex_consistent(lock);
     }
 #endif
     if (am->error != 0) return AM_ERROR;
@@ -866,14 +866,14 @@ am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialise
 #if defined(__SunOS_5_10) 
 #if defined(_POSIX_THREAD_PRIO_INHERIT)
         pthread_mutexattr_setprotocol(&attr, PTHREAD_PRIO_INHERIT);
-        pthread_mutexattr_setrobust_np(&attr, PTHREAD_MUTEX_ROBUST_NP);
+        pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST);
 #endif
 #else
         pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST);
 #endif
 #endif
 #if defined(LINUX)
-        pthread_mutexattr_setrobust_np(&attr, PTHREAD_MUTEX_ROBUST_NP);
+        pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST);
 #endif
         pthread_mutex_init(lock, &attr);
         pthread_mutexattr_destroy(&attr);
@@ -1088,7 +1088,7 @@ static int am_shm_extend(am_shm_t *am, uint64_t usize) {
             /* the last chunk is used - add all newly allocated space right after the last chunk 
              * adjusting both - next pointer of the last chunk and head node to point to it
              */
-            struct mem_chunk *e = (struct mem_chunk *) ((char *) pool + pool->size);
+            struct mem_chunk *e = (struct mem_chunk *) ((char *) pool + (unsigned long long)pool->size);
             e->used = 0;
             e->usize = 0;
             e->size = size - pool->size;
@@ -1307,7 +1307,7 @@ void am_shm_info(am_shm_t *am) {
     pool = (struct mem_pool *) am->pool;
 
     fprintf(stdout, "\n");
-    fprintf(stdout, "AREA   (size: %llu bytes) ", pool->size);
+    fprintf(stdout, "AREA   (size: %llu bytes) ", (unsigned long long)pool->size);
 
     head = (struct mem_chunk *) AM_GET_POINTER(pool, pool->lh.prev);
     fprintf(stdout, "             HEAD   [P:%d][N:%d]\n", pool->lh.prev, pool->lh.next);
@@ -1315,7 +1315,7 @@ void am_shm_info(am_shm_t *am) {
     AM_OFFSET_LIST_FOR_EACH(pool, head, e, t, struct mem_chunk) {
         fprintf(stdout, "CHUNK #%03d: %s  (size: %llu, user: %llu bytes) [P:%d][O:%d][N:%d]\n",
                 ++i, e->used ? "used" : "free",
-                e->size, e->usize, e->lh.prev,
+                (unsigned long long)e->size, (unsigned long long)e->usize, e->lh.prev,
                 AM_GET_OFFSET(pool, e), e->lh.next);
     }
     fprintf(stdout, "\n");

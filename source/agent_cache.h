@@ -16,6 +16,7 @@
 
 #ifndef AGENT_CACHE_H
 #define AGENT_CACHE_H
+#include "platform.h"
 
 int cache_initialise(int id);
 int cache_shutdown(int destroy);

@@ -16,6 +16,7 @@
 
 #ifndef UTILITY_H
 #define UTILITY_H
+#include "platform.h"
 
 #include "pcre.h"
 #include "net_client.h"

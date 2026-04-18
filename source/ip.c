@@ -136,7 +136,7 @@ static void ipv4_set_mask(struct in_addr * n, int bits) {
  * @return number of bits in the network mask, 128 if no CIDR mask is present
  */
 int ipv6_pton(const char * p, struct in6_addr * n) {
-    char * e = strchr(p, '/');
+    const char * e = strchr(p, '/');
     if (e) {
         char * endp;
         uint64_t bits64 = strtoul(e + 1, &endp, 10);
@@ -168,7 +168,7 @@ int ipv6_pton(const char * p, struct in6_addr * n) {
  * @return number of bits in the network mask, 32 if no CIDR mask is present
  */
 int ipv4_pton(const char * p, struct in_addr * n) {
-    char * e = strchr(p, '/');
+    const char * e = strchr(p, '/');
     if (e) {
         char * endp;
         uint64_t bits64 = strtoul(e + 1, &endp, 10);
@@ -377,7 +377,7 @@ static am_bool_t test_within_bounds(const char * addr_p, const char * lo_p, cons
 static am_status_t get_in_bounded_range_status(const char * addr, const char * range) {
     int c;
     char *lo_p, *hi_p;
-    char *p = strchr(range, '-');
+    const const char *p = strchr(range, '-');
     if (p == NULL) {
         return AM_ENOMEM;
     }

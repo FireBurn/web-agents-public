@@ -16,6 +16,7 @@
 
 #ifndef AM_MEMORY_MANAGER
 #define AM_MEMORY_MANAGER
+#include "platform.h"
 
 #define CTLFILE                                        "ctl"
 #define BLOCKFILE                                      "blocks"
@@ -33,7 +34,7 @@ offset agent_memory_offset(void *ptr);
 void *agent_memory_ptr(offset ofs);
 
 int agent_memory_initialise(uint32_t sz, int id);
-void agent_memory_shutdown();
+void agent_memory_shutdown(int unlink);
 int agent_memory_cleanup(int id);
 
 int agent_memory_clusters(void);

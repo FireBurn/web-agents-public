@@ -524,7 +524,7 @@ static void entity_declaration(void *userData, const XML_Char *entityName,
 am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, size_t xml_sz, char log_enable) {
     static const char *thisfunc = "am_parse_config_xml():";
     am_config_t *r = NULL;
-    char *begin, *stream = NULL;
+    const const char *begin, *stream = NULL;
     size_t data_sz;
     pcre *x = NULL;
     const char *error = NULL;
@@ -555,7 +555,7 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
 
     begin = strstr(xml, "![CDATA[");
     if (begin != NULL) {
-        char *end = strstr(begin + 8, "]]>");
+        const const char *end = strstr(begin + 8, "]]>");
         if (end != NULL) {
             stream = begin + 8;
             data_sz = end - (begin + 8);

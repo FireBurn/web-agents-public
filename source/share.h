@@ -16,6 +16,8 @@
 
 #ifndef SHM_INCLUDED
 #define SHM_INCLUDED
+#include "platform.h"
+#include "utility.h"
 
 typedef struct {
     uint64_t size_limit;
