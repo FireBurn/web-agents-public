@@ -34,6 +34,7 @@ configure_file(
 find_package(ZLIB REQUIRED)
 find_package(EXPAT REQUIRED)
 find_package(Threads REQUIRED)
+find_package(libzip REQUIRED)
 
 # PCRE1 usually requires manual find_path/find_library
 find_path(PCRE_INCLUDE_DIR pcre.h REQUIRED)
@@ -83,13 +84,15 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # --- 7. Build Admin Tool ---
-add_executable(agentadmin source/admin.c)
+add_executable(agentadmin source/admin.c source/admin_iis.c)
 target_include_directories(agentadmin PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/source
     ${CMAKE_CURRENT_BINARY_DIR}/source)
-target_link_libraries(agentadmin PRIVATE openam)
+target_link_libraries(agentadmin PRIVATE openam libzip::zip)
 
-# --- 8. Build Apache Agent ---
+# --- 8. Build Web Agents ---
+
+# Apache (Linux/macOS/Windows)
 find_program(APXS_EXECUTABLE NAMES apxs apxs2)
 if(APXS_EXECUTABLE)
     execute_process(COMMAND ${APXS_EXECUTABLE} -q INCLUDEDIR OUTPUT_VARIABLE APACHE_INCLUDE_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -97,4 +100,12 @@ if(APXS_EXECUTABLE)
     target_include_directories(mod_openam PRIVATE ${APACHE_INCLUDE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/source ${CMAKE_CURRENT_BINARY_DIR}/source)
     target_link_libraries(mod_openam PRIVATE openam)
     set_target_properties(mod_openam PROPERTIES PREFIX "")
+endif()
+
+# IIS (Windows Only)
+if(WIN32)
+    add_library(mod_iis_openam MODULE source/iis/agent.c)
+    target_include_directories(mod_iis_openam PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/source ${CMAKE_CURRENT_BINARY_DIR}/source)
+    target_link_libraries(mod_iis_openam PRIVATE openam)
+    set_target_properties(mod_iis_openam PROPERTIES PREFIX "")
 endif()
