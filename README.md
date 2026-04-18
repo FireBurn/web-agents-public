@@ -1,6 +1,5 @@
 ## OpenAM Web Policy Agents
 [![Latest release](https://img.shields.io/github/release/OpenIdentityPlatform/OpenAM-Web-Agents.svg)](https://github.com/OpenIdentityPlatform/OpenAM-Web-Agents/releases)
-[![Build Status](https://travis-ci.org/OpenIdentityPlatform/OpenAM-Web-Agents.svg)](https://travis-ci.org/OpenIdentityPlatform/OpenAM-Web-Agents)
 [![Issues](https://img.shields.io/github/issues/OpenIdentityPlatform/OpenAM-Web-Agents.svg)](https://github.com/OpenIdentityPlatform/OpenAM-Web-Agents/issues)
 [![Last commit](https://img.shields.io/github/last-commit/OpenIdentityPlatform/OpenAM-Web-Agents.svg)](https://github.com/OpenIdentityPlatform/OpenAM-Web-Agents/commits/master)
 [![License](https://img.shields.io/badge/license-CDDL-blue.svg)](https://github.com/OpenIdentityPlatform/OpenAM-Web-Agents/blob/master/LICENSE.md)

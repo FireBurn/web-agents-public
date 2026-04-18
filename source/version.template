@@ -9,7 +9,7 @@
  * When distributing Covered Software, include this CDDL Header Notice in each file and include
  * the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
- * information: "Portions copyright [year] [name of copyright owner]".
+ * information: "Portions copyright[year] [name of copyright owner]".
  *
  * Copyright 2014 - 2016 ForgeRock AS.
  */
@@ -19,17 +19,17 @@
 
 #define DESCRIPTION     "OpenAM Web Agent"
 #define BUILD_TS        __DATE__" "__TIME__
-#define VERSION         "_VERSION_"
-#define CONTAINER       "_CONTAINER_"
-#define VERSION_NUM     _VERSION_NUM_
-#define VERSION_VCS     "_REVISION_"
-#define BUILD_MACHINE   "_BUILD_MACHINE_"
+#define VERSION         "@AGENT_VERSION@"
+#define CONTAINER       "@AGENT_CONTAINER@"
+#define VERSION_NUM     @AGENT_VERSION_NUM@
+#define VERSION_VCS     "@AGENT_REVISION@"
+#define BUILD_MACHINE   "@AGENT_BUILD_MACHINE@"
 #define MODINFO         DESCRIPTION"/"VERSION
 
 #ifdef __sun
-#pragma ident "@(#)am.h    _VERSION_    _IDENT_DATE_ ForgeRock AS"
+#pragma ident "@(#)am.h    @AGENT_VERSION@    @AGENT_IDENT_DATE@ ForgeRock AS"
 #else
-static char const rcsid[] = "$Id: am.h     _VERSION_   _IDENT_DATE_ ForgeRock AS Exp $";
+static char const rcsid[] = "$Id: am.h     @AGENT_VERSION@   @AGENT_IDENT_DATE@ ForgeRock AS Exp $";
 #endif
 
 #endif
