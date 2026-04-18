@@ -466,7 +466,7 @@ static int purge_expired_entries(pid_t pid, uint32_t hash, struct cache_entry *e
         offset ofs = e->bucket[i];
 
         if (~ofs) {
-            if (e->expires[i] < t) {
+            if (e->expires[i] < (t - 1800)) { /* 30 min grace */
                 unlink_entry(pid, hash, e, i, ofs);
                 n++;
                 incr(&stats->expires.v);
@@ -697,8 +697,12 @@ int cache_get_readlocked_ptr(uint32_t h, void **addr, uint32_t *ln, void *data, 
                 struct user_entry *p = agent_memory_ptr(u);
 
                 if (identity(data, p->data)) {
-                    if (e->expires[i] < t)
-                        break;
+                    if (e->expires[i] < t) {
+                        *addr = p->data;
+                        *ln = p->ln;
+                        incr(&stats->reads.v);
+                        return 2; /* EXPIRED */
+                    }
 
                     uint32_t cycles = e->cycles[i];
 

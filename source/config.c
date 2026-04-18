@@ -1596,13 +1596,14 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml, size_
 }
 
 int am_get_agent_config(unsigned long instance_id, const char *config_file, am_config_t **cnf) {
+    int force_fetch = 0;
     static const char *thisfunc = "am_get_agent_config():";
     struct am_instance_entry *c;
     int rv = AM_ERROR, in_progress = AM_FALSE;
     char *profile_xml = NULL;
     size_t profile_xml_sz = 0;
-    int max_retry = 3;
-    unsigned int retry = 3, retry_wait = 2;
+    int max_retry = 1;
+    unsigned int retry = 1, retry_wait = 0;
 
     if (instance_id == 0 || cnf == NULL || ISINVALID(config_file)) {
         return AM_EINVAL;
@@ -1615,7 +1616,7 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
     max_retry++;
     do {
         am_shm_lock(conf);
-        c = get_instance_entry(instance_id);
+        c = force_fetch ? NULL : get_instance_entry(instance_id);
         if (c == NULL) {
             am_request_t r;
             int login_status, should_retry = AM_FALSE, store_status;
@@ -1714,13 +1715,7 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
                     AM_LOG_WARNING(instance_id,
                                    "%s configuration cache entry is obsolete (created: %s, valid until: %s)", thisfunc,
                                    tsc, tsu);
-                    if (delete_instance_entry(c) == AM_SUCCESS) {
-                        am_shm_free(conf, c);
-                    }
-                    am_agent_instance_init_lock();
-                    /* set this instance to 'unconfigured' */
-                    am_agent_init_set_value(instance_id, AM_FALSE);
-                    am_agent_instance_init_unlock();
+                    force_fetch = 1;
                     am_config_free(cnf);
                     *cnf = NULL;
                 }
