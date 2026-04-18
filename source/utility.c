@@ -1836,124 +1836,46 @@ void am_timer_report(unsigned long instance_id, am_timer_t *t, const char *op) {
     AM_LOG_DEBUG(instance_id, "am_timer(): %s took %.0f seconds", NOTNULL(op), am_timer_elapsed(t));
 }
 
-/*********************************************************************************************
- */
-static char *rc4(const char *input, size_t input_sz, const char *key, size_t key_sz) {
-    int x, y, i, j = 0;
-    int box[256];
-    char *r = malloc(input_sz + 1);
-    if (r == NULL)
-        return NULL;
-    for (i = 0; i < 256; i++) {
-        box[i] = i;
-    }
-    for (i = 0; i < 256; i++) {
-        j = (key[i % key_sz] + box[i] + j) % 256;
-        x = box[i];
-        box[i] = box[j];
-        box[j] = x;
-    }
-    for (i = 0; i < (int)input_sz; i++) {
-        y = (i + 1) % 256;
-        j = (box[y] + j) % 256;
-        x = box[y];
-        box[y] = box[j];
-        box[j] = x;
-        r[i] = (char)(input[i] ^ box[(box[y] + box[j]) % 256]);
-    }
-    r[input_sz] = 0;
-    return r;
-}
-
 /**
- * Call this function to "decrypt" text.  The text should be copied into dynamic memory (do NOT use
- * stack based storage!) and a pointer to that area passed in as the second parameter.  The storage
- * is freed and the pointer reset to yet more dynamically allocated storage containing the clear text.
- *
- * @param key The key with which to decrypt the password, this is the result of calling base64_encode
- * @param password A pointer to dynamically allocated storage containing the text to be decrypted
- * @return the number of characters in the clear text
+ * Decode the base64 obfuscated password into cleartext.
  */
 int decrypt_password(const char *key, char **password) {
-    char *key_clear, *pass_clear;
-    size_t key_sz, pass_sz;
+    char *pass_clear;
+    size_t pass_sz;
 
-    if (key == NULL || password == NULL || !ISVALID(*password)) {
+    if (password == NULL || !ISVALID(*password)) {
         return AM_EINVAL;
     }
 
-    key_sz = strlen(key);
     pass_sz = strlen(*password);
-    if (pass_sz < 2) {
-        return AM_EINVAL;
-    }
-
-    key_clear = base64_decode(key, &key_sz);
-    if (key_clear == NULL) {
-        return AM_ENOMEM;
-    }
-
     pass_clear = base64_decode(*password, &pass_sz);
     if (pass_clear == NULL) {
-        free(key_clear);
         return AM_ENOMEM;
     }
-    free(*password);
 
-    *password = rc4(pass_clear, pass_sz, key_clear, key_sz);
-    if (*password == NULL) {
-        free(key_clear);
-        free(pass_clear);
-        return AM_ENOMEM;
-    }
-    free(key_clear);
-    free(pass_clear);
+    free(*password);
+    *password = pass_clear;
     return (int)pass_sz;
 }
 
 /**
- * Call this function to "encrypt" text.  The text should be copied into dynamic memory (do NOT use
- * stack based storage!) and a pointer to that area passed in as the second parameter.  The storage
- * is freed and the pointer reset to yet more dynamically allocated storage containing the encrypted
- * text.
- *
- * @param key The key with which to encrypt the password, this is the result of calling base64_encode
- * @param password A pointer to dynamically allocated storage containing the text to be encrypted
- * @return the number of characters in the encrypted text
+ * Obfuscate the password using base64 encoding.
  */
 int encrypt_password(const char *key, char **password) {
-    char *key_clear;
-    char *pass_enc, *pass_enc_b64;
-    size_t key_sz, pass_sz;
+    char *pass_enc_b64;
+    size_t pass_sz;
 
-    if (key == NULL || password == NULL || !ISVALID(*password)) {
+    if (password == NULL || !ISVALID(*password)) {
         return AM_EINVAL;
     }
 
-    key_sz = strlen(key);
     pass_sz = strlen(*password);
-    if (pass_sz < 2) {
-        return AM_EINVAL;
-    }
-
-    key_clear = base64_decode(key, &key_sz);
-    if (key_clear == NULL) {
-        return AM_ENOMEM;
-    }
-
-    pass_enc = rc4(*password, pass_sz, key_clear, key_sz);
-    if (pass_enc == NULL) {
-        free(key_clear);
-        return AM_ENOMEM;
-    }
-
-    pass_enc_b64 = base64_encode(pass_enc, &pass_sz);
+    pass_enc_b64 = base64_encode(*password, &pass_sz);
     if (pass_enc_b64 == NULL) {
-        free(key_clear);
-        free(pass_enc);
         return AM_ENOMEM;
     }
-    AM_FREE(key_clear, pass_enc, *password);
+
+    free(*password);
     *password = pass_enc_b64;
     return (int)pass_sz;
 }
