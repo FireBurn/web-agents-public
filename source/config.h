@@ -29,6 +29,7 @@ struct am_session_info {
 typedef struct am_config_map {
     char *name;
     char *value;
+    void *compiled_regex;
 } am_config_map_t;
 
 #define AM_CONF_MAP_FREE(sz, el)                                                                                       \
@@ -37,6 +38,8 @@ typedef struct am_config_map {
         for (i = 0; (el) && i < sz; i++) {                                                                             \
             am_config_map_t *v = &((el)[i]);                                                                           \
             am_free(v->name);                                                                                          \
+            if (v->compiled_regex)                                                                                     \
+                am_free_regex(v->compiled_regex);                                                                      \
         }                                                                                                              \
         am_free(el);                                                                                                   \
         (el) = NULL;                                                                                                   \
@@ -254,6 +257,9 @@ typedef struct {
     int proxy_password_sz;
 
     char *policy_eval_app;
+
+    void *compiled_url_check_regex;
+    void *compiled_logout_url_regex;
 } am_config_t;
 
 /* bootstrap options */

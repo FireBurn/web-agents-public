@@ -9,7 +9,7 @@
  * When distributing Covered Software, include this CDDL Header Notice in each file and include
  * the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
- * information: "Portions copyright [year] [name of copyright owner]".
+ * information: "Portions copyright [year][name of copyright owner]".
  *
  * Copyright 2014 - 2016 ForgeRock AS.
  */
@@ -19,7 +19,6 @@
 #include "platform.h"
 
 #include "net_client.h"
-#include "pcre.h"
 
 #define AM_POLICY_CHANGE_KEY "AM_POLICY_CHANGE_KEY"
 #define AM_CACHE_TIMEFORMAT "%Y-%m-%d %H:%M:%S"
@@ -224,7 +223,7 @@ void decrypt_agent_passwords(am_config_t *r);
 char is_big_endian();
 uint64_t page_size(uint64_t size);
 am_return_t match(unsigned long instance_id, const char *subject, const char *pattern);
-char *match_group(pcre *x, int capture_groups, const char *subject, size_t *len);
+char *match_group(void *x, int capture_groups, const char *subject, size_t *len);
 int gzip_deflate(const char *uncompressed, size_t *uncompressed_sz, char **compressed);
 int gzip_inflate(const char *compressed, size_t *compressed_sz, char **uncompressed);
 void trim(char *a, char w);
@@ -338,6 +337,7 @@ void update_agent_configuration_ttl(am_config_t *c);
 void update_agent_configuration_audit(am_config_t *c);
 void update_agent_configuration_normalise_map_urls(am_config_t *c);
 void update_agent_configuration_reorder_map_values(am_config_t *c);
+void update_agent_configuration_compile_regexes(am_config_t *conf);
 
 char *get_global_name(const char *name, int id);
 am_bool_t validate_directory_access(const char *path, int mask);
@@ -376,5 +376,9 @@ int am_policy_epoch_serialise(struct cache_object_ctx *ctx, uint64_t time);
 int am_cache_worker_init();
 void am_cache_worker_shutdown();
 int am_cache_cleanup(int id);
+
+void *am_compile_regex(const char *pattern);
+am_return_t am_match_regex(void *compiled_re, const char *subject);
+void am_free_regex(void *compiled_re);
 
 #endif
