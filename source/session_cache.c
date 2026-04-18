@@ -311,7 +311,8 @@ int am_get_session_policy_cache_entry(am_request_t *request, const char *key, st
     void *shm_data; /* pointer into hash table */
     uint32_t shm_data_sz;
 
-    if (cache_fetch_readable(hash, (char *)key, &shm_data, &shm_data_sz)) {
+    status = cache_fetch_readable(hash, (char *)key, &shm_data, &shm_data_sz);
+    if (status != AM_SUCCESS && status != AM_EAGAIN) {
         return AM_NOT_FOUND;
     }
 
@@ -322,7 +323,10 @@ int am_get_session_policy_cache_entry(am_request_t *request, const char *key, st
 
     cache_release_readlocked_ptr(hash);
 
-    status = ctx.error;
+    if (ctx.error)
+        status = ctx.error;
+    if (ts)
+        *ts = (status == AM_EAGAIN) ? 1 : 0;
     cache_object_ctx_destroy(&ctx);
 
     return status;

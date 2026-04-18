@@ -1174,8 +1174,8 @@ static am_return_t validate_policy(am_request_t *r) {
         struct am_namevalue *session_cache_new = NULL;
         am_net_options_t net_options;
         const char *service_url = get_valid_openam_url(r);
-        int max_retry = 3;
-        unsigned int retry = 3, retry_wait = 2;
+        int max_retry = 1;
+        unsigned int retry = 1, retry_wait = 0;
 
         am_net_options_create(r->conf, &net_options, NULL);
         net_options.server_id = r->conf->lb_enable && ISVALID(r->session_info.si) ? strdup(r->session_info.si) : NULL;
