@@ -365,6 +365,12 @@ static void log_file_write(unsigned long instance_id, const char *data, unsigned
         return;
     }
 
+    if (strcmp(file_name, "stdout") == 0) {
+        fprintf(stdout, "%s\n", data);
+        fflush(stdout);
+        return;
+    }
+
     if (file_handle == -1) {
         /* this is a new file - try to open/create one */
         file_handle = file_open(file_name);
