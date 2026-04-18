@@ -111,6 +111,35 @@ static char config_template[AM_URI_SIZE];
 static char instance_config_template[AM_URI_SIZE];
 static am_net_options_t net_options;
 
+/**
+ * Build a path by concatenating a prefix and a suffix into a destination
+ * buffer. If the combined size would exceed dstsz, writes an empty string
+ * and returns -1 rather than silently truncating. Returns 0 on success.
+ *
+ * This wraps the common "%s%s" and "%s<literal>" snprintf pattern in
+ * admin.c, where app_path is up to AM_URI_SIZE and appending fixed
+ * suffixes could otherwise overflow the destination.
+ */
+static int build_path(char *dst, size_t dstsz, const char *prefix, const char *suffix) {
+    size_t plen = prefix ? strlen(prefix) : 0;
+    size_t slen = suffix ? strlen(suffix) : 0;
+    if (dstsz == 0) {
+        return -1;
+    }
+    if (plen + slen + 1 > dstsz) {
+        dst[0] = '\0';
+        return -1;
+    }
+    if (plen > 0) {
+        memcpy(dst, prefix, plen);
+    }
+    if (slen > 0) {
+        memcpy(dst + plen, suffix, slen);
+    }
+    dst[plen + slen] = '\0';
+    return 0;
+}
+
 static const char *agent_4x_obsolete_properties[] = {"com.forgerock.agents.nss.shutdown",
 
                                                      "com.sun.identity.agents.config.debug.file",
@@ -838,11 +867,11 @@ static int create_agent_instance(int status, const char *web_conf_path, const ch
         if (rv == AM_SUCCESS && (status == ADMIN_IIS_MOD_NONE || status == ADMIN_IIS_MOD_ERROR)) {
             char schema_file[AM_URI_SIZE];
             char lib_file_prefix[AM_URI_SIZE];
-            snprintf(schema_file, sizeof(schema_file),
-                     "%s.." FILE_PATH_SEP "config" FILE_PATH_SEP "mod_iis_openam_schema.xml", app_path);
+            build_path(schema_file, sizeof(schema_file), app_path,
+                       ".." FILE_PATH_SEP "config" FILE_PATH_SEP "mod_iis_openam_schema.xml");
             /* install_module will use this prefix to add both 32 and 64 bit module versions */
-            snprintf(lib_file_prefix, sizeof(lib_file_prefix),
-                     "%s.." FILE_PATH_SEP "lib" FILE_PATH_SEP "mod_iis_openam_", app_path);
+            build_path(lib_file_prefix, sizeof(lib_file_prefix), app_path,
+                       ".." FILE_PATH_SEP "lib" FILE_PATH_SEP "mod_iis_openam_");
 
             /* need to add modules to global configuration first */
             if (install_module(lib_file_prefix, schema_file) == 0) {
@@ -887,8 +916,8 @@ static int create_agent_instance(int status, const char *web_conf_path, const ch
             char instance_type_mod[AM_URI_SIZE];
             char instance_conf_file[AM_URI_SIZE];
             snprintf(vmod_path, sizeof(vmod_path), "%s" FILE_PATH_SEP "libvmod_am." LIB_FILE_EXT, web_conf_path);
-            snprintf(instance_type_mod, sizeof(instance_type_mod),
-                     "%s.." FILE_PATH_SEP "lib" FILE_PATH_SEP "libvmod_am." LIB_FILE_EXT, app_path);
+            build_path(instance_type_mod, sizeof(instance_type_mod), app_path,
+                       ".." FILE_PATH_SEP "lib" FILE_PATH_SEP "libvmod_am." LIB_FILE_EXT);
             snprintf(instance_conf_file, sizeof(instance_conf_file),
                      "%s" FILE_PATH_SEP "config" FILE_PATH_SEP "agent.conf", created_name_path);
 
@@ -1232,7 +1261,7 @@ static void install_interactive(int argc, char **argv) {
 
     memset(&server_conf[0], 0, sizeof(server_conf));
 
-    snprintf(lic_file_path, sizeof(lic_file_path), "%s%s", app_path, LICENSE_FILE);
+    build_path(lic_file_path, sizeof(lic_file_path), app_path, LICENSE_FILE);
 
     install_log("%s for %s Server interactive installation", DESCRIPTION, am_container_str(instance_type));
 
@@ -1910,7 +1939,7 @@ static void install_silent(int argc, char **argv) {
     install_log("%s for %s server silent installation", DESCRIPTION, am_container_str(instance_type));
     fprintf(stdout, "\n%s for %s Server installation.\n\n", DESCRIPTION, am_container_str(instance_type));
 
-    snprintf(lic_file_path, sizeof(lic_file_path), "%s%s", app_path, LICENSE_FILE);
+    build_path(lic_file_path, sizeof(lic_file_path), app_path, LICENSE_FILE);
 
     if ((argc > 8 && strcasecmp(argv[8], "--acceptLicence") == 0) ||
         (argc > 9 && strcasecmp(argv[9], "--acceptLicence") == 0) ||
@@ -2133,7 +2162,7 @@ static void list_instances(int argc, char **argv) {
 static void remove_instance(int argc, char **argv) {
     struct am_conf_entry *list = NULL, *e, *t;
     int rv;
-    char prompt[AM_PATH_SIZE];
+    char prompt[AM_URI_SIZE];
     if (argc != 3) {
         fprintf(stdout, "\nNo agent configuration specified.\n");
         return;
@@ -2455,7 +2484,7 @@ static void archive_files(int argc, char **argv) {
             am_bin_path(app_path, sizeof(app_path) - 1);
 
             /* create/update installer log path */
-            snprintf(log_path, sizeof(log_path), "%s.." FILE_PATH_SEP "log", app_path);
+            build_path(log_path, sizeof(log_path), app_path, ".." FILE_PATH_SEP "log");
             strcpy(log_path_dir, log_path);
             if (strcmp(argv[1], "--a") != 0) {
                 am_make_path(log_path, NULL, NULL, install_log);
@@ -2464,41 +2493,41 @@ static void archive_files(int argc, char **argv) {
                      FILE_PATH_SEP, tm);
 
             /* instances directory */
-            snprintf(instance_path, sizeof(instance_path), "%s.." FILE_PATH_SEP "instances", app_path);
+            build_path(instance_path, sizeof(instance_path), app_path, ".." FILE_PATH_SEP "instances");
 
             /* agent configuration template */
-            snprintf(config_template, sizeof(config_template),
-                     "%s.." FILE_PATH_SEP "config" FILE_PATH_SEP "agent.conf.template", app_path);
+            build_path(config_template, sizeof(config_template), app_path,
+                       ".." FILE_PATH_SEP "config" FILE_PATH_SEP "agent.conf.template");
 
             /* instances configuration file (internal) */
-            snprintf(instance_config, sizeof(instance_config), "%s.." FILE_PATH_SEP "instances" FILE_PATH_SEP ".agents",
-                     app_path);
+            build_path(instance_config, sizeof(instance_config), app_path,
+                       ".." FILE_PATH_SEP "instances" FILE_PATH_SEP ".agents");
 
             /* and add a license tracker path */
-            snprintf(license_tracker_path, sizeof(license_tracker_path),
-                     "%s.." FILE_PATH_SEP "instances" FILE_PATH_SEP ".license", app_path);
+            build_path(license_tracker_path, sizeof(license_tracker_path), app_path,
+                       ".." FILE_PATH_SEP "instances" FILE_PATH_SEP ".license");
 
             /* determine installer type */
-            snprintf(instance_type_mod, sizeof(instance_type_mod),
-                     "%s.." FILE_PATH_SEP "lib" FILE_PATH_SEP "mod_openam." LIB_FILE_EXT, app_path);
+            build_path(instance_type_mod, sizeof(instance_type_mod), app_path,
+                       ".." FILE_PATH_SEP "lib" FILE_PATH_SEP "mod_openam." LIB_FILE_EXT);
             if (file_exists(instance_type_mod)) {
                 instance_type = AM_I_APACHE;
             }
-            snprintf(instance_type_mod, sizeof(instance_type_mod),
-                     "%s.." FILE_PATH_SEP "lib" FILE_PATH_SEP "mod_iis_openam_32." LIB_FILE_EXT, app_path);
+            build_path(instance_type_mod, sizeof(instance_type_mod), app_path,
+                       ".." FILE_PATH_SEP "lib" FILE_PATH_SEP "mod_iis_openam_32." LIB_FILE_EXT);
             if (file_exists(instance_type_mod)) {
                 instance_type = AM_I_IIS;
             }
-            snprintf(instance_type_mod, sizeof(instance_type_mod),
-                     "%s.." FILE_PATH_SEP "lib" FILE_PATH_SEP "mod_iis_openam_64." LIB_FILE_EXT, app_path);
+            build_path(instance_type_mod, sizeof(instance_type_mod), app_path,
+                       ".." FILE_PATH_SEP "lib" FILE_PATH_SEP "mod_iis_openam_64." LIB_FILE_EXT);
             if (file_exists(instance_type_mod)) {
                 instance_type = AM_I_IIS;
             }
-            snprintf(instance_type_mod, sizeof(instance_type_mod),
-                     "%s.." FILE_PATH_SEP "lib" FILE_PATH_SEP "libvmod_am." LIB_FILE_EXT, app_path);
+            build_path(instance_type_mod, sizeof(instance_type_mod), app_path,
+                       ".." FILE_PATH_SEP "lib" FILE_PATH_SEP "libvmod_am." LIB_FILE_EXT);
             if (file_exists(instance_type_mod)) {
-                snprintf(instance_config_template, sizeof(instance_config_template),
-                         "%s.." FILE_PATH_SEP "config" FILE_PATH_SEP "agent.vcl.template", app_path);
+                build_path(instance_config_template, sizeof(instance_config_template), app_path,
+                           ".." FILE_PATH_SEP "config" FILE_PATH_SEP "agent.vcl.template");
                 instance_type = AM_I_VARNISH;
             }
 

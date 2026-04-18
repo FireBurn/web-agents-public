@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <setjmp.h>
+#include <unistd.h>
 
 #include "platform.h"
 #include "am.h"
@@ -21,8 +22,12 @@ void am_worker_pool_init_reset();
 void am_net_init_ssl_reset();
 
 static am_status_t get_post_data(struct am_request *request) {
-    request->post_data_fn = strdup("test_post_data-XXXXXXX");
-    mktemp(request->post_data_fn);
+    int fd;
+    request->post_data_fn = strdup("test_post_data-XXXXXX");
+    fd = mkstemp(request->post_data_fn);
+    if (fd != -1) {
+        close(fd);
+    }
 
     write_file(request->post_data_fn, request->post_data, request->post_data_sz);
     return AM_SUCCESS;

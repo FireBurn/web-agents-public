@@ -366,7 +366,7 @@ static am_bool_t test_within_bounds(const char *addr_p, const char *lo_p, const 
 static am_status_t get_in_bounded_range_status(const char *addr, const char *range) {
     int c;
     char *lo_p, *hi_p;
-    const const char *p = strchr(range, '-');
+    const char *p = strchr(range, '-');
     if (p == NULL) {
         return AM_ENOMEM;
     }

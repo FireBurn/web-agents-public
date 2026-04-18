@@ -138,7 +138,7 @@ static void entity_declaration(void *userData, const XML_Char *entityName, int i
 
 void *am_parse_session_xml(unsigned long instance_id, const char *xml, size_t xml_sz) {
     static const char *thisfunc = "am_parse_session_xml():";
-    const const char *begin, *stream = NULL;
+    const char *begin, *stream = NULL;
     size_t data_sz;
     struct am_namevalue *r = NULL;
 
@@ -157,7 +157,7 @@ void *am_parse_session_xml(unsigned long instance_id, const char *xml, size_t xm
 
     begin = strstr(xml, "![CDATA[");
     if (begin != NULL) {
-        const const char *end = strstr(begin + 8, "]]>");
+        const char *end = strstr(begin + 8, "]]>");
         if (end != NULL) {
             stream = begin + 8;
             data_sz = end - (begin + 8);

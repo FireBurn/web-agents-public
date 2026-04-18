@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <setjmp.h>
+#include <unistd.h>
 
 #include "am.h"
 #include "platform.h"
@@ -20,8 +21,10 @@ void test_config_url_maps(void **state) {
     am_config_t *conf;
     char *value;
 
-    char buffer[] = "config-tests-XXXXXXX";
-    char *path = mktemp(buffer);
+    char buffer[] = "config-tests-XXXXXX";
+    int fd = mkstemp(buffer);
+    assert_int_not_equal(fd, -1);
+    char *path = buffer;
 
     char *configs = "com.sun.identity.agents.config.repository.location = local\n"
 
@@ -64,6 +67,7 @@ void test_config_url_maps(void **state) {
     assert_string_equal(conf->json_url_map[1].value, "https://a.b.c:443/path");
 
     unlink(path);
+    close(fd);
 }
 
 void test_config_map_value_reorder(void **state) {

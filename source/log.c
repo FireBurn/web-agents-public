@@ -410,8 +410,18 @@ static void log_file_write(unsigned long instance_id, const char *data, unsigned
         unsigned int idx = 1;
         char *tmp = malloc(AM_PATH_SIZE + 1);
         if (tmp != NULL) {
+            /* Leave headroom for the ".%u" suffix (up to 11 chars for a
+             * 32-bit unsigned decimal plus the dot and NUL). If the base
+             * path is too long to fit a rotated name, skip rotation. */
+            size_t name_len = strlen(file_name);
+            if (name_len + 12 >= AM_PATH_SIZE) {
+                free(tmp);
+                tmp = NULL;
+            }
+        }
+        if (tmp != NULL) {
             do {
-                snprintf(tmp, AM_PATH_SIZE, "%s.%d", file_name, idx);
+                snprintf(tmp, AM_PATH_SIZE, "%s.%u", file_name, idx);
                 idx++;
             } while (file_access(tmp) == 0);
 #ifdef _WIN32

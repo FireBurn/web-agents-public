@@ -571,11 +571,10 @@ static void entity_declaration(void *userData, const XML_Char *entityName, int i
 am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, size_t xml_sz, char log_enable) {
     static const char *thisfunc = "am_parse_config_xml():";
     am_config_t *r = NULL;
-    const const char *begin, *stream = NULL;
+    const char *begin, *stream = NULL;
     size_t data_sz;
     void *x = NULL;
     const char *error = NULL;
-    int erroroffset;
 
     am_xml_parser_ctx_t xctx = {.setting_value = 0,
                                 .conf = NULL,
@@ -607,7 +606,7 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
 
     begin = strstr(xml, "![CDATA[");
     if (begin != NULL) {
-        const const char *end = strstr(begin + 8, "]]>");
+        const char *end = strstr(begin + 8, "]]>");
         if (end != NULL) {
             stream = begin + 8;
             data_sz = end - (begin + 8);

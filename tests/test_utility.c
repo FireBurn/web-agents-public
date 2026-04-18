@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <setjmp.h>
+#include <unistd.h>
 
 #include "am.h"
 #include "platform.h"
@@ -773,14 +774,21 @@ void test_copy_file(void **state) {
     void create_random_cache_key(char *buffer, size_t size);
 
     char content[1024];
-    char source_buffer[] = "test_copy_file_src-XXXXXXX";
-    char *source = mktemp(source_buffer);
+    char source_buffer[] = "test_copy_file_src-XXXXXX";
+    int src_fd = mkstemp(source_buffer);
+    char *source = source_buffer;
 
-    char dest_buffer[] = "test_copy_file_dst-XXXXXXX";
-    char *dest = mktemp(dest_buffer);
+    char dest_buffer[] = "test_copy_file_dst-XXXXXX";
+    int dst_fd = mkstemp(dest_buffer);
+    char *dest = dest_buffer;
 
     char *loaded;
     size_t loaded_sz;
+
+    assert_int_not_equal(src_fd, -1);
+    assert_int_not_equal(dst_fd, -1);
+    close(src_fd);
+    close(dst_fd);
 
     create_random_cache_key(content, sizeof(content));
 
@@ -798,14 +806,21 @@ void test_copy_file(void **state) {
 void test_copy_empty_file(void **state) {
     void create_random_cache_key(char *buffer, size_t size);
 
-    char source_buffer[] = "test_copy_file_src-XXXXXXX";
-    char *source = mktemp(source_buffer);
+    char source_buffer[] = "test_copy_file_src-XXXXXX";
+    int src_fd = mkstemp(source_buffer);
+    char *source = source_buffer;
 
-    char dest_buffer[] = "test_copy_file_dst-XXXXXXX";
-    char *dest = mktemp(dest_buffer);
+    char dest_buffer[] = "test_copy_file_dst-XXXXXX";
+    int dst_fd = mkstemp(dest_buffer);
+    char *dest = dest_buffer;
 
     char *loaded;
     size_t loaded_sz;
+
+    assert_int_not_equal(src_fd, -1);
+    assert_int_not_equal(dst_fd, -1);
+    close(src_fd);
+    close(dst_fd);
 
     assert_int_equal(write_file(source, "", 0), 0);
     assert_int_equal(copy_file(source, dest), AM_SUCCESS);

@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <setjmp.h>
+#include <inttypes.h>
 
 #include "platform.h"
 #include "am.h"
@@ -117,16 +118,17 @@ static void verify_file(char *path, int count) {
 
     for (i = 0; i < count; i++)
         if ((bits[word_offset(i)] & word_bit(i)) == 0)
-            printf("error at position %d, got %llu\n", i, bits[word_offset(i)]);
+            printf("error at position %d, got %" PRIu64 "\n", i, bits[word_offset(i)]);
 
     /* test all bits are set */
 
     for (i = 0; i < c; i++)
         if (~bits[i])
-            printf("error at word %d, got %llu\n", i, bits[i]);
+            printf("error at word %d, got %" PRIu64 "\n", i, bits[i]);
 
     if (bits[c] != word_bit(count) - 1)
-        printf("error in final word %llu, got %llu (expected %llu)\n", c, bits[c], word_bit(count) - 1);
+        printf("error in final word %" PRIu64 ", got %" PRIu64 " (expected %" PRIu64 ")\n", c, bits[c],
+               (uint64_t)(word_bit(count) - 1));
 
     free(bits);
 }

@@ -14,14 +14,18 @@
 
 #ifdef _WIN32
 static INIT_ONCE ssl_lib_initialized = INIT_ONCE_STATIC_INIT;
-static CRITICAL_SECTION *ssl_mutexes = NULL;
 #else
 static pthread_once_t ssl_lib_initialized = PTHREAD_ONCE_INIT;
-static pthread_mutex_t *ssl_mutexes = NULL;
 #endif
 
 /* Setup Thread-safety for older OpenSSL 1.0.x (e.g. RHEL 7) */
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
+#ifdef _WIN32
+static CRITICAL_SECTION *ssl_mutexes = NULL;
+#else
+static pthread_mutex_t *ssl_mutexes = NULL;
+#endif
+
 static void ssl_locking_callback(int mode, int mutex_num, const char *file, int line) {
     if (mode & 1) {
 #ifdef _WIN32
