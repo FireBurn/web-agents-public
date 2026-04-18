@@ -653,9 +653,7 @@ static am_status_t set_cookie(am_request_t *rq, const char *header) {
             char *new_cookie = (char *)alloc_request(r, strlen(current_cookies) + strlen(new_value) + 2);
             if (new_cookie == NULL)
                 return AM_ENOMEM;
-            strcpy(new_cookie, current_cookies);
-            strcat(new_cookie, ";");
-            strcat(new_cookie, new_value);
+            snprintf(new_cookie, strlen(current_cookies) + strlen(new_value) + 2, "%s;%s", current_cookies, new_value);
             status = set_header_in_request(rq, "Cookie", new_cookie);
         }
     }

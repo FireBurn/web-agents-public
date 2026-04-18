@@ -2516,9 +2516,8 @@ int main(int argc, char **argv) {
         if (strcmp(argv[1], "--a") != 0) {
             am_make_path(log_path, NULL, NULL, install_log);
         }
-        strcat(log_path, FILE_PATH_SEP "install_");
-        strcat(log_path, tm);
-        strcat(log_path, ".log");
+        snprintf(log_path + strlen(log_path), sizeof(log_path) - strlen(log_path), "%sinstall_%s.log", FILE_PATH_SEP,
+                 tm);
 
         /* instances directory */
         snprintf(instance_path, sizeof(instance_path), "%s.." FILE_PATH_SEP "instances", app_path);

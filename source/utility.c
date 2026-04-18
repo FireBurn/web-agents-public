@@ -2064,7 +2064,7 @@ int am_delete_directory(const char *path) {
     char *tempdir = (char *)calloc(1, len);
     if (tempdir == NULL)
         return AM_ENOMEM;
-    strcpy(tempdir, path);
+    snprintf(tempdir, len, "%s", path);
 
     file_op.hwnd = NULL;
     file_op.wFunc = FO_DELETE;
