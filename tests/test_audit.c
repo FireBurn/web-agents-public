@@ -39,8 +39,8 @@ struct am_audit_transfer {
 
 static int proc = 0;
 
-am_status_t extract_audit_entries(unsigned long instance_id,
-        am_status_t(*callback)(const char *openam, int count, struct am_audit_transfer *batch));
+am_status_t extract_audit_entries(unsigned long instance_id, am_status_t (*callback)(const char *openam, int count,
+                                                                                     struct am_audit_transfer *batch));
 
 static am_status_t write_entries_to_server(const char *openam, int count, struct am_audit_transfer *batch) {
     int msg_size, i;
@@ -67,14 +67,14 @@ static am_status_t write_entries_to_server(const char *openam, int count, struct
 #else
     usleep(WRITE_TEST_SLEEP * 1000);
 #endif
-    return AM_SUCCESS;
+        return AM_SUCCESS;
 }
 
 void test_audit_shm(void **state) {
     int i;
     am_config_t conf;
     char *am[] = {"http://localhost/am"};
-    memset(&conf, 0, sizeof (am_config_t));
+    memset(&conf, 0, sizeof(am_config_t));
     conf.instance_id = INSTANCE_ID;
     conf.config = "agent.conf";
     conf.naming_url_sz = 1;
@@ -86,8 +86,9 @@ void test_audit_shm(void **state) {
     printf("adding %d entries\n", NUM_ENTRIES);
 
     for (i = 0; i < NUM_ENTRIES; i++) {
-        assert_int_equal(am_add_remote_audit_entry(INSTANCE_ID, "AGENT_TOKEN", "01", "remote-file.log",
-                "USER_TOKEN", MESSAGE_TEMPLATE, i), AM_SUCCESS);
+        assert_int_equal(am_add_remote_audit_entry(INSTANCE_ID, "AGENT_TOKEN", "01", "remote-file.log", "USER_TOKEN",
+                                                   MESSAGE_TEMPLATE, i),
+                         AM_SUCCESS);
     }
 
     extract_audit_entries(INSTANCE_ID, write_entries_to_server);

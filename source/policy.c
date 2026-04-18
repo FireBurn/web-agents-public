@@ -14,31 +14,28 @@
  * Copyright 2014 - 2016 ForgeRock AS.
  */
 
-#include "platform.h"
 #include "am.h"
+#include "platform.h"
 #include "utility.h"
 
 #define URL_MATCH_FRAME_MAX 32
 
-static const char *policy_fetch_scope_str[] = {
-    "self",
-    "subtree",
-    "response-attributes-only"
-};
+static const char *policy_fetch_scope_str[] = {"self", "subtree", "response-attributes-only"};
 
 const char *am_policy_strerror(char status) {
     switch (status) {
-        case AM_EXACT_MATCH: return "exact match";
-        case AM_EXACT_PATTERN_MATCH: return "exact pattern match";
-        default:
-            return "no match";
+    case AM_EXACT_MATCH:
+        return "exact match";
+    case AM_EXACT_PATTERN_MATCH:
+        return "exact pattern match";
+    default:
+        return "no match";
     }
 }
 
 static char compare_resource(am_request_t *r, const char *pattern, const char *resource) {
     char status = AM_FALSE;
-    char case_sensitive = (r != NULL && r->conf != NULL) ?
-            !(r->conf->url_eval_case_ignore) : AM_FALSE;
+    char case_sensitive = (r != NULL && r->conf != NULL) ? !(r->conf->url_eval_case_ignore) : AM_FALSE;
     if (case_sensitive) {
         if (strcmp(pattern, resource) == 0)
             status = AM_TRUE;
@@ -55,9 +52,8 @@ typedef struct {
 
 } url_match_frame_t;
 
-am_bool_t compare_chars(am_request_t * r, char a, char b) {
+am_bool_t compare_chars(am_request_t *r, char a, char b) {
     return r->conf->url_eval_case_ignore ? tolower(a) == tolower(b) : a == b;
-
 }
 
 /*
@@ -65,29 +61,38 @@ am_bool_t compare_chars(am_request_t * r, char a, char b) {
  *
  * this has full backtracking.
  */
-static am_bool_t url_pattern_match_with_backtrack(am_request_t *r, url_match_frame_t * stack, int stacksize,
-                      const char * pattern, const char * url) {
-    const char           *p = pattern, *u = url;
-    url_match_frame_t    *top = stack, *const end = stack + stacksize;
+static am_bool_t url_pattern_match_with_backtrack(am_request_t *r, url_match_frame_t *stack, int stacksize,
+                                                  const char *pattern, const char *url) {
+    const char *p = pattern, *u = url;
+    url_match_frame_t *top = stack, *const end = stack + stacksize;
 
-#define handle_overflow              AM_LOG_ERROR(r->instance_id, "unable to match with pattern %s", pattern)
-#define push_state_with_check(s)     if (++top == end) { handle_overflow; return AM_FALSE; } top->p = p; top->u = u; top->skip = s
+#define handle_overflow AM_LOG_ERROR(r->instance_id, "unable to match with pattern %s", pattern)
+#define push_state_with_check(s)                                                                                       \
+    if (++top == end) {                                                                                                \
+        handle_overflow;                                                                                               \
+        return AM_FALSE;                                                                                               \
+    }                                                                                                                  \
+    top->p = p;                                                                                                        \
+    top->u = u;                                                                                                        \
+    top->skip = s
 
     /* only frame 0 has skip set to none */
 
-    top->skip = none; 
+    top->skip = none;
 
     while (*u) {
         if (*p == '*') {
-            p += 1; push_state_with_check(multilevel);
+            p += 1;
+            push_state_with_check(multilevel);
 
         } else if (*p == '-' && p[1] == '*' && p[2] == '-') {
-            p += 3; push_state_with_check(onelevel);
-
+            p += 3;
+            push_state_with_check(onelevel);
         }
 
         if (compare_chars(r, *p, *u)) {
-            p++; u++;
+            p++;
+            u++;
 
         } else {
             do {
@@ -101,32 +106,28 @@ static am_bool_t url_pattern_match_with_backtrack(am_request_t *r, url_match_fra
 
                 } else {
                     return AM_FALSE; /* frame 0 */
-
                 }
                 top--;
 
             } while (1);
 
-            p = top->p; u = ++top->u;
-
+            p = top->p;
+            u = ++top->u;
         }
-
     }
 
     while (*p)
         if (*p == '*') {
-            p += 1; 
+            p += 1;
 
         } else if (*p == '-' && p[1] == '*' && p[2] == '-') {
             p += 3;
 
         } else {
-           return AM_FALSE;
-
+            return AM_FALSE;
         }
 
     return AM_TRUE;
-
 }
 
 /*
@@ -136,7 +137,7 @@ static am_bool_t url_pattern_match_with_backtrack(am_request_t *r, url_match_fra
  * this uses a heap allocated stack large enough to allow 64 frames, which will suffice for
  * patterns with 32 wildcards (* or -*-).
  */
-am_bool_t compare_pattern_resource(am_request_t *r, const char * pattern, const char * url) {
+am_bool_t compare_pattern_resource(am_request_t *r, const char *pattern, const char *url) {
     url_match_frame_t *stack = malloc(sizeof(url_match_frame_t) * URL_MATCH_FRAME_MAX);
     am_bool_t out;
 
@@ -147,20 +148,18 @@ am_bool_t compare_pattern_resource(am_request_t *r, const char * pattern, const 
     } else {
         AM_LOG_ERROR(r->instance_id, "unable to allocate URL pattern matching stack");
         out = AM_FALSE;
-
     }
     return out;
-
 }
 
-#define end_of_protocol(offsets) (offsets [0])
+#define end_of_protocol(offsets) (offsets[0])
 #define start_of_host(offsets) (end_of_protocol(offsets) + 3)
 
-#define port_marker(offsets) (offsets [1])
+#define port_marker(offsets) (offsets[1])
 #define start_of_port(offsets) (port_marker(offsets) + 1)
 #define end_of_port(offsets) start_of_path(offsets)
 
-#define start_of_path(offsets) (offsets [2])
+#define start_of_path(offsets) (offsets[2])
 
 /**
  * Gets offsets of parts of a URL, setting them in the array (allocated by the caller).
@@ -175,30 +174,30 @@ am_bool_t compare_pattern_resource(am_request_t *r, const char * pattern, const 
 static am_bool_t policy_get_url_offsets(const char *url, int *offsets) {
     am_bool_t got_protocol = AM_FALSE;
     int i;
-    
+
     port_marker(offsets) = 0;
-    
-    for (i = 0; url [i]; i++) {
-        switch (url [i]) {
-            case ':':
-                if (got_protocol) {
-                    port_marker(offsets) = i;
-                } else {
-                    end_of_protocol(offsets) = i;
-                    if (url [++i] == '/' && url [++i] == '/')
-                        got_protocol = AM_TRUE;
-                    else
-                        return AM_FALSE;
-                }
-                break;
-                
-            case '/':
-            case '?':
-                if (got_protocol) {
-                    start_of_path(offsets) = i; // start of path (or query, as in a.b.c?query)
-                    return AM_TRUE;
-                }
-                break;
+
+    for (i = 0; url[i]; i++) {
+        switch (url[i]) {
+        case ':':
+            if (got_protocol) {
+                port_marker(offsets) = i;
+            } else {
+                end_of_protocol(offsets) = i;
+                if (url[++i] == '/' && url[++i] == '/')
+                    got_protocol = AM_TRUE;
+                else
+                    return AM_FALSE;
+            }
+            break;
+
+        case '/':
+        case '?':
+            if (got_protocol) {
+                start_of_path(offsets) = i; // start of path (or query, as in a.b.c?query)
+                return AM_TRUE;
+            }
+            break;
         }
     }
     if (got_protocol) {
@@ -217,14 +216,14 @@ static am_bool_t policy_get_url_offsets(const char *url, int *offsets) {
 char *am_normalize_pattern(const char *url) {
     unsigned port = 0;
     char *protocol;
-    int offsets [] = { 0, 0, 0 };
-    
+    int offsets[] = {0, 0, 0};
+
     policy_get_url_offsets(url, offsets);
     if (end_of_protocol(offsets) && !port_marker(offsets)) {
         // do we have a wildcard intended to include the port?
-        if (url [start_of_path(offsets) - 1] == '*')
+        if (url[start_of_path(offsets) - 1] == '*')
             return NULL;
-        
+
         // determine default port for the protocol
         protocol = strndup(url, end_of_protocol(offsets));
         if (strcasecmp(protocol, "http") == 0) {
@@ -233,10 +232,10 @@ char *am_normalize_pattern(const char *url) {
             port = 443;
         }
         free(protocol);
-        
+
         if (port) {
             // reconstruct URL with the default port
-            char * buffer = NULL;
+            char *buffer = NULL;
             am_asprintf(&buffer, "%.*s:%u%s", start_of_path(offsets), url, port, url + start_of_path(offsets));
             return buffer;
         }
@@ -247,18 +246,17 @@ char *am_normalize_pattern(const char *url) {
 /*
  * Match sections within the pattern and resource.
  */
-static char compare_pattern_sections(am_request_t *r,
-                                     const char *pattern_base, size_t pattern_lo, size_t pattern_hi,
+static char compare_pattern_sections(am_request_t *r, const char *pattern_base, size_t pattern_lo, size_t pattern_hi,
                                      const char *resource_base, size_t resource_lo, size_t resource_hi) {
-    char * pattern_section = strndup(pattern_base + pattern_lo, pattern_hi - pattern_lo);
-    char * resource_section = strndup(resource_base + resource_lo, resource_hi - resource_lo);
-    
+    char *pattern_section = strndup(pattern_base + pattern_lo, pattern_hi - pattern_lo);
+    char *resource_section = strndup(resource_base + resource_lo, resource_hi - resource_lo);
+
     char c;
     if (pattern_section && resource_section)
         c = compare_pattern_resource(r, pattern_section, resource_section);
     else
         c = AM_NO_MATCH;
-    
+
     AM_FREE(pattern_section, resource_section);
     return c;
 }
@@ -280,11 +278,10 @@ char policy_compare_url(am_request_t *r, const char *pattern, const char *resour
             /*
              * pattern matching algorithm forbids:
              * - wildcard only (i.e. "all allowed")
-             * - white-space before/after a wildcard, though this is unlikely to be matched, because url list 
+             * - white-space before/after a wildcard, though this is unlikely to be matched, because url list
              *   is passed down to an agent as a space separated value object
              */
-            AM_LOG_WARNING(instance_id, "%s invalid pattern '%s'",
-                    thisfunc, pattern);
+            AM_LOG_WARNING(instance_id, "%s invalid pattern '%s'", thisfunc, pattern);
             return AM_NO_MATCH;
         }
         has_wildcard = AM_TRUE;
@@ -297,36 +294,40 @@ char policy_compare_url(am_request_t *r, const char *pattern, const char *resour
     }
 
     /* resource must have regular URL structure */
-    if (! policy_get_url_offsets(resource, ri))
+    if (!policy_get_url_offsets(resource, ri))
         return AM_NO_MATCH;
-    
-    if (! policy_get_url_offsets(pattern, pi)) {
+
+    if (!policy_get_url_offsets(pattern, pi)) {
         /* pattern has not got regular URL structure, so match the resource as a whole */
         return compare_pattern_resource(r, pattern, resource) ? AM_EXACT_PATTERN_MATCH : AM_NO_MATCH;
     }
-    
+
     /* compare protocol */
-    if (! compare_pattern_sections(r, pattern, 0, end_of_protocol(pi), resource, 0, end_of_protocol(ri)))
+    if (!compare_pattern_sections(r, pattern, 0, end_of_protocol(pi), resource, 0, end_of_protocol(ri)))
         return AM_NO_MATCH;
-    
+
     if (port_marker(pi) && port_marker(ri)) {
         /* compare hosts - up to ports */
-        if (! compare_pattern_sections(r, pattern, start_of_host(pi), port_marker(pi), resource, start_of_host(ri), port_marker(ri)))
+        if (!compare_pattern_sections(r, pattern, start_of_host(pi), port_marker(pi), resource, start_of_host(ri),
+                                      port_marker(ri)))
             return AM_NO_MATCH;
 
         /* compare ports */
-        if (! compare_pattern_sections(r, pattern, start_of_port(pi), start_of_path(pi), resource, start_of_port(ri), start_of_path(ri)))
+        if (!compare_pattern_sections(r, pattern, start_of_port(pi), start_of_path(pi), resource, start_of_port(ri),
+                                      start_of_path(ri)))
             return AM_NO_MATCH;
     } else {
         /* compare hosts - up to paths */
-        if (! compare_pattern_sections(r, pattern, start_of_host(pi), start_of_path(pi), resource, start_of_host(ri), start_of_path(ri)))
+        if (!compare_pattern_sections(r, pattern, start_of_host(pi), start_of_path(pi), resource, start_of_host(ri),
+                                      start_of_path(ri)))
             return AM_NO_MATCH;
     }
-    
+
     /* compare paths and query */
-    if (! compare_pattern_sections(r, pattern, start_of_path(pi), strlen(pattern), resource, start_of_path(ri), strlen(resource)))
+    if (!compare_pattern_sections(r, pattern, start_of_path(pi), strlen(pattern), resource, start_of_path(ri),
+                                  strlen(resource)))
         return AM_NO_MATCH;
-    
+
     return AM_EXACT_PATTERN_MATCH;
 }
 

@@ -42,8 +42,8 @@ static void test_log_callback(void *arg, char *name, int error) {
 /*
  * log unique messages within a range
  */
-static void *log_procedure(void * params) {
-    struct log_range * range = params;
+static void *log_procedure(void *params) {
+    struct log_range *range = params;
     int i;
 
     for (i = range->start; i < range->end; i++) {
@@ -56,14 +56,14 @@ static void *log_procedure(void * params) {
 }
 
 #define NTHREADS 256
-#define NLOGS    1234
+#define NLOGS 1234
 
 /*
  * create threads which willl log messages in separate ranges
  */
 static void test_threaded_logging(int instance, int nthreads, int nlogs) {
-    am_thread_t *threads = calloc(nthreads, sizeof (am_thread_t));
-    struct log_range *ranges = calloc(nthreads, sizeof (struct log_range));
+    am_thread_t *threads = calloc(nthreads, sizeof(am_thread_t));
+    struct log_range *ranges = calloc(nthreads, sizeof(struct log_range));
 
     long t0 = clock();
     double dt;
@@ -71,9 +71,9 @@ static void test_threaded_logging(int instance, int nthreads, int nlogs) {
     int i;
 
     for (i = 0; i < nthreads; i++) {
-        ranges [i].inst = instance;
-        ranges [i].start = i * nlogs;
-        ranges [i].end = ranges [i].start + nlogs;
+        ranges[i].inst = instance;
+        ranges[i].start = i * nlogs;
+        ranges[i].end = ranges[i].start + nlogs;
         AM_THREAD_CREATE(threads[i], log_procedure, ranges + i);
     }
 
@@ -81,7 +81,7 @@ static void test_threaded_logging(int instance, int nthreads, int nlogs) {
         AM_THREAD_JOIN(threads[i]);
     }
 
-    dt = ((double) (clock() - t0)) / CLOCKS_PER_SEC;
+    dt = ((double)(clock() - t0)) / CLOCKS_PER_SEC;
     fprintf(stdout, "%d log entries takes %lf secs\n", nthreads * nlogs, dt);
 
     free(threads);
@@ -95,31 +95,31 @@ static void test_threaded_logging(int instance, int nthreads, int nlogs) {
  * read back log file and use a bit map to ensure each message
  * was logged once
  */
-static void verify_file(char * path, int count) {
+static void verify_file(char *path, int count) {
     size_t size = 0;
-    char * s, *t;
-    char * p = load_file(path, &size);
+    char *s, *t;
+    char *p = load_file(path, &size);
 
     const int offset = strlen("message ");
 
     int i;
     uint64_t c = word_offset(count);
-    uint64_t * bits = calloc(1 + c, sizeof (uint64_t));
+    uint64_t *bits = calloc(1 + c, sizeof(uint64_t));
 
     t = p;
     while ((s = am_strsep(&t, "\n")) != NULL) {
-        char * str = strstr(s, "message ");
+        char *str = strstr(s, "message ");
         if (str) {
-            char * end = NULL;
+            char *end = NULL;
             uint64_t msgid = strtoul(str + offset, &end, 10);
             if (end == str + offset)
                 printf("corrupt log entry: %s\n", str);
             else if (count <= msgid)
                 printf("out of rangelog entry: %s\n", str);
-            else if (bits [word_offset(msgid)] & word_bit(msgid))
+            else if (bits[word_offset(msgid)] & word_bit(msgid))
                 printf("error: duplicated log: %s\n", str);
             else
-                bits [word_offset(msgid)] |= word_bit(msgid);
+                bits[word_offset(msgid)] |= word_bit(msgid);
         }
     }
     free(p);
@@ -127,17 +127,17 @@ static void verify_file(char * path, int count) {
     /* test all bits are set (redundant) */
 
     for (i = 0; i < count; i++)
-        if ((bits [word_offset(i)] & word_bit(i)) == 0)
-            printf("error at position %d, got %llu\n", i, bits [word_offset(i)]);
+        if ((bits[word_offset(i)] & word_bit(i)) == 0)
+            printf("error at position %d, got %llu\n", i, bits[word_offset(i)]);
 
     /* test all bits are set */
 
     for (i = 0; i < c; i++)
-        if (~bits [i])
-            printf("error at word %d, got %llu\n", i, bits [i]);
+        if (~bits[i])
+            printf("error at word %d, got %llu\n", i, bits[i]);
 
-    if (bits [c] != word_bit(count) - 1)
-        printf("error in final word %llu, got %llu (expected %llu)\n", c, bits [c], word_bit(count) - 1);
+    if (bits[c] != word_bit(count) - 1)
+        printf("error in final word %llu, got %llu (expected %llu)\n", c, bits[c], word_bit(count) - 1);
 
     free(bits);
 }
@@ -163,8 +163,8 @@ void test_logging(void **state) {
     printf("type return\n");
     getc(stdin);
 
-    am_log_register_instance(instance, "temp-debug.log", AM_LOG_LEVEL_DEBUG, 0,
-            "temp-audit.log", 0, 0x100000, "temp-agent.conf");
+    am_log_register_instance(instance, "temp-debug.log", AM_LOG_LEVEL_DEBUG, 0, "temp-audit.log", 0, 0x100000,
+                             "temp-agent.conf");
 
     // log_procedure(&range);
     test_threaded_logging(instance, NTHREADS, NLOGS);

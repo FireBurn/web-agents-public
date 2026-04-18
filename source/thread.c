@@ -14,11 +14,11 @@
  * Copyright 2014 - 2016 ForgeRock AS.
  */
 
-#include "platform.h"
+#include "thread.h"
 #include "am.h"
+#include "platform.h"
 #include "utility.h"
 #include "version.h"
-#include "thread.h"
 #if defined(__sun)
 #include <port.h>
 #include <sys/atomic.h>
@@ -49,13 +49,10 @@ static pthread_once_t worker_pool_initialized = PTHREAD_ONCE_INIT;
 static pthread_once_t worker_pool_main_initialized = PTHREAD_ONCE_INIT;
 static sigset_t fillset;
 
-enum {
-    AM_THREADPOOL_WAIT = 0x01,
-    AM_THREADPOOL_DESTROY = 0x02
-};
+enum { AM_THREADPOOL_WAIT = 0x01, AM_THREADPOOL_DESTROY = 0x02 };
 
 struct am_threadpool_work {
-    void (*func) (void *);
+    void (*func)(void *);
     void *arg;
     struct am_threadpool_work *next;
 };
@@ -69,11 +66,11 @@ struct am_threadpool {
     struct am_threadpool_work *tail;
     pthread_attr_t attr;
     int flag;
-    int linger; /* number of seconds excess idle worker threads (greater than min_threads) linger before exiting */
+    int linger;      /* number of seconds excess idle worker threads (greater than min_threads) linger before exiting */
     int min_threads; /* minimum number of threads kept in the pool */
     int max_threads; /* maximum number of threads that can be in the pool */
     int num_threads; /* current number of worker threads */
-    int idle; /* number of idle worker threads */
+    int idle;        /* number of idle worker threads */
 
     struct am_threadpool_active {
         pthread_t thread;
@@ -97,14 +94,13 @@ static int create_worker(struct am_threadpool *pool) {
 }
 
 static void worker_cleanup(void *arg) {
-    struct am_threadpool *pool = (struct am_threadpool *) arg;
+    struct am_threadpool *pool = (struct am_threadpool *)arg;
     --pool->num_threads;
     if (pool->flag & AM_THREADPOOL_DESTROY) {
         if (pool->num_threads == 0) {
             pthread_cond_broadcast(&pool->busy);
         }
-    } else if (pool->head != NULL && pool->num_threads < pool->max_threads &&
-            create_worker(pool) == 0) {
+    } else if (pool->head != NULL && pool->num_threads < pool->max_threads && create_worker(pool) == 0) {
         pool->num_threads++;
     }
     pthread_mutex_unlock(&pool->lock);
@@ -118,7 +114,7 @@ static void worker_notify(struct am_threadpool *pool) {
 }
 
 static void work_cleanup(void *arg) {
-    struct am_threadpool *pool = (struct am_threadpool *) arg;
+    struct am_threadpool *pool = (struct am_threadpool *)arg;
     pthread_t thread = pthread_self();
     struct am_threadpool_active *a, **b;
 
@@ -135,7 +131,7 @@ static void work_cleanup(void *arg) {
 }
 
 void am_clock_gettime(struct timespec *ts) {
-#ifdef __APPLE__ 
+#ifdef __APPLE__
     clock_serv_t cclock;
     mach_timespec_t mts;
     host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
@@ -153,12 +149,12 @@ static void cleanup_unlock_mutex(void *arg) {
 }
 
 static void *do_work(void *arg) {
-    struct am_threadpool *pool = (struct am_threadpool *) arg;
+    struct am_threadpool *pool = (struct am_threadpool *)arg;
     struct am_threadpool_work *cur;
     struct am_threadpool_active active;
     int timed_out;
     struct timespec ts;
-    void (*func) (void *arg);
+    void (*func)(void *arg);
     void *func_arg;
 
     /* worker thread main loop */
@@ -168,7 +164,7 @@ static void *do_work(void *arg) {
     active.thread = pthread_self();
 
     while (1) {
-        /* reset (this) thread signal mask and cancellation state back to the initial values 
+        /* reset (this) thread signal mask and cancellation state back to the initial values
          * (since the last work performed) */
         pthread_sigmask(SIG_SETMASK, &fillset, NULL);
         pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
@@ -220,7 +216,7 @@ static void *do_work(void *arg) {
             pthread_cleanup_pop(1);
         }
         if (timed_out && pool->num_threads > pool->min_threads) {
-            /* thread timed out (waiting for work) and 
+            /* thread timed out (waiting for work) and
              * the number of workers exceeds the minimum - exit now */
             break;
         }
@@ -233,15 +229,15 @@ static void *do_work(void *arg) {
 
 static
 #ifdef _WIN32
-BOOL CALLBACK
+    BOOL CALLBACK
 #else
-void
+    void
 #endif
-create_threadpool(
+    create_threadpool(
 #ifdef _WIN32
         PINIT_ONCE io, PVOID p, PVOID *c
 #endif
-        ) {
+    ) {
 #ifdef _WIN32
 
     worker_pool = CreateThreadpool(NULL);
@@ -252,7 +248,7 @@ create_threadpool(
     SetThreadpoolThreadMaximum(worker_pool, AM_MAX_THREADS_POOL);
     SetThreadpoolThreadMinimum(worker_pool, AM_MIN_THREADS_POOL);
 
-    worker_env = LocalAlloc(LPTR, sizeof (TP_CALLBACK_ENVIRON));
+    worker_env = LocalAlloc(LPTR, sizeof(TP_CALLBACK_ENVIRON));
     if (worker_env == NULL) {
         CloseThreadpool(worker_pool);
         worker_pool = NULL;
@@ -273,11 +269,12 @@ create_threadpool(
     return TRUE;
 
 #else
-    if (worker_pool != NULL) return;
+    if (worker_pool != NULL)
+        return;
 
     sigfillset(&fillset);
 
-    worker_pool = (struct am_threadpool *) malloc(sizeof (struct am_threadpool));
+    worker_pool = (struct am_threadpool *)malloc(sizeof(struct am_threadpool));
     if (worker_pool == NULL) {
         return;
     }
@@ -304,12 +301,12 @@ create_threadpool(
 #ifndef _WIN32
 
 static void create_threadpool_main() {
-
-    if (worker_pool_main != NULL) return;
+    if (worker_pool_main != NULL)
+        return;
 
     sigfillset(&fillset);
 
-    worker_pool_main = (struct am_threadpool *) malloc(sizeof (struct am_threadpool));
+    worker_pool_main = (struct am_threadpool *)malloc(sizeof(struct am_threadpool));
     if (worker_pool_main == NULL) {
         return;
     }
@@ -359,13 +356,13 @@ void am_worker_pool_init_reset() {
 #else
     pthread_once_t once = PTHREAD_ONCE_INIT;
 #endif
-    memcpy(&worker_pool_initialized, &once, sizeof (worker_pool_initialized));
+    memcpy(&worker_pool_initialized, &once, sizeof(worker_pool_initialized));
 }
 
 #ifdef _WIN32
 
 static void CALLBACK worker_dispatch_callback(PTP_CALLBACK_INSTANCE instance, void *arg) {
-    struct am_callback_args *cba = (struct am_callback_args *) arg;
+    struct am_callback_args *cba = (struct am_callback_args *)arg;
     if (cba != NULL && cba->callback != NULL) {
         cba->callback(cba->args);
     }
@@ -383,7 +380,7 @@ int am_worker_dispatch(void (*worker_f)(void *), void *arg) {
         return AM_ENOTSTARTED;
     }
 
-    cb_arg = (struct am_callback_args *) malloc(sizeof (struct am_callback_args));
+    cb_arg = (struct am_callback_args *)malloc(sizeof(struct am_callback_args));
     if (cb_arg != NULL) {
         cb_arg->args = arg;
         cb_arg->callback = worker_f;
@@ -402,9 +399,10 @@ int am_worker_dispatch(void (*worker_f)(void *), void *arg) {
         pool = worker_pool_main;
     }
 
-    if (pool == NULL) return AM_EFAULT;
+    if (pool == NULL)
+        return AM_EFAULT;
 
-    cur = (struct am_threadpool_work *) malloc(sizeof (struct am_threadpool_work));
+    cur = (struct am_threadpool_work *)malloc(sizeof(struct am_threadpool_work));
     if (cur == NULL) {
         return AM_ENOMEM;
     }
@@ -425,8 +423,7 @@ int am_worker_dispatch(void (*worker_f)(void *), void *arg) {
     if (pool->idle > 0) {
         /* if there is an idle worker in the pool - wake it up */
         pthread_cond_signal(&pool->work);
-    } else if (pool->num_threads < pool->max_threads &&
-            create_worker(pool) == 0) {
+    } else if (pool->num_threads < pool->max_threads && create_worker(pool) == 0) {
         /* new worker scheduled */
         pool->num_threads++;
     }
@@ -443,7 +440,8 @@ static void worker_pool_shutdown(struct am_threadpool **threadpool) {
     struct am_threadpool_work *work;
     struct am_threadpool *pool;
 
-    if (threadpool == NULL || *threadpool == NULL) return;
+    if (threadpool == NULL || *threadpool == NULL)
+        return;
     pool = *threadpool;
 
     pthread_mutex_lock(&pool->lock);
@@ -512,21 +510,21 @@ void am_worker_pool_shutdown_main() {
     pthread_once_t once = PTHREAD_ONCE_INIT;
     worker_pool_shutdown(&worker_pool_main);
     /* reset main process pool init flag */
-    memcpy(&worker_pool_main_initialized, &once, sizeof (worker_pool_main_initialized));
+    memcpy(&worker_pool_main_initialized, &once, sizeof(worker_pool_main_initialized));
 #endif
 }
 
 am_event_t *create_event() {
-    am_event_t *e = malloc(sizeof (am_event_t));
+    am_event_t *e = malloc(sizeof(am_event_t));
     if (e != NULL) {
 #ifdef _WIN32
         e->event = CreateEventA(NULL, TRUE, FALSE, NULL);
 #else
 #ifdef __APPLE__
-        e->sem = malloc(sizeof (semaphore_t));
+        e->sem = malloc(sizeof(semaphore_t));
 #else
-        e->sem = malloc(sizeof (sem_t));
-#endif   
+        e->sem = malloc(sizeof(sem_t));
+#endif
         if (e->sem == NULL) {
             free(e);
             return NULL;
@@ -537,7 +535,7 @@ am_event_t *create_event() {
 #else
         e->status = sem_init(e->sem, 0, 0);
         if (e->status == -1) {
-#endif   
+#endif
             AM_FREE(e->sem, e);
             return NULL;
         }
@@ -548,14 +546,14 @@ am_event_t *create_event() {
 }
 
 am_event_t *create_named_event(const char *name, void *sem) {
-    am_event_t *e = malloc(sizeof (am_event_t));
+    am_event_t *e = malloc(sizeof(am_event_t));
     if (e != NULL) {
 #ifdef _WIN32
         SECURITY_DESCRIPTOR sec_descr;
         SECURITY_ATTRIBUTES sec_attr, *sec = NULL;
         if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
-                SetSecurityDescriptorDacl(&sec_descr, TRUE, (PACL) NULL, FALSE)) {
-            sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
+            SetSecurityDescriptorDacl(&sec_descr, TRUE, (PACL)NULL, FALSE)) {
+            sec_attr.nLength = sizeof(SECURITY_ATTRIBUTES);
             sec_attr.lpSecurityDescriptor = &sec_descr;
             sec_attr.bInheritHandle = TRUE;
             sec = &sec_attr;
@@ -570,9 +568,9 @@ am_event_t *create_named_event(const char *name, void *sem) {
         }
 #else
 #ifdef __APPLE__
-        e->sem = (semaphore_t *) sem;
+        e->sem = (semaphore_t *)sem;
 #else
-        e->sem = (sem_t *) sem;
+        e->sem = (sem_t *)sem;
 #endif
         if (e->sem == NULL) {
             free(e);
@@ -612,16 +610,20 @@ void set_event(am_event_t *e) {
 
 static inline int sem_wait_nointr(sem_t *sem) {
     while (sem_wait(sem)) {
-        if (errno == EINTR) errno = 0;
-        else return -1;
+        if (errno == EINTR)
+            errno = 0;
+        else
+            return -1;
     }
     return 0;
 }
 
 static inline int sem_timedwait_nointr(sem_t *sem, const struct timespec *abs_timeout) {
     while (sem_timedwait(sem, abs_timeout)) {
-        if (errno == EINTR) errno = 0;
-        else return -1;
+        if (errno == EINTR)
+            errno = 0;
+        else
+            return -1;
     }
     return 0;
 }
@@ -643,21 +645,22 @@ int wait_for_event(am_event_t *e, int timeout) {
             e->status = semaphore_wait(*e->sem);
 #else
             e->status = sem_wait_nointr(e->sem);
-#endif  
+#endif
         } else {
 
-#define timespecadd(vvp, uvp) do { \
-        (vvp)->tv_sec += (uvp)->tv_sec; \
-        (vvp)->tv_nsec += (uvp)->tv_nsec; \
-        if ((vvp)->tv_nsec >= 1000000000) { \
-            (vvp)->tv_sec++; \
-            (vvp)->tv_nsec -= 1000000000; \
-        } \
+#define timespecadd(vvp, uvp)                                                                                          \
+    do {                                                                                                               \
+        (vvp)->tv_sec += (uvp)->tv_sec;                                                                                \
+        (vvp)->tv_nsec += (uvp)->tv_nsec;                                                                              \
+        if ((vvp)->tv_nsec >= 1000000000) {                                                                            \
+            (vvp)->tv_sec++;                                                                                           \
+            (vvp)->tv_nsec -= 1000000000;                                                                              \
+        }                                                                                                              \
     } while (0)
 
 #ifdef __APPLE__
             const unsigned sec = timeout / 1000;
-            const int nsec = ((int) timeout - (sec * 1000)) * 1000000;
+            const int nsec = ((int)timeout - (sec * 1000)) * 1000000;
             const mach_timespec_t t = {sec, nsec};
             e->status = semaphore_timedwait(*e->sem, t);
             if (e->status == KERN_OPERATION_TIMED_OUT) {
@@ -690,7 +693,7 @@ void close_event(am_event_t **e) {
         event->status = semaphore_destroy(mach_task_self(), *event->sem);
 #else
         event->status = sem_destroy(event->sem);
-#endif   
+#endif
         if (event->allocated)
             free(event->sem);
 #endif
@@ -702,7 +705,7 @@ void close_event(am_event_t **e) {
 #ifdef _WIN32
 
 static void CALLBACK timer_callback(void *args, BOOLEAN tw_fired) {
-    struct am_callback_args *cba = (struct am_callback_args *) args;
+    struct am_callback_args *cba = (struct am_callback_args *)args;
     if (cba != NULL && cba->callback != NULL) {
         if (InterlockedExchangeAdd(cba->stop, 0) == 1)
             return;
@@ -713,10 +716,10 @@ static void CALLBACK timer_callback(void *args, BOOLEAN tw_fired) {
     }
 }
 
-#elif defined (LINUX) || defined(AIX)
+#elif defined(LINUX) || defined(AIX)
 
 static void timer_callback(union sigval si) {
-    struct am_callback_args *cba = (struct am_callback_args *) si.sival_ptr;
+    struct am_callback_args *cba = (struct am_callback_args *)si.sival_ptr;
     if (cba != NULL && cba->callback != NULL) {
         if (__sync_fetch_and_add(cba->stop, 0) == 1)
             return;
@@ -730,13 +733,13 @@ static void timer_callback(union sigval si) {
 #endif
 
 am_timer_event_t *am_create_timer_event(int type, unsigned int interval, void *args, void (*callback)(void *)) {
-#if defined (__sun)
+#if defined(__sun)
     port_notify_t pnotif;
     struct sigevent se;
-#elif defined (LINUX) || defined(AIX)
+#elif defined(LINUX) || defined(AIX)
     struct sigevent se;
 #endif
-    am_timer_event_t *e = calloc(1, sizeof (am_timer_event_t));
+    am_timer_event_t *e = calloc(1, sizeof(am_timer_event_t));
     if (e != NULL) {
         if (interval == 0) {
             e->error = AM_EINVAL;
@@ -747,15 +750,15 @@ am_timer_event_t *am_create_timer_event(int type, unsigned int interval, void *a
         e->init_status = AM_ENOTSTARTED;
         e->type = type;
         e->interval = interval;
-        e->args = malloc(sizeof (struct am_callback_args));
+        e->args = malloc(sizeof(struct am_callback_args));
         if (e->args == NULL) {
             e->error = AM_ENOMEM;
             return e;
         }
-        ((struct am_callback_args *) e->args)->running = &e->running;
-        ((struct am_callback_args *) e->args)->stop = &e->stop;
-        ((struct am_callback_args *) e->args)->args = args;
-        ((struct am_callback_args *) e->args)->callback = callback;
+        ((struct am_callback_args *)e->args)->running = &e->running;
+        ((struct am_callback_args *)e->args)->stop = &e->stop;
+        ((struct am_callback_args *)e->args)->args = args;
+        ((struct am_callback_args *)e->args)->callback = callback;
 
         e->exit_ev = create_event();
         if (e->exit_ev == NULL) {
@@ -788,9 +791,8 @@ am_timer_event_t *am_create_timer_event(int type, unsigned int interval, void *a
             e->error = GetLastError();
             return e;
         }
-        if (CreateTimerQueueTimer(&e->tick, e->tick_q,
-                (WAITORTIMERCALLBACK) timer_callback, e->args, interval * 1000,
-                type == AM_TIMER_EVENT_ONCE ? 0 : interval * 1000, WT_EXECUTELONGFUNCTION) == 0) {
+        if (CreateTimerQueueTimer(&e->tick, e->tick_q, (WAITORTIMERCALLBACK)timer_callback, e->args, interval * 1000,
+                                  type == AM_TIMER_EVENT_ONCE ? 0 : interval * 1000, WT_EXECUTELONGFUNCTION) == 0) {
             e->error = GetLastError();
             return e;
         }
@@ -809,7 +811,7 @@ am_timer_event_t *am_create_timer_event(int type, unsigned int interval, void *a
 }
 
 static void *timer_event_loop(void *args) {
-    am_timer_event_t *e = (am_timer_event_t *) args;
+    am_timer_event_t *e = (am_timer_event_t *)args;
 
 #if defined(__sun)
 
@@ -836,7 +838,7 @@ static void *timer_event_loop(void *args) {
         if (ev.portev_source != PORT_SOURCE_TIMER) {
             break;
         }
-        cba = (struct am_callback_args *) ev.portev_user;
+        cba = (struct am_callback_args *)ev.portev_user;
         if (cba == NULL || cba->callback == NULL) {
             break;
         }
@@ -853,7 +855,7 @@ static void *timer_event_loop(void *args) {
     int n;
     u_short flags = EV_ADD | EV_ENABLE;
     struct kevent ch, ev;
-    struct am_callback_args *cba = (struct am_callback_args *) e->args;
+    struct am_callback_args *cba = (struct am_callback_args *)e->args;
     if (cba == NULL || cba->callback == NULL) {
         return NULL;
     }
@@ -904,9 +906,10 @@ static void *timer_event_loop(void *args) {
 }
 
 void am_start_timer_event(am_timer_event_t *e) {
-    if (e == NULL || e->error != 0) return;
+    if (e == NULL || e->error != 0)
+        return;
 #ifdef _WIN32
-    if ((e->tick_thr = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) timer_event_loop, e, 0, NULL)) != NULL) {
+    if ((e->tick_thr = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)timer_event_loop, e, 0, NULL)) != NULL) {
         e->init_status = AM_SUCCESS;
     }
 #else
@@ -918,7 +921,7 @@ void am_start_timer_event(am_timer_event_t *e) {
 
 static void wait_for_timer_worker(am_timer_event_t *e) {
     int tries = 1000;
-    
+
     /* Stop any upcoming timer callback method from executing */
 #ifdef _WIN32
     InterlockedExchange(&e->stop, 1);
@@ -927,18 +930,18 @@ static void wait_for_timer_worker(am_timer_event_t *e) {
 #else
     __sync_fetch_and_add(&e->stop, 1);
 #endif
-    
+
     /* Wait till any outstanding callback is finished */
     do {
         if (
-#ifdef _WIN32        
-                InterlockedExchangeAdd
+#ifdef _WIN32
+            InterlockedExchangeAdd
 #elif defined(__sun)
-                atomic_add_32_nv
+            atomic_add_32_nv
 #else
-                __sync_fetch_and_add
+            __sync_fetch_and_add
 #endif
-                (&e->running, 0) == 0)
+            (&e->running, 0) == 0)
             break;
 #ifdef _WIN32
         Sleep(100); /* 100 msec */
@@ -949,7 +952,8 @@ static void wait_for_timer_worker(am_timer_event_t *e) {
 }
 
 void am_close_timer_event(am_timer_event_t *e) {
-    if (e == NULL) return;
+    if (e == NULL)
+        return;
 
     set_event(e->exit_ev);
     wait_for_timer_worker(e);

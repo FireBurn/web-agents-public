@@ -19,14 +19,14 @@
 #define WIN32_LEAN_AND_MEAN
 #define COBJMACROS
 
-#include "platform.h"
 #include "am.h"
+#include "platform.h"
 #include "utility.h"
-#include <objbase.h>
-#include <oleauto.h>
-#include <ahadmin.h>
 #include <accctrl.h>
 #include <aclapi.h>
+#include <ahadmin.h>
+#include <objbase.h>
+#include <oleauto.h>
 
 #define IIS_SCHEMA_CONF_FILE "\\inetsrv\\config\\schema\\mod_iis_openam_schema.xml"
 #define AM_IIS_APPHOST L"MACHINE/WEBROOT/APPHOST"
@@ -44,11 +44,11 @@
 #define AM_IIS_MODULE_NAME L"OpenAmModule"
 #define AM_IIS_MODULE_NAME64 AM_IIS_MODULE_NAME L"64"
 
-static BOOL add_to_modules(IAppHostWritableAdminManager* manager, BSTR config_path, const char* siteid);
+static BOOL add_to_modules(IAppHostWritableAdminManager *manager, BSTR config_path, const char *siteid);
 static char *get_site_application_pool(const char *site_id);
-static char *get_property_value_byname(IAppHostElement* ahe, VARIANT* value, BSTR name, VARTYPE type);
+static char *get_property_value_byname(IAppHostElement *ahe, VARIANT *value, BSTR name, VARTYPE type);
 
-typedef void (WINAPI * GET_SYS_INFO)(LPSYSTEM_INFO);
+typedef void(WINAPI *GET_SYS_INFO)(LPSYSTEM_INFO);
 
 static DWORD hr_to_winerror(HRESULT hr) {
     if ((hr & 0xFFFF0000) == MAKE_HRESULT(SEVERITY_ERROR, FACILITY_WIN32, 0)) {
@@ -60,7 +60,7 @@ static DWORD hr_to_winerror(HRESULT hr) {
 static void show_windows_error(DWORD err) {
     LPVOID e = NULL;
     if (FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-            NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR) & e, 0, NULL) != 0) {
+                       NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR)&e, 0, NULL) != 0) {
         char *p = strchr(e, '\r');
         if (p != NULL)
             *p = '\0';
@@ -68,13 +68,14 @@ static void show_windows_error(DWORD err) {
     } else {
         fprintf(stderr, "[Could not find a description for error %#x]\n", err);
     }
-    if (e) LocalFree(e);
+    if (e)
+        LocalFree(e);
 }
 
 static BOOL is_win64() {
     SYSTEM_INFO info;
-    ZeroMemory(&info, sizeof (SYSTEM_INFO));
-    GET_SYS_INFO native = (GET_SYS_INFO) GetProcAddress(GetModuleHandle("kernel32.dll"), "GetNativeSystemInfo");
+    ZeroMemory(&info, sizeof(SYSTEM_INFO));
+    GET_SYS_INFO native = (GET_SYS_INFO)GetProcAddress(GetModuleHandle("kernel32.dll"), "GetNativeSystemInfo");
     if (native != NULL) {
         native(&info);
     } else {
@@ -90,15 +91,18 @@ static char *utf8_encode(const wchar_t *wstr, int *iolen) {
     char *tmp;
     int out_len, len;
 
-    if (iolen == NULL || *iolen <= 0) return NULL;
+    if (iolen == NULL || *iolen <= 0)
+        return NULL;
     len = *iolen;
 
     out_len = WideCharToMultiByte(CP_UTF8, 0, wstr, len, NULL, 0, NULL, NULL);
     *iolen = 0;
-    if (out_len <= 0) return NULL;
+    if (out_len <= 0)
+        return NULL;
 
-    tmp = (char *) malloc(out_len + 1);
-    if (tmp == NULL) return NULL;
+    tmp = (char *)malloc(out_len + 1);
+    if (tmp == NULL)
+        return NULL;
 
     WideCharToMultiByte(CP_UTF8, 0, wstr, len, tmp, out_len, NULL, NULL);
     tmp[out_len] = 0;
@@ -109,10 +113,12 @@ static char *utf8_encode(const wchar_t *wstr, int *iolen) {
 static wchar_t *utf8_decode(const char *str) {
     wchar_t *tmp;
     int out_len = MultiByteToWideChar(CP_UTF8, 0, str, -1, NULL, 0);
-    if (out_len <= 0) return NULL;
+    if (out_len <= 0)
+        return NULL;
 
-    tmp = (wchar_t *) malloc(sizeof (wchar_t) * out_len);
-    if (tmp == NULL) return NULL;
+    tmp = (wchar_t *)malloc(sizeof(wchar_t) * out_len);
+    if (tmp == NULL)
+        return NULL;
 
     MultiByteToWideChar(CP_UTF8, 0, str, -1, tmp, out_len);
     tmp[out_len - 1] = 0;
@@ -123,7 +129,7 @@ static wchar_t *utf8_decode(const char *str) {
  * Test that site runs in 32 bit application pool.
  *
  * @param site_id: site id
- * 
+ *
  * @return TRUE when site/application pool runs in 32 bit mode else FALSE
  */
 static BOOL is_site_32bit(const char *site_id) {
@@ -146,8 +152,8 @@ static BOOL is_site_32bit(const char *site_id) {
 
     do {
         /* create AdminManager instance */
-        hr = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
-                CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID*) & admin_manager);
+        hr = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL, CLSCTX_INPROC_SERVER,
+                              &IID_IAppHostWritableAdminManager, (LPVOID *)&admin_manager);
         if (FAILED(hr)) {
             break;
         }
@@ -181,7 +187,8 @@ static BOOL is_site_32bit(const char *site_id) {
                 found = strcmp(pool_name + 12, NOTNULL(val)) == 0;
                 am_free(val);
                 val = NULL;
-                if (!found) continue;
+                if (!found)
+                    continue;
 
                 val = get_property_value_byname(ce, &value, AM_IIS_E32BIT, VT_BOOL);
                 found = strcmp(NOTNULL(val), "true") == 0;
@@ -193,7 +200,8 @@ static BOOL is_site_32bit(const char *site_id) {
             }
             VariantClear(&index);
             VariantClear(&value);
-            if (found) break;
+            if (found)
+                break;
         }
 
     } while (FALSE);
@@ -219,7 +227,7 @@ static BOOL is_site_32bit(const char *site_id) {
 /**
  * Get AppHostElement property value.
  */
-static char *get_property_value_byname(IAppHostElement* ahe, VARIANT* value, BSTR name, VARTYPE type) {
+static char *get_property_value_byname(IAppHostElement *ahe, VARIANT *value, BSTR name, VARTYPE type) {
     IAppHostProperty *property = NULL;
     HRESULT hresult;
     char *ret = NULL;
@@ -238,8 +246,8 @@ static char *get_property_value_byname(IAppHostElement* ahe, VARIANT* value, BST
         return NULL;
     }
     if (value->vt != type) {
-        fwprintf(stderr, L"get_property_value_byname(%s) failed. Property type %d differs from type expected %d.",
-                name, value->vt, type);
+        fwprintf(stderr, L"get_property_value_byname(%s) failed. Property type %d differs from type expected %d.", name,
+                 value->vt, type);
         if (property != NULL) {
             IAppHostProperty_Release(property);
         }
@@ -274,8 +282,8 @@ void list_iis_sites(int argc, char **argv) {
     fprintf(stdout, "\nIIS Site configuration:\n");
 
     do {
-        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
-                CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID*) & admin_manager);
+        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL, CLSCTX_INPROC_SERVER,
+                                   &IID_IAppHostWritableAdminManager, (LPVOID *)&admin_manager);
         if (FAILED(hresult)) {
             break;
         }
@@ -342,8 +350,8 @@ void list_iis_sites(int argc, char **argv) {
 /**
  * Set AppHostElement property value.
  */
-static BOOL set_property(IAppHostElement* element, BSTR name, BSTR value) {
-    IAppHostProperty* property = NULL;
+static BOOL set_property(IAppHostElement *element, BSTR name, BSTR value) {
+    IAppHostProperty *property = NULL;
     HRESULT hresult;
     VARIANT value_variant;
 
@@ -380,8 +388,8 @@ static BOOL set_property(IAppHostElement* element, BSTR name, BSTR value) {
 /**
  * Get AppHostElement property value.
  */
-static BOOL get_property(IAppHostElement* element, BSTR name, VARIANT* value) {
-    IAppHostProperty* property = NULL;
+static BOOL get_property(IAppHostElement *element, BSTR name, VARIANT *value) {
+    IAppHostProperty *property = NULL;
     HRESULT hresult;
     do {
         hresult = IAppHostElement_GetPropertyByName(element, name, &property);
@@ -405,9 +413,9 @@ static BOOL get_property(IAppHostElement* element, BSTR name, VARIANT* value) {
 /**
  * Get indexed AppHostElementCollection property value.
  */
-static BOOL get_from_collection_idx(IAppHostElementCollection* collection,
-        BSTR property_key, BSTR property_value, short* index) {
-    IAppHostElement* element = NULL;
+static BOOL get_from_collection_idx(IAppHostElementCollection *collection, BSTR property_key, BSTR property_value,
+                                    short *index) {
+    IAppHostElement *element = NULL;
     USHORT i;
     DWORD count;
     HRESULT hresult;
@@ -462,8 +470,8 @@ static BOOL get_from_collection_idx(IAppHostElementCollection* collection,
 /**
  * Get AppHostElement from AppHostElementCollection (by property key/value).
  */
-static BOOL get_from_collection(IAppHostElementCollection* collection,
-        BSTR property_key, BSTR property_value, IAppHostElement** element) {
+static BOOL get_from_collection(IAppHostElementCollection *collection, BSTR property_key, BSTR property_value,
+                                IAppHostElement **element) {
     short idx;
     HRESULT hresult;
     if (!get_from_collection_idx(collection, property_key, property_value, &idx)) {
@@ -491,7 +499,7 @@ static BOOL get_from_collection(IAppHostElementCollection* collection,
 /**
  * Update AdminManager configuration section with module name.
  */
-static BOOL update_config_sections(IAppHostWritableAdminManager* manager, BSTR mod_name) {
+static BOOL update_config_sections(IAppHostWritableAdminManager *manager, BSTR mod_name) {
     IAppHostConfigManager *cmgr = NULL;
     IAppHostConfigFile *cfile = NULL;
     IAppHostSectionGroup *root = NULL;
@@ -591,10 +599,10 @@ static BOOL update_config_sections(IAppHostWritableAdminManager* manager, BSTR m
 /**
  * Update AdminManager global configuration section with module image location.
  */
-static BOOL add_to_global_modules(IAppHostWritableAdminManager* manager, BSTR image, BOOL btype) {
-    IAppHostElement* parent = NULL;
-    IAppHostElementCollection* collection = NULL;
-    IAppHostElement* element = NULL;
+static BOOL add_to_global_modules(IAppHostWritableAdminManager *manager, BSTR image, BOOL btype) {
+    IAppHostElement *parent = NULL;
+    IAppHostElementCollection *collection = NULL;
+    IAppHostElement *element = NULL;
     HRESULT hresult;
     BOOL result = FALSE;
 
@@ -615,7 +623,8 @@ static BOOL add_to_global_modules(IAppHostWritableAdminManager* manager, BSTR im
          * <add name="ModuleName", image="module.dll" />
          **/
 
-        if (!get_from_collection(collection, AM_IIS_ENAME, btype ? AM_IIS_MODULE_NAME64 : AM_IIS_MODULE_NAME, &element)) {
+        if (!get_from_collection(collection, AM_IIS_ENAME, btype ? AM_IIS_MODULE_NAME64 : AM_IIS_MODULE_NAME,
+                                 &element)) {
             fprintf(stderr, "Failed to try detect old modules.\n");
             break;
         }
@@ -671,8 +680,8 @@ static BOOL add_to_global_modules(IAppHostWritableAdminManager* manager, BSTR im
 /**
  * Update AdminManager site configuration section with module configuration.
  */
-static BOOL update_module_site_config(IAppHostWritableAdminManager* manager,
-        BSTR config_path, BSTR mod_config_path, BOOL enabled) {
+static BOOL update_module_site_config(IAppHostWritableAdminManager *manager, BSTR config_path, BSTR mod_config_path,
+                                      BOOL enabled) {
     IAppHostElement *element = NULL;
     IAppHostPropertyCollection *properties = NULL;
     IAppHostProperty *enabled_prop = NULL;
@@ -700,8 +709,7 @@ static BOOL update_module_site_config(IAppHostWritableAdminManager* manager,
             hresult = E_OUTOFMEMORY;
             break;
         }
-        hresult = IAppHostWritableAdminManager_GetAdminSection(manager,
-                AM_IIS_MODULE_CONF, config_path, &element);
+        hresult = IAppHostWritableAdminManager_GetAdminSection(manager, AM_IIS_MODULE_CONF, config_path, &element);
         if (FAILED(hresult) || &element == NULL) {
             fprintf(stderr, "Unable to get module configuration element.\n");
             break;
@@ -763,19 +771,17 @@ static BOOL update_module_site_config(IAppHostWritableAdminManager* manager,
 /**
  * Remove module from AdminManager configuration section.
  */
-static BOOL remove_from_modules(IAppHostWritableAdminManager* manager, BSTR config_path,
-        BSTR section, BOOL test_only) {
-    IAppHostElement* parent = NULL;
-    IAppHostElementCollection* collection = NULL;
-    IAppHostElement* element = NULL;
-    IAppHostProperty* name_property = NULL;
+static BOOL remove_from_modules(IAppHostWritableAdminManager *manager, BSTR config_path, BSTR section, BOOL test_only) {
+    IAppHostElement *parent = NULL;
+    IAppHostElementCollection *collection = NULL;
+    IAppHostElement *element = NULL;
+    IAppHostProperty *name_property = NULL;
     HRESULT hresult;
     BOOL result = FALSE;
     short sitemap_index;
     DWORD rv = 0;
     do {
-        hresult = IAppHostWritableAdminManager_GetAdminSection(manager, section,
-                config_path, &parent);
+        hresult = IAppHostWritableAdminManager_GetAdminSection(manager, section, config_path, &parent);
         if (FAILED(hresult) || &parent == NULL) {
             fprintf(stderr, "Unable to get section to remove module.\n");
             break;
@@ -851,7 +857,8 @@ static BSTR create_module_path(const char *prefix, const char *suffix) {
     BSTR ret;
     char *temp = NULL;
     am_asprintf(&temp, "%s%s", prefix, suffix);
-    if (temp == NULL) return NULL;
+    if (temp == NULL)
+        return NULL;
     ret = utf8_decode(temp);
     free(temp);
     return ret;
@@ -880,8 +887,8 @@ int install_module(const char *modpath, const char *schema) {
     strcat(schema_sys_file, IIS_SCHEMA_CONF_FILE);
 
     do {
-        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
-                CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID*) & admin_manager);
+        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL, CLSCTX_INPROC_SERVER,
+                                   &IID_IAppHostWritableAdminManager, (LPVOID *)&admin_manager);
         if (FAILED(hresult)) {
             fprintf(stderr, "Failed to create AppHostWritableAdminManager.\n");
             break;
@@ -909,7 +916,7 @@ int install_module(const char *modpath, const char *schema) {
         }
 
         rv = add_to_global_modules(admin_manager, module_wpath, FALSE) &&
-                update_config_sections(admin_manager, AM_IIS_MODULE_NAME);
+             update_config_sections(admin_manager, AM_IIS_MODULE_NAME);
         free(module_wpath);
         if (!rv) {
             fprintf(stderr, "Failed to add 32bit entry to globalModules.\n");
@@ -923,7 +930,7 @@ int install_module(const char *modpath, const char *schema) {
         }
 
         rv = add_to_global_modules(admin_manager, module_wpath, TRUE) &&
-                update_config_sections(admin_manager, AM_IIS_MODULE_NAME64);
+             update_config_sections(admin_manager, AM_IIS_MODULE_NAME64);
         free(module_wpath);
         if (!rv) {
             fprintf(stderr, "Failed to add 64bit entry to globalModules.\n");
@@ -956,8 +963,8 @@ int remove_module() {
     HRESULT hresult;
 
     do {
-        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
-                CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID*) & admin_manager);
+        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL, CLSCTX_INPROC_SERVER,
+                                   &IID_IAppHostWritableAdminManager, (LPVOID *)&admin_manager);
         if (FAILED(hresult)) {
             fprintf(stderr, "Failed to create AppHostWritableAdminManager.\n");
             break;
@@ -1005,8 +1012,8 @@ static char *get_site_name(const char *sid) {
     char *name, *id, *ret = NULL;
 
     do {
-        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
-                CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID*) & admin_manager);
+        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL, CLSCTX_INPROC_SERVER,
+                                   &IID_IAppHostWritableAdminManager, (LPVOID *)&admin_manager);
         if (FAILED(hresult)) {
             break;
         }
@@ -1040,7 +1047,7 @@ static char *get_site_name(const char *sid) {
                         for (p = name; *p != '\0'; ++p) {
                             *p = toupper(*p);
                         }
-                        snprintf(cpath, sizeof (cpath), "MACHINE/WEBROOT/APPHOST/%s", name);
+                        snprintf(cpath, sizeof(cpath), "MACHINE/WEBROOT/APPHOST/%s", name);
                         ret = strdup(cpath);
                         i = num;
                     }
@@ -1106,8 +1113,8 @@ int enable_module(const char *siteid, const char *modconf) {
             break;
         }
 
-        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
-                CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID*) & admin_manager);
+        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL, CLSCTX_INPROC_SERVER,
+                                   &IID_IAppHostWritableAdminManager, (LPVOID *)&admin_manager);
         if (FAILED(hresult)) {
             fprintf(stderr, "Failed to create AppHostWritableAdminManager.\n");
             break;
@@ -1180,8 +1187,8 @@ int disable_module(const char *siteid, const char *modconf) {
             break;
         }
 
-        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
-                CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID*) & admin_manager);
+        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL, CLSCTX_INPROC_SERVER,
+                                   &IID_IAppHostWritableAdminManager, (LPVOID *)&admin_manager);
         if (FAILED(hresult)) {
             fprintf(stderr, "Failed to create AppHostWritableAdminManager.\n");
             break;
@@ -1225,10 +1232,10 @@ int disable_module(const char *siteid, const char *modconf) {
 /**
  * Add module to AdminManager module list.
  */
-static BOOL add_to_modules(IAppHostWritableAdminManager* manager, BSTR config_path, const char* siteid) {
-    IAppHostElement* parent = NULL;
-    IAppHostElementCollection* collection = NULL;
-    IAppHostElement* element = NULL;
+static BOOL add_to_modules(IAppHostWritableAdminManager *manager, BSTR config_path, const char *siteid) {
+    IAppHostElement *parent = NULL;
+    IAppHostElementCollection *collection = NULL;
+    IAppHostElement *element = NULL;
     HRESULT hresult;
     BOOL result = FALSE;
 
@@ -1284,35 +1291,33 @@ static BOOL add_to_modules(IAppHostWritableAdminManager* manager, BSTR config_pa
 
         hresult = IAppHostElementCollection_AddElement(collection, element, -1);
         switch (hresult) {
-            case S_OK:
-                result = TRUE;
-                break;
-            case ERROR_INVALID_INDEX:
-                fprintf(stderr, "AddElement failed with ERROR_INVALID_INDEX");
-                break;
-            case ERROR_FILE_NOT_FOUND:
-            {
-                char* c_str_config_path = get_site_name(siteid);
-                if (c_str_config_path == NULL) {
-                    fprintf(stderr, "AddElement failed, unknown site id: %s.\n", siteid);
-                    break;
-                }
-                fprintf(stderr, "AddElement failed, file %s: ERROR_FILE_NOT_FOUND", c_str_config_path);
-                free(c_str_config_path);
+        case S_OK:
+            result = TRUE;
+            break;
+        case ERROR_INVALID_INDEX:
+            fprintf(stderr, "AddElement failed with ERROR_INVALID_INDEX");
+            break;
+        case ERROR_FILE_NOT_FOUND: {
+            char *c_str_config_path = get_site_name(siteid);
+            if (c_str_config_path == NULL) {
+                fprintf(stderr, "AddElement failed, unknown site id: %s.\n", siteid);
                 break;
             }
-            default:
-            {
-                char* c_str_config_path = get_site_name(siteid);
-                if (c_str_config_path == NULL) {
-                    fprintf(stderr, "AddElement failed, unknown site id: %s.\n", siteid);
-                    break;
-                }
-                fprintf(stderr, "AddElement failed, file %s\n", c_str_config_path);
-                show_windows_error(hr_to_winerror(hresult));
-                free(c_str_config_path);
+            fprintf(stderr, "AddElement failed, file %s: ERROR_FILE_NOT_FOUND", c_str_config_path);
+            free(c_str_config_path);
+            break;
+        }
+        default: {
+            char *c_str_config_path = get_site_name(siteid);
+            if (c_str_config_path == NULL) {
+                fprintf(stderr, "AddElement failed, unknown site id: %s.\n", siteid);
                 break;
             }
+            fprintf(stderr, "AddElement failed, file %s\n", c_str_config_path);
+            show_windows_error(hr_to_winerror(hresult));
+            free(c_str_config_path);
+            break;
+        }
         }
     } while (FALSE);
 
@@ -1360,8 +1365,8 @@ int test_module(const char *siteid) {
             break;
         }
 
-        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
-                CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID*) & admin_manager);
+        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL, CLSCTX_INPROC_SERVER,
+                                   &IID_IAppHostWritableAdminManager, (LPVOID *)&admin_manager);
         if (FAILED(hresult)) {
             fprintf(stderr, "Failed to create AppHostWritableAdminManager.\n");
             break;
@@ -1414,16 +1419,15 @@ static char *get_site_application_pool(const char *site_id) {
     HRESULT hresult;
     DWORD i, j, site_count = 0;
     static char app_pool[AM_URI_SIZE];
-    memset(&app_pool[0], 0, sizeof (app_pool));
+    memset(&app_pool[0], 0, sizeof(app_pool));
 
     do {
-        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL,
-                CLSCTX_INPROC_SERVER, &IID_IAppHostWritableAdminManager, (LPVOID *) & admin_manager);
+        hresult = CoCreateInstance(&CLSID_AppHostWritableAdminManager, NULL, CLSCTX_INPROC_SERVER,
+                                   &IID_IAppHostWritableAdminManager, (LPVOID *)&admin_manager);
         if (FAILED(hresult)) {
             break;
         }
-        hresult = IAppHostWritableAdminManager_GetAdminSection(admin_manager,
-                AM_IIS_SITES, AM_IIS_APPHOST, &root);
+        hresult = IAppHostWritableAdminManager_GetAdminSection(admin_manager, AM_IIS_SITES, AM_IIS_APPHOST, &root);
         if (FAILED(hresult) || &root == NULL) {
             break;
         }
@@ -1450,14 +1454,15 @@ static char *get_site_application_pool(const char *site_id) {
                     DWORD app_count = 0;
                     hresult = IAppHostElement_get_Collection(site, &site_element_collection);
                     if (SUCCEEDED(hresult) && site_element_collection != NULL &&
-                            SUCCEEDED(IAppHostElementCollection_get_Count(site_element_collection, &app_count))) {
+                        SUCCEEDED(IAppHostElementCollection_get_Count(site_element_collection, &app_count))) {
                         for (j = 0; j < app_count; j++) {
                             IAppHostElement *app_element = NULL;
                             VARIANT app_index;
                             VariantInit(&app_index);
                             app_index.vt = VT_UINT;
                             app_index.uintVal = j;
-                            hresult = IAppHostElementCollection_get_Item(site_element_collection, app_index, &app_element);
+                            hresult =
+                                IAppHostElementCollection_get_Item(site_element_collection, app_index, &app_element);
                             if (SUCCEEDED(hresult)) {
                                 VARIANT path_value, app_pool_value;
                                 BSTR app_element_name = NULL;
@@ -1465,12 +1470,14 @@ static char *get_site_application_pool(const char *site_id) {
                                 VariantInit(&app_pool_value);
                                 hresult = IAppHostElement_get_Name(app_element, &app_element_name);
                                 if (SUCCEEDED(hresult) && app_element_name != NULL &&
-                                        wcscmp(app_element_name, L"application") == 0) {
-                                    char *path_str = get_property_value_byname(app_element, &path_value, AM_IIS_EPATH, VT_BSTR);
+                                    wcscmp(app_element_name, L"application") == 0) {
+                                    char *path_str =
+                                        get_property_value_byname(app_element, &path_value, AM_IIS_EPATH, VT_BSTR);
                                     if (path_str != NULL && strcmp(path_str, "/") == 0) {
-                                        char *pool_str = get_property_value_byname(app_element, &app_pool_value, AM_IIS_EPOOL, VT_BSTR);
+                                        char *pool_str = get_property_value_byname(app_element, &app_pool_value,
+                                                                                   AM_IIS_EPOOL, VT_BSTR);
                                         if (pool_str != NULL) {
-                                            snprintf(app_pool, sizeof (app_pool), "IIS APPPOOL\\%s", pool_str);
+                                            snprintf(app_pool, sizeof(app_pool), "IIS APPPOOL\\%s", pool_str);
                                             free(pool_str);
                                         }
                                     }
@@ -1536,8 +1543,8 @@ int add_directory_acl(char *site_id, char *directory, char *user) {
         return AM_ERROR;
     }
 
-    rv = GetNamedSecurityInfo(directory, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
-            NULL, NULL, &directory_acl, NULL, &directory_secd);
+    rv = GetNamedSecurityInfo(directory, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, &directory_acl, NULL,
+                              &directory_secd);
     if (rv != ERROR_SUCCESS) {
         if (directory_secd != NULL) {
             LocalFree(directory_secd);
@@ -1545,18 +1552,17 @@ int add_directory_acl(char *site_id, char *directory, char *user) {
         return AM_FILE_ERROR;
     }
 
-    ZeroMemory(&ea, sizeof (EXPLICIT_ACCESS));
+    ZeroMemory(&ea, sizeof(EXPLICIT_ACCESS));
     ea[0].grfAccessPermissions = GENERIC_ALL;
     ea[0].grfAccessMode = GRANT_ACCESS;
     ea[0].grfInheritance = CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE;
     ea[0].Trustee.TrusteeForm = TRUSTEE_IS_NAME;
     ea[0].Trustee.TrusteeType = TRUSTEE_IS_USER;
-    ea[0].Trustee.ptstrName = (LPTSTR) app_pool_name;
+    ea[0].Trustee.ptstrName = (LPTSTR)app_pool_name;
 
     rv = SetEntriesInAcl(1, ea, directory_acl, &acl);
     if (rv == ERROR_SUCCESS) {
-        rv = SetNamedSecurityInfo(directory, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
-                NULL, NULL, acl, NULL);
+        rv = SetNamedSecurityInfo(directory, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, acl, NULL);
         if (rv == ERROR_SUCCESS) {
             status = AM_SUCCESS;
         }
@@ -1570,12 +1576,11 @@ int add_directory_acl(char *site_id, char *directory, char *user) {
     return status;
 }
 
-#else 
+#else
 
 /*no-ops on this platform*/
 
 void list_iis_sites(int argc, char **argv) {
-
 }
 
 int enable_module(const char *siteid, const char *modconf) {

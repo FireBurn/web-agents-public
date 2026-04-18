@@ -14,21 +14,17 @@
  * Copyright 2014 - 2016 ForgeRock AS.
  */
 
-#include "platform.h"
 #include "am.h"
-#include "utility.h"
 #include "list.h"
 #include "net_client.h"
+#include "platform.h"
+#include "utility.h"
 
-#define MAKE_TYPE(t,s) (s << 16 | t)
-#define GET_TYPE(r)    (r & 0xFFFF)
-#define GET_SIZE(r)    (r >> 16)
+#define MAKE_TYPE(t, s) (s << 16 | t)
+#define GET_TYPE(r) (r & 0xFFFF)
+#define GET_SIZE(r) (r >> 16)
 
-enum {
-    AM_CONF_ALL = 0,
-    AM_CONF_BOOT,
-    AM_CONF_REMOTE
-};
+enum { AM_CONF_ALL = 0, AM_CONF_BOOT, AM_CONF_REMOTE };
 
 enum {
     AM_CONF_LOCAL = 1,
@@ -166,8 +162,8 @@ struct am_instance_entry {
     unsigned long instance_id;
     char token[AM_MAX_TOKEN_LENGTH];
     char name[AM_HASH_TABLE_KEY_SIZE]; /* agent id */
-    char config[AM_PATH_SIZE]; /* config file name */
-    struct offset_list data; /* agent configuration data */
+    char config[AM_PATH_SIZE];         /* config file name */
+    struct offset_list data;           /* agent configuration data */
     struct offset_list lh;
 };
 
@@ -183,10 +179,11 @@ static am_shm_t *conf = NULL;
 
 int am_configuration_init(int id) {
     int shm_status = AM_ERROR;
-    if (conf != NULL) return AM_SUCCESS;
+    if (conf != NULL)
+        return AM_SUCCESS;
 
-    conf = am_shm_create(get_global_name(AM_CONFIG_SHM_NAME, id),
-            sizeof (struct am_instance) * 2048 * AM_MAX_INSTANCES, AM_FALSE, NULL, &shm_status);
+    conf = am_shm_create(get_global_name(AM_CONFIG_SHM_NAME, id), sizeof(struct am_instance) * 2048 * AM_MAX_INSTANCES,
+                         AM_FALSE, NULL, &shm_status);
     if (conf == NULL) {
         return shm_status;
     }
@@ -196,7 +193,7 @@ int am_configuration_init(int id) {
 
     if (conf->init) {
         /* allocate the table itself */
-        struct am_instance *instance_data = (struct am_instance *) am_shm_alloc(conf, sizeof (struct am_instance));
+        struct am_instance *instance_data = (struct am_instance *)am_shm_alloc(conf, sizeof(struct am_instance));
         if (instance_data == NULL) {
             return AM_ENOMEM;
         }
@@ -217,8 +214,8 @@ int am_configuration_shutdown() {
     return AM_SUCCESS;
 }
 
-static struct am_instance * get_instance_data() {
-    return (struct am_instance *) am_shm_get_user_pointer(conf);
+static struct am_instance *get_instance_data() {
+    return (struct am_instance *)am_shm_get_user_pointer(conf);
 }
 
 static struct am_instance_entry *get_instance_entry(unsigned long instance_id) {
@@ -226,7 +223,7 @@ static struct am_instance_entry *get_instance_entry(unsigned long instance_id) {
     struct am_instance *instance_data = get_instance_data();
 
     if (instance_data != NULL) {
-        h = (struct am_instance_entry *) AM_GET_POINTER(conf->pool, instance_data->list.prev);
+        h = (struct am_instance_entry *)AM_GET_POINTER(conf->pool, instance_data->list.prev);
 
         AM_OFFSET_LIST_FOR_EACH(conf->pool, h, e, t, struct am_instance_entry) {
             if (instance_id == e->instance_id) {
@@ -242,10 +239,11 @@ static int delete_instance_entry(struct am_instance_entry *e) {
     struct am_instance_entry_data *i, *t, *h;
     struct am_instance *instance_data = get_instance_data();
 
-    if (e == NULL || instance_data == NULL) return AM_EINVAL;
+    if (e == NULL || instance_data == NULL)
+        return AM_EINVAL;
 
     /* cleanup instance entry data */
-    h = (struct am_instance_entry_data *) AM_GET_POINTER(conf->pool, e->data.prev);
+    h = (struct am_instance_entry_data *)AM_GET_POINTER(conf->pool, e->data.prev);
 
     AM_OFFSET_LIST_FOR_EACH(conf->pool, h, i, t, struct am_instance_entry_data) {
         am_shm_free(conf, i);
@@ -255,13 +253,13 @@ static int delete_instance_entry(struct am_instance_entry *e) {
     if (e->lh.prev == 0) {
         instance_data->list.prev = e->lh.next;
     } else {
-        ((struct am_instance_entry *) AM_GET_POINTER(conf->pool, e->lh.prev))->lh.next = e->lh.next;
+        ((struct am_instance_entry *)AM_GET_POINTER(conf->pool, e->lh.prev))->lh.next = e->lh.next;
     }
 
     if (e->lh.next == 0) {
         instance_data->list.next = e->lh.prev;
     } else {
-        ((struct am_instance_entry *) AM_GET_POINTER(conf->pool, e->lh.next))->lh.prev = e->lh.prev;
+        ((struct am_instance_entry *)AM_GET_POINTER(conf->pool, e->lh.next))->lh.prev = e->lh.prev;
     }
     return rv;
 }
@@ -282,7 +280,7 @@ void remove_agent_instance_byname(const char *name) {
         return;
     }
 
-    h = (struct am_instance_entry *) AM_GET_POINTER(conf->pool, instance_data->list.prev);
+    h = (struct am_instance_entry *)AM_GET_POINTER(conf->pool, instance_data->list.prev);
 
     AM_OFFSET_LIST_FOR_EACH(conf->pool, h, e, t, struct am_instance_entry) {
         if (strcasecmp(e->name, name) == 0) {
@@ -299,53 +297,57 @@ void remove_agent_instance_byname(const char *name) {
 
 #define HEADER_FROM_OFFSET(shm, offset) ((struct offset_list *)AM_GET_POINTER((shm)->pool, offset))
 
-#define SAVE_NUM_VALUE(shm, hdr_offset, t, v) \
-    do {\
-        struct am_instance_entry_data *x = am_shm_alloc(shm, sizeof (struct am_instance_entry_data));\
-        if (x == NULL) return AM_ENOMEM;\
-        x->type = t;\
-        x->num_value = v;\
-        x->size[0] = x->size[1] = 0;\
-        x->lh.next = x->lh.prev = 0;\
-        AM_OFFSET_LIST_INSERT(shm->pool, x, HEADER_FROM_OFFSET(shm, hdr_offset), struct am_instance_entry_data);\
-    } while(0)
+#define SAVE_NUM_VALUE(shm, hdr_offset, t, v)                                                                          \
+    do {                                                                                                               \
+        struct am_instance_entry_data *x = am_shm_alloc(shm, sizeof(struct am_instance_entry_data));                   \
+        if (x == NULL)                                                                                                 \
+            return AM_ENOMEM;                                                                                          \
+        x->type = t;                                                                                                   \
+        x->num_value = v;                                                                                              \
+        x->size[0] = x->size[1] = 0;                                                                                   \
+        x->lh.next = x->lh.prev = 0;                                                                                   \
+        AM_OFFSET_LIST_INSERT(shm->pool, x, HEADER_FROM_OFFSET(shm, hdr_offset), struct am_instance_entry_data);       \
+    } while (0)
 
-#define SAVE_CHAR_VALUE(shm, hdr_offset, t, v) \
-    do {\
-        size_t sz = strlen(v);\
-        struct am_instance_entry_data *x = am_shm_alloc(shm, sizeof (struct am_instance_entry_data) + sz + 1);\
-        if (x == NULL) return AM_ENOMEM;\
-        x->type = t;\
-        x->num_value = 0;\
-        x->size[0] = sz; x->size[1] = 0;\
-        memcpy(x->value, v, x->size[0]);\
-        x->value[x->size[0]] = 0;\
-        x->lh.next = x->lh.prev = 0;\
-        AM_OFFSET_LIST_INSERT(shm->pool, x, HEADER_FROM_OFFSET(shm, hdr_offset), struct am_instance_entry_data);\
-    } while(0)
+#define SAVE_CHAR_VALUE(shm, hdr_offset, t, v)                                                                         \
+    do {                                                                                                               \
+        size_t sz = strlen(v);                                                                                         \
+        struct am_instance_entry_data *x = am_shm_alloc(shm, sizeof(struct am_instance_entry_data) + sz + 1);          \
+        if (x == NULL)                                                                                                 \
+            return AM_ENOMEM;                                                                                          \
+        x->type = t;                                                                                                   \
+        x->num_value = 0;                                                                                              \
+        x->size[0] = sz;                                                                                               \
+        x->size[1] = 0;                                                                                                \
+        memcpy(x->value, v, x->size[0]);                                                                               \
+        x->value[x->size[0]] = 0;                                                                                      \
+        x->lh.next = x->lh.prev = 0;                                                                                   \
+        AM_OFFSET_LIST_INSERT(shm->pool, x, HEADER_FROM_OFFSET(shm, hdr_offset), struct am_instance_entry_data);       \
+    } while (0)
 
-#define SAVE_CHAR2_VALUE(shm, hdr_offset, t, v, k) \
-    do {\
-        size_t sz = strlen(v);\
-        size_t kz = strlen(k);\
-        struct am_instance_entry_data *x = am_shm_alloc(shm, sizeof (struct am_instance_entry_data) + sz + kz + 2);\
-        if (x == NULL) return AM_ENOMEM;\
-        x->type = t;\
-        x->num_value = 0;\
-        x->size[0] = sz; x->size[1] = kz;\
-        memcpy(x->value, v, x->size[0]);\
-        x->value[x->size[0]] = 0;\
-        memcpy(x->value + x->size[0] + 1, k, x->size[1]);\
-        x->value[x->size[0] + x->size[1] + 1] = 0;\
-        x->lh.next = x->lh.prev = 0;\
-        AM_OFFSET_LIST_INSERT(shm->pool, x, HEADER_FROM_OFFSET(shm, hdr_offset), struct am_instance_entry_data);\
-    } while(0)
+#define SAVE_CHAR2_VALUE(shm, hdr_offset, t, v, k)                                                                     \
+    do {                                                                                                               \
+        size_t sz = strlen(v);                                                                                         \
+        size_t kz = strlen(k);                                                                                         \
+        struct am_instance_entry_data *x = am_shm_alloc(shm, sizeof(struct am_instance_entry_data) + sz + kz + 2);     \
+        if (x == NULL)                                                                                                 \
+            return AM_ENOMEM;                                                                                          \
+        x->type = t;                                                                                                   \
+        x->num_value = 0;                                                                                              \
+        x->size[0] = sz;                                                                                               \
+        x->size[1] = kz;                                                                                               \
+        memcpy(x->value, v, x->size[0]);                                                                               \
+        x->value[x->size[0]] = 0;                                                                                      \
+        memcpy(x->value + x->size[0] + 1, k, x->size[1]);                                                              \
+        x->value[x->size[0] + x->size[1] + 1] = 0;                                                                     \
+        x->lh.next = x->lh.prev = 0;                                                                                   \
+        AM_OFFSET_LIST_INSERT(shm->pool, x, HEADER_FROM_OFFSET(shm, hdr_offset), struct am_instance_entry_data);       \
+    } while (0)
 
 static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
     int i;
 
     if (all == AM_CONF_ALL || all == AM_CONF_BOOT) {
-
         if (c->local > 0) {
             SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_LOCAL, 0), c->local);
         }
@@ -422,7 +424,8 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
         }
         if (c->valid_default_url_sz > 0 && c->valid_default_url != NULL) {
             for (i = 0; i < c->valid_default_url_sz; i++) {
-                SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_VALID_DEFAULT_IDX, c->valid_default_url_sz), c->valid_default_url[i]);
+                SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_VALID_DEFAULT_IDX, c->valid_default_url_sz),
+                               c->valid_default_url[i]);
             }
         }
         if (c->hostmap_sz > 0 && c->hostmap != NULL) {
@@ -439,7 +442,6 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
     }
 
     if (all == AM_CONF_ALL || all == AM_CONF_REMOTE) {
-
         if (ISVALID(c->agenturi)) {
             SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_AGENT_URI, 0), c->agenturi);
         }
@@ -485,7 +487,8 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
             for (i = 0; i < c->profile_attr_map_sz; i++) {
                 am_config_map_t *v = &c->profile_attr_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_PROF_ATTR_MAP, c->profile_attr_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_PROF_ATTR_MAP, c->profile_attr_map_sz), v->name,
+                                     v->value);
                 }
             }
         }
@@ -496,7 +499,8 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
             for (i = 0; i < c->session_attr_map_sz; i++) {
                 am_config_map_t *v = &c->session_attr_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_SESS_ATTR_MAP, c->session_attr_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_SESS_ATTR_MAP, c->session_attr_map_sz), v->name,
+                                     v->value);
                 }
             }
         }
@@ -507,7 +511,8 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
             for (i = 0; i < c->response_attr_map_sz; i++) {
                 am_config_map_t *v = &c->response_attr_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_RESP_ATTR_MAP, c->response_attr_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_RESP_ATTR_MAP, c->response_attr_map_sz), v->name,
+                                     v->value);
                 }
             }
         }
@@ -562,7 +567,8 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
             for (i = 0; i < c->cookie_reset_map_sz; i++) {
                 am_config_map_t *v = &c->cookie_reset_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_COOKIE_RESET_MAP, c->cookie_reset_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_COOKIE_RESET_MAP, c->cookie_reset_map_sz), v->name,
+                                     v->value);
                 }
             }
         }
@@ -584,7 +590,8 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
             for (i = 0; i < c->not_enforced_ext_map_sz; i++) {
                 am_config_map_t *v = &c->not_enforced_ext_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_NEF_EXT_MAP, c->not_enforced_ext_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_NEF_EXT_MAP, c->not_enforced_ext_map_sz), v->name,
+                                     v->value);
                 }
             }
         }
@@ -592,7 +599,8 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
             for (i = 0; i < c->not_enforced_ip_map_sz; i++) {
                 am_config_map_t *v = &c->not_enforced_ip_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_NEF_IP_MAP, c->not_enforced_ip_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_NEF_IP_MAP, c->not_enforced_ip_map_sz), v->name,
+                                     v->value);
                 }
             }
         }
@@ -645,7 +653,8 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
             for (i = 0; i < c->cdsso_login_map_sz; i++) {
                 am_config_map_t *v = &c->cdsso_login_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_CDSSO_LOGIN_MAP, c->cdsso_login_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_CDSSO_LOGIN_MAP, c->cdsso_login_map_sz), v->name,
+                                     v->value);
                 }
             }
         }
@@ -653,7 +662,8 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
             for (i = 0; i < c->cdsso_cookie_domain_map_sz; i++) {
                 am_config_map_t *v = &c->cdsso_cookie_domain_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_CDSSO_COOKIE_MAP, c->cdsso_cookie_domain_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_CDSSO_COOKIE_MAP, c->cdsso_cookie_domain_map_sz),
+                                     v->name, v->value);
                 }
             }
         }
@@ -661,7 +671,8 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
             for (i = 0; i < c->logout_cookie_reset_map_sz; i++) {
                 am_config_map_t *v = &c->logout_cookie_reset_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_LOGOUT_COOKIE_MAP, c->logout_cookie_reset_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_LOGOUT_COOKIE_MAP, c->logout_cookie_reset_map_sz),
+                                     v->name, v->value);
                 }
             }
         }
@@ -686,7 +697,8 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
             for (i = 0; i < c->openam_logout_map_sz; i++) {
                 am_config_map_t *v = &c->openam_logout_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_AMLOGOUT_MAP, c->openam_logout_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_AMLOGOUT_MAP, c->openam_logout_map_sz), v->name,
+                                     v->value);
                 }
             }
         }
@@ -745,7 +757,8 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
             for (i = 0; i < c->cond_login_url_sz; i++) {
                 am_config_map_t *v = &c->cond_login_url[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_CONDLOGIN_MAP, c->cond_login_url_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_CONDLOGIN_MAP, c->cond_login_url_sz), v->name,
+                                     v->value);
                 }
             }
         }
@@ -776,7 +789,8 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
             for (i = 0; i < c->json_header_map_sz; i++) {
                 am_config_map_t *v = &c->json_header_map[i];
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_JSON_HEADER_MAP, c->json_header_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_JSON_HEADER_MAP, c->json_header_map_sz), v->name,
+                                     v->value);
                 }
             }
         }
@@ -787,7 +801,8 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
             for (i = 0; i < c->skip_post_url_map_sz; i++) {
                 am_config_map_t *v = &(c->skip_post_url_map[i]);
                 if (ISVALID(v->name) && ISVALID(v->value)) {
-                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_SKIP_POST_URL_MAP, c->skip_post_url_map_sz), v->name, v->value);
+                    SAVE_CHAR2_VALUE(conf, h, MAKE_TYPE(AM_CONF_SKIP_POST_URL_MAP, c->skip_post_url_map_sz), v->name,
+                                     v->value);
                 }
             }
         }
@@ -813,7 +828,8 @@ static int am_create_instance_entry_data(uint32_t h, am_config_t *c, char all) {
             SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_PATHINFO_IGNORE, 0), c->path_info_ignore);
         }
         if (c->path_info_ignore_not_enforced > 0) {
-            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_PATHINFO_IGNORE_NOTENFORCED, 0), c->path_info_ignore_not_enforced);
+            SAVE_NUM_VALUE(conf, h, MAKE_TYPE(AM_CONF_PATHINFO_IGNORE_NOTENFORCED, 0),
+                           c->path_info_ignore_not_enforced);
         }
         if (ISVALID(c->policy_eval_app)) {
             SAVE_CHAR_VALUE(conf, h, MAKE_TYPE(AM_CONF_POLICY_EVAL_APP, 0), c->policy_eval_app);
@@ -826,652 +842,655 @@ static am_config_t *am_get_stored_agent_config(struct am_instance_entry *c) {
     am_config_t *r = NULL;
     struct am_instance_entry_data *i, *t, *h;
 
-    if (c == NULL) return NULL;
-    r = calloc(1, sizeof (am_config_t));
-    if (r == NULL) return NULL;
-    h = (struct am_instance_entry_data *) AM_GET_POINTER(conf->pool, c->data.prev);
+    if (c == NULL)
+        return NULL;
+    r = calloc(1, sizeof(am_config_t));
+    if (r == NULL)
+        return NULL;
+    h = (struct am_instance_entry_data *)AM_GET_POINTER(conf->pool, c->data.prev);
 
     AM_OFFSET_LIST_FOR_EACH(conf->pool, h, i, t, struct am_instance_entry_data) {
         int ty = GET_TYPE(i->type);
         int sz = GET_SIZE(i->type);
         switch (ty) {
-            case AM_CONF_LOCAL:
-                r->local = i->num_value;
-                break;
-            case AM_CONF_PDP_DIR:
-                r->pdp_dir = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_NAMING_URL:
-                if (r->naming_url_sz == 0) {
-                    r->naming_url = malloc(sz * sizeof (char *));
+        case AM_CONF_LOCAL:
+            r->local = i->num_value;
+            break;
+        case AM_CONF_PDP_DIR:
+            r->pdp_dir = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_NAMING_URL:
+            if (r->naming_url_sz == 0) {
+                r->naming_url = malloc(sz * sizeof(char *));
+            }
+            if (r->naming_url != NULL && r->naming_url_sz < sz) {
+                r->naming_url[r->naming_url_sz++] = strndup(i->value, i->size[0]);
+            }
+            break;
+        case AM_CONF_REALM:
+            r->realm = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_USER:
+            r->user = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_PASSWORD:
+            r->pass = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_KEY:
+            r->key = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_DEBUG:
+            r->debug = i->num_value;
+            break;
+        case AM_CONF_DEBUG_LEVEL:
+            r->debug_level = i->num_value;
+            break;
+        case AM_CONF_DEBUG_FILE:
+            r->debug_file = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_AUDIT:
+            r->audit = i->num_value;
+            break;
+        case AM_CONF_AUDIT_LEVEL:
+            r->audit_level = i->num_value;
+            break;
+        case AM_CONF_AUDIT_FILE:
+            r->audit_file = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_AUDIT_REMOTE_INTERVAL:
+            r->audit_remote_interval = i->num_value;
+            break;
+        case AM_CONF_AUDIT_REMOTE_FILE:
+            r->audit_file_remote = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_AUDIT_FILE_DISPOSITION:
+            r->audit_file_disposition = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_CERT_KEY_FILE:
+            r->cert_key_file = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_CERT_KEY_PASS:
+            r->cert_key_pass = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_CERT_FILE:
+            r->cert_file = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_CERT_CA_FILE:
+            r->cert_ca_file = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_CIPHERS:
+            r->ciphers = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_TLS_OPTIONS:
+            r->tls_opts = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_CERT_TRUST:
+            r->cert_trust = i->num_value;
+            break;
+        case AM_CONF_NET_TIMEOUT:
+            r->net_timeout = i->num_value;
+            break;
+        case AM_CONF_VALID_LEVEL:
+            r->valid_level = i->num_value;
+            break;
+        case AM_CONF_VALID_PING:
+            r->valid_ping = i->num_value;
+            break;
+        case AM_CONF_VALID_PING_MISS:
+            r->valid_ping_miss = i->num_value;
+            break;
+        case AM_CONF_VALID_PING_OK:
+            r->valid_ping_ok = i->num_value;
+            break;
+        case AM_CONF_VALID_DEFAULT_IDX:
+            if (r->valid_default_url_sz == 0) {
+                r->valid_default_url = malloc(sz * sizeof(int));
+            }
+            if (r->valid_default_url != NULL && r->valid_default_url_sz < sz) {
+                r->valid_default_url[r->valid_default_url_sz++] = i->num_value;
+            }
+            break;
+        case AM_CONF_HOST_MAP:
+            if (r->hostmap_sz == 0) {
+                r->hostmap = malloc(sz * sizeof(char *));
+            }
+            if (r->hostmap != NULL && r->hostmap_sz < sz) {
+                r->hostmap[r->hostmap_sz++] = strndup(i->value, i->size[0]);
+            }
+            break;
+        case AM_CONF_RETRY_MAX:
+            r->retry_max = i->num_value;
+            break;
+        case AM_CONF_RETRY_WAIT:
+            r->retry_wait = i->num_value;
+            break;
+        case AM_CONF_AGENT_URI:
+            r->agenturi = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_COOKIE:
+            r->cookie_name = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_LOGIN_URL:
+            if (r->login_url_sz == 0) {
+                r->login_url = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->login_url != NULL && r->login_url_sz < sz) {
+                am_config_map_t *m = &r->login_url[r->login_url_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->login_url_sz, r->login_url);
+                    r->login_url_sz = 0;
                 }
-                if (r->naming_url != NULL && r->naming_url_sz < sz) {
-                    r->naming_url[r->naming_url_sz++] = strndup(i->value, i->size[0]);
+            }
+            break;
+        case AM_CONF_COOKIE_SECURE:
+            r->cookie_secure = i->num_value;
+            break;
+        case AM_CONF_NOTIF_ENABLE:
+            r->notif_enable = i->num_value;
+            break;
+        case AM_CONF_NOTIF_URL:
+            r->notif_url = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_EVAL_CASE:
+            r->url_eval_case_ignore = i->num_value;
+            break;
+        case AM_CONF_POLICY_CACHE_VALID:
+            r->policy_cache_valid = i->num_value;
+            break;
+        case AM_CONF_TOKEN_CACHE_VALID:
+            r->token_cache_valid = i->num_value;
+            break;
+        case AM_CONF_UID_PARAM:
+            r->userid_param = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_UID_PARAM_TYPE:
+            r->userid_param_type = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_PROF_ATTR:
+            r->profile_attr_fetch = i->num_value;
+            break;
+        case AM_CONF_PROF_ATTR_MAP:
+            if (r->profile_attr_map_sz == 0) {
+                r->profile_attr_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->profile_attr_map != NULL && r->profile_attr_map_sz < sz) {
+                am_config_map_t *m = &r->profile_attr_map[r->profile_attr_map_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->profile_attr_map_sz, r->profile_attr_map);
+                    r->profile_attr_map_sz = 0;
                 }
-                break;
-            case AM_CONF_REALM:
-                r->realm = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_USER:
-                r->user = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_PASSWORD:
-                r->pass = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_KEY:
-                r->key = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_DEBUG:
-                r->debug = i->num_value;
-                break;
-            case AM_CONF_DEBUG_LEVEL:
-                r->debug_level = i->num_value;
-                break;
-            case AM_CONF_DEBUG_FILE:
-                r->debug_file = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_AUDIT:
-                r->audit = i->num_value;
-                break;
-            case AM_CONF_AUDIT_LEVEL:
-                r->audit_level = i->num_value;
-                break;
-            case AM_CONF_AUDIT_FILE:
-                r->audit_file = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_AUDIT_REMOTE_INTERVAL:
-                r->audit_remote_interval = i->num_value;
-                break;
-            case AM_CONF_AUDIT_REMOTE_FILE:
-                r->audit_file_remote = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_AUDIT_FILE_DISPOSITION:
-                r->audit_file_disposition = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_CERT_KEY_FILE:
-                r->cert_key_file = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_CERT_KEY_PASS:
-                r->cert_key_pass = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_CERT_FILE:
-                r->cert_file = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_CERT_CA_FILE:
-                r->cert_ca_file = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_CIPHERS:
-                r->ciphers = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_TLS_OPTIONS:
-                r->tls_opts = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_CERT_TRUST:
-                r->cert_trust = i->num_value;
-                break;
-            case AM_CONF_NET_TIMEOUT:
-                r->net_timeout = i->num_value;
-                break;
-            case AM_CONF_VALID_LEVEL:
-                r->valid_level = i->num_value;
-                break;
-            case AM_CONF_VALID_PING:
-                r->valid_ping = i->num_value;
-                break;
-            case AM_CONF_VALID_PING_MISS:
-                r->valid_ping_miss = i->num_value;
-                break;
-            case AM_CONF_VALID_PING_OK:
-                r->valid_ping_ok = i->num_value;
-                break;
-            case AM_CONF_VALID_DEFAULT_IDX:
-                if (r->valid_default_url_sz == 0) {
-                    r->valid_default_url = malloc(sz * sizeof (int));
+            }
+            break;
+        case AM_CONF_SESS_ATTR:
+            r->session_attr_fetch = i->num_value;
+            break;
+        case AM_CONF_SESS_ATTR_MAP:
+            if (r->session_attr_map_sz == 0) {
+                r->session_attr_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->session_attr_map != NULL && r->session_attr_map_sz < sz) {
+                am_config_map_t *m = &r->session_attr_map[r->session_attr_map_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->session_attr_map_sz, r->session_attr_map);
+                    r->session_attr_map_sz = 0;
                 }
-                if (r->valid_default_url != NULL && r->valid_default_url_sz < sz) {
-                    r->valid_default_url[r->valid_default_url_sz++] = i->num_value;
+            }
+            break;
+        case AM_CONF_RESP_ATTR:
+            r->response_attr_fetch = i->num_value;
+            break;
+        case AM_CONF_RESP_ATTR_MAP:
+            if (r->response_attr_map_sz == 0) {
+                r->response_attr_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->response_attr_map != NULL && r->response_attr_map_sz < sz) {
+                am_config_map_t *m = &r->response_attr_map[r->response_attr_map_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->response_attr_map_sz, r->response_attr_map);
+                    r->response_attr_map_sz = 0;
                 }
-                break;
-            case AM_CONF_HOST_MAP:
-                if (r->hostmap_sz == 0) {
-                    r->hostmap = malloc(sz * sizeof (char *));
+            }
+            break;
+        case AM_CONF_LB_ENABLE:
+            r->lb_enable = i->num_value;
+            break;
+        case AM_CONF_KEEPALIVE_DISABLE:
+            r->keepalive_disable = i->num_value;
+            break;
+        case AM_CONF_PERSISTENT_COOKIE_ENABLE:
+            r->persistent_cookie_enable = i->num_value;
+            break;
+        case AM_CONF_SCHANNEL_DISABLE:
+            r->secure_channel_disable = i->num_value;
+            break;
+        case AM_CONF_PROXY_PORT:
+            r->proxy_port = i->num_value;
+            break;
+        case AM_CONF_PROXY_HOST:
+            r->proxy_host = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_PROXY_USER:
+            r->proxy_user = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_PROXY_PASSWORD:
+            r->proxy_password = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_SSO_ONLY:
+            r->sso_only = i->num_value;
+            break;
+        case AM_CONF_ACC_DENIED:
+            r->access_denied_url = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_FQDN_CHECK:
+            r->fqdn_check_enable = i->num_value;
+            break;
+        case AM_CONF_FQDN_DEFAULT:
+            r->fqdn_default = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_FQDN_MAP:
+            if (r->fqdn_map_sz == 0) {
+                r->fqdn_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->fqdn_map != NULL && r->fqdn_map_sz < sz) {
+                am_config_map_t *m = &r->fqdn_map[r->fqdn_map_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->fqdn_map_sz, r->fqdn_map);
+                    r->fqdn_map_sz = 0;
                 }
-                if (r->hostmap != NULL && r->hostmap_sz < sz) {
-                    r->hostmap[r->hostmap_sz++] = strndup(i->value, i->size[0]);
+            }
+            break;
+        case AM_CONF_COOKIE_RESET:
+            r->cookie_reset_enable = i->num_value;
+            break;
+        case AM_CONF_COOKIE_RESET_MAP:
+            if (r->cookie_reset_map_sz == 0) {
+                r->cookie_reset_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->cookie_reset_map != NULL && r->cookie_reset_map_sz < sz) {
+                am_config_map_t *m = &r->cookie_reset_map[r->cookie_reset_map_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->cookie_reset_map_sz, r->cookie_reset_map);
+                    r->cookie_reset_map_sz = 0;
                 }
-                break;
-            case AM_CONF_RETRY_MAX:
-                r->retry_max = i->num_value;
-                break;
-            case AM_CONF_RETRY_WAIT:
-                r->retry_wait = i->num_value;
-                break;
-            case AM_CONF_AGENT_URI:
-                r->agenturi = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_COOKIE:
-                r->cookie_name = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_LOGIN_URL:
-                if (r->login_url_sz == 0) {
-                    r->login_url = malloc(sz * sizeof (am_config_map_t));
+            }
+            break;
+        case AM_CONF_NEF_INVERT:
+            r->not_enforced_invert = i->num_value;
+            break;
+        case AM_CONF_NEF_ATTR:
+            r->not_enforced_fetch_attr = i->num_value;
+            break;
+        case AM_CONF_NEF_MAP:
+            if (r->not_enforced_map_sz == 0) {
+                r->not_enforced_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->not_enforced_map != NULL && r->not_enforced_map_sz < sz) {
+                am_config_map_t *m = &r->not_enforced_map[r->not_enforced_map_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->not_enforced_map_sz, r->not_enforced_map);
+                    r->not_enforced_map_sz = 0;
                 }
-                if (r->login_url != NULL && r->login_url_sz < sz) {
-                    am_config_map_t *m = &r->login_url[r->login_url_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->login_url_sz, r->login_url);
-                        r->login_url_sz = 0;
-                    }
+            }
+            break;
+        case AM_CONF_NEF_IP_MAP:
+            if (r->not_enforced_ip_map_sz == 0) {
+                r->not_enforced_ip_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->not_enforced_ip_map != NULL && r->not_enforced_ip_map_sz < sz) {
+                am_config_map_t *m = &r->not_enforced_ip_map[r->not_enforced_ip_map_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->not_enforced_ip_map_sz, r->not_enforced_ip_map);
+                    r->not_enforced_ip_map_sz = 0;
                 }
-                break;
-            case AM_CONF_COOKIE_SECURE:
-                r->cookie_secure = i->num_value;
-                break;
-            case AM_CONF_NOTIF_ENABLE:
-                r->notif_enable = i->num_value;
-                break;
-            case AM_CONF_NOTIF_URL:
-                r->notif_url = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_EVAL_CASE:
-                r->url_eval_case_ignore = i->num_value;
-                break;
-            case AM_CONF_POLICY_CACHE_VALID:
-                r->policy_cache_valid = i->num_value;
-                break;
-            case AM_CONF_TOKEN_CACHE_VALID:
-                r->token_cache_valid = i->num_value;
-                break;
-            case AM_CONF_UID_PARAM:
-                r->userid_param = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_UID_PARAM_TYPE:
-                r->userid_param_type = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_PROF_ATTR:
-                r->profile_attr_fetch = i->num_value;
-                break;
-            case AM_CONF_PROF_ATTR_MAP:
-                if (r->profile_attr_map_sz == 0) {
-                    r->profile_attr_map = malloc(sz * sizeof (am_config_map_t));
+            }
+            break;
+        case AM_CONF_NEF_EXT_MAP:
+            if (r->not_enforced_ext_map_sz == 0) {
+                r->not_enforced_ext_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->not_enforced_ext_map != NULL && r->not_enforced_ext_map_sz < sz) {
+                am_config_map_t *m = &r->not_enforced_ext_map[r->not_enforced_ext_map_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->not_enforced_ext_map_sz, r->not_enforced_ext_map);
+                    r->not_enforced_ext_map_sz = 0;
                 }
-                if (r->profile_attr_map != NULL && r->profile_attr_map_sz < sz) {
-                    am_config_map_t *m = &r->profile_attr_map[r->profile_attr_map_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->profile_attr_map_sz, r->profile_attr_map);
-                        r->profile_attr_map_sz = 0;
-                    }
+            }
+            break;
+        case AM_CONF_NEF_REGEX_ENABLE:
+            r->not_enforced_regex_enable = i->num_value;
+            break;
+        case AM_CONF_NEF_EXT_REGEX_ENABLE:
+            r->not_enforced_ext_regex_enable = i->num_value;
+            break;
+        case AM_CONF_LOGOUT_REGEX_ENABLE:
+            r->logout_regex_enable = i->num_value;
+            break;
+        case AM_CONF_PDP:
+            r->pdp_enable = i->num_value;
+            break;
+        case AM_CONF_PDP_LBCOOKIE:
+            r->pdp_lb_cookie = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_PDP_CACHE:
+            r->pdp_cache_valid = i->num_value;
+            break;
+        case AM_CONF_PDP_JS:
+            r->pdp_js_repost = i->num_value;
+            break;
+        case AM_CONF_PDP_SMODE:
+            r->pdp_sess_mode = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_PDP_SVALUE:
+            r->pdp_sess_value = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_PDP_PREFIX:
+            r->pdp_uri_prefix = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_IP_VALIDATE:
+            r->client_ip_validate = i->num_value;
+            break;
+        case AM_CONF_COOKIE_PREFIX:
+            r->cookie_prefix = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_COOKIE_MAXAGE:
+            r->cookie_maxage = i->num_value;
+            break;
+        case AM_CONF_CDSSO:
+            r->cdsso_enable = i->num_value;
+            break;
+        case AM_CONF_CDSSO_DENY_CLEANUP_DISABLE:
+            r->cdsso_deny_cleanup_disable = i->num_value;
+            break;
+        case AM_CONF_CDSSO_LOGIN_MAP:
+            if (r->cdsso_login_map_sz == 0) {
+                r->cdsso_login_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->cdsso_login_map != NULL && r->cdsso_login_map_sz < sz) {
+                am_config_map_t *m = &r->cdsso_login_map[r->cdsso_login_map_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->cdsso_login_map_sz, r->cdsso_login_map);
+                    r->cdsso_login_map_sz = 0;
                 }
-                break;
-            case AM_CONF_SESS_ATTR:
-                r->session_attr_fetch = i->num_value;
-                break;
-            case AM_CONF_SESS_ATTR_MAP:
-                if (r->session_attr_map_sz == 0) {
-                    r->session_attr_map = malloc(sz * sizeof (am_config_map_t));
+            }
+            break;
+        case AM_CONF_CDSSO_COOKIE_MAP:
+            if (r->cdsso_cookie_domain_map_sz == 0) {
+                r->cdsso_cookie_domain_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->cdsso_cookie_domain_map != NULL && r->cdsso_cookie_domain_map_sz < sz) {
+                am_config_map_t *m = &r->cdsso_cookie_domain_map[r->cdsso_cookie_domain_map_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->cdsso_cookie_domain_map_sz, r->cdsso_cookie_domain_map);
+                    r->cdsso_cookie_domain_map_sz = 0;
                 }
-                if (r->session_attr_map != NULL && r->session_attr_map_sz < sz) {
-                    am_config_map_t *m = &r->session_attr_map[r->session_attr_map_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->session_attr_map_sz, r->session_attr_map);
-                        r->session_attr_map_sz = 0;
-                    }
+            }
+            break;
+        case AM_CONF_LOGOUT_COOKIE_MAP:
+            if (r->logout_cookie_reset_map_sz == 0) {
+                r->logout_cookie_reset_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->logout_cookie_reset_map != NULL && r->logout_cookie_reset_map_sz < sz) {
+                am_config_map_t *m = &r->logout_cookie_reset_map[r->logout_cookie_reset_map_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->logout_cookie_reset_map_sz, r->logout_cookie_reset_map);
+                    r->logout_cookie_reset_map_sz = 0;
                 }
-                break;
-            case AM_CONF_RESP_ATTR:
-                r->response_attr_fetch = i->num_value;
-                break;
-            case AM_CONF_RESP_ATTR_MAP:
-                if (r->response_attr_map_sz == 0) {
-                    r->response_attr_map = malloc(sz * sizeof (am_config_map_t));
+            }
+            break;
+        case AM_CONF_LOGOUT_REDIRECT:
+            r->logout_redirect_url = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_LOGOUT_URL_REGEX:
+            r->logout_url_regex = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_LOGOUT_REDIR_DISABLE:
+            r->logout_redirect_disable = i->num_value;
+            break;
+        case AM_CONF_LOGOUT_MAP:
+            if (r->logout_map_sz == 0) {
+                r->logout_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->logout_map != NULL && r->logout_map_sz < sz) {
+                am_config_map_t *m = &r->logout_map[r->logout_map_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->logout_map_sz, r->logout_map);
+                    r->logout_map_sz = 0;
                 }
-                if (r->response_attr_map != NULL && r->response_attr_map_sz < sz) {
-                    am_config_map_t *m = &r->response_attr_map[r->response_attr_map_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->response_attr_map_sz, r->response_attr_map);
-                        r->response_attr_map_sz = 0;
-                    }
+            }
+            break;
+        case AM_CONF_AMLOGOUT_MAP:
+            if (r->openam_logout_map_sz == 0) {
+                r->openam_logout_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->openam_logout_map != NULL && r->openam_logout_map_sz < sz) {
+                am_config_map_t *m = &r->openam_logout_map[r->openam_logout_map_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->openam_logout_map_sz, r->openam_logout_map);
+                    r->openam_logout_map_sz = 0;
                 }
-                break;
-            case AM_CONF_LB_ENABLE:
-                r->lb_enable = i->num_value;
-                break;
-            case AM_CONF_KEEPALIVE_DISABLE:
-                r->keepalive_disable = i->num_value;
-                break;
-            case AM_CONF_PERSISTENT_COOKIE_ENABLE:
-                r->persistent_cookie_enable = i->num_value;
-                break;
-            case AM_CONF_SCHANNEL_DISABLE:
-                r->secure_channel_disable = i->num_value;
-                break;
-            case AM_CONF_PROXY_PORT:
-                r->proxy_port = i->num_value;
-                break;
-            case AM_CONF_PROXY_HOST:
-                r->proxy_host = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_PROXY_USER:
-                r->proxy_user = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_PROXY_PASSWORD:
-                r->proxy_password = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_SSO_ONLY:
-                r->sso_only = i->num_value;
-                break;
-            case AM_CONF_ACC_DENIED:
-                r->access_denied_url = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_FQDN_CHECK:
-                r->fqdn_check_enable = i->num_value;
-                break;
-            case AM_CONF_FQDN_DEFAULT:
-                r->fqdn_default = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_FQDN_MAP:
-                if (r->fqdn_map_sz == 0) {
-                    r->fqdn_map = malloc(sz * sizeof (am_config_map_t));
+            }
+            break;
+        case AM_CONF_SCOPE:
+            r->policy_scope_subtree = i->num_value;
+            break;
+        case AM_CONF_CRESOLVE:
+            r->resolve_client_host = i->num_value;
+            break;
+        case AM_CONF_PE_ENC_CHARS:
+            r->policy_eval_encode_chars = i->num_value;
+            break;
+        case AM_CONF_CK_ENC_CHARS:
+            r->cookie_encode_chars = i->num_value;
+            break;
+        case AM_CONF_OV_PROTO:
+            r->override_protocol = i->num_value;
+            break;
+        case AM_CONF_OV_HOST:
+            r->override_host = i->num_value;
+            break;
+        case AM_CONF_OV_PORT:
+            r->override_port = i->num_value;
+            break;
+        case AM_CONF_OV_NURL:
+            r->override_notif_url = i->num_value;
+            break;
+        case AM_CONF_VALID:
+            r->config_valid = i->num_value;
+            break;
+        case AM_CONF_PASS_REPLY_KEY:
+            r->password_replay_key = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_POL_CSKEW:
+            r->policy_clock_skew = i->num_value;
+            break;
+        case AM_CONF_URL_REDIR_PARAM:
+            r->url_redirect_param = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_CACHE_HEADERS:
+            r->cache_control_enable = i->num_value;
+            break;
+        case AM_CONF_REDIRECT_ADVICE:
+            r->use_redirect_for_advice = i->num_value;
+            break;
+        case AM_CONF_CLIENT_IP_HEADER:
+            r->client_ip_header = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_CLIENT_HOST_HEADER:
+            r->client_hostname_header = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_URL_CHECK:
+            r->url_check_regex = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_CONDLOGIN_MAP:
+            if (r->cond_login_url_sz == 0) {
+                r->cond_login_url = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->cond_login_url != NULL && r->cond_login_url_sz < sz) {
+                am_config_map_t *m = &r->cond_login_url[r->cond_login_url_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->cond_login_url_sz, r->cond_login_url);
+                    r->cond_login_url_sz = 0;
                 }
-                if (r->fqdn_map != NULL && r->fqdn_map_sz < sz) {
-                    am_config_map_t *m = &r->fqdn_map[r->fqdn_map_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->fqdn_map_sz, r->fqdn_map);
-                        r->fqdn_map_sz = 0;
-                    }
+            }
+            break;
+        case AM_CONF_HTTP_ONLY_COOKIE:
+            r->cookie_http_only = i->num_value;
+            break;
+        case AM_CONF_ATTR_SEP:
+            r->multi_attr_separator = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_WIN_LOGON:
+            r->logon_user_enable = i->num_value;
+            break;
+        case AM_CONF_WIN_PASS_HEADER:
+            r->password_header_enable = i->num_value;
+            break;
+        case AM_CONF_JSON_URL_MAP:
+            if (r->json_url_map_sz == 0) {
+                r->json_url_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->json_url_map != NULL && r->json_url_map_sz < sz) {
+                am_config_map_t *m = &r->json_url_map[r->json_url_map_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->json_url_map_sz, r->json_url_map);
+                    r->json_url_map_sz = 0;
                 }
-                break;
-            case AM_CONF_COOKIE_RESET:
-                r->cookie_reset_enable = i->num_value;
-                break;
-            case AM_CONF_COOKIE_RESET_MAP:
-                if (r->cookie_reset_map_sz == 0) {
-                    r->cookie_reset_map = malloc(sz * sizeof (am_config_map_t));
+            }
+            break;
+        case AM_CONF_JSON_URL_INVERT:
+            r->json_url_invert = i->num_value;
+            break;
+        case AM_CONF_JSON_HEADER_MAP:
+            if (r->json_header_map_sz == 0) {
+                r->json_header_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->json_header_map != NULL && r->json_header_map_sz < sz) {
+                am_config_map_t *m = &r->json_header_map[r->json_header_map_sz++];
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->json_header_map_sz, r->json_header_map);
+                    r->json_header_map_sz = 0;
                 }
-                if (r->cookie_reset_map != NULL && r->cookie_reset_map_sz < sz) {
-                    am_config_map_t *m = &r->cookie_reset_map[r->cookie_reset_map_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->cookie_reset_map_sz, r->cookie_reset_map);
-                        r->cookie_reset_map_sz = 0;
-                    }
+            }
+            break;
+        case AM_CONF_JSON_RESPONSE_CODE:
+            r->json_url_response_code = i->num_value;
+            break;
+        case AM_CONF_SKIP_POST_URL_MAP:
+            if (r->skip_post_url_map_sz == 0) {
+                r->skip_post_url_map = malloc(sz * sizeof(am_config_map_t));
+            }
+            if (r->skip_post_url_map != NULL && r->skip_post_url_map_sz < sz) {
+                am_config_map_t *m = &(r->skip_post_url_map[r->skip_post_url_map_sz++]);
+                m->name = malloc(i->size[0] + i->size[1] + 2);
+                if (m->name != NULL) {
+                    memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
+                    m->value = m->name + i->size[0] + 1;
+                } else {
+                    AM_CONF_MAP_FREE(--r->skip_post_url_map_sz, r->skip_post_url_map);
+                    r->skip_post_url_map_sz = 0;
                 }
-                break;
-            case AM_CONF_NEF_INVERT:
-                r->not_enforced_invert = i->num_value;
-                break;
-            case AM_CONF_NEF_ATTR:
-                r->not_enforced_fetch_attr = i->num_value;
-                break;
-            case AM_CONF_NEF_MAP:
-                if (r->not_enforced_map_sz == 0) {
-                    r->not_enforced_map = malloc(sz * sizeof (am_config_map_t));
-                }
-                if (r->not_enforced_map != NULL && r->not_enforced_map_sz < sz) {
-                    am_config_map_t *m = &r->not_enforced_map[r->not_enforced_map_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->not_enforced_map_sz, r->not_enforced_map);
-                        r->not_enforced_map_sz = 0;
-                    }
-                }
-                break;
-            case AM_CONF_NEF_IP_MAP:
-                if (r->not_enforced_ip_map_sz == 0) {
-                    r->not_enforced_ip_map = malloc(sz * sizeof (am_config_map_t));
-                }
-                if (r->not_enforced_ip_map != NULL && r->not_enforced_ip_map_sz < sz) {
-                    am_config_map_t *m = &r->not_enforced_ip_map[r->not_enforced_ip_map_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->not_enforced_ip_map_sz, r->not_enforced_ip_map);
-                        r->not_enforced_ip_map_sz = 0;
-                    }
-                }
-                break;
-            case AM_CONF_NEF_EXT_MAP:
-                if (r->not_enforced_ext_map_sz == 0) {
-                    r->not_enforced_ext_map = malloc(sz * sizeof (am_config_map_t));
-                }
-                if (r->not_enforced_ext_map != NULL && r->not_enforced_ext_map_sz < sz) {
-                    am_config_map_t *m = &r->not_enforced_ext_map[r->not_enforced_ext_map_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->not_enforced_ext_map_sz, r->not_enforced_ext_map);
-                        r->not_enforced_ext_map_sz = 0;
-                    }
-                }
-                break;
-            case AM_CONF_NEF_REGEX_ENABLE:
-                r->not_enforced_regex_enable = i->num_value;
-                break;
-            case AM_CONF_NEF_EXT_REGEX_ENABLE:
-                r->not_enforced_ext_regex_enable = i->num_value;
-                break;
-            case AM_CONF_LOGOUT_REGEX_ENABLE:
-                r->logout_regex_enable = i->num_value;
-                break;
-            case AM_CONF_PDP:
-                r->pdp_enable = i->num_value;
-                break;
-            case AM_CONF_PDP_LBCOOKIE:
-                r->pdp_lb_cookie = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_PDP_CACHE:
-                r->pdp_cache_valid = i->num_value;
-                break;
-            case AM_CONF_PDP_JS:
-                r->pdp_js_repost = i->num_value;
-                break;
-            case AM_CONF_PDP_SMODE:
-                r->pdp_sess_mode = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_PDP_SVALUE:
-                r->pdp_sess_value = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_PDP_PREFIX:
-                r->pdp_uri_prefix = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_IP_VALIDATE:
-                r->client_ip_validate = i->num_value;
-                break;
-            case AM_CONF_COOKIE_PREFIX:
-                r->cookie_prefix = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_COOKIE_MAXAGE:
-                r->cookie_maxage = i->num_value;
-                break;
-            case AM_CONF_CDSSO:
-                r->cdsso_enable = i->num_value;
-                break;
-            case AM_CONF_CDSSO_DENY_CLEANUP_DISABLE:
-                r->cdsso_deny_cleanup_disable = i->num_value;
-                break;
-            case AM_CONF_CDSSO_LOGIN_MAP:
-                if (r->cdsso_login_map_sz == 0) {
-                    r->cdsso_login_map = malloc(sz * sizeof (am_config_map_t));
-                }
-                if (r->cdsso_login_map != NULL && r->cdsso_login_map_sz < sz) {
-                    am_config_map_t *m = &r->cdsso_login_map[r->cdsso_login_map_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->cdsso_login_map_sz, r->cdsso_login_map);
-                        r->cdsso_login_map_sz = 0;
-                    }
-                }
-                break;
-            case AM_CONF_CDSSO_COOKIE_MAP:
-                if (r->cdsso_cookie_domain_map_sz == 0) {
-                    r->cdsso_cookie_domain_map = malloc(sz * sizeof (am_config_map_t));
-                }
-                if (r->cdsso_cookie_domain_map != NULL && r->cdsso_cookie_domain_map_sz < sz) {
-                    am_config_map_t *m = &r->cdsso_cookie_domain_map[r->cdsso_cookie_domain_map_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->cdsso_cookie_domain_map_sz, r->cdsso_cookie_domain_map);
-                        r->cdsso_cookie_domain_map_sz = 0;
-                    }
-                }
-                break;
-            case AM_CONF_LOGOUT_COOKIE_MAP:
-                if (r->logout_cookie_reset_map_sz == 0) {
-                    r->logout_cookie_reset_map = malloc(sz * sizeof (am_config_map_t));
-                }
-                if (r->logout_cookie_reset_map != NULL && r->logout_cookie_reset_map_sz < sz) {
-                    am_config_map_t *m = &r->logout_cookie_reset_map[r->logout_cookie_reset_map_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->logout_cookie_reset_map_sz, r->logout_cookie_reset_map);
-                        r->logout_cookie_reset_map_sz = 0;
-                    }
-                }
-                break;
-            case AM_CONF_LOGOUT_REDIRECT:
-                r->logout_redirect_url = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_LOGOUT_URL_REGEX:
-                r->logout_url_regex = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_LOGOUT_REDIR_DISABLE:
-                r->logout_redirect_disable = i->num_value;
-                break;
-            case AM_CONF_LOGOUT_MAP:
-                if (r->logout_map_sz == 0) {
-                    r->logout_map = malloc(sz * sizeof (am_config_map_t));
-                }
-                if (r->logout_map != NULL && r->logout_map_sz < sz) {
-                    am_config_map_t *m = &r->logout_map[r->logout_map_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->logout_map_sz, r->logout_map);
-                        r->logout_map_sz = 0;
-                    }
-                }
-                break;
-            case AM_CONF_AMLOGOUT_MAP:
-                if (r->openam_logout_map_sz == 0) {
-                    r->openam_logout_map = malloc(sz * sizeof (am_config_map_t));
-                }
-                if (r->openam_logout_map != NULL && r->openam_logout_map_sz < sz) {
-                    am_config_map_t *m = &r->openam_logout_map[r->openam_logout_map_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->openam_logout_map_sz, r->openam_logout_map);
-                        r->openam_logout_map_sz = 0;
-                    }
-                }
-                break;
-            case AM_CONF_SCOPE:
-                r->policy_scope_subtree = i->num_value;
-                break;
-            case AM_CONF_CRESOLVE:
-                r->resolve_client_host = i->num_value;
-                break;
-            case AM_CONF_PE_ENC_CHARS:
-                r->policy_eval_encode_chars = i->num_value;
-                break;
-            case AM_CONF_CK_ENC_CHARS:
-                r->cookie_encode_chars = i->num_value;
-                break;
-            case AM_CONF_OV_PROTO:
-                r->override_protocol = i->num_value;
-                break;
-            case AM_CONF_OV_HOST:
-                r->override_host = i->num_value;
-                break;
-            case AM_CONF_OV_PORT:
-                r->override_port = i->num_value;
-                break;
-            case AM_CONF_OV_NURL:
-                r->override_notif_url = i->num_value;
-                break;
-            case AM_CONF_VALID:
-                r->config_valid = i->num_value;
-                break;
-            case AM_CONF_PASS_REPLY_KEY:
-                r->password_replay_key = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_POL_CSKEW:
-                r->policy_clock_skew = i->num_value;
-                break;
-            case AM_CONF_URL_REDIR_PARAM:
-                r->url_redirect_param = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_CACHE_HEADERS:
-                r->cache_control_enable = i->num_value;
-                break;
-            case AM_CONF_REDIRECT_ADVICE:
-                r->use_redirect_for_advice = i->num_value;
-                break;
-            case AM_CONF_CLIENT_IP_HEADER:
-                r->client_ip_header = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_CLIENT_HOST_HEADER:
-                r->client_hostname_header = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_URL_CHECK:
-                r->url_check_regex = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_CONDLOGIN_MAP:
-                if (r->cond_login_url_sz == 0) {
-                    r->cond_login_url = malloc(sz * sizeof (am_config_map_t));
-                }
-                if (r->cond_login_url != NULL && r->cond_login_url_sz < sz) {
-                    am_config_map_t *m = &r->cond_login_url[r->cond_login_url_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->cond_login_url_sz, r->cond_login_url);
-                        r->cond_login_url_sz = 0;
-                    }
-                }
-                break;
-            case AM_CONF_HTTP_ONLY_COOKIE:
-                r->cookie_http_only = i->num_value;
-                break;
-            case AM_CONF_ATTR_SEP:
-                r->multi_attr_separator = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_WIN_LOGON:
-                r->logon_user_enable = i->num_value;
-                break;
-            case AM_CONF_WIN_PASS_HEADER:
-                r->password_header_enable = i->num_value;
-                break;
-            case AM_CONF_JSON_URL_MAP:
-                if (r->json_url_map_sz == 0) {
-                    r->json_url_map = malloc(sz * sizeof (am_config_map_t));
-                }
-                if (r->json_url_map != NULL && r->json_url_map_sz < sz) {
-                    am_config_map_t *m = &r->json_url_map[r->json_url_map_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->json_url_map_sz, r->json_url_map);
-                        r->json_url_map_sz = 0;
-                    }
-                }
-                break;
-            case AM_CONF_JSON_URL_INVERT:
-                r->json_url_invert = i->num_value;
-                break;
-            case AM_CONF_JSON_HEADER_MAP:
-                if (r->json_header_map_sz == 0) {
-                    r->json_header_map = malloc(sz * sizeof (am_config_map_t));
-                }
-                if (r->json_header_map != NULL && r->json_header_map_sz < sz) {
-                    am_config_map_t *m = &r->json_header_map[r->json_header_map_sz++];
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->json_header_map_sz, r->json_header_map);
-                        r->json_header_map_sz = 0;
-                    }
-                }
-                break;
-            case AM_CONF_JSON_RESPONSE_CODE:
-                r->json_url_response_code = i->num_value;
-                break;
-            case AM_CONF_SKIP_POST_URL_MAP:
-                if (r->skip_post_url_map_sz == 0) {
-                    r->skip_post_url_map = malloc(sz * sizeof (am_config_map_t));
-                }
-                if (r->skip_post_url_map != NULL && r->skip_post_url_map_sz < sz) {
-                    am_config_map_t *m = &(r->skip_post_url_map[r->skip_post_url_map_sz++]);
-                    m->name = malloc(i->size[0] + i->size[1] + 2);
-                    if (m->name != NULL) {
-                        memcpy(m->name, i->value, i->size[0] + i->size[1] + 2);
-                        m->value = m->name + i->size[0] + 1;
-                    } else {
-                        AM_CONF_MAP_FREE(--r->skip_post_url_map_sz, r->skip_post_url_map);
-                        r->skip_post_url_map_sz = 0;
-                    }
-                }
-                break;
-            case AM_CONF_ANON_USER_ENABLE:
-                r->anon_remote_user_enable = i->num_value;
-                break;
-            case AM_CONF_ANON_USER_ID:
-                r->unauthenticated_user = strndup(i->value, i->size[0]);
-                break;
-            case AM_CONF_PATHINFO_IGNORE:
-                r->path_info_ignore = i->num_value;
-                break;
-            case AM_CONF_PATHINFO_IGNORE_NOTENFORCED:
-                r->path_info_ignore_not_enforced = i->num_value;
-                break;
-            case AM_CONF_POLICY_EVAL_APP:
-                r->policy_eval_app = strndup(i->value, i->size[0]);
-                break;
+            }
+            break;
+        case AM_CONF_ANON_USER_ENABLE:
+            r->anon_remote_user_enable = i->num_value;
+            break;
+        case AM_CONF_ANON_USER_ID:
+            r->unauthenticated_user = strndup(i->value, i->size[0]);
+            break;
+        case AM_CONF_PATHINFO_IGNORE:
+            r->path_info_ignore = i->num_value;
+            break;
+        case AM_CONF_PATHINFO_IGNORE_NOTENFORCED:
+            r->path_info_ignore_not_enforced = i->num_value;
+            break;
+        case AM_CONF_POLICY_EVAL_APP:
+            r->policy_eval_app = strndup(i->value, i->size[0]);
+            break;
         }
     }
 
     return r;
 }
 
-static int am_set_agent_config(unsigned long instance_id, const char *xml,
-        size_t xsz, const char *token, const char *config_file, const char *name,
-        am_config_t *bc, struct am_instance_entry **ie) {
+static int am_set_agent_config(unsigned long instance_id, const char *xml, size_t xsz, const char *token,
+                               const char *config_file, const char *name, am_config_t *bc,
+                               struct am_instance_entry **ie) {
     static const char *thisfunc = "am_set_agent_config():";
     struct am_instance_entry *c;
     int ret;
     struct am_instance *instance_data;
     uint32_t hdr_offset;
 
-    if (bc == NULL) return AM_EINVAL;
+    if (bc == NULL)
+        return AM_EINVAL;
 
     ret = am_shm_lock(conf);
     if (ret != AM_SUCCESS) {
@@ -1491,10 +1510,9 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
         }
     }
 
-    c = am_shm_alloc(conf, sizeof (struct am_instance_entry));
+    c = am_shm_alloc(conf, sizeof(struct am_instance_entry));
     if (c == NULL) {
-        AM_LOG_ERROR(instance_id, "%s failed to allocate %ld bytes",
-                thisfunc, sizeof (struct am_instance_entry));
+        AM_LOG_ERROR(instance_id, "%s failed to allocate %ld bytes", thisfunc, sizeof(struct am_instance_entry));
         am_shm_unlock(conf);
         return AM_ENOMEM;
     }
@@ -1510,17 +1528,17 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
 
     c->instance_id = instance_id;
     c->ts = time(NULL);
-    memset(c->token, 0, sizeof (c->token));
+    memset(c->token, 0, sizeof(c->token));
     if (ISVALID(token)) {
-        strncpy(c->token, token, sizeof (c->token) - 1);
+        strncpy(c->token, token, sizeof(c->token) - 1);
     }
-    memset(c->config, 0, sizeof (c->config));
+    memset(c->config, 0, sizeof(c->config));
     if (ISVALID(config_file)) {
-        strncpy(c->config, config_file, sizeof (c->config) - 1);
+        strncpy(c->config, config_file, sizeof(c->config) - 1);
     }
-    memset(c->name, 0, sizeof (c->name));
+    memset(c->name, 0, sizeof(c->name));
     if (ISVALID(name)) {
-        strncpy(c->name, name, sizeof (c->name) - 1);
+        strncpy(c->name, name, sizeof(c->name) - 1);
     }
 
     c->data.next = c->data.prev = 0;
@@ -1535,8 +1553,7 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
         } else {
             am_config_t *cf = am_parse_config_xml(instance_id, xml, xsz, AM_TRUE);
             if (cf == NULL) {
-                AM_LOG_ERROR(instance_id, "%s failed to parse agent profile xml",
-                        thisfunc);
+                AM_LOG_ERROR(instance_id, "%s failed to parse agent profile xml", thisfunc);
                 ret = AM_XML_ERROR;
             } else {
                 /* remote mode overrides logging and audit level bootstrap configuration */
@@ -1572,7 +1589,8 @@ static int am_set_agent_config(unsigned long instance_id, const char *xml,
         }
     }
 
-    if (ie != NULL) *ie = c;
+    if (ie != NULL)
+        *ie = c;
     am_shm_unlock(conf);
     return ret;
 }
@@ -1590,14 +1608,12 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
         return AM_EINVAL;
     }
     if (conf == NULL) {
-        AM_LOG_ERROR(instance_id, "%s unable to fetch agent configuration (shared memory error)",
-                thisfunc);
+        AM_LOG_ERROR(instance_id, "%s unable to fetch agent configuration (shared memory error)", thisfunc);
         return AM_ENOMEM;
     }
 
     max_retry++;
     do {
-
         am_shm_lock(conf);
         c = get_instance_entry(instance_id);
         if (c == NULL) {
@@ -1613,13 +1629,11 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
 
             in_progress = am_agent_init_get_value(instance_id);
 
-            AM_LOG_DEBUG(instance_id, "%s agent configuration fetch in progress: %d",
-                    thisfunc, in_progress);
+            AM_LOG_DEBUG(instance_id, "%s agent configuration fetch in progress: %d", thisfunc, in_progress);
 
             if (in_progress) {
                 am_agent_instance_init_unlock();
-                AM_LOG_WARNING(instance_id, "%s retry %d",
-                        thisfunc, (retry - max_retry) + 1);
+                AM_LOG_WARNING(instance_id, "%s retry %d", thisfunc, (retry - max_retry) + 1);
                 sleep(retry_wait);
                 continue;
             }
@@ -1630,37 +1644,32 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
             if (ac == NULL) {
                 am_agent_init_set_value(instance_id, AM_FALSE);
                 am_agent_instance_init_unlock();
-                AM_LOG_ERROR(instance_id, "%s failed to load instance bootstrap %ld data",
-                        thisfunc, instance_id);
+                AM_LOG_ERROR(instance_id, "%s failed to load instance bootstrap %ld data", thisfunc, instance_id);
                 return AM_FILE_ERROR; /* fatal */
             }
 
             am_net_options_create(ac, &net_options, NULL);
             net_options.notif_enable = AM_TRUE; /* agent token notifications are always enabled */
 
-            memset(&r, 0, sizeof (am_request_t));
+            memset(&r, 0, sizeof(am_request_t));
             r.conf = ac;
             r.instance_id = instance_id;
 
-            login_status = am_agent_login(instance_id, get_valid_openam_url(&r),
-                    ac->user, ac->pass, ac->realm, ac->policy_eval_app, &net_options,
-                    &agent_token, &profile_xml, &profile_xml_sz, &agent_session);
+            login_status = am_agent_login(instance_id, get_valid_openam_url(&r), ac->user, ac->pass, ac->realm,
+                                          ac->policy_eval_app, &net_options, &agent_token, &profile_xml,
+                                          &profile_xml_sz, &agent_session);
 
             if (login_status == AM_SUCCESS && ISVALID(agent_token) && agent_session != NULL) {
-
                 AM_LOG_DEBUG(instance_id, "%s agent login%s succeeded", thisfunc,
-                        ISVALID(profile_xml) ? " and profile fetch" : "");
+                             ISVALID(profile_xml) ? " and profile fetch" : "");
 
-                if ((store_status = am_set_agent_config(instance_id, profile_xml, profile_xml_sz,
-                        agent_token, config_file, ac->user, ac, &c)) == AM_SUCCESS) {
-
-                    AM_LOG_DEBUG(instance_id, "%s agent configuration stored in a cache",
-                            thisfunc);
+                if ((store_status = am_set_agent_config(instance_id, profile_xml, profile_xml_sz, agent_token,
+                                                        config_file, ac->user, ac, &c)) == AM_SUCCESS) {
+                    AM_LOG_DEBUG(instance_id, "%s agent configuration stored in a cache", thisfunc);
 
                 } else {
-
-                    AM_LOG_WARNING(instance_id, "%s retry %d (%s)",
-                            thisfunc, (retry - max_retry) + 1, am_strerror(store_status));
+                    AM_LOG_WARNING(instance_id, "%s retry %d (%s)", thisfunc, (retry - max_retry) + 1,
+                                   am_strerror(store_status));
 
                     if (c != NULL && delete_instance_entry(c) == AM_SUCCESS) {
                         am_shm_free(conf, c);
@@ -1668,8 +1677,7 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
                     should_retry = AM_TRUE;
                 }
             } else {
-                AM_LOG_WARNING(instance_id, "%s retry %d (login failure)",
-                        thisfunc, (retry - max_retry) + 1);
+                AM_LOG_WARNING(instance_id, "%s retry %d (login failure)", thisfunc, (retry - max_retry) + 1);
                 should_retry = AM_TRUE;
             }
 
@@ -1690,7 +1698,6 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
             am_agent_instance_init_unlock();
 
         } else {
-
             *cnf = am_get_stored_agent_config(c);
 
             /* validate configuration cache entry ttl */
@@ -1700,12 +1707,13 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
                 if (difftime(time(NULL), ts) >= 0) {
                     char tsc[32], tsu[32];
                     struct tm created, until;
-                    localtime_r((const time_t *) &c->ts, &created);
-                    localtime_r((const time_t *) &ts, &until);
-                    strftime(tsc, sizeof (tsc), AM_CACHE_TIMEFORMAT, &created);
-                    strftime(tsu, sizeof (tsu), AM_CACHE_TIMEFORMAT, &until);
-                    AM_LOG_WARNING(instance_id, "%s configuration cache entry is obsolete (created: %s, valid until: %s)",
-                            thisfunc, tsc, tsu);
+                    localtime_r((const time_t *)&c->ts, &created);
+                    localtime_r((const time_t *)&ts, &until);
+                    strftime(tsc, sizeof(tsc), AM_CACHE_TIMEFORMAT, &created);
+                    strftime(tsu, sizeof(tsu), AM_CACHE_TIMEFORMAT, &until);
+                    AM_LOG_WARNING(instance_id,
+                                   "%s configuration cache entry is obsolete (created: %s, valid until: %s)", thisfunc,
+                                   tsc, tsu);
                     if (delete_instance_entry(c) == AM_SUCCESS) {
                         am_shm_free(conf, c);
                     }
@@ -1724,29 +1732,27 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
                 (*cnf)->token = strdup(c->token);
                 (*cnf)->config = strdup(c->config);
                 if (ISVALID((*cnf)->cert_key_pass)) {
-                    (*cnf)->cert_key_pass_sz = (int) strlen((*cnf)->cert_key_pass);
+                    (*cnf)->cert_key_pass_sz = (int)strlen((*cnf)->cert_key_pass);
                 }
                 if (ISVALID((*cnf)->proxy_password)) {
-                    (*cnf)->proxy_password_sz = (int) strlen((*cnf)->proxy_password);
+                    (*cnf)->proxy_password_sz = (int)strlen((*cnf)->proxy_password);
                 }
                 rv = AM_SUCCESS;
-                AM_LOG_DEBUG(instance_id, "%s agent configuration read from a cache",
-                        thisfunc);
+                AM_LOG_DEBUG(instance_id, "%s agent configuration read from a cache", thisfunc);
                 am_shm_unlock(conf);
 
                 if (!(*cnf)->local) {
                     /* update instance logger registration data */
                     am_log_register_instance(instance_id, (*cnf)->debug_file, (*cnf)->debug_level, (*cnf)->debug,
-                            (*cnf)->audit_file, (*cnf)->audit_level, (*cnf)->audit, (*cnf)->config);
+                                             (*cnf)->audit_file, (*cnf)->audit_level, (*cnf)->audit, (*cnf)->config);
                 }
 
                 if (AM_BITMASK_CHECK((*cnf)->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE)) {
                     /* register or update remote audit logging configuration */
                     rv = am_audit_register_instance(*cnf);
                     if (rv != AM_SUCCESS) {
-                        AM_LOG_WARNING(instance_id,
-                                "%s failed to register remote audit log instance (%s)",
-                                thisfunc, am_strerror(rv));
+                        AM_LOG_WARNING(instance_id, "%s failed to register remote audit log instance (%s)", thisfunc,
+                                       am_strerror(rv));
                     }
                 }
                 break;
@@ -1757,9 +1763,8 @@ int am_get_agent_config(unsigned long instance_id, const char *config_file, am_c
     } while (--max_retry > 0);
 
     if (max_retry == 0) {
-        AM_LOG_ERROR(instance_id,
-                "%s failed to locate instance configuration %ld data (max %d retries exhausted)",
-                thisfunc, instance_id, retry);
+        AM_LOG_ERROR(instance_id, "%s failed to locate instance configuration %ld data (max %d retries exhausted)",
+                     thisfunc, instance_id, retry);
         return AM_RETRY_ERROR; /* fatal */
     }
 
@@ -1776,7 +1781,8 @@ int am_get_agent_config_cache_or_local(unsigned long instance_id, const char *co
     }
 
     do {
-        if (conf == NULL || am_shm_lock(conf) != AM_SUCCESS) break;
+        if (conf == NULL || am_shm_lock(conf) != AM_SUCCESS)
+            break;
 
         /* try to get instance configuration from cache */
 
@@ -1794,12 +1800,12 @@ int am_get_agent_config_cache_or_local(unsigned long instance_id, const char *co
             if (difftime(time(NULL), ts) >= 0) {
                 char tsc[32], tsu[32];
                 struct tm created, until;
-                localtime_r((const time_t *) &entry->ts, &created);
-                localtime_r((const time_t *) &ts, &until);
-                strftime(tsc, sizeof (tsc), AM_CACHE_TIMEFORMAT, &created);
-                strftime(tsu, sizeof (tsu), AM_CACHE_TIMEFORMAT, &until);
+                localtime_r((const time_t *)&entry->ts, &created);
+                localtime_r((const time_t *)&ts, &until);
+                strftime(tsc, sizeof(tsc), AM_CACHE_TIMEFORMAT, &created);
+                strftime(tsu, sizeof(tsu), AM_CACHE_TIMEFORMAT, &until);
                 AM_LOG_WARNING(instance_id, "%s configuration cache entry is obsolete (created: %s, valid until: %s)",
-                        thisfunc, tsc, tsu);
+                               thisfunc, tsc, tsu);
                 if (delete_instance_entry(entry) == AM_SUCCESS) {
                     am_shm_free(conf, entry);
                 }
@@ -1816,15 +1822,16 @@ int am_get_agent_config_cache_or_local(unsigned long instance_id, const char *co
             (*cnf)->token = strdup(entry->token);
             (*cnf)->config = strdup(entry->config);
             if (ISVALID((*cnf)->cert_key_pass)) {
-                (*cnf)->cert_key_pass_sz = (int) strlen((*cnf)->cert_key_pass);
+                (*cnf)->cert_key_pass_sz = (int)strlen((*cnf)->cert_key_pass);
             }
             if (ISVALID((*cnf)->proxy_password)) {
-                (*cnf)->proxy_password_sz = (int) strlen((*cnf)->proxy_password);
+                (*cnf)->proxy_password_sz = (int)strlen((*cnf)->proxy_password);
             }
         }
 
         am_shm_unlock(conf);
-        if (*cnf == NULL) break;
+        if (*cnf == NULL)
+            break;
 
         return AM_SUCCESS;
     } while (0);

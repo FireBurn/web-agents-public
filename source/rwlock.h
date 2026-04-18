@@ -14,20 +14,17 @@
  * Copyright 2014 - 2016 ForgeRock AS.
  */
 
-#define THREAD_LIMIT                        20
+#define THREAD_LIMIT 20
 
-struct readlock
-{
-    volatile int32_t                        readers;
+struct readlock {
+    volatile int32_t readers;
 
-    volatile pid_t                          barrier;
+    volatile pid_t barrier;
 
-    volatile pid_t                          pids[THREAD_LIMIT];
-
+    volatile pid_t pids[THREAD_LIMIT];
 };
 
-extern const struct readlock                readlock_init;
-
+extern const struct readlock readlock_init;
 
 int read_lock(struct readlock *lock, pid_t pid);
 
@@ -46,4 +43,3 @@ int read_block(struct readlock *lock, pid_t pid);
 int read_unblock(struct readlock *lock, pid_t pid);
 
 int wait_for_barrier(struct readlock *lock, pid_t pid);
-

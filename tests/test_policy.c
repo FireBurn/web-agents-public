@@ -34,13 +34,11 @@ static void check_normalisation(char *pattern, char *expect) {
 
     } else {
         assert_null(norm);
-
     }
     am_free(norm);
 }
 
 void test_pattern_normalisation(void **state) {
-
     /* simple cases */
     check_normalisation("http://a.c.b/first/second?a=b", "http://a.c.b:80/first/second?a=b");
     check_normalisation("https://a.c.b/first/second", "https://a.c.b:443/first/second");
@@ -82,8 +80,10 @@ static int compare_url(am_request_t *r, const char *pattern, const char *resourc
 }
 
 void test_policy_compare_url(void **state) {
-    am_config_t config = { .instance_id = 101, .url_eval_case_ignore = 1 };
-    am_request_t r = { .conf = &config, };
+    am_config_t config = {.instance_id = 101, .url_eval_case_ignore = 1};
+    am_request_t r = {
+        .conf = &config,
+    };
 
     /* pattern, resource */
 
@@ -148,24 +148,23 @@ void test_policy_compare_url(void **state) {
     assert_int_equal(compare_url(&r, "http://a*b*cM*", "http://axbxcNbxcM:80?q"), AM_NO_MATCH);
 }
 
-
 #undef BACKTRACK_CASES
 #define REMOVE_DEGENERATE_PATTERNS
 #define DEGENERATE_CASES
 
 #define MATCH(r, p, u) compare_pattern_resource(r, p, u)
 
-am_bool_t compare_chars(am_request_t * r, char a, char b);
-am_bool_t compare_pattern_resource(am_request_t *r, const char * pattern, const char * url);
+am_bool_t compare_chars(am_request_t *r, char a, char b);
+am_bool_t compare_pattern_resource(am_request_t *r, const char *pattern, const char *url);
 
 /*
- * this is a test facility to modify degenerate URL patterns where there is a pointless sequence of 
+ * this is a test facility to modify degenerate URL patterns where there is a pointless sequence of
  * * and/or -*- wildcards. It replaces a sequence of wildcards with the last one.
  *
- * these degenerate patterns are not expected in practice, and they can cause significant performance 
+ * these degenerate patterns are not expected in practice, and they can cause significant performance
  * decrease in these tests.
  */
-static char * simplify_degenerate_pattern(const char *pattern) {
+static char *simplify_degenerate_pattern(const char *pattern) {
     enum { multilevel, onelevel, none } skip;
 
     char *base = strdup(pattern), *p, *q;
@@ -186,28 +185,25 @@ static char * simplify_degenerate_pattern(const char *pattern) {
 
             } else {
                 break;
-
             }
 
         } while (1);
 
         if (skip == multilevel) {
-           *q++ = '*';
+            *q++ = '*';
 
         } else if (skip == onelevel) {
-           *q++ = '-'; *q++ = '*'; *q++ = '-';
-
+            *q++ = '-';
+            *q++ = '*';
+            *q++ = '-';
         }
         *q++ = *p++;
-
     }
 
     if (strlen(base) != strlen(pattern)) {
         printf("changed %s to %s\n", pattern, base);
-
     }
     return base;
-
 }
 
 /*
@@ -218,52 +214,53 @@ static char * simplify_degenerate_pattern(const char *pattern) {
  * faster with this version, but it requires BACKTRACK_CASES off. The overhead of the backtracking implementation
  * are deemed to be acceptable.
  */
-static am_bool_t fast_compare_pattern_resource(am_request_t *r, const char * pattern, const char * url) {
-
+static am_bool_t fast_compare_pattern_resource(am_request_t *r, const char *pattern, const char *url) {
     enum { multilevel, onelevel, none } skip = none;
 
     const char *p = pattern, *u = url;
 
     const char *p0, *u0; /* backtrack points: p0 start of pattern, u0 start of candidate match after skipping */
 
-#define save_backtrack(s)           p0 = p; u0 = u; skip = s
+#define save_backtrack(s)                                                                                              \
+    p0 = p;                                                                                                            \
+    u0 = u;                                                                                                            \
+    skip = s
 
     while (*u) {
         if (*p == '*') {
-            p += 1; save_backtrack(multilevel);
+            p += 1;
+            save_backtrack(multilevel);
 
         } else if (*p == '-' && p[1] == '*' && p[2] == '-') {
-            p += 3; save_backtrack(onelevel);
-
+            p += 3;
+            save_backtrack(onelevel);
         }
 
         if (compare_chars(r, *p, *u)) {
-            p++; u++;
+            p++;
+            u++;
 
         } else if (skip == multilevel) {
             if (*u0 != '?') {
-                p = p0; u = ++u0;
+                p = p0;
+                u = ++u0;
 
             } else {
                 return AM_FALSE;
-
             }
 
         } else if (skip == onelevel) {
             if (*u0 != '?' && *u0 != '/') {
-                p = p0; u = ++u0;
+                p = p0;
+                u = ++u0;
 
             } else {
                 return AM_FALSE;
-
             }
 
         } else {
             return AM_FALSE;
-
         }
-
-
     }
 
     while (*p)
@@ -275,137 +272,135 @@ static am_bool_t fast_compare_pattern_resource(am_request_t *r, const char * pat
 
         } else {
             return AM_FALSE;
-
         }
 
     return AM_TRUE;
-
 }
 
-
 typedef struct {
-
-    char * pattern, * resource;
+    char *pattern, *resource;
     am_bool_t expect;
-    
+
 } pattern_exp_t;
 
-#define array_len(a) ((&a) [1] - a)
+#define array_len(a) ((&a)[1] - a)
 
-#define expect(p, r, e) { .pattern = p, .resource = r, .expect = e }
+#define expect(p, r, e) {.pattern = p, .resource = r, .expect = e}
 
 static pattern_exp_t exps[] = {
 
-    //expect("*-*-A",                      "-/a/b/-A",                            AM_TRUE),
+    // expect("*-*-A",                      "-/a/b/-A",                            AM_TRUE),
 
-    expect("*.c:90/a/-*-",               "http://a.b.c:90/a/",                   AM_TRUE),
-    expect("*.c:90/a/b-*-",              "http://a.b.c:90/a/b",                  AM_TRUE),
-    expect("*.c:90/a/b-*-",              "http://a.b.c:90/a/b/",                AM_FALSE),
-    expect("*.c:90/-*-/z",               "http://a.b.c:90/x/y/z",               AM_FALSE),
+    expect("*.c:90/a/-*-", "http://a.b.c:90/a/", AM_TRUE),
+    expect("*.c:90/a/b-*-", "http://a.b.c:90/a/b", AM_TRUE),
+    expect("*.c:90/a/b-*-", "http://a.b.c:90/a/b/", AM_FALSE),
+    expect("*.c:90/-*-/z", "http://a.b.c:90/x/y/z", AM_FALSE),
 
-    expect("*://*/-*-*.html",            "http://a.b.c/path?hack.html",         AM_FALSE),
+    expect("*://*/-*-*.html", "http://a.b.c/path?hack.html", AM_FALSE),
 
-    expect("http://x/cM*",               "http://x/cM-80?q",                    AM_FALSE),
-    expect("*://*:*/xapp/*",             "://:///xapp/?x",                      AM_FALSE),
+    expect("http://x/cM*", "http://x/cM-80?q", AM_FALSE),
+    expect("*://*:*/xapp/*", "://:///xapp/?x", AM_FALSE),
 
-    expect("http://*/a*b",               "http://foo.bar/axbxxxxxxxxx",         AM_FALSE),
-    expect("http://*/a*b",               "http://foo/bar/axbxbx",               AM_FALSE),
+    expect("http://*/a*b", "http://foo.bar/axbxxxxxxxxx", AM_FALSE),
+    expect("http://*/a*b", "http://foo/bar/axbxbx", AM_FALSE),
 
-    expect("*://*/root/*?*",             "https://foo.bar:443/root/next/path?params", AM_TRUE),
-    expect("*://*/root/*?*P=Q",          "http://foo.bar:4738923249/root/next/path?P=Q", AM_TRUE),
-    expect("*://*/root/*?*P=Q",          "http://foo.bar:4/root/next/path?S=T&P=Q", AM_TRUE),
-    
-    expect("http://vb2.*/test*",         "http://vb3.local.com:80/test/path",   AM_FALSE),
-    
-    expect("http://a.b.c:*/x/y/z",       "http://a.b.c:90/x",                   AM_FALSE),
-    expect("http://a.b.*/*/z",           "http://a.b.c:90/x/y/z",               AM_TRUE),
-    
-    /* wildcard goes over port and path */
+    expect("*://*/root/*?*", "https://foo.bar:443/root/next/path?params", AM_TRUE),
+    expect("*://*/root/*?*P=Q", "http://foo.bar:4738923249/root/next/path?P=Q", AM_TRUE),
+    expect("*://*/root/*?*P=Q", "http://foo.bar:4/root/next/path?S=T&P=Q", AM_TRUE),
+
+    expect("http://vb2.*/test*", "http://vb3.local.com:80/test/path", AM_FALSE),
+
+    expect("http://a.b.c:*/x/y/z", "http://a.b.c:90/x", AM_FALSE),
+    expect("http://a.b.*/*/z", "http://a.b.c:90/x/y/z", AM_TRUE),
+
+/* wildcard goes over port and path */
 
 #ifdef BACKTRACK_CASES
-    expect("http://a.b.*/-*-/z",         "http://a.b.c:90/x/y/z",               AM_TRUE),
-    expect("*.c*/-*-/z",                 "http://a.b.c:90/x/y/z",               AM_TRUE),
-    expect("http*.c*/-*-/z",             "http://a.b.c:90/x/y/z",               AM_TRUE),
-    expect("http*.c*/-*-/z*",            "http://a.b.c:90/x/y/z/a",             AM_TRUE),
-    expect("http*.c*/-*-z*",             "http://a.b.c:90/x/yz/a",              AM_TRUE),
-    expect("http*.c*/-*-z*",             "http://a.b.c:90/x/y?z/a",             AM_FALSE),
+    expect("http://a.b.*/-*-/z", "http://a.b.c:90/x/y/z", AM_TRUE),
+    expect("*.c*/-*-/z", "http://a.b.c:90/x/y/z", AM_TRUE),
+    expect("http*.c*/-*-/z", "http://a.b.c:90/x/y/z", AM_TRUE),
+    expect("http*.c*/-*-/z*", "http://a.b.c:90/x/y/z/a", AM_TRUE),
+    expect("http*.c*/-*-z*", "http://a.b.c:90/x/yz/a", AM_TRUE),
+    expect("http*.c*/-*-z*", "http://a.b.c:90/x/y?z/a", AM_FALSE),
 #endif
 
-    expect("http:/a.b.c*/*/-*-/z",       "http://a.b.c:90/x/z",                 AM_FALSE),
-    expect("*.c:90/-*-/z",               "http://a.b.c:90/x/y/z",               AM_FALSE),
+    expect("http:/a.b.c*/*/-*-/z", "http://a.b.c:90/x/z", AM_FALSE),
+    expect("*.c:90/-*-/z", "http://a.b.c:90/x/y/z", AM_FALSE),
 
-    expect("http://a.b.*/-*-/z",         "http://a.b.c:90/x/z",                 AM_TRUE),
-    
-    expect("http://a.b.*:123456/*x",     "http://a.b.c:123456/x",               AM_TRUE),
-    expect("http://a.b.*:123456/*x",     "http://a.ffff.c/x",                   AM_FALSE),
-    
-    expect("http://-*-.c:*/*/-*-/z",     "http://a.b.c:90/x/y/z",               AM_TRUE),
-    expect("http://-*-.c*/-*-/z",        "http://a.b.c:90/x/z",                 AM_TRUE),
-    expect("http://*.c*/x/-*-/z",        "http://a.b.c:90/x//z",                AM_TRUE),
+    expect("http://a.b.*/-*-/z", "http://a.b.c:90/x/z", AM_TRUE),
 
-    /* should not pass the sanity check: bad url, not 3 /s */
+    expect("http://a.b.*:123456/*x", "http://a.b.c:123456/x", AM_TRUE),
+    expect("http://a.b.*:123456/*x", "http://a.ffff.c/x", AM_FALSE),
+
+    expect("http://-*-.c:*/*/-*-/z", "http://a.b.c:90/x/y/z", AM_TRUE),
+    expect("http://-*-.c*/-*-/z", "http://a.b.c:90/x/z", AM_TRUE),
+    expect("http://*.c*/x/-*-/z", "http://a.b.c:90/x//z", AM_TRUE),
+
+/* should not pass the sanity check: bad url, not 3 /s */
 
 #ifdef MALFORMED_URL
-    expect("http://-*-.c*/-*-/z",        "http://a.b.c/:90/x/z",                AM_FALSE),
-    expect("*://*:*/*",                  "http:///a.b.c:90/x/z",                AM_FALSE),
+    expect("http://-*-.c*/-*-/z", "http://a.b.c/:90/x/z", AM_FALSE),
+    expect("*://*:*/*", "http:///a.b.c:90/x/z", AM_FALSE),
 #endif
 
-    expect("*.c*/-*-/z",                 "http://a.b.c:90/y/z",                 AM_TRUE),
+    expect("*.c*/-*-/z", "http://a.b.c:90/y/z", AM_TRUE),
 
-    expect("http://a.b.c/*.gif",         "http://a.b.c/illegal?hack.gif",       AM_FALSE),
+    expect("http://a.b.c/*.gif", "http://a.b.c/illegal?hack.gif", AM_FALSE),
 
-    expect("http://a.b.c/*x",            "http://a.b.c/illegalxand-the-rest",   AM_FALSE),
-    expect("http://a.b.c/*x",            "xxxxxhttp://a.b.c/illegalx",          AM_FALSE),
-    expect("http://a.b.c/*x*",           "http://a.b.c/illegalxand-the-rest",   AM_TRUE),
-    
-    expect("http://?$a.b.c/\t([]x",      "http://?$a.b.c/\t([]x",               AM_TRUE),
-    
+    expect("http://a.b.c/*x", "http://a.b.c/illegalxand-the-rest", AM_FALSE),
+    expect("http://a.b.c/*x", "xxxxxhttp://a.b.c/illegalx", AM_FALSE),
+    expect("http://a.b.c/*x*", "http://a.b.c/illegalxand-the-rest", AM_TRUE),
+
+    expect("http://?$a.b.c/\t([]x", "http://?$a.b.c/\t([]x", AM_TRUE),
+
     /* backtrack 1 level */
 
-    expect("http://a*bcd:80/n",          "http://abxxxbcxxxxbcd:80/n",          AM_TRUE),
-    expect("http://a*b*cM:80/n",         "http://axbxcMNbxcM:80/n",             AM_TRUE),
-    
+    expect("http://a*bcd:80/n", "http://abxxxbcxxxxbcd:80/n", AM_TRUE),
+    expect("http://a*b*cM:80/n", "http://axbxcMNbxcM:80/n", AM_TRUE),
+
     /* test without paths */
 
-    expect("http://a*b*cM:80?a=b",       "http://axbxcNbxcM:80?a=b",            AM_TRUE),
-    expect("http://a*b*cM*",             "http://axbxcNbxcM:80",                AM_TRUE),
+    expect("http://a*b*cM:80?a=b", "http://axbxcNbxcM:80?a=b", AM_TRUE),
+    expect("http://a*b*cM*", "http://axbxcNbxcM:80", AM_TRUE),
 
-    expect("http://a*b*cM:*/*",          "http://axbxcMbxcM:80/q",              AM_TRUE),
-    expect("http://a*b*cM*/q",           "http://axbxcNbxcM:80/q",              AM_TRUE),
-    expect("http://a*b*cM*/*r",          "http://axbxcNbxcM:80/q?r",            AM_FALSE),
-    expect("http://a*b*cM*/*?r",         "http://axbxcNbxcM:80/q?r",            AM_TRUE),
+    expect("http://a*b*cM:*/*", "http://axbxcMbxcM:80/q", AM_TRUE),
+    expect("http://a*b*cM*/q", "http://axbxcNbxcM:80/q", AM_TRUE),
+    expect("http://a*b*cM*/*r", "http://axbxcNbxcM:80/q?r", AM_FALSE),
+    expect("http://a*b*cM*/*?r", "http://axbxcNbxcM:80/q?r", AM_TRUE),
 
-    expect("http://a*b*cM*/-*-r",        "http://axbxcNbxcM:80/q?r",            AM_FALSE),
-    expect("http://a*b*cM*/-*-?r",       "http://axbxcNbxcM:80/q?r",            AM_TRUE),
+    expect("http://a*b*cM*/-*-r", "http://axbxcNbxcM:80/q?r", AM_FALSE),
+    expect("http://a*b*cM*/-*-?r", "http://axbxcNbxcM:80/q?r", AM_TRUE),
 
-    expect("http://a*b*cM*",             "http://axbxcNbxcM:80/q",              AM_TRUE),
-    expect("http://a*b*cM*",             "http://axbxcNbxcM:80?q",              AM_FALSE),
+    expect("http://a*b*cM*", "http://axbxcNbxcM:80/q", AM_TRUE),
+    expect("http://a*b*cM*", "http://axbxcNbxcM:80?q", AM_FALSE),
 
-    expect("*://*/*.html",               "http://a.b.c/secret.xml?hack.html",   AM_FALSE),
-    expect("*://*/*.html",               "http://a.b.c/path/no-hack.html",      AM_TRUE),
+    expect("*://*/*.html", "http://a.b.c/secret.xml?hack.html", AM_FALSE),
+    expect("*://*/*.html", "http://a.b.c/path/no-hack.html", AM_TRUE),
 
-    expect("*://*/-*-.html",             "http://a.b.c/secret.xml?hack.html",   AM_FALSE),
-    expect("*://*/*/-*-.html",           "http://a.b.c/foo/bar/secret.xml?hack.html",AM_FALSE),
-    expect("*://*/-*-*.html",            "http://a.b.c/path?hack.html",         AM_FALSE),
+    expect("*://*/-*-.html", "http://a.b.c/secret.xml?hack.html", AM_FALSE),
+    expect("*://*/*/-*-.html", "http://a.b.c/foo/bar/secret.xml?hack.html", AM_FALSE),
+    expect("*://*/-*-*.html", "http://a.b.c/path?hack.html", AM_FALSE),
 
-    /* degenerate cases: concatenated wildcards - don't have more of them than characters */
+/* degenerate cases: concatenated wildcards - don't have more of them than characters */
 
 #if defined DEGENERATE_CASES
-    expect("***",                        "01",                                  AM_TRUE),
-    expect("****",                       "01",                                  AM_TRUE), 
+    expect("***", "01", AM_TRUE),
+    expect("****", "01", AM_TRUE),
 
-    expect("**-*-****?***",              "http://a.b.c:90/x/y/z?a/b",           AM_TRUE),
-    expect("**-*-******",                "http://a.b.c:90/x/y/z?a/b",           AM_FALSE),
+    expect("**-*-****?***", "http://a.b.c:90/x/y/z?a/b", AM_TRUE),
+    expect("**-*-******", "http://a.b.c:90/x/y/z?a/b", AM_FALSE),
 #endif
 
-    expect("http://a.b.c:90/x/y/z?a/b",  "http://a.b.c:90/x/y/z?a/b",           AM_TRUE),
+    expect("http://a.b.c:90/x/y/z?a/b", "http://a.b.c:90/x/y/z?a/b", AM_TRUE),
 };
 
 void test_compare_pattern_resource(void **state) {
     size_t len = array_len(exps);
-    
-    am_config_t config = { .instance_id = 101, .url_eval_case_ignore = 0 };
-    am_request_t request = { .conf = &config, };
+
+    am_config_t config = {.instance_id = 101, .url_eval_case_ignore = 0};
+    am_request_t request = {
+        .conf = &config,
+    };
 
     int i, errs = 0;
 
@@ -421,17 +416,15 @@ void test_compare_pattern_resource(void **state) {
     am_timer_start(&t);
     for (c = 0; errs == 0 && c < max_c; c++) {
         for (i = 0; i < len; i++) {
-            if (MATCH(&request, exps[i].pattern, exps[i].resource) !=  exps[i].expect) {
-                printf("policy test error with pattern %s and URL %s: expected %d\n", exps[i].pattern, exps[i].resource, exps[i].expect);
+            if (MATCH(&request, exps[i].pattern, exps[i].resource) != exps[i].expect) {
+                printf("policy test error with pattern %s and URL %s: expected %d\n", exps[i].pattern, exps[i].resource,
+                       exps[i].expect);
                 errs++;
-
             }
-
         }
-
     }
     am_timer_stop(&t);
-    printf("test_compare_pattern_resource: %lu evals took %lf seconds\n", c*len, am_timer_elapsed(&t));
+    printf("test_compare_pattern_resource: %lu evals took %lf seconds\n", c * len, am_timer_elapsed(&t));
 
     assert_int_equal(errs, 0);
 
@@ -439,23 +432,24 @@ void test_compare_pattern_resource(void **state) {
     for (i = 0; i < len; i++)
         free(exps[i].pattern);
 #endif
-
 }
 
-static void match_wildcard(const char* url, const char *ptn) {
-    am_config_t config = { .instance_id = 101, .url_eval_case_ignore = 1 };
-    am_request_t request = { .conf = &config, };
+static void match_wildcard(const char *url, const char *ptn) {
+    am_config_t config = {.instance_id = 101, .url_eval_case_ignore = 1};
+    am_request_t request = {
+        .conf = &config,
+    };
 
-    if (! MATCH(&request, ptn, url)) {
+    if (!MATCH(&request, ptn, url)) {
         printf("expected url %s to match pattern %s\n", url, ptn);
     }
-
 }
 
 void test_am_policy_results(void **state) {
     match_wildcard("http://example.com:80/fred/index.html", "http*://*example.com:*/fred/*");
     match_wildcard("http://www.example.com:80/fred/index.html", "http*://*example.com:*/fred/*");
-    match_wildcard("http://www.google.com:80/asdf/hello/blah/wibble/asdf/blah", "http://www.google.com:80/*/blah/wibble/*/blah");
+    match_wildcard("http://www.google.com:80/asdf/hello/blah/wibble/asdf/blah",
+                   "http://www.google.com:80/*/blah/wibble/*/blah");
     match_wildcard("http://www.google.com.net", "http://www.google.com*");
     match_wildcard("http://www.google.com:80/", "http://www.google.com:*");
     match_wildcard("http://www.google.com.co.uk", "http://www.google.com*");
@@ -466,6 +460,4 @@ void test_am_policy_results(void **state) {
     match_wildcard("http://www.google.com:80/123/index.html", "http://*.com:80/123/index.html");
     match_wildcard("http://example.com:80/index.html?a=b", "http://example.com:80/index.*?a=b");
     match_wildcard("http://example.com:80/index.html?a=b", "http://example.com:80/index.*?*");
-
 }
-

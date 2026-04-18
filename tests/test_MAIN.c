@@ -14,9 +14,9 @@
  * Copyright 2015 ForgeRock AS.
  */
 
-/** 
- * THIS FILE INCLUDES AUTOMATICALLY GENERATED CONTENT FROM "tests.h".  
- * DO NOT EDIT "test_MAIN.c" AND "tests.h" FILES. 
+/**
+ * THIS FILE INCLUDES AUTOMATICALLY GENERATED CONTENT FROM "tests.h".
+ * DO NOT EDIT "test_MAIN.c" AND "tests.h" FILES.
  */
 
 #include <stdio.h>

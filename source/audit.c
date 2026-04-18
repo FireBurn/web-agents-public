@@ -14,46 +14,47 @@
  * Copyright 2015 - 2016 ForgeRock AS.
  */
 
-#include "platform.h"
 #include "am.h"
-#include "utility.h"
 #include "list.h"
-#include "thread.h"
 #include "net_client.h"
+#include "platform.h"
+#include "thread.h"
+#include "utility.h"
 
 #define AUDIT_SHM_LOCK_TIMEOUT 500 /* msec */
-#define THROTTLE_CNTRL 50 /* default max number of batch messages per second */
+#define THROTTLE_CNTRL 50          /* default max number of batch messages per second */
 #define BATCH_SIZE 20
 #define DEFAULT_RUN_INTERVAL 5 /* minutes */
 
-#define AUDIT_ENTRY_LINKS(offset) (&((struct am_audit_entry *) AM_GET_POINTER(audit_shm->pool, (offset)))->lh)
+#define AUDIT_ENTRY_LINKS(offset) (&((struct am_audit_entry *)AM_GET_POINTER(audit_shm->pool, (offset)))->lh)
 
-#define OFFSET_LIST_APPEND(hdr, links, offset) do {\
-    if ((hdr)->last) {\
-        links((hdr)->last)->next = offset;\
-        links(offset)->prev = (hdr)->last;\
-    } else {\
-        (hdr)->first = offset;\
-    }\
-    (hdr)->last = offset;\
-} while (0)
+#define OFFSET_LIST_APPEND(hdr, links, offset)                                                                         \
+    do {                                                                                                               \
+        if ((hdr)->last) {                                                                                             \
+            links((hdr)->last)->next = offset;                                                                         \
+            links(offset)->prev = (hdr)->last;                                                                         \
+        } else {                                                                                                       \
+            (hdr)->first = offset;                                                                                     \
+        }                                                                                                              \
+        (hdr)->last = offset;                                                                                          \
+    } while (0)
 
-#define OFFSET_LIST_UNLINK(hdr, links, offset) do {\
-    if (links(offset)->next) {\
-        links(links(offset)->next)->prev = links(offset)->prev;\
-    } else {\
-        (hdr)->last = links(offset)->prev;\
-    }\
-    if (links(offset)->prev) {\
-        links(links(offset)->prev)->next = links(offset)->next;\
-    } else {\
-        (hdr)->first = links(offset)->next;\
-    }\
-} while (0)
+#define OFFSET_LIST_UNLINK(hdr, links, offset)                                                                         \
+    do {                                                                                                               \
+        if (links(offset)->next) {                                                                                     \
+            links(links(offset)->next)->prev = links(offset)->prev;                                                    \
+        } else {                                                                                                       \
+            (hdr)->last = links(offset)->prev;                                                                         \
+        }                                                                                                              \
+        if (links(offset)->prev) {                                                                                     \
+            links(links(offset)->prev)->next = links(offset)->next;                                                    \
+        } else {                                                                                                       \
+            (hdr)->first = links(offset)->next;                                                                        \
+        }                                                                                                              \
+    } while (0)
 
-#define AM_OFFSET_LIST_FOR_EACH_OFFSET(base, header, e, offset) \
-    for (offset = (header)->first; (e = AM_GET_POINTER((base), offset), offset); \
-        offset = e->lh.next)
+#define AM_OFFSET_LIST_FOR_EACH_OFFSET(base, header, e, offset)                                                        \
+    for (offset = (header)->first; (e = AM_GET_POINTER((base), offset), offset); offset = e->lh.next)
 
 struct offset_list_hdr {
     unsigned int first, last;
@@ -88,9 +89,10 @@ struct am_audit_transfer {
 static am_timer_event_t *audit_timer = NULL;
 static am_shm_t *audit_shm = NULL;
 
-static const char *AUDIT_REQ_MSG = "<Request><![CDATA[<logRecWrite reqid=\"%%d\"><log logName=\"%s\" sid=\"%s\">"
-        "</log><logRecord><level>800</level><recMsg>%s</recMsg><logInfoMap><logInfo><infoKey>LoginIDSid</infoKey>"
-        "<infoValue>%s</infoValue></logInfo></logInfoMap></logRecord></logRecWrite>]]></Request>%%s";
+static const char *AUDIT_REQ_MSG =
+    "<Request><![CDATA[<logRecWrite reqid=\"%%d\"><log logName=\"%s\" sid=\"%s\">"
+    "</log><logRecord><level>800</level><recMsg>%s</recMsg><logInfoMap><logInfo><infoKey>LoginIDSid</infoKey>"
+    "<infoValue>%s</infoValue></logInfo></logInfoMap></logRecord></logRecWrite>]]></Request>%%s";
 
 static int throttle_ratio() {
     char *env = getenv("AM_AUDIT_SUBMIT_RATIO");
@@ -107,11 +109,13 @@ static int throttle_ratio() {
 
 int am_audit_init(int id) {
     int shm_status = AM_ERROR;
-    if (audit_shm != NULL) return AM_SUCCESS;
+    if (audit_shm != NULL)
+        return AM_SUCCESS;
 
     /* allocate memory: average audit entry size * 2048 */
     audit_shm = am_shm_create(get_global_name(AM_AUDIT_SHM_NAME, id),
-            sizeof (struct am_audit) + ((sizeof (struct am_audit_entry) + 800) * 2048), AM_FALSE, NULL, &shm_status);
+                              sizeof(struct am_audit) + ((sizeof(struct am_audit_entry) + 800) * 2048), AM_FALSE, NULL,
+                              &shm_status);
     if (audit_shm == NULL) {
         return shm_status;
     }
@@ -120,12 +124,12 @@ int am_audit_init(int id) {
     }
 
     if (audit_shm->init) {
-        struct am_audit *audit_data = (struct am_audit *) am_shm_alloc(audit_shm, sizeof (struct am_audit));
+        struct am_audit *audit_data = (struct am_audit *)am_shm_alloc(audit_shm, sizeof(struct am_audit));
         if (audit_data == NULL) {
             return AM_ENOMEM;
         }
         am_shm_lock(audit_shm);
-        memset(audit_data->config, 0, sizeof (audit_data->config));
+        memset(audit_data->config, 0, sizeof(audit_data->config));
         /* store table offset (for other processes) */
         am_shm_set_user_offset(audit_shm, AM_GET_OFFSET(audit_shm->pool, audit_data));
         am_shm_unlock(audit_shm);
@@ -141,7 +145,7 @@ int am_audit_shutdown() {
 }
 
 static struct am_audit *get_audit_data() {
-    return (struct am_audit *) am_shm_get_user_pointer(audit_shm);
+    return (struct am_audit *)am_shm_get_user_pointer(audit_shm);
 }
 
 static struct am_audit_config *get_audit_config(unsigned long instance_id) {
@@ -156,21 +160,20 @@ static struct am_audit_config *get_audit_config(unsigned long instance_id) {
     return NULL;
 }
 
-static am_status_t add_audit_entry(unsigned long instance_id,
-        const char *server_id, const char *message, size_t size) {
+static am_status_t add_audit_entry(unsigned long instance_id, const char *server_id, const char *message, size_t size) {
     int offset;
     struct am_audit_entry *audit_entry;
     struct am_audit_config *config;
 
-    audit_entry = am_shm_alloc(audit_shm, sizeof (struct am_audit_entry) +size + 1);
+    audit_entry = am_shm_alloc(audit_shm, sizeof(struct am_audit_entry) + size + 1);
     if (audit_entry == NULL) {
         return AM_ENOMEM;
     }
 
     if (ISVALID(server_id)) {
-        strncpy(audit_entry->server_id, server_id, sizeof (audit_entry->server_id) - 1);
+        strncpy(audit_entry->server_id, server_id, sizeof(audit_entry->server_id) - 1);
     } else {
-        memset(audit_entry->server_id, 0, sizeof (audit_entry->server_id));
+        memset(audit_entry->server_id, 0, sizeof(audit_entry->server_id));
     }
     memcpy(audit_entry->value, message, size);
     audit_entry->value[size] = '\0';
@@ -190,17 +193,15 @@ static am_status_t add_audit_entry(unsigned long instance_id,
     return AM_SUCCESS;
 }
 
-int am_add_remote_audit_entry(unsigned long instance_id, const char *agent_token,
-        const char *agent_token_server_id, const char *file_name,
-        const char *user_token, const char *format, ...) {
+int am_add_remote_audit_entry(unsigned long instance_id, const char *agent_token, const char *agent_token_server_id,
+                              const char *file_name, const char *user_token, const char *format, ...) {
     va_list args;
     size_t size;
     int msg_size;
     am_status_t status;
     char *tmp = NULL, *message = NULL, *message_b64;
 
-    if (!instance_id || ISINVALID(agent_token) || ISINVALID(user_token) ||
-            ISINVALID(file_name) || ISINVALID(format)) {
+    if (!instance_id || ISINVALID(agent_token) || ISINVALID(user_token) || ISINVALID(file_name) || ISINVALID(format)) {
         return AM_EINVAL;
     }
 
@@ -243,8 +244,9 @@ int am_add_remote_audit_entry(unsigned long instance_id, const char *agent_token
 #ifndef UNIT_TEST
 static
 #endif
-am_status_t extract_audit_entries(unsigned long instance_id,
-        am_status_t(*callback)(const char *openam, int count, struct am_audit_transfer *batch)) {
+    am_status_t extract_audit_entries(unsigned long instance_id,
+                                      am_status_t (*callback)(const char *openam, int count,
+                                                              struct am_audit_transfer *batch)) {
     static const char *thisfunc = "extract_audit_entries():";
     am_status_t status;
     struct am_audit_entry *e;
@@ -256,7 +258,7 @@ am_status_t extract_audit_entries(unsigned long instance_id,
     am_timer_t tm;
     double elapsed;
 
-    batch = malloc(BATCH_SIZE * sizeof (struct am_audit_transfer));
+    batch = malloc(BATCH_SIZE * sizeof(struct am_audit_transfer));
     if (batch == NULL) {
         return AM_ENOMEM;
     }
@@ -329,8 +331,7 @@ am_status_t extract_audit_entries(unsigned long instance_id,
     }
 
     if (total > 0) {
-        AM_LOG_DEBUG(instance_id, "%s processed %d entries (%f seconds)",
-                thisfunc, total, am_timer_elapsed(&tm));
+        AM_LOG_DEBUG(instance_id, "%s processed %d entries (%f seconds)", thisfunc, total, am_timer_elapsed(&tm));
 #ifdef UNIT_TEST
         printf("processed %d entries (%f seconds)\n", total, am_timer_elapsed(&tm));
 #endif
@@ -355,7 +356,7 @@ static am_status_t write_entries_to_server(const char *openam, int count, struct
         return AM_EINVAL;
     }
 
-    wd = malloc(sizeof (struct audit_worker_data));
+    wd = malloc(sizeof(struct audit_worker_data));
     if (wd == NULL) {
         return AM_ENOMEM;
     }
@@ -378,7 +379,7 @@ static am_status_t write_entries_to_server(const char *openam, int count, struct
     wd->instance_id = instance_id;
     wd->openam = strdup(openam);
     wd->logdata = msg;
-    wd->options = malloc(sizeof (am_net_options_t));
+    wd->options = malloc(sizeof(am_net_options_t));
     if (wd->options != NULL) {
         am_config_t *conf = NULL;
         if (am_get_agent_config(instance_id, config_file, &conf) == AM_SUCCESS) {
@@ -416,15 +417,14 @@ static void am_audit_tick(void *arg) {
 
     for (i = 0; i < AM_MAX_INSTANCES; i++) {
         if (audit_data->config[i].instance_id > 0 &&
-                (audit_data->config[i].interval == 1 ||
-                audit_data->config[i].interval == ++(audit_data->config[i].last))) {
+            (audit_data->config[i].interval == 1 || audit_data->config[i].interval == ++(audit_data->config[i].last))) {
             /* reset run-count for this instance */
             audit_data->config[i].last = 0;
 
             status = extract_audit_entries(audit_data->config[i].instance_id, write_entries_to_server);
             if (status != AM_SUCCESS) {
-                AM_LOG_WARNING(audit_data->config[i].instance_id,
-                        "%s failed to extract audit entries (%s)", thisfunc, am_strerror(status));
+                AM_LOG_WARNING(audit_data->config[i].instance_id, "%s failed to extract audit entries (%s)", thisfunc,
+                               am_strerror(status));
             }
         }
     }
@@ -470,7 +470,7 @@ int am_audit_register_instance(am_config_t *conf) {
         return AM_ENOMEM;
     }
 
-    memset(&req, 0, sizeof (am_request_t));
+    memset(&req, 0, sizeof(am_request_t));
     req.instance_id = conf->instance_id;
     req.conf = conf;
     openam = get_valid_openam_url(&req);
@@ -478,10 +478,10 @@ int am_audit_register_instance(am_config_t *conf) {
     /* update existing instance configuration */
     for (i = 0; i < AM_MAX_INSTANCES; i++) {
         if (audit_data->config[i].instance_id == conf->instance_id) {
-            audit_data->config[i].interval = conf->audit_remote_interval <= 0 ?
-                    DEFAULT_RUN_INTERVAL : conf->audit_remote_interval;
-            strncpy(audit_data->config[i].config_file, conf->config, sizeof (audit_data->config[i].config_file) - 1);
-            strncpy(audit_data->config[i].openam, openam, sizeof (audit_data->config[i].openam) - 1);
+            audit_data->config[i].interval =
+                conf->audit_remote_interval <= 0 ? DEFAULT_RUN_INTERVAL : conf->audit_remote_interval;
+            strncpy(audit_data->config[i].config_file, conf->config, sizeof(audit_data->config[i].config_file) - 1);
+            strncpy(audit_data->config[i].openam, openam, sizeof(audit_data->config[i].openam) - 1);
             am_shm_unlock(audit_shm);
             return AM_SUCCESS;
         }
@@ -490,11 +490,11 @@ int am_audit_register_instance(am_config_t *conf) {
     for (i = 0; i < AM_MAX_INSTANCES; i++) {
         if (audit_data->config[i].instance_id == 0) {
             audit_data->config[i].instance_id = conf->instance_id;
-            audit_data->config[i].interval = conf->audit_remote_interval <= 0 ?
-                    DEFAULT_RUN_INTERVAL : conf->audit_remote_interval;
+            audit_data->config[i].interval =
+                conf->audit_remote_interval <= 0 ? DEFAULT_RUN_INTERVAL : conf->audit_remote_interval;
             audit_data->config[i].last = 0;
-            strncpy(audit_data->config[i].config_file, conf->config, sizeof (audit_data->config[i].config_file) - 1);
-            strncpy(audit_data->config[i].openam, openam, sizeof (audit_data->config[i].openam) - 1);
+            strncpy(audit_data->config[i].config_file, conf->config, sizeof(audit_data->config[i].config_file) - 1);
+            strncpy(audit_data->config[i].openam, openam, sizeof(audit_data->config[i].openam) - 1);
             break;
         }
     }

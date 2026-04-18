@@ -17,11 +17,11 @@
 #ifdef _GNU_SOURCE
 #undef _GNU_SOURCE /* prefer strerror_r */
 #endif
-#include "platform.h"
-#include "am.h"
-#include "utility.h"
 #include "net_client.h"
+#include "am.h"
 #include "list.h"
+#include "platform.h"
+#include "utility.h"
 
 #ifndef INVALID_SOCKET
 #define INVALID_SOCKET -1
@@ -29,12 +29,7 @@
 
 #define RECV_BUFFER_SZ 1024
 
-enum {
-    HEADER_NONE = 0,
-    HEADER_FIELD,
-    HEADER_VALUE,
-    HEADER_ERROR
-};
+enum { HEADER_NONE = 0, HEADER_FIELD, HEADER_VALUE, HEADER_ERROR };
 
 #ifdef _WIN32
 static short connect_ev = POLLWRNORM;
@@ -51,40 +46,41 @@ static am_bool_t openssl_init = AM_TRUE;
 #endif
 
 #ifdef _WIN32
-#define net_log_error(i,e) \
-    do {\
-        LPSTR es = NULL; \
-        if (FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, 0, e, 0, (LPSTR) & es, 0, 0) == 0) { \
-            AM_LOG_ERROR(i, "net_error(%s:%d) unknown error code (%X)", __FILE__, __LINE__, e);\
-        } else { \
-            char *p = strchr(es, '\r'); \
-            if (p != NULL) {\
-                *p = '\0';\
-            }\
-            AM_LOG_ERROR(i, "net_error(%s:%d): %s (%X)", __FILE__, __LINE__, es, e); \
-            LocalFree(es);\
-        }\
-    } while(0)
+#define net_log_error(i, e)                                                                                            \
+    do {                                                                                                               \
+        LPSTR es = NULL;                                                                                               \
+        if (FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, 0, e, 0, (LPSTR) & es, 0,      \
+                           0) == 0) {                                                                                  \
+            AM_LOG_ERROR(i, "net_error(%s:%d) unknown error code (%X)", __FILE__, __LINE__, e);                        \
+        } else {                                                                                                       \
+            char *p = strchr(es, '\r');                                                                                \
+            if (p != NULL) {                                                                                           \
+                *p = '\0';                                                                                             \
+            }                                                                                                          \
+            AM_LOG_ERROR(i, "net_error(%s:%d): %s (%X)", __FILE__, __LINE__, es, e);                                   \
+            LocalFree(es);                                                                                             \
+        }                                                                                                              \
+    } while (0)
 #else
-#define net_log_error(i, e) \
-    do {\
-        size_t size = 1024;\
-        char *tmp, *es = malloc(size + 1);\
-        if (es != NULL) {\
-            while (strerror_r(e, es, size) == -1 && errno == ERANGE) {\
-                size *= 2;\
-                tmp = realloc(es, size + 1);\
-                if (tmp == NULL) {\
-                    am_free(es);\
-                    es = NULL;\
-                    break;\
-                }\
-                es = tmp;\
-            }\
-            AM_LOG_ERROR(i, "net_error(%s:%d): %s (%d)", __FILE__, __LINE__, es, e);\
-            am_free(es);\
-        }\
-    } while(0)
+#define net_log_error(i, e)                                                                                            \
+    do {                                                                                                               \
+        size_t size = 1024;                                                                                            \
+        char *tmp, *es = malloc(size + 1);                                                                             \
+        if (es != NULL) {                                                                                              \
+            while (strerror_r(e, es, size) == -1 && errno == ERANGE) {                                                 \
+                size *= 2;                                                                                             \
+                tmp = realloc(es, size + 1);                                                                           \
+                if (tmp == NULL) {                                                                                     \
+                    am_free(es);                                                                                       \
+                    es = NULL;                                                                                         \
+                    break;                                                                                             \
+                }                                                                                                      \
+                es = tmp;                                                                                              \
+            }                                                                                                          \
+            AM_LOG_ERROR(i, "net_error(%s:%d): %s (%d)", __FILE__, __LINE__, es, e);                                   \
+            am_free(es);                                                                                               \
+        }                                                                                                              \
+    } while (0)
 #endif
 
 void net_init_ssl();
@@ -144,9 +140,9 @@ static int net_in_progress(int e) {
 
 static int net_close_socket(
 #ifdef _WIN32
-        SOCKET
+    SOCKET
 #else
-        int
+    int
 #endif
         s) {
     if (s != INVALID_SOCKET)
@@ -191,27 +187,28 @@ static int set_nonblocking(am_net_t *n, int cmd) {
 #endif
 
 static int on_status_cb(http_parser *parser, const char *at, size_t length) {
-    am_net_t *n = (am_net_t *) parser->data;
-    if (n->proxy == AM_PROXY_CONNECTING && ISVALID(at) &&
-            strncasecmp(at, "Connection established", length) == 0) {
+    am_net_t *n = (am_net_t *)parser->data;
+    if (n->proxy == AM_PROXY_CONNECTING && ISVALID(at) && strncasecmp(at, "Connection established", length) == 0) {
         n->proxy = AM_PROXY_CONNECTED;
     }
     return 0;
 }
 
 static int on_body_cb(http_parser *parser, const char *at, size_t length) {
-    am_net_t *n = (am_net_t *) parser->data;
-    if (n->on_data) n->on_data(n->data, at, length, 0);
+    am_net_t *n = (am_net_t *)parser->data;
+    if (n->on_data)
+        n->on_data(n->data, at, length, 0);
     return 0;
 }
 
 static int on_header_field_cb(http_parser *parser, const char *at, size_t length) {
-    am_net_t *n = (am_net_t *) parser->data;
+    am_net_t *n = (am_net_t *)parser->data;
     void *p;
-    if (n->header_state == HEADER_ERROR) return 0;
+    if (n->header_state == HEADER_ERROR)
+        return 0;
     if (n->header_state != HEADER_FIELD) {
         n->num_headers++;
-        p = realloc(n->header_fields, n->num_headers * sizeof (char *));
+        p = realloc(n->header_fields, n->num_headers * sizeof(char *));
         if (p != NULL) {
             n->header_fields = p;
             n->header_fields[n->num_headers - 1] = strndup(at, length);
@@ -220,8 +217,7 @@ static int on_header_field_cb(http_parser *parser, const char *at, size_t length
             n->num_headers--;
         }
     } else {
-        p = realloc(n->header_fields[n->num_headers - 1],
-                strlen(n->header_fields[n->num_headers - 1]) + length + 1);
+        p = realloc(n->header_fields[n->num_headers - 1], strlen(n->header_fields[n->num_headers - 1]) + length + 1);
         if (p != NULL) {
             n->header_fields[n->num_headers - 1] = p;
             strncat(n->header_fields[n->num_headers - 1], at, length);
@@ -234,12 +230,13 @@ static int on_header_field_cb(http_parser *parser, const char *at, size_t length
 }
 
 static int on_header_value_cb(http_parser *parser, const char *at, size_t length) {
-    am_net_t *n = (am_net_t *) parser->data;
+    am_net_t *n = (am_net_t *)parser->data;
     void *p;
-    if (n->header_state == HEADER_ERROR) return 0;
+    if (n->header_state == HEADER_ERROR)
+        return 0;
     if (n->header_state != HEADER_VALUE) {
         n->num_header_values++;
-        p = realloc(n->header_values, n->num_headers * sizeof (char *));
+        p = realloc(n->header_values, n->num_headers * sizeof(char *));
         if (p != NULL) {
             n->header_values = p;
             n->header_values[n->num_headers - 1] = strndup(at, length);
@@ -248,8 +245,7 @@ static int on_header_value_cb(http_parser *parser, const char *at, size_t length
             n->num_header_values--;
         }
     } else {
-        p = realloc(n->header_values[n->num_headers - 1],
-                strlen(n->header_values[n->num_headers - 1]) + length + 1);
+        p = realloc(n->header_values[n->num_headers - 1], strlen(n->header_values[n->num_headers - 1]) + length + 1);
         if (p != NULL) {
             n->header_values[n->num_headers - 1] = p;
             strncat(n->header_values[n->num_headers - 1], at, length);
@@ -263,12 +259,12 @@ static int on_header_value_cb(http_parser *parser, const char *at, size_t length
 
 static int on_headers_complete_cb(http_parser *parser) {
     int i;
-    am_net_t *n = (am_net_t *) parser->data;
+    am_net_t *n = (am_net_t *)parser->data;
     n->http_status = parser->status_code;
     if (n->num_headers != n->num_header_values || n->header_state == HEADER_ERROR) {
         AM_LOG_WARNING(n->instance_id,
-                "on_headers_complete_cb(): response header fields and their values do not match (%d/%d)",
-                n->num_headers, n->num_header_values);
+                       "on_headers_complete_cb(): response header fields and their values do not match (%d/%d)",
+                       n->num_headers, n->num_header_values);
         for (i = 0; i < n->num_headers; i++) {
             char *field = n->header_fields[i];
             AM_FREE(field);
@@ -284,7 +280,7 @@ static int on_headers_complete_cb(http_parser *parser) {
     }
     n->header_state = HEADER_NONE;
     if (n->proxy == AM_PROXY_CONNECTED) {
-        /* Special case for http_parser, handling responses to a CONNECT request, 
+        /* Special case for http_parser, handling responses to a CONNECT request,
          * that it should not expect neither a body nor any further responses on this connection */
         return 2;
     }
@@ -297,14 +293,16 @@ static int on_headers_complete_cb(http_parser *parser) {
 }
 
 static int on_message_complete_cb(http_parser *parser) {
-    am_net_t *n = (am_net_t *) parser->data;
-    if (n->on_complete) n->on_complete(n->data, 0);
+    am_net_t *n = (am_net_t *)parser->data;
+    if (n->on_complete)
+        n->on_complete(n->data, 0);
     return 0;
 }
 
 void am_net_options_create(am_config_t *conf, am_net_options_t *options, void (*log)(const char *, ...)) {
     int i;
-    if (conf == NULL || options == NULL) return;
+    if (conf == NULL || options == NULL)
+        return;
 
     options->local = conf->local;
     options->lb_enable = conf->lb_enable;
@@ -328,11 +326,12 @@ void am_net_options_create(am_config_t *conf, am_net_options_t *options, void (*
     options->proxy_port = conf->proxy_port;
     options->proxy_host = ISVALID(conf->proxy_host) ? strdup(conf->proxy_host) : NULL;
     options->proxy_user = ISVALID(conf->proxy_user) ? strdup(conf->proxy_user) : NULL;
-    options->proxy_password = ISVALID(conf->proxy_password) ? strndup(conf->proxy_password, conf->proxy_password_sz) : NULL;
+    options->proxy_password =
+        ISVALID(conf->proxy_password) ? strndup(conf->proxy_password, conf->proxy_password_sz) : NULL;
     options->proxy_password_sz = conf->proxy_password_sz;
 
     if (conf->hostmap_sz > 0 && conf->hostmap != NULL) {
-        options->hostmap = malloc(conf->hostmap_sz * sizeof (char *));
+        options->hostmap = malloc(conf->hostmap_sz * sizeof(char *));
         if (options->hostmap != NULL) {
             for (i = 0; i < conf->hostmap_sz; i++) {
                 options->hostmap[i] = strdup(conf->hostmap[i]);
@@ -344,11 +343,11 @@ void am_net_options_create(am_config_t *conf, am_net_options_t *options, void (*
 
 void am_net_options_delete(am_net_options_t *options) {
     int i;
-    if (options == NULL) return;
+    if (options == NULL)
+        return;
 
-    AM_FREE(options->ciphers, options->cert_ca_file, options->server_id, options->notif_url,
-            options->cert_file, options->cert_key_file, options->tls_opts, options->proxy_host,
-            options->proxy_user);
+    AM_FREE(options->ciphers, options->cert_ca_file, options->server_id, options->notif_url, options->cert_file,
+            options->cert_key_file, options->tls_opts, options->proxy_host, options->proxy_user);
     if (options->cert_key_pass != NULL) {
         am_secure_zero_memory(options->cert_key_pass, options->cert_key_pass_sz);
         free(options->cert_key_pass);
@@ -381,7 +380,6 @@ void am_net_options_delete(am_net_options_t *options) {
     }
     options->hostmap_sz = 0;
 }
-
 
 /**
  * Synchronous comms - where one thread creates a connection then
@@ -434,20 +432,19 @@ static void sync_connect(am_net_t *n) {
          */
         for (i = 0; i < n->options->hostmap_sz; i++) {
             char *sep = strchr(n->options->hostmap[i], '|');
-            if (sep != NULL &&
-                    strncasecmp(n->options->hostmap[i], n->uv.host, sep - n->options->hostmap[i]) == 0) {
+            if (sep != NULL && strncasecmp(n->options->hostmap[i], n->uv.host, sep - n->options->hostmap[i]) == 0) {
                 ip_address = sep++;
-                AM_LOG_DEBUG(n->instance_id, "%s found host '%s' (%s) entry in "AM_AGENTS_CONFIG_HOST_MAP,
-                        thisfunc, n->uv.host, ip_address);
+                AM_LOG_DEBUG(n->instance_id, "%s found host '%s' (%s) entry in " AM_AGENTS_CONFIG_HOST_MAP, thisfunc,
+                             n->uv.host, ip_address);
                 break;
             }
         }
     }
 
-    /* set up hints for getaddrinfo to ease address resolution in case 
-     * we are running with IP address 
+    /* set up hints for getaddrinfo to ease address resolution in case
+     * we are running with IP address
      */
-    memset(&hints, 0, sizeof (struct addrinfo));
+    memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_flags = AI_NUMERICSERV;
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -464,7 +461,7 @@ static void sync_connect(am_net_t *n) {
         }
     }
 
-    snprintf(port, sizeof (port), "%d", n->uv.port);
+    snprintf(port, sizeof(port), "%d", n->uv.port);
 
     /* do network address and service translation */
     am_timer_start(&tmr);
@@ -480,26 +477,25 @@ static void sync_connect(am_net_t *n) {
 
     /* run through resulting addrinfo list to see if we can connect to */
     for (rp = n->ra; rp != NULL; rp = rp->ai_next) {
-
-        if (rp->ai_family != AF_INET && rp->ai_family != AF_INET6 &&
-                rp->ai_socktype != SOCK_STREAM && rp->ai_protocol != IPPROTO_TCP) continue;
+        if (rp->ai_family != AF_INET && rp->ai_family != AF_INET6 && rp->ai_socktype != SOCK_STREAM &&
+            rp->ai_protocol != IPPROTO_TCP)
+            continue;
 
         if ((n->sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol)) == INVALID_SOCKET) {
-            AM_LOG_ERROR(n->instance_id,
-                    "%s cannot create socket while connecting to %s:%d",
-                    thisfunc, n->uv.host, n->uv.port);
+            AM_LOG_ERROR(n->instance_id, "%s cannot create socket while connecting to %s:%d", thisfunc, n->uv.host,
+                         n->uv.port);
             net_log_error(n->instance_id, net_error());
             continue;
         }
 
-        if (setsockopt(n->sock, IPPROTO_TCP, TCP_NODELAY, (void *) &on, sizeof (on)) < 0) {
+        if (setsockopt(n->sock, IPPROTO_TCP, TCP_NODELAY, (void *)&on, sizeof(on)) < 0) {
             net_log_error(n->instance_id, net_error());
         }
-        if (setsockopt(n->sock, SOL_SOCKET, SO_REUSEADDR, (void *) &on, sizeof (on)) < 0) {
+        if (setsockopt(n->sock, SOL_SOCKET, SO_REUSEADDR, (void *)&on, sizeof(on)) < 0) {
             net_log_error(n->instance_id, net_error());
         }
 #ifdef SO_NOSIGPIPE
-        if (setsockopt(n->sock, SOL_SOCKET, SO_NOSIGPIPE, (void *) &on, sizeof (on)) < 0) {
+        if (setsockopt(n->sock, SOL_SOCKET, SO_NOSIGPIPE, (void *)&on, sizeof(on)) < 0) {
             net_log_error(n->instance_id, net_error());
         }
 #endif
@@ -508,12 +504,11 @@ static void sync_connect(am_net_t *n) {
             continue;
         }
 
-        err = connect(n->sock, rp->ai_addr, (SOCKLEN_T) rp->ai_addrlen);
+        err = connect(n->sock, rp->ai_addr, (SOCKLEN_T)rp->ai_addrlen);
         if (err == 0) {
             /* success - we got connection */
-            AM_LOG_DEBUG(n->instance_id, "%s connected to %s:%d (%s)",
-                    thisfunc, n->uv.host, n->uv.port,
-                    rp->ai_family == AF_INET ? "IPv4" : "IPv6");
+            AM_LOG_DEBUG(n->instance_id, "%s connected to %s:%d (%s)", thisfunc, n->uv.host, n->uv.port,
+                         rp->ai_family == AF_INET ? "IPv4" : "IPv6");
             n->error = 0;
             if (n->uv.ssl) {
                 /* socket should be talking over ssl/tls - wire it up */
@@ -527,11 +522,9 @@ static void sync_connect(am_net_t *n) {
                 net_connect_ssl(n);
 #endif
                 if (n->ssl.error != AM_SUCCESS) {
-                    AM_LOG_ERROR(n->instance_id,
-                            "%s SSL/TLS connection to %s:%d (%s) failed (%s)",
-                            thisfunc, n->uv.host, n->uv.port,
-                            rp->ai_family == AF_INET ? "IPv4" : "IPv6",
-                            am_strerror(n->ssl.error));
+                    AM_LOG_ERROR(n->instance_id, "%s SSL/TLS connection to %s:%d (%s) failed (%s)", thisfunc,
+                                 n->uv.host, n->uv.port, rp->ai_family == AF_INET ? "IPv4" : "IPv6",
+                                 am_strerror(n->ssl.error));
                     net_close_socket(n->sock);
                     n->sock = INVALID_SOCKET;
                     n->error = n->ssl.error;
@@ -545,7 +538,7 @@ static void sync_connect(am_net_t *n) {
         /* non blocking socket - poll it and try again */
         if (err == INVALID_SOCKET && net_in_progress(net_error())) {
             POLLFD fds[1];
-            memset(fds, 0, sizeof (fds));
+            memset(fds, 0, sizeof(fds));
             fds[0].fd = n->sock;
             fds[0].events = connect_ev;
             fds[0].revents = 0;
@@ -553,13 +546,12 @@ static void sync_connect(am_net_t *n) {
             err = sockpoll(fds, 1, timeout > 0 ? timeout * 1000 : -1);
             if (err > 0 && fds[0].revents & connected_ev) {
                 int pe = 0;
-                SOCKLEN_T pe_sz = sizeof (pe);
+                SOCKLEN_T pe_sz = sizeof(pe);
                 /* double check for any so_errors */
-                err = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (char *) &pe, &pe_sz);
+                err = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (char *)&pe, &pe_sz);
                 if (err == 0 && pe == 0) {
-                    AM_LOG_DEBUG(n->instance_id, "%s connected to %s:%d (%s)",
-                            thisfunc, n->uv.host, n->uv.port,
-                            rp->ai_family == AF_INET ? "IPv4" : "IPv6");
+                    AM_LOG_DEBUG(n->instance_id, "%s connected to %s:%d (%s)", thisfunc, n->uv.host, n->uv.port,
+                                 rp->ai_family == AF_INET ? "IPv4" : "IPv6");
 
                     n->error = 0;
                     if (n->uv.ssl) {
@@ -573,11 +565,9 @@ static void sync_connect(am_net_t *n) {
                         net_connect_ssl(n);
 #endif
                         if (n->ssl.error != AM_SUCCESS) {
-                            AM_LOG_ERROR(n->instance_id,
-                                    "%s SSL/TLS connection to %s:%d (%s) failed (%s)",
-                                    thisfunc, n->uv.host, n->uv.port,
-                                    rp->ai_family == AF_INET ? "IPv4" : "IPv6",
-                                    am_strerror(n->ssl.error));
+                            AM_LOG_ERROR(n->instance_id, "%s SSL/TLS connection to %s:%d (%s) failed (%s)", thisfunc,
+                                         n->uv.host, n->uv.port, rp->ai_family == AF_INET ? "IPv4" : "IPv6",
+                                         am_strerror(n->ssl.error));
                             net_close_socket(n->sock);
                             n->sock = INVALID_SOCKET;
                             n->error = n->ssl.error;
@@ -590,15 +580,13 @@ static void sync_connect(am_net_t *n) {
                 net_log_error(n->instance_id, pe);
                 n->error = AM_ECONNREFUSED;
             } else if (err == 0) {
-                AM_LOG_WARNING(n->instance_id,
-                        "%s timeout connecting to %s:%d (%s)",
-                        thisfunc, n->uv.host, n->uv.port,
-                        rp->ai_family == AF_INET ? "IPv4" : "IPv6");
+                AM_LOG_WARNING(n->instance_id, "%s timeout connecting to %s:%d (%s)", thisfunc, n->uv.host, n->uv.port,
+                               rp->ai_family == AF_INET ? "IPv4" : "IPv6");
                 n->error = AM_ETIMEDOUT;
             } else {
                 int pe = 0;
-                SOCKLEN_T pe_sz = sizeof (pe);
-                err = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (char *) &pe, &pe_sz);
+                SOCKLEN_T pe_sz = sizeof(pe);
+                err = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (char *)&pe, &pe_sz);
                 n->error = AM_ETIMEDOUT;
                 break;
             }
@@ -632,19 +620,18 @@ int am_net_sync_connect(am_net_t *n) {
     }
 
     if (parse_url(n->url, &n->uv) != 0) {
-        AM_LOG_ERROR(n->instance_id,
-                "%s failed to parse url %s", LOGEMPTY(n->url));
+        AM_LOG_ERROR(n->instance_id, "%s failed to parse url %s", LOGEMPTY(n->url));
         return n->uv.error;
     }
 
     /* allocate memory for http_parser and initialize it */
-    n->hs = calloc(1, sizeof (http_parser_settings));
+    n->hs = calloc(1, sizeof(http_parser_settings));
     if (n->hs == NULL) {
         AM_LOG_ERROR(n->instance_id, "%s memory allocation error", thisfunc);
         return AM_ENOMEM;
     }
 
-    n->hp = calloc(1, sizeof (http_parser));
+    n->hp = calloc(1, sizeof(http_parser));
     if (n->hp == NULL) {
         AM_LOG_ERROR(n->instance_id, "%s memory allocation error", thisfunc);
         return AM_ENOMEM;
@@ -675,7 +662,7 @@ int am_net_sync_connect(am_net_t *n) {
 static int am_net_write_internal(am_net_t *n, const char *data, size_t data_sz) {
     int status = 0, sent = 0, flags = 0;
     int er = 0, error = 0;
-    SOCKLEN_T errlen = sizeof (error);
+    SOCKLEN_T errlen = sizeof(error);
     size_t len = data_sz;
     const char *buf = data;
     if (n->error != 0) {
@@ -695,13 +682,13 @@ static int am_net_write_internal(am_net_t *n, const char *data, size_t data_sz) 
 #ifdef MSG_NOSIGNAL
         flags |= MSG_NOSIGNAL;
 #endif
-        er = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (void *) &error, &errlen);
-        while (sent < (int) len) {
-            int rv = send(n->sock, buf + sent, (int) len - sent, flags);
+        er = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (void *)&error, &errlen);
+        while (sent < (int)len) {
+            int rv = send(n->sock, buf + sent, (int)len - sent, flags);
             if (rv < 0) {
                 if (net_in_progress(net_error())) {
                     POLLFD fds[1];
-                    memset(fds, 0, sizeof (fds));
+                    memset(fds, 0, sizeof(fds));
                     fds[0].fd = n->sock;
                     fds[0].events = connect_ev;
                     fds[0].revents = 0;
@@ -723,21 +710,25 @@ static int am_net_write_internal(am_net_t *n, const char *data, size_t data_sz) 
 
 static int get_req_method(const char *data, size_t data_sz) {
     int ret = AM_REQUEST_UNKNOWN;
-    char *method; const char *sep;
+    char *method;
+    const char *sep;
 
     sep = memchr(data, ' ', data_sz);
-    if (sep == NULL) return ret;
+    if (sep == NULL)
+        return ret;
 
     method = strndup(data, sep - data);
-    if (method == NULL) return ret;
-    
+    if (method == NULL)
+        return ret;
+
     ret = am_method_str_to_num(method);
     free(method);
     return ret;
 }
 
 int am_net_write(am_net_t *n, const char *data, size_t data_sz) {
-    if (n == NULL || data == NULL || data_sz == 0) return AM_EINVAL;
+    if (n == NULL || data == NULL || data_sz == 0)
+        return AM_EINVAL;
     n->req_method = get_req_method(data, data_sz);
 #ifdef _WIN32
     if (n->uv.ssl && n->options != NULL && !n->options->secure_channel_disable) {
@@ -745,7 +736,7 @@ int am_net_write(am_net_t *n, const char *data, size_t data_sz) {
         if (n->error != 0) {
             return n->error;
         }
-        status = wnet_write(n, data, (int) data_sz);
+        status = wnet_write(n, data, (int)data_sz);
         return status > 0 ? AM_SUCCESS : status;
     }
     return am_net_write_internal(n, data, data_sz);
@@ -773,7 +764,7 @@ static void am_net_sync_recv_internal(am_net_t *n, int timeout_secs) {
         return;
     }
 
-    memset(fds, 0, sizeof (fds));
+    memset(fds, 0, sizeof(fds));
     n->reset_complete(n->data);
 
     while (ev != -1) {
@@ -784,8 +775,7 @@ static void am_net_sync_recv_internal(am_net_t *n, int timeout_secs) {
         ev = poll_with_interrupt(fds, 1, poll_msec);
         if (ev == 0) {
             /* timeout */
-            AM_LOG_WARNING(n->instance_id,
-                    "am_net_sync_recv(): timeout waiting for a response from a server");
+            AM_LOG_WARNING(n->instance_id, "am_net_sync_recv(): timeout waiting for a response from a server");
 
             n->error = AM_ETIMEDOUT;
             break;
@@ -795,15 +785,16 @@ static void am_net_sync_recv_internal(am_net_t *n, int timeout_secs) {
             break;
         }
         if (ev == 1 && fds[0].revents & (POLLNVAL | POLLERR)) {
-            if (n->on_close) n->on_close(n->data, 0);
+            if (n->on_close)
+                n->on_close(n->data, 0);
             break;
         }
         if (ev == 1 && fds[0].revents & read_avail_ev) {
             /* read an output from a remote side */
             int got = 0;
             int error = 0;
-            SOCKLEN_T errlen = sizeof (error);
-            if (getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (void *) &error, &errlen) == 0 && error != 0) {
+            SOCKLEN_T errlen = sizeof(error);
+            if (getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (void *)&error, &errlen) == 0 && error != 0) {
                 net_log_error(n->instance_id, error);
                 n->error = error;
                 break;
@@ -814,18 +805,21 @@ static void am_net_sync_recv_internal(am_net_t *n, int timeout_secs) {
                 error = net_read_ssl(n, buffer, got);
                 if (error != AM_SUCCESS) {
                     if (error != AM_EAGAIN) {
-                        if (n->on_close) n->on_close(n->data, 0);
+                        if (n->on_close)
+                            n->on_close(n->data, 0);
                         break;
                     }
                 }
             } else {
                 if (got < 0) {
                     if (!net_in_progress(net_error())) {
-                        if (n->on_close) n->on_close(n->data, 0);
+                        if (n->on_close)
+                            n->on_close(n->data, 0);
                         break;
                     }
                 } else if (got == 0) {
-                    if (n->on_close) n->on_close(n->data, 0);
+                    if (n->on_close)
+                        n->on_close(n->data, 0);
                     break;
                 } else {
                     http_parser_execute(n->hp, n->hs, buffer, got);

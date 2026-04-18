@@ -16,28 +16,28 @@
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
-#include <ws2tcpip.h>
-#include <windows.h>
-#include <process.h>
 #include <io.h>
+#include <process.h>
+#include <windows.h>
+#include <ws2tcpip.h>
 #else
 #include <unistd.h>
 #endif
+#include <ap_mpm.h>
+#include <apr_buckets.h>
+#include <apr_strings.h>
 #include <ctype.h>
-#include <string.h>
-#include <httpd.h>
+#include <http_config.h>
 #include <http_core.h>
-#include <http_protocol.h>
-#include <http_request.h>
 #include <http_log.h>
 #include <http_main.h>
-#include <http_config.h>
-#include <ap_mpm.h>
-#include <apr_strings.h>
-#include <apr_buckets.h>
+#include <http_protocol.h>
+#include <http_request.h>
+#include <httpd.h>
+#include <string.h>
 
-#include "version.h"
 #include "am.h"
+#include "version.h"
 
 static const char amagent_post_filter_name[] = "AmModuleFilterIn";
 static const char amagent_preserve_url_hook_name[] = "AmModulePreservedUrl";
@@ -71,8 +71,7 @@ typedef struct {
 } amagent_config_t; /*per server config*/
 
 static const char *am_set_opt(cmd_parms *c, void *cfg, const char *arg) {
-    amagent_config_t *conf = (amagent_config_t *)
-            ap_get_module_config(c->server->module_config, &amagent_module);
+    amagent_config_t *conf = (amagent_config_t *)ap_get_module_config(c->server->module_config, &amagent_module);
     const char *name = c->cmd->name;
     if (!conf || !name) {
         return NULL;
@@ -107,14 +106,12 @@ static const char *am_set_opt(cmd_parms *c, void *cfg, const char *arg) {
 static const command_rec amagent_cmds[] = {
     AP_INIT_TAKE1("AmAgent", am_set_opt, NULL, RSRC_CONF, "Module enabled/disabled"),
     AP_INIT_TAKE1("AmAgentConf", am_set_opt, NULL, RSRC_CONF, "Module configuration file"),
-    AP_INIT_TAKE1("AmAgentId", am_set_opt, NULL, RSRC_CONF, "Module Id"), {
-        NULL
-    }
-};
+    AP_INIT_TAKE1("AmAgentId", am_set_opt, NULL, RSRC_CONF, "Module Id"),
+    {NULL}};
 
 static apr_status_t amagent_cleanup(void *arg) {
     /* main process cleanup */
-    server_rec *s = (server_rec *) arg;
+    server_rec *s = (server_rec *)arg;
     amagent_config_t *config = ap_get_module_config(s->module_config, &amagent_module);
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "amagent_cleanup() %d", getpid());
 #ifndef _WIN32
@@ -123,17 +120,17 @@ static apr_status_t amagent_cleanup(void *arg) {
     return APR_SUCCESS;
 }
 
-static void recovery_callback(void *cb_arg, char * name, int error) {
+static void recovery_callback(void *cb_arg, char *name, int error) {
     server_rec *s = cb_arg;
     if (error) {
-        ap_log_error(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, s, "unable to clear shared resource: %s, error %d", name, error);
+        ap_log_error(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, s, "unable to clear shared resource: %s, error %d", name,
+                     error);
     } else {
         ap_log_error(APLOG_MARK, APLOG_WARNING | APLOG_NOERRNO, 0, s, "agent cleared shared resource: %s", name);
     }
 }
 
-static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
-        server_rec *s) {
+static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, server_rec *s) {
     /* main process init */
     int status;
     apr_status_t rv = APR_SUCCESS;
@@ -144,8 +141,7 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
     apr_pool_userdata_get(&data, AMAGENT_INIT_ONCE, s->process->pool);
     if (data == NULL) {
         /* this is a configuration check phase - do nothing */
-        apr_pool_userdata_set((const void *) 1, AMAGENT_INIT_ONCE,
-                apr_pool_cleanup_null, s->process->pool);
+        apr_pool_userdata_set((const void *)1, AMAGENT_INIT_ONCE, apr_pool_cleanup_null, s->process->pool);
         return rv;
     }
     apr_pool_cleanup_register(pconf, s, amagent_cleanup, apr_pool_cleanup_null);
@@ -157,7 +153,8 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
 
     /* find and clear down shared memory resources after abnormal termination */
     if (am_remove_shm_and_locks(config->agent_id, recovery_callback, s) != AM_SUCCESS) {
-        ap_log_error(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, s, "amagent_init() failed to recover after abnormal termination");
+        ap_log_error(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, s,
+                     "amagent_init() failed to recover after abnormal termination");
         return APR_EINIT;
     }
 
@@ -172,7 +169,7 @@ static int amagent_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
 
 static apr_status_t amagent_worker_cleanup(void *arg) {
     /* worker process cleanup */
-    server_rec *s = (server_rec *) arg;
+    server_rec *s = (server_rec *)arg;
 #ifdef _WIN32
     amagent_config_t *config = ap_get_module_config(s->module_config, &amagent_module);
 #endif
@@ -193,7 +190,7 @@ static void amagent_worker_init(apr_pool_t *p, server_rec *s) {
 #ifdef _WIN32
     if (status != AM_SUCCESS) {
         ap_log_error(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, s, "amagent_worker_init() status: %s",
-                am_strerror(status));
+                     am_strerror(status));
         config->error = status;
     }
 #endif
@@ -201,7 +198,7 @@ static void amagent_worker_init(apr_pool_t *p, server_rec *s) {
 }
 
 static void *amagent_srv_config(apr_pool_t *p, server_rec *srv) {
-    amagent_config_t *c = apr_pcalloc(p, sizeof (amagent_config_t));
+    amagent_config_t *c = apr_pcalloc(p, sizeof(amagent_config_t));
     if (c != NULL) {
         c->config = NULL;
         c->config_id = 0;
@@ -213,38 +210,38 @@ static void *amagent_srv_config(apr_pool_t *p, server_rec *srv) {
         c->error = 0;
         c->agent_id = 0;
     }
-    return (void *) c;
+    return (void *)c;
 }
 
 static int am_status_value(am_status_t v) {
     switch (v) {
-        case AM_SUCCESS:
-            return OK;
-        case AM_PDP_DONE:
-        case AM_DONE:
-            return DONE;
-        case AM_NOT_HANDLING:
-            return DECLINED;
-        case AM_NOT_FOUND:
-            return HTTP_NOT_FOUND;
-        case AM_REDIRECT:
-            return HTTP_MOVED_TEMPORARILY;
-        case AM_FORBIDDEN:
-            return HTTP_FORBIDDEN;
-        case AM_BAD_REQUEST:
-            return HTTP_BAD_REQUEST;
-        case AM_ERROR:
-            return HTTP_INTERNAL_SERVER_ERROR;
-        case AM_NOT_IMPLEMENTED:
-            return HTTP_NOT_IMPLEMENTED;
-        default:
-            return HTTP_INTERNAL_SERVER_ERROR;
+    case AM_SUCCESS:
+        return OK;
+    case AM_PDP_DONE:
+    case AM_DONE:
+        return DONE;
+    case AM_NOT_HANDLING:
+        return DECLINED;
+    case AM_NOT_FOUND:
+        return HTTP_NOT_FOUND;
+    case AM_REDIRECT:
+        return HTTP_MOVED_TEMPORARILY;
+    case AM_FORBIDDEN:
+        return HTTP_FORBIDDEN;
+    case AM_BAD_REQUEST:
+        return HTTP_BAD_REQUEST;
+    case AM_ERROR:
+        return HTTP_INTERNAL_SERVER_ERROR;
+    case AM_NOT_IMPLEMENTED:
+        return HTTP_NOT_IMPLEMENTED;
+    default:
+        return HTTP_INTERNAL_SERVER_ERROR;
     }
 }
 
 static const char *get_request_header(am_request_t *req, const char *name) {
     request_rec *rec;
-    if (req == NULL || (rec = (request_rec *) req->ctx) == NULL || ISINVALID(name))
+    if (req == NULL || (rec = (request_rec *)req->ctx) == NULL || ISINVALID(name))
         return NULL;
     return apr_table_get(rec->headers_in, name);
 }
@@ -256,7 +253,7 @@ static am_status_t get_request_url(am_request_t *req) {
         return AM_EINVAL;
     }
 
-    rec = (request_rec *) req->ctx;
+    rec = (request_rec *)req->ctx;
     if (rec == NULL) {
         return AM_EINVAL;
     }
@@ -276,8 +273,9 @@ static am_status_t get_request_url(am_request_t *req) {
 
 static am_status_t set_user(am_request_t *rq, const char *user) {
     static const char *thisfunc = "set_user():";
-    request_rec *r = (request_rec *) (rq != NULL ? rq->ctx : NULL);
-    if (r == NULL) return AM_EINVAL;
+    request_rec *r = (request_rec *)(rq != NULL ? rq->ctx : NULL);
+    if (r == NULL)
+        return AM_EINVAL;
     r->user = apr_pstrdup(r->pool, user == NULL ? "" : user);
     r->ap_auth_type = apr_pstrdup(r->pool, "OpenAM");
     AM_LOG_DEBUG(rq->instance_id, "%s %s", thisfunc, LOGEMPTY(user));
@@ -285,8 +283,9 @@ static am_status_t set_user(am_request_t *rq, const char *user) {
 }
 
 static am_status_t set_header_in_request(am_request_t *rq, const char *key, const char *value) {
-    request_rec *r = (request_rec *) (rq != NULL ? rq->ctx : NULL);
-    if (r == NULL || !ISVALID(key)) return AM_EINVAL;
+    request_rec *r = (request_rec *)(rq != NULL ? rq->ctx : NULL);
+    if (r == NULL || !ISVALID(key))
+        return AM_EINVAL;
     /* remove all instances of the header first */
     apr_table_unset(r->headers_in, key);
     if (ISVALID(value)) {
@@ -296,16 +295,18 @@ static am_status_t set_header_in_request(am_request_t *rq, const char *key, cons
 }
 
 static am_status_t set_cookie(am_request_t *rq, const char *header) {
-    request_rec *r = (request_rec *) (rq != NULL ? rq->ctx : NULL);
+    request_rec *r = (request_rec *)(rq != NULL ? rq->ctx : NULL);
     const char *current_cookies;
     char *cookie, *equals, *sep;
-    if (r == NULL || ISINVALID(header)) return AM_EINVAL;
+    if (r == NULL || ISINVALID(header))
+        return AM_EINVAL;
     /* add cookie in response headers */
     apr_table_add(r->err_headers_out, "Set-Cookie", header);
 
     /* modify Cookie request header */
     cookie = apr_pstrdup(r->pool, header);
-    if (cookie == NULL) return AM_ENOMEM;
+    if (cookie == NULL)
+        return AM_ENOMEM;
 
     equals = strchr(cookie, '=');
     sep = strchr(cookie, ';');
@@ -314,7 +315,8 @@ static am_status_t set_cookie(am_request_t *rq, const char *header) {
     if (sep != NULL && equals != NULL && (sep - equals) > 1) {
         char *new_key = apr_pstrndup(r->pool, cookie, (equals - cookie) + 1); /* keep equals sign */
         char *new_value = apr_pstrndup(r->pool, cookie, sep - cookie);
-        if (new_key == NULL || new_value == NULL) return AM_ENOMEM;
+        if (new_key == NULL || new_value == NULL)
+            return AM_ENOMEM;
         if (ISINVALID(current_cookies)) {
             /* Cookie request header is not available yet - set it now */
             apr_table_add(r->headers_in, "Cookie", new_value);
@@ -327,15 +329,16 @@ static am_status_t set_cookie(am_request_t *rq, const char *header) {
 }
 
 static am_status_t add_header_in_response(am_request_t *rq, const char *key, const char *value) {
-    request_rec *r = (request_rec *) (rq != NULL ? rq->ctx : NULL);
-    if (r == NULL || !ISVALID(key)) return AM_EINVAL;
+    request_rec *r = (request_rec *)(rq != NULL ? rq->ctx : NULL);
+    if (r == NULL || !ISVALID(key))
+        return AM_EINVAL;
     if (!ISVALID(value)) {
         /*value is empty, sdk is setting a cookie in response*/
         return set_cookie(rq, key);
     }
-    /* Apache HTTPD keeps two separate server response header tables in the request 
-     * record - one for normal response headers and one for error headers. 
-     * The difference between them is the error headers are sent to 
+    /* Apache HTTPD keeps two separate server response header tables in the request
+     * record - one for normal response headers and one for error headers.
+     * The difference between them is the error headers are sent to
      * the client even (not only) on an error response (REDIRECT is one of them)
      */
     apr_table_add(r->err_headers_out, key, value);
@@ -344,7 +347,7 @@ static am_status_t add_header_in_response(am_request_t *rq, const char *key, con
 
 static am_status_t set_custom_response(am_request_t *rq, const char *text, const char *cont_type) {
     static const char *thisfunc = "set_custom_response():";
-    request_rec *r = (request_rec *) (rq != NULL ? rq->ctx : NULL);
+    request_rec *r = (request_rec *)(rq != NULL ? rq->ctx : NULL);
     am_status_t status = AM_ERROR;
 
     if (r == NULL || !ISVALID(text)) {
@@ -354,218 +357,203 @@ static am_status_t set_custom_response(am_request_t *rq, const char *text, const
     status = rq->is_json_url ? AM_JSON_RESPONSE : rq->status;
 
     switch (status) {
-        case AM_JSON_RESPONSE:
-        {
-            r->status = (rq->status == AM_REDIRECT || rq->status == AM_SUCCESS ||
-                    rq->status == AM_DONE || rq->status == AM_INTERNAL_REDIRECT ||
-                    rq->status == AM_PDP_DONE) ? HTTP_OK : am_status_value(rq->status);
-            ap_set_content_type(r, "application/json");
-            switch (rq->status) {
-                case AM_PDP_DONE:
-                {
-                    apr_file_t *pdp_file;
-                    apr_size_t nbytes;
-                    apr_status_t rv;
-                    char *buf = apr_palloc(r->pool, AP_IOBUFSIZE + 1);
-                    char *a = NULL;
-                    char *temp = NULL;
-                    size_t data_sz = rq->post_data_sz;
+    case AM_JSON_RESPONSE: {
+        r->status = (rq->status == AM_REDIRECT || rq->status == AM_SUCCESS || rq->status == AM_DONE ||
+                     rq->status == AM_INTERNAL_REDIRECT || rq->status == AM_PDP_DONE)
+                        ? HTTP_OK
+                        : am_status_value(rq->status);
+        ap_set_content_type(r, "application/json");
+        switch (rq->status) {
+        case AM_PDP_DONE: {
+            apr_file_t *pdp_file;
+            apr_size_t nbytes;
+            apr_status_t rv;
+            char *buf = apr_palloc(r->pool, AP_IOBUFSIZE + 1);
+            char *a = NULL;
+            char *temp = NULL;
+            size_t data_sz = rq->post_data_sz;
 
-                    rv = apr_file_open(&pdp_file, rq->post_data_fn, APR_FOPEN_READ | APR_FOPEN_BINARY,
-                            APR_OS_DEFAULT, r->pool);
-                    if (rv == APR_SUCCESS) {
-                        while (!apr_file_eof(pdp_file)) {
-                            do {
-                                nbytes = AP_IOBUFSIZE;
-                                rv = apr_file_read(pdp_file, buf, &nbytes);
-                            } while (APR_STATUS_IS_EINTR(rv));
-                            if (nbytes == 0 || rv != APR_SUCCESS) {
-                                break;
-                            }
-                            buf[nbytes] = '\0';
-                            if (a == NULL) {
-                                a = apr_pstrdup(r->pool, buf);
-                            } else {
-                                a = apr_pstrcat(r->pool, a, buf, NULL);
-                            }
+            rv = apr_file_open(&pdp_file, rq->post_data_fn, APR_FOPEN_READ | APR_FOPEN_BINARY, APR_OS_DEFAULT, r->pool);
+            if (rv == APR_SUCCESS) {
+                while (!apr_file_eof(pdp_file)) {
+                    do {
+                        nbytes = AP_IOBUFSIZE;
+                        rv = apr_file_read(pdp_file, buf, &nbytes);
+                    } while (APR_STATUS_IS_EINTR(rv));
+                    if (nbytes == 0 || rv != APR_SUCCESS) {
+                        break;
+                    }
+                    buf[nbytes] = '\0';
+                    if (a == NULL) {
+                        a = apr_pstrdup(r->pool, buf);
+                    } else {
+                        a = apr_pstrcat(r->pool, a, buf, NULL);
+                    }
+                }
+                apr_file_close(pdp_file);
+            }
+
+            if (a != NULL) {
+                temp = base64_encode(a, &data_sz);
+            }
+
+            ap_rprintf(r, AM_JSON_TEMPLATE_LOCATION_DATA, am_strerror(rq->status), rq->post_data_url, cont_type,
+                       NOTNULL(temp), am_status_value(rq->status));
+            am_free(temp);
+            apr_file_remove(rq->post_data_fn, r->pool);
+        } break;
+        case AM_REDIRECT:
+        case AM_INTERNAL_REDIRECT:
+            ap_rprintf(r, AM_JSON_TEMPLATE_LOCATION, am_strerror(rq->status), text, am_status_value(rq->status));
+            if (is_http_status(rq->conf->json_url_response_code)) {
+                r->status = rq->conf->json_url_response_code;
+            } else {
+                if (rq->conf->json_url_response_code != 0) {
+                    AM_LOG_WARNING(rq->instance_id, "%s response status code %d is not valid, sending HTTP_FORBIDDEN",
+                                   thisfunc, rq->conf->json_url_response_code);
+                }
+                r->status = HTTP_FORBIDDEN;
+            }
+            break;
+        default: {
+            char *payload = am_json_escape(text, NULL);
+            ap_rprintf(r, AM_JSON_TEMPLATE_DATA, am_strerror(rq->status), ISVALID(payload) ? payload : "\"\"",
+                       am_status_value(rq->status));
+            am_free(payload);
+            break;
+        }
+        }
+        ap_rflush(r);
+        rq->status = AM_DONE;
+        break;
+    }
+    case AM_INTERNAL_REDIRECT: {
+        ap_internal_redirect(text, r);
+        rq->status = AM_DONE;
+        break;
+    }
+    case AM_REDIRECT: {
+        apr_table_add(r->headers_out, "Location", text);
+        break;
+    }
+    case AM_PDP_DONE: {
+        request_rec *sr;
+
+        /* special handler for x-www-form-urlencoded POST data */
+        if (apr_strnatcasecmp(cont_type, "application/x-www-form-urlencoded") == 0) {
+            char *pair, *a = NULL, *eq, *inputs, *last = NULL;
+
+            inputs = apr_pstrcat(r->pool, "", NULL);
+
+            if (ISVALID(rq->post_data_fn)) {
+                apr_file_t *pdp_file;
+                apr_size_t nbytes;
+                apr_status_t rv;
+                char *buf = apr_palloc(r->pool, AP_IOBUFSIZE + 1);
+
+                rv = apr_file_open(&pdp_file, rq->post_data_fn, APR_FOPEN_READ | APR_FOPEN_BINARY, APR_OS_DEFAULT,
+                                   r->pool);
+                if (rv == APR_SUCCESS) {
+                    while (!apr_file_eof(pdp_file)) {
+                        do {
+                            nbytes = AP_IOBUFSIZE;
+                            rv = apr_file_read(pdp_file, buf, &nbytes);
+                        } while (APR_STATUS_IS_EINTR(rv));
+                        if (nbytes == 0 || rv != APR_SUCCESS) {
+                            break;
                         }
-                        apr_file_close(pdp_file);
+                        buf[nbytes] = '\0';
+                        if (a == NULL) {
+                            a = apr_pstrdup(r->pool, buf);
+                        } else {
+                            a = apr_pstrcat(r->pool, a, buf, NULL);
+                        }
                     }
+                    apr_file_close(pdp_file);
+                    apr_file_remove(rq->post_data_fn, r->pool);
 
-                    if (a != NULL) {
-                        temp = base64_encode(a, &data_sz);
+                    /* recreate x-www-form-urlencoded HTML Form data */
+
+                    for (pair = apr_strtok(a, "&", &last); pair; pair = apr_strtok(NULL, "&", &last)) {
+                        for (eq = pair; *eq; ++eq) {
+                            if (*eq == '+')
+                                *eq = ' ';
+                        }
+                        ap_unescape_url(pair);
+                        eq = strchr(pair, '=');
+                        if (eq) {
+                            *eq++ = 0;
+                            inputs = apr_pstrcat(r->pool, inputs, "<input type=\"hidden\" name=\"", pair, "\" value=\"",
+                                                 eq, "\"/>", NULL);
+                        } else {
+                            inputs = apr_pstrcat(r->pool, inputs, "<input type=\"hidden\" name=\"", pair,
+                                                 "\" value=\"\"/>", NULL);
+                        }
                     }
-
-                    ap_rprintf(r, AM_JSON_TEMPLATE_LOCATION_DATA,
-                            am_strerror(rq->status), rq->post_data_url, cont_type,
-                            NOTNULL(temp),
-                            am_status_value(rq->status));
-                    am_free(temp);
+                } else {
+                    apr_strerror(rv, buf, AP_IOBUFSIZE);
+                    AM_LOG_ERROR(rq->instance_id, "%s unable to open post preservation file: %s, %s", thisfunc,
+                                 rq->post_data_fn, buf);
                     apr_file_remove(rq->post_data_fn, r->pool);
                 }
-                    break;
-                case AM_REDIRECT:
-                case AM_INTERNAL_REDIRECT:
-                    ap_rprintf(r, AM_JSON_TEMPLATE_LOCATION,
-                            am_strerror(rq->status), text, am_status_value(rq->status));
-                    if (is_http_status(rq->conf->json_url_response_code)) {
-                        r->status = rq->conf->json_url_response_code;
-                    } else {
-                        if (rq->conf->json_url_response_code != 0) {
-                            AM_LOG_WARNING(rq->instance_id, "%s response status code %d is not valid, sending HTTP_FORBIDDEN",
-                                    thisfunc, rq->conf->json_url_response_code);
-                        }
-                        r->status = HTTP_FORBIDDEN;
-                    }
-                    break;
-                default:
-                {
-                    char *payload = am_json_escape(text, NULL);
-                    ap_rprintf(r, AM_JSON_TEMPLATE_DATA,
-                            am_strerror(rq->status), ISVALID(payload) ? payload : "\"\"",
-                            am_status_value(rq->status));
-                    am_free(payload);
-                    break;
-                }
             }
+
+            r->clength = 0;
+            apr_table_unset(r->headers_in, "Content-Length");
+            apr_table_unset(r->notes, amagent_post_filter_name);
+            ap_set_content_type(r, "text/html");
+            ap_rprintf(r,
+                       "<html><head></head><body onload=\"document.postform.submit()\">"
+                       "<form name=\"postform\" method=\"%s\" action=\"%s\">"
+                       "%s"
+                       "</form></body></html>",
+                       am_method_num_to_str(rq->method), rq->post_data_url, inputs);
             ap_rflush(r);
             rq->status = AM_DONE;
             break;
         }
-        case AM_INTERNAL_REDIRECT:
-        {
-            ap_internal_redirect(text, r);
-            rq->status = AM_DONE;
-            break;
-        }
-        case AM_REDIRECT:
-        {
-            apr_table_add(r->headers_out, "Location", text);
-            break;
-        }
-        case AM_PDP_DONE:
-        {
-            request_rec *sr;
 
-            /* special handler for x-www-form-urlencoded POST data */
-            if (apr_strnatcasecmp(cont_type, "application/x-www-form-urlencoded") == 0) {
-                char *pair, *a = NULL, *eq, *inputs, *last = NULL;
+        /* all other content types are replied in amagent_post_filter (as sub-request) */
+        sr = ap_sub_req_method_uri(am_method_num_to_str(rq->method), rq->post_data_url, r, NULL);
 
-                inputs = apr_pstrcat(r->pool, "", NULL);
+        sr->protocol = r->protocol;
+        sr->proto_num = r->proto_num;
+        sr->headers_in = r->headers_in;
+        sr->notes = r->notes;
+        sr->clength = rq->post_data_sz;
+        sr->content_type = cont_type;
+        sr->path_info = r->path_info;
+        sr->args = r->args;
 
-                if (ISVALID(rq->post_data_fn)) {
-                    apr_file_t *pdp_file;
-                    apr_size_t nbytes;
-                    apr_status_t rv;
-                    char *buf = apr_palloc(r->pool, AP_IOBUFSIZE + 1);
+        AM_LOG_DEBUG(rq->instance_id, "%s issuing %s sub-request to %s (%s), status %d", thisfunc, sr->method,
+                     rq->post_data_url, LOGEMPTY(cont_type), sr->status);
 
-                    rv = apr_file_open(&pdp_file, rq->post_data_fn, APR_FOPEN_READ | APR_FOPEN_BINARY,
-                            APR_OS_DEFAULT, r->pool);
-                    if (rv == APR_SUCCESS) {
-                        while (!apr_file_eof(pdp_file)) {
-                            do {
-                                nbytes = AP_IOBUFSIZE;
-                                rv = apr_file_read(pdp_file, buf, &nbytes);
-                            } while (APR_STATUS_IS_EINTR(rv));
-                            if (nbytes == 0 || rv != APR_SUCCESS) {
-                                break;
-                            }
-                            buf[nbytes] = '\0';
-                            if (a == NULL) {
-                                a = apr_pstrdup(r->pool, buf);
-                            } else {
-                                a = apr_pstrcat(r->pool, a, buf, NULL);
-                            }
-                        }
-                        apr_file_close(pdp_file);
-                        apr_file_remove(rq->post_data_fn, r->pool);
+        ap_run_sub_req(sr);
 
-                        /* recreate x-www-form-urlencoded HTML Form data */
+        r->status_line = apr_pstrdup(r->pool, sr->status_line);
+        r->status = sr->status;
+        r->uri = sr->uri;
 
-                        for (pair = apr_strtok(a, "&", &last); pair;
-                                pair = apr_strtok(NULL, "&", &last)) {
-                            for (eq = pair; *eq; ++eq) {
-                                if (*eq == '+') *eq = ' ';
-                            }
-                            ap_unescape_url(pair);
-                            eq = strchr(pair, '=');
-                            if (eq) {
-                                *eq++ = 0;
-                                inputs = apr_pstrcat(r->pool, inputs,
-                                        "<input type=\"hidden\" name=\"", pair, "\" value=\"", eq, "\"/>", NULL);
-                            } else {
-                                inputs = apr_pstrcat(r->pool, inputs,
-                                        "<input type=\"hidden\" name=\"", pair, "\" value=\"\"/>", NULL);
-                            }
-                        }
-                    } else {
-                        apr_strerror(rv, buf, AP_IOBUFSIZE);
-                        AM_LOG_ERROR(rq->instance_id, "%s unable to open post preservation file: %s, %s",
-                                thisfunc, rq->post_data_fn, buf);
-                        apr_file_remove(rq->post_data_fn, r->pool);
-                    }
-                }
+        ap_rflush(sr);
 
-                r->clength = 0;
-                apr_table_unset(r->headers_in, "Content-Length");
-                apr_table_unset(r->notes, amagent_post_filter_name);
-                ap_set_content_type(r, "text/html");
-                ap_rprintf(r, "<html><head></head><body onload=\"document.postform.submit()\">"
-                        "<form name=\"postform\" method=\"%s\" action=\"%s\">"
-                        "%s"
-                        "</form></body></html>",
-                        am_method_num_to_str(rq->method),
-                        rq->post_data_url, inputs);
-                ap_rflush(r);
-                rq->status = AM_DONE;
-                break;
-            }
-
-            /* all other content types are replied in amagent_post_filter (as sub-request) */
-            sr = ap_sub_req_method_uri(am_method_num_to_str(rq->method),
-                    rq->post_data_url, r, NULL);
-
-            sr->protocol = r->protocol;
-            sr->proto_num = r->proto_num;
-            sr->headers_in = r->headers_in;
-            sr->notes = r->notes;
-            sr->clength = rq->post_data_sz;
-            sr->content_type = cont_type;
-            sr->path_info = r->path_info;
-            sr->args = r->args;
-
-            AM_LOG_DEBUG(rq->instance_id, "%s issuing %s sub-request to %s (%s), status %d",
-                    thisfunc, sr->method, rq->post_data_url, LOGEMPTY(cont_type), sr->status);
-
-            ap_run_sub_req(sr);
-
-            r->status_line = apr_pstrdup(r->pool, sr->status_line);
-            r->status = sr->status;
-            r->uri = sr->uri;
-
-            ap_rflush(sr);
-
-            ap_destroy_sub_req(sr);
-            rq->status = AM_SUCCESS;
-            break;
-        }
-        default:
-        {
-            size_t tl = strlen(text);
-            if (ISVALID(cont_type)) {
-                ap_set_content_type(r, cont_type);
-            }
-            ap_set_content_length(r, tl);
-            ap_rwrite(text, (int) tl, r);
-            ap_custom_response(r,
-                    am_status_value(rq->status == AM_SUCCESS ||
-                    rq->status == AM_DONE ? AM_SUCCESS : rq->status), text);
-            ap_rflush(r);
-            break;
-        }
+        ap_destroy_sub_req(sr);
+        rq->status = AM_SUCCESS;
+        break;
     }
-    AM_LOG_DEBUG(rq->instance_id, "%s status: %s (exit: %s)",
-            thisfunc, am_strerror(status), am_strerror(rq->status));
+    default: {
+        size_t tl = strlen(text);
+        if (ISVALID(cont_type)) {
+            ap_set_content_type(r, cont_type);
+        }
+        ap_set_content_length(r, tl);
+        ap_rwrite(text, (int)tl, r);
+        ap_custom_response(
+            r, am_status_value(rq->status == AM_SUCCESS || rq->status == AM_DONE ? AM_SUCCESS : rq->status), text);
+        ap_rflush(r);
+        break;
+    }
+    }
+    AM_LOG_DEBUG(rq->instance_id, "%s status: %s (exit: %s)", thisfunc, am_strerror(status), am_strerror(rq->status));
 
     return AM_SUCCESS;
 }
@@ -575,8 +563,7 @@ static char get_method_num(request_rec *r, unsigned long instance_id) {
     int method_num = AM_REQUEST_UNKNOWN;
     const char *mthd = ap_method_name_of(r->pool, r->method_number);
 
-    AM_LOG_DEBUG(instance_id, "%s method %s (%s, %d)", thisfunc, LOGEMPTY(r->method),
-            LOGEMPTY(mthd), r->method_number);
+    AM_LOG_DEBUG(instance_id, "%s method %s (%s, %d)", thisfunc, LOGEMPTY(r->method), LOGEMPTY(mthd), r->method_number);
 
     /* Check to see if the method number is M_GET */
     if (r->method_number == M_GET) {
@@ -590,8 +577,7 @@ static char get_method_num(request_rec *r, unsigned long instance_id) {
         method_num = am_method_str_to_num(mthd);
     }
 
-    AM_LOG_DEBUG(instance_id, "%s number corresponds to %s method",
-            thisfunc, am_method_num_to_str(method_num));
+    AM_LOG_DEBUG(instance_id, "%s number corresponds to %s method", thisfunc, am_method_num_to_str(method_num));
 
     /* check if method number and method string correspond */
     if (method_num == AM_REQUEST_UNKNOWN) {
@@ -599,11 +585,11 @@ static char get_method_num(request_rec *r, unsigned long instance_id) {
         if (r->method != NULL && *(r->method) != '\0') {
             method_num = am_method_str_to_num(r->method);
             r->method_number = ap_method_number_of(r->method);
-            AM_LOG_DEBUG(instance_id, "%s set method number to correspond to %s method (%d)",
-                    thisfunc, r->method, r->method_number);
+            AM_LOG_DEBUG(instance_id, "%s set method number to correspond to %s method (%d)", thisfunc, r->method,
+                         r->method_number);
         }
-    } else if (ISVALID(r->method) && strcasecmp(r->method, am_method_num_to_str(method_num))
-            && (method_num != AM_REQUEST_INVALID)) {
+    } else if (ISVALID(r->method) && strcasecmp(r->method, am_method_num_to_str(method_num)) &&
+               (method_num != AM_REQUEST_INVALID)) {
         /* in case the method number and the method string do not match,
          * correct the method string. But if the method number is invalid
          * the method string needs to be preserved in case Apache is
@@ -616,15 +602,16 @@ static char get_method_num(request_rec *r, unsigned long instance_id) {
 }
 
 static am_status_t set_method(am_request_t *rq) {
-    request_rec *r = (request_rec *) (rq != NULL ? rq->ctx : NULL);
-    if (r == NULL) return AM_EINVAL;
+    request_rec *r = (request_rec *)(rq != NULL ? rq->ctx : NULL);
+    if (r == NULL)
+        return AM_EINVAL;
     r->method = am_method_num_to_str(rq->method);
     r->method_number = ap_method_number_of(r->method);
     return AM_SUCCESS;
 }
 
 static am_status_t set_request_body(am_request_t *rq) {
-    request_rec *r = (request_rec *) (rq != NULL ? rq->ctx : NULL);
+    request_rec *r = (request_rec *)(rq != NULL ? rq->ctx : NULL);
     am_status_t status = AM_EINVAL;
 
     if (r == NULL) {
@@ -634,11 +621,9 @@ static am_status_t set_request_body(am_request_t *rq) {
     apr_table_unset(r->notes, amagent_post_filter_name);
 
     if (ISVALID(rq->post_data_fn) && rq->post_data_sz > 0) {
-        apr_table_set(r->notes, amagent_post_filter_name,
-                apr_psprintf(r->pool, "%s", rq->post_data_fn));
+        apr_table_set(r->notes, amagent_post_filter_name, apr_psprintf(r->pool, "%s", rq->post_data_fn));
         r->clength = rq->post_data_sz;
-        apr_table_set(r->headers_in, "Content-Length",
-                apr_psprintf(r->pool, "%ld", rq->post_data_sz));
+        apr_table_set(r->headers_in, "Content-Length", apr_psprintf(r->pool, "%ld", rq->post_data_sz));
     }
     return AM_SUCCESS;
 }
@@ -660,10 +645,10 @@ static am_status_t get_request_body(am_request_t *rq) {
         return AM_EINVAL;
     }
 
-    r = (request_rec *) rq->ctx;
+    r = (request_rec *)rq->ctx;
 
     /* reserve twice the size of the bytes read from input filter/brigade in one go */
-#define TEMP_BUFFER_SZ  (HUGE_STRING_LEN * 2) 
+#define TEMP_BUFFER_SZ (HUGE_STRING_LEN * 2)
     tmp = apr_palloc(r->pool, TEMP_BUFFER_SZ);
     if (tmp == NULL)
         return AM_ENOMEM;
@@ -672,8 +657,7 @@ static am_status_t get_request_body(am_request_t *rq) {
 
     do {
         apr_bucket *ob;
-        read_status = ap_get_brigade(r->input_filters, bb, AP_MODE_READBYTES,
-                APR_BLOCK_READ, HUGE_STRING_LEN);
+        read_status = ap_get_brigade(r->input_filters, bb, AP_MODE_READBYTES, APR_BLOCK_READ, HUGE_STRING_LEN);
         if (read_status != APR_SUCCESS) {
             am_free(out);
             return AM_ERROR;
@@ -698,20 +682,18 @@ static am_status_t get_request_body(am_request_t *rq) {
             apr_bucket_read(ob, &data, &data_size, APR_BLOCK_READ);
 
             if (data != NULL && data_size > 0) {
-
                 if (tmp_writes != APR_EOF && (tmp_sz + data_size) <= TEMP_BUFFER_SZ) {
                     /* stream initial data into the temp buffer */
                     memcpy(tmp + tmp_sz, data, data_size);
                     tmp_sz += data_size;
                 }
 
-                AM_LOG_DEBUG(rq->instance_id, "%s read: %ld, temp: %ld bytes",
-                        thisfunc, data_size, tmp_sz);
+                AM_LOG_DEBUG(rq->instance_id, "%s read: %ld, temp: %ld bytes", thisfunc, data_size, tmp_sz);
 
                 if (tmp_writes != APR_EOF) {
                     /* try to analyze temp buffer data - see if we can spot our key */
                     if (tmp_sz > 5) {
-                        /* we've got enough data - check if that's 
+                        /* we've got enough data - check if that's
                          * LARES POST or should it be stored into a file */
                         tmp_writes = APR_EOF;
                         to_file = memcmp(tmp, "LARES=", 6) != 0;
@@ -722,8 +704,8 @@ static am_status_t get_request_body(am_request_t *rq) {
                     }
                 }
 
-                AM_LOG_DEBUG(rq->instance_id, "%s storing into: %s, temp writes: %s",
-                        thisfunc, to_file ? "file" : "memory", tmp_writes == APR_EOF ? "done" : "working");
+                AM_LOG_DEBUG(rq->instance_id, "%s storing into: %s, temp writes: %s", thisfunc,
+                             to_file ? "file" : "memory", tmp_writes == APR_EOF ? "done" : "working");
 
                 if (tmp_writes == APR_EOF) {
                     /* no more temp buffer screening - write data directly into a file (heap buffer) */
@@ -735,22 +717,23 @@ static am_status_t get_request_body(am_request_t *rq) {
                             char key[37];
 
                             if (ISINVALID(rq->conf->pdp_dir)) {
-                                AM_LOG_ERROR(rq->instance_id, "%s invalid POST preservation configuration",
-                                        thisfunc);
+                                AM_LOG_ERROR(rq->instance_id, "%s invalid POST preservation configuration", thisfunc);
                                 status = AM_EINVAL;
                                 eos_found = 1;
                                 break;
                             }
 
-                            uuid(key, sizeof (key));
+                            uuid(key, sizeof(key));
                             file_name = apr_psprintf(r->pool, "%s/%s", rq->conf->pdp_dir, key);
-                            ret = apr_file_open(&fd, file_name,
-                                    APR_FOPEN_CREATE | APR_FOPEN_APPEND | APR_FOPEN_WRITE | APR_FOPEN_BINARY,
-                                    APR_OS_DEFAULT, r->pool);
+                            ret =
+                                apr_file_open(&fd, file_name,
+                                              APR_FOPEN_CREATE | APR_FOPEN_APPEND | APR_FOPEN_WRITE | APR_FOPEN_BINARY,
+                                              APR_OS_DEFAULT, r->pool);
                             if (ret != APR_SUCCESS) {
-                                apr_strerror(ret, buferr, sizeof (buferr));
-                                AM_LOG_ERROR(rq->instance_id, "%s unable to open POST preservation file %s for write, %s",
-                                        thisfunc, file_name, buferr);
+                                apr_strerror(ret, buferr, sizeof(buferr));
+                                AM_LOG_ERROR(rq->instance_id,
+                                             "%s unable to open POST preservation file %s for write, %s", thisfunc,
+                                             file_name, buferr);
                                 status = AM_FILE_ERROR;
                                 eos_found = 1;
                                 break;
@@ -761,9 +744,9 @@ static am_status_t get_request_body(am_request_t *rq) {
                             /* write down whatever we have stored in the temp buffer */
                             ret = apr_file_write_full(fd, tmp, tmp_sz, &nbytes_written);
                             if (ret != APR_SUCCESS) {
-                                apr_strerror(ret, buferr, sizeof (buferr));
+                                apr_strerror(ret, buferr, sizeof(buferr));
                                 AM_LOG_ERROR(rq->instance_id, "%s unable to write to POST preservation file: %s, %s",
-                                        thisfunc, file_name, buferr);
+                                             thisfunc, file_name, buferr);
                                 status = AM_FILE_ERROR;
                                 eos_found = 1;
                                 break;
@@ -773,9 +756,9 @@ static am_status_t get_request_body(am_request_t *rq) {
                         } else {
                             ret = apr_file_write_full(fd, data, data_size, &nbytes_written);
                             if (ret != APR_SUCCESS) {
-                                apr_strerror(ret, buferr, sizeof (buferr));
+                                apr_strerror(ret, buferr, sizeof(buferr));
                                 AM_LOG_ERROR(rq->instance_id, "%s unable to write to POST preservation file: %s, %s",
-                                        thisfunc, file_name, buferr);
+                                             thisfunc, file_name, buferr);
                                 status = AM_FILE_ERROR;
                                 eos_found = 1;
                                 break;
@@ -784,7 +767,6 @@ static am_status_t get_request_body(am_request_t *rq) {
                         }
 
                     } else {
-
                         /* process in-memory data */
                         out_tmp = realloc(out, read_bytes + (tmp_sz > 0 ? tmp_sz : data_size) + 1);
                         if (out_tmp == NULL) {
@@ -827,8 +809,8 @@ static am_status_t get_request_body(am_request_t *rq) {
     }
 
     if (status == AM_SUCCESS) {
-        AM_LOG_DEBUG(rq->instance_id, "%s processed %ld bytes\n%s", thisfunc,
-                read_bytes, ISVALID(out) ? out : LOGEMPTY(file_name));
+        AM_LOG_DEBUG(rq->instance_id, "%s processed %ld bytes\n%s", thisfunc, read_bytes,
+                     ISVALID(out) ? out : LOGEMPTY(file_name));
         /* remove Content-Length since the body has been read */
         r->clength = 0;
         apr_table_unset(r->headers_in, "Content-Length");
@@ -848,43 +830,46 @@ static int amagent_auth_handler(request_rec *req) {
     amagent_config_t *config = ap_get_module_config(req->server->module_config, &amagent_module);
 
     if (config == NULL || !config->enabled) {
-        /* amagent module is not enabled for this 
+        /* amagent module is not enabled for this
          * server/virtualhost - we are not handling this request
          **/
         return DECLINED;
     }
 
     if (config->error != AM_SUCCESS) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, req, "%s is not configured to handle the request "
-                "to %s (unable to load bootstrap configuration from %s, error: %s)",
-                DESCRIPTION, req->uri, config->config, am_strerror(config->error));
+        ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, req,
+                      "%s is not configured to handle the request "
+                      "to %s (unable to load bootstrap configuration from %s, error: %s)",
+                      DESCRIPTION, req->uri, config->config, am_strerror(config->error));
         return HTTP_FORBIDDEN;
     }
 
-    ap_log_rerror(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, req, "amagent_auth_handler(): [%s] [%ld]", config->config, config->config_id);
+    ap_log_rerror(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, req, "amagent_auth_handler(): [%s] [%ld]", config->config,
+                  config->config_id);
 
     /* register and update instance logger configuration (for already registered
-     * instances - update logging level only 
+     * instances - update logging level only
      */
     am_log_register_instance(config->config_id, config->debug_file, config->debug_level, config->debug_size,
-            config->audit_file, config->audit_level, config->audit_size, config->config);
+                             config->audit_file, config->audit_level, config->audit_size, config->config);
 
     AM_LOG_DEBUG(config->config_id, "%s begin", thisfunc);
 
     /* fetch agent configuration instance (from cache if available) */
     result = am_get_agent_config(config->config_id, config->config, &boot);
     if (boot == NULL || result != AM_SUCCESS) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, req, "%s is not configured to handle the request "
-                "to %s (unable to get agent configuration instance, configuration: %s, error: %s)",
-                DESCRIPTION, req->uri, config->config, am_strerror(result));
+        ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, req,
+                      "%s is not configured to handle the request "
+                      "to %s (unable to get agent configuration instance, configuration: %s, error: %s)",
+                      DESCRIPTION, req->uri, config->config, am_strerror(result));
 
         AM_LOG_ERROR(config->config_id, "amagent_auth_handler(): failed to get agent configuration instance, error: %s",
-                am_strerror(result));
+                     am_strerror(result));
         return HTTP_FORBIDDEN;
     }
 
     /* set up request processor data structure */
-    memset(&am_request, 0, sizeof (am_request_t));
+    memset(&am_request, 0, sizeof(am_request_t));
     am_request.conf = boot;
     am_request.status = AM_ERROR;
     am_request.instance_id = config->config_id;
@@ -894,19 +879,19 @@ static int amagent_auth_handler(request_rec *req) {
     am_request.cookies = apr_table_get(req->headers_in, "Cookie");
 
     if (ISVALID(am_request.conf->client_ip_header)) {
-        am_request.client_ip = (char *) apr_table_get(req->headers_in, am_request.conf->client_ip_header);
+        am_request.client_ip = (char *)apr_table_get(req->headers_in, am_request.conf->client_ip_header);
     }
 
     if (!ISVALID(am_request.client_ip)) {
 #ifdef APACHE24
-        am_request.client_ip = (char *) req->connection->client_ip;
+        am_request.client_ip = (char *)req->connection->client_ip;
 #else
-        am_request.client_ip = (char *) req->connection->remote_ip;
+        am_request.client_ip = (char *)req->connection->remote_ip;
 #endif
     }
 
     if (ISVALID(am_request.conf->client_hostname_header)) {
-        am_request.client_host = (char *) apr_table_get(req->headers_in, am_request.conf->client_hostname_header);
+        am_request.client_host = (char *)apr_table_get(req->headers_in, am_request.conf->client_hostname_header);
     }
 
     am_request.am_get_request_url_f = get_request_url;
@@ -927,14 +912,14 @@ static int amagent_auth_handler(request_rec *req) {
     /* json handler for the rest of the unsuccessful exit statuses not processed by set_custom_response */
     if (am_request.is_json_url && !(result == OK || result == DONE || result == DECLINED)) {
         ap_set_content_type(req, "application/json");
-        ap_rprintf(req, AM_JSON_TEMPLATE_DATA,
-                am_strerror(am_request.status), "\"\"", am_status_value(am_request.status));
+        ap_rprintf(req, AM_JSON_TEMPLATE_DATA, am_strerror(am_request.status), "\"\"",
+                   am_status_value(am_request.status));
         ap_rflush(req);
         result = DONE;
     }
 
-    AM_LOG_DEBUG(config->config_id, "amagent_auth_handler(): exit status: %s (%d)",
-            am_strerror(am_request.status), am_request.status);
+    AM_LOG_DEBUG(config->config_id, "amagent_auth_handler(): exit status: %s (%d)", am_strerror(am_request.status),
+                 am_request.status);
 
     am_config_free(&am_request.conf);
     am_request_free(&am_request);
@@ -946,8 +931,8 @@ static void amagent_auth_post_insert_filter(request_rec *req) {
     ap_add_input_filter(amagent_post_filter_name, NULL, req, req->connection);
 }
 
-static apr_status_t amagent_post_filter(ap_filter_t *f, apr_bucket_brigade *bucket_out,
-        ap_input_mode_t emode, apr_read_type_e eblock, apr_off_t nbytes) {
+static apr_status_t amagent_post_filter(ap_filter_t *f, apr_bucket_brigade *bucket_out, ap_input_mode_t emode,
+                                        apr_read_type_e eblock, apr_off_t nbytes) {
     static const char *thisfunc = "amagent_post_filter():";
     request_rec *r = f->r;
     conn_rec *c = r->connection;
@@ -964,10 +949,9 @@ static apr_status_t amagent_post_filter(ap_filter_t *f, apr_bucket_brigade *buck
     if (state == NULL) {
         apr_finfo_t finfo;
 
-        f->ctx = state = (amagent_filter_ctx *) apr_pcalloc(r->pool, sizeof (amagent_filter_ctx));
+        f->ctx = state = (amagent_filter_ctx *)apr_pcalloc(r->pool, sizeof(amagent_filter_ctx));
         if (state == NULL) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r, "%s memory allocation error",
-                    thisfunc);
+            ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r, "%s memory allocation error", thisfunc);
             apr_file_remove(file_name, r->pool);
             apr_table_unset(r->notes, amagent_post_filter_name);
             return ap_get_brigade(f->next, bucket_out, emode, eblock, nbytes);
@@ -975,19 +959,17 @@ static apr_status_t amagent_post_filter(ap_filter_t *f, apr_bucket_brigade *buck
 
         state->output_ptr = apr_palloc(r->pool, 4000); /* bucket limit of 4K */
         if (state->output_ptr == NULL) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r, "%s memory allocation error",
-                    thisfunc);
+            ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r, "%s memory allocation error", thisfunc);
             apr_file_remove(file_name, r->pool);
             apr_table_unset(r->notes, amagent_post_filter_name);
             return ap_get_brigade(f->next, bucket_out, emode, eblock, nbytes);
         }
 
-        ret = apr_file_open(&state->tmp_file, file_name, APR_FOPEN_READ | APR_FOPEN_BINARY,
-                APR_OS_DEFAULT, r->pool);
+        ret = apr_file_open(&state->tmp_file, file_name, APR_FOPEN_READ | APR_FOPEN_BINARY, APR_OS_DEFAULT, r->pool);
         if (ret != APR_SUCCESS) {
-            apr_strerror(ret, buferr, sizeof (buferr));
-            ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r, "%s unable to open POST preservation file: %s, %s",
-                    thisfunc, file_name, buferr);
+            apr_strerror(ret, buferr, sizeof(buferr));
+            ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r,
+                          "%s unable to open POST preservation file: %s, %s", thisfunc, file_name, buferr);
             apr_file_remove(file_name, r->pool);
             apr_table_unset(r->notes, amagent_post_filter_name);
             return ap_get_brigade(f->next, bucket_out, emode, eblock, nbytes);
@@ -1009,15 +991,17 @@ static apr_status_t amagent_post_filter(ap_filter_t *f, apr_bucket_brigade *buck
         apr_bucket *pbktOut;
         apr_size_t len = 4000;
 
-        if (len > (apr_size_t) nbytes) len = (apr_size_t) nbytes;
+        if (len > (apr_size_t)nbytes)
+            len = (apr_size_t)nbytes;
 
-        if (state->size - state->output_sent < len) len = state->size - state->output_sent;
+        if (state->size - state->output_sent < len)
+            len = state->size - state->output_sent;
 
         ret = apr_file_read(state->tmp_file, state->output_ptr, &len);
         if (ret != APR_SUCCESS) {
-            apr_strerror(ret, buferr, sizeof (buferr));
-            ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r, "%s unable to read POST preservation file: %s, %s",
-                    thisfunc, file_name, buferr);
+            apr_strerror(ret, buferr, sizeof(buferr));
+            ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r,
+                          "%s unable to read POST preservation file: %s, %s", thisfunc, file_name, buferr);
             apr_file_close(state->tmp_file);
             apr_file_remove(file_name, r->pool);
             apr_table_unset(r->notes, amagent_post_filter_name);
@@ -1025,11 +1009,11 @@ static apr_status_t amagent_post_filter(ap_filter_t *f, apr_bucket_brigade *buck
         }
 
         pbktOut = apr_bucket_heap_create(state->output_ptr, len, NULL, c->bucket_alloc);
-        state->output_sent += (int) len;
+        state->output_sent += (int)len;
 
         APR_BRIGADE_INSERT_TAIL(bucket_out, pbktOut);
-        ap_log_rerror(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r, "%s sent %ld bytes (%d total)",
-                thisfunc, len, state->output_sent);
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r, "%s sent %ld bytes (%d total)", thisfunc, len,
+                      state->output_sent);
     }
 
     /* are we done yet? */
@@ -1058,23 +1042,21 @@ static int amagent_preserve_url(request_rec *r) {
     request_rec *prev, *main;
 #define AM_REQUEST_CHAIN_LIMIT 5
 
-    const char* url = apr_table_get(r->notes, amagent_preserve_url_hook_name);
-    if (url != NULL) return DECLINED;
-
+    const char *url = apr_table_get(r->notes, amagent_preserve_url_hook_name);
+    if (url != NULL)
+        return DECLINED;
 
     /* Go down the prev chain to see if this request was a rewrite
      * from another one.  We want to store the uri the user passed in,
      * not the one it was rewritten to */
     prev = r->prev;
-    for (i = 0; (url == NULL) && (prev != NULL) && (i < AM_REQUEST_CHAIN_LIMIT);
-            ++i, prev = prev->prev) {
+    for (i = 0; (url == NULL) && (prev != NULL) && (i < AM_REQUEST_CHAIN_LIMIT); ++i, prev = prev->prev) {
         url = apr_table_get(prev->notes, amagent_preserve_url_hook_name);
     }
 
     /* Do the same for main chain as well (mod_dir internal redirects) */
     main = r->main;
-    for (i = 0; (url == NULL) && (main != NULL) && (i < AM_REQUEST_CHAIN_LIMIT);
-            ++i, main = main->main) {
+    for (i = 0; (url == NULL) && (main != NULL) && (i < AM_REQUEST_CHAIN_LIMIT); ++i, main = main->main) {
         url = apr_table_get(main->notes, amagent_preserve_url_hook_name);
     }
 
@@ -1087,7 +1069,7 @@ static int amagent_preserve_url(request_rec *r) {
 #else
         if (strncasecmp(r->unparsed_uri,
 #endif
-                "http", 4) == 0) {
+                      "http", 4) == 0) {
             url = apr_pstrdup(r->pool, r->unparsed_uri);
         } else {
             url = ap_construct_url(r->pool, r->unparsed_uri, r);
@@ -1095,8 +1077,8 @@ static int amagent_preserve_url(request_rec *r) {
     }
 
     if (ISINVALID(url)) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r,
-                "%s error parsing request url %s", thisfunc, LOGEMPTY(r->unparsed_uri));
+        ap_log_rerror(APLOG_MARK, APLOG_ERR | APLOG_NOERRNO, 0, r, "%s error parsing request url %s", thisfunc,
+                      LOGEMPTY(r->unparsed_uri));
         apr_table_unset(r->notes, amagent_preserve_url_hook_name);
     } else {
         apr_table_set(r->notes, amagent_preserve_url_hook_name, url);
@@ -1118,13 +1100,5 @@ static void amagent_register_hooks(apr_pool_t *p) {
     ap_register_input_filter(amagent_post_filter_name, amagent_post_filter, NULL, AP_FTYPE_RESOURCE);
 }
 
-
 module AP_MODULE_DECLARE_DATA amagent_module = {
-    STANDARD20_MODULE_STUFF,
-    NULL,
-    NULL,
-    amagent_srv_config,
-    NULL,
-    amagent_cmds,
-    amagent_register_hooks
-};
+    STANDARD20_MODULE_STUFF, NULL, NULL, amagent_srv_config, NULL, amagent_cmds, amagent_register_hooks};
