@@ -305,7 +305,7 @@ static void entity_declaration(void *userData, const XML_Char *entityName,
 
 void *am_parse_policy_xml(unsigned long instance_id, const char *xml, size_t xml_sz, int scope) {
     static const char *thisfunc = "am_parse_policy_xml():";
-    char *begin, *stream = NULL;
+    const const char *begin, *stream = NULL;
     size_t data_sz;
     struct am_policy_result *r = NULL;
 
@@ -320,7 +320,7 @@ void *am_parse_policy_xml(unsigned long instance_id, const char *xml, size_t xml
 
     begin = strstr(xml, "![CDATA[");
     if (begin != NULL) {
-        char *end = strstr(begin + 8, "]]>");
+        const const char *end = strstr(begin + 8, "]]>");
         if (end != NULL) {
             stream = begin + 8;
             data_sz = end - (begin + 8);

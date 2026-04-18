@@ -16,6 +16,7 @@
 
 #ifndef LIST_H
 #define LIST_H
+#include <stddef.h>
 
 struct offset_list {
     uint32_t prev, next;

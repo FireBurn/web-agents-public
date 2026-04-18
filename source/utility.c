@@ -2353,7 +2353,7 @@ static int am_scandir(const char *dirname, struct dirent ***ret_namelist,
         closedir(dir);
         return AM_ENOMEM;
     }
-    while (readdir_r(dir, dirbuf, &ent) == 0 && ent) {
+    while ((ent = readdir(dir)) != NULL) {
         if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
             continue;
         if (select != NULL && !select(ent))

@@ -16,9 +16,12 @@
 
 #ifndef NET_CLIENT_H
 #define NET_CLIENT_H
+#include "platform.h"
 
 #include "http_parser.h"
 #include "thread.h"
+#include "am.h"
+#include "config.h"
 
 typedef struct {
     int cert_key_pass_sz;

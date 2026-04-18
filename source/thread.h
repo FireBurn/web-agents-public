@@ -16,6 +16,7 @@
 
 #ifndef THREAD_H
 #define THREAD_H
+#include "platform.h"
 
 #ifdef _WIN32
 typedef CRITICAL_SECTION am_mutex_t;
@@ -30,6 +31,7 @@ typedef HANDLE am_thread_t;
 #else
 typedef pthread_mutex_t am_mutex_t;
 typedef pthread_t am_thread_t;
+#include <semaphore.h>
 #define AM_MUTEX_INIT(m)        pthread_mutex_init((m), NULL)
 #define AM_MUTEX_LOCK           pthread_mutex_lock
 #define AM_MUTEX_UNLOCK         pthread_mutex_unlock
