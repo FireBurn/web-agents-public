@@ -14,9 +14,9 @@
  * Copyright 2014 - 2016 ForgeRock AS.
  */
 
+#include "am.h"
 #include "platform.h"
 #include "thread.h"
-#include "am.h"
 #include "utility.h"
 #include "version.h"
 #ifndef _WIN32
@@ -30,14 +30,14 @@ typedef struct {
 } Dl_info;
 
 static int dladdr(void *s, Dl_info *i) {
-#define DLADDR_BUFF_SZ      4096
+#define DLADDR_BUFF_SZ 4096
     void *buf = malloc(DLADDR_BUFF_SZ);
     if (buf == NULL) {
         i->dli_fname = NULL;
         return 0;
     }
 
-    char *pldi = (char *) buf;
+    char *pldi = (char *)buf;
     int r = loadquery(L_GETINFO, pldi, DLADDR_BUFF_SZ);
     if (r == -1) {
         i->dli_fname = NULL;
@@ -45,11 +45,11 @@ static int dladdr(void *s, Dl_info *i) {
         return 0;
     }
 
-    struct ld_info *ldi = (struct ld_info *) pldi;
+    struct ld_info *ldi = (struct ld_info *)pldi;
     while (ldi->ldinfo_next) {
         pldi += ldi->ldinfo_next;
-        ldi = (struct ld_info *) pldi;
-        char *begin = (char *) ldi->ldinfo_textorg;
+        ldi = (struct ld_info *)pldi;
+        char *begin = (char *)ldi->ldinfo_textorg;
         if (begin < s) {
             char *end = begin + ldi->ldinfo_textsize;
             if (end > s) {
@@ -69,17 +69,17 @@ static int dladdr(void *s, Dl_info *i) {
 #define DEFAULT_LOG_SIZE (1024 * 1024 * 5) /* 5MB */
 
 #if defined(_WIN32)
-#define AM_ATOMIC_ADD_32        InterlockedExchangeAdd
-#define AM_ATOMIC_CAS_32        InterlockedCompareExchange
-#define AM_ATOMIC_SWAP_32       InterlockedExchange
+#define AM_ATOMIC_ADD_32 InterlockedExchangeAdd
+#define AM_ATOMIC_CAS_32 InterlockedCompareExchange
+#define AM_ATOMIC_SWAP_32 InterlockedExchange
 #elif defined(__sun)
 #include <sys/atomic.h>
-#define AM_ATOMIC_ADD_32        atomic_add_32_nv
-#define AM_ATOMIC_CAS_32(t,o,n) atomic_cas_32(t,n,o)
-#define AM_ATOMIC_SWAP_32       atomic_swap_32
+#define AM_ATOMIC_ADD_32 atomic_add_32_nv
+#define AM_ATOMIC_CAS_32(t, o, n) atomic_cas_32(t, n, o)
+#define AM_ATOMIC_SWAP_32 atomic_swap_32
 #else
-#define AM_ATOMIC_ADD_32        __sync_fetch_and_add
-#define AM_ATOMIC_CAS_32(t,o,n) __sync_val_compare_and_swap(t,n,o)
+#define AM_ATOMIC_ADD_32 __sync_fetch_and_add
+#define AM_ATOMIC_CAS_32(t, o, n) __sync_val_compare_and_swap(t, n, o)
 
 static inline uint32_t AM_ATOMIC_SWAP_32(volatile uint32_t *target, uint32_t value) {
     __sync_synchronize();
@@ -90,11 +90,7 @@ static inline uint32_t AM_ATOMIC_SWAP_32(volatile uint32_t *target, uint32_t val
 #define LOG_WRITE_TIMEOUT 1000
 #define LOG_READ_TIMEOUT 1000
 
-enum {
-    LOG_MUTEX = 0,
-    LOG_URL_MUTEX,
-    LOG_INIT_MUTEX
-};
+enum { LOG_MUTEX = 0, LOG_URL_MUTEX, LOG_INIT_MUTEX };
 
 struct log_block {
     uint32_t prev;
@@ -115,7 +111,7 @@ struct log_buffer {
     volatile uint32_t write_start;
 
     volatile uint32_t owner; /* process id who owns the log_reader thread */
-    volatile uint32_t stop; /* log_reader stop flag */
+    volatile uint32_t stop;  /* log_reader stop flag */
 
     volatile int32_t lock_owner[3];
     volatile uint32_t lock[3];
@@ -180,12 +176,10 @@ static struct am_shared_log {
 static char default_log_path[AM_PATH_SIZE] = {0};
 static int32_t default_log_level = AM_LOG_LEVEL_ERROR;
 static int file_write_enabled = AM_TRUE;
-static struct log_files log_level_cache[AM_MAX_INSTANCES] = {
-    {0}
-};
+static struct log_files log_level_cache[AM_MAX_INSTANCES] = {{0}};
 
 uint64_t get_log_buffer_size() {
-    return page_size(sizeof (struct log_buffer));
+    return page_size(sizeof(struct log_buffer));
 }
 
 static void log_mutex_lock(int type) {
@@ -212,9 +206,7 @@ static void log_mutex_lock(int type) {
         Sleep(1);
 #else
 
-        nanosleep((const struct timespec[]) {
-            {0, 1000000L}
-        }, NULL);
+        nanosleep((const struct timespec[]){{0, 1000000L}}, NULL);
 #endif
     }
     ++(mtx->count);
@@ -227,11 +219,11 @@ static int log_mutex_trylock(int type) {
 
     if (
 #ifdef _WIN32
-            TryEnterCriticalSection(&mtx->lock) == 0
+        TryEnterCriticalSection(&mtx->lock) == 0
 #else
-            pthread_mutex_trylock(&mtx->lock) != 0
+        pthread_mutex_trylock(&mtx->lock) != 0
 #endif
-            ) {
+    ) {
         return AM_ERROR;
     }
 
@@ -253,9 +245,7 @@ static int log_mutex_trylock(int type) {
         Sleep(1);
 #else
 
-        nanosleep((const struct timespec[]){
-            {0, 1000000L}
-        }, NULL);
+        nanosleep((const struct timespec[]){{0, 1000000L}}, NULL);
 #endif
     }
     ++(mtx->count);
@@ -285,8 +275,7 @@ static void log_mutex_unlock(int type) {
 
 static struct log_block *get_write_block() {
     for (int i = 0; i < LOGGER_RW_RETRY_LIMIT; i++) {
-        if (log_handle == NULL || log_handle->area == NULL ||
-                AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
+        if (log_handle == NULL || log_handle->area == NULL || AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
             return NULL;
         /* check if there is a room to expand the cursor */
         uint32_t index = log_handle->area->write_start;
@@ -308,8 +297,7 @@ static struct log_block *get_write_block() {
 
 static struct log_block *get_read_block() {
     for (int i = 0; i < LOGGER_RW_RETRY_LIMIT; i++) {
-        if (log_handle == NULL || log_handle->area == NULL ||
-                AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
+        if (log_handle == NULL || log_handle->area == NULL || AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
             return NULL;
         uint32_t index = log_handle->area->read_start;
         struct log_block *block = log_handle->area->blocks + index;
@@ -330,7 +318,6 @@ static am_bool_t should_rotate_time(uint64_t ct) {
     return difftime(time(NULL), ts) >= 0;
 }
 
-
 #ifdef _WIN32
 #define fsync _commit
 #define file_open(name) _open(name, _O_CREAT | _O_WRONLY | _O_APPEND | _O_BINARY, _S_IREAD | _S_IWRITE)
@@ -346,8 +333,8 @@ static am_bool_t should_rotate_time(uint64_t ct) {
 #define file_access(name) access(name, F_OK)
 #endif
 
-static void log_file_write(unsigned long instance_id, const char *data, unsigned int data_sz,
-        struct log_files *f, struct log_file *file_cache, am_bool_t is_audit) {
+static void log_file_write(unsigned long instance_id, const char *data, unsigned int data_sz, struct log_files *f,
+                           struct log_file *file_cache, am_bool_t is_audit) {
     file_stat_struct st;
     uint64_t wr, file_created, fsize;
     int32_t file_handle, max_size;
@@ -389,8 +376,7 @@ static void log_file_write(unsigned long instance_id, const char *data, unsigned
     }
     status = errno;
     if (file_handle == -1 || file_fstat(file_handle, &st) != 0) {
-        fprintf(stderr, "log_file_write(): failed to open log file %s: (error: %d/%d)\n",
-                file_name, status, errno);
+        fprintf(stderr, "log_file_write(): failed to open log file %s: (error: %d/%d)\n", file_name, status, errno);
         if (file_handle != -1) {
             file_close(file_handle);
         }
@@ -416,17 +402,16 @@ static void log_file_write(unsigned long instance_id, const char *data, unsigned
     wr = write(file_handle, data, data_sz);
     wr += write(file_handle,
 #ifdef _WIN32
-            "\r\n", 2
+                "\r\n", 2
 #else
-            "\n", 1
+                "\n", 1
 #endif
-            );
+    );
     fsync(file_handle);
     fsize += wr;
 
     /* rotate file if size exceeds max (configured) value or it is set to rotate once a day */
-    if ((max_size > 0 && (fsize + 1024) > max_size) ||
-            (max_size == -1 && should_rotate_time(file_created))) {
+    if ((max_size > 0 && (fsize + 1024) > max_size) || (max_size == -1 && should_rotate_time(file_created))) {
         unsigned int idx = 1;
         char *tmp = malloc(AM_PATH_SIZE + 1);
         if (tmp != NULL) {
@@ -436,7 +421,7 @@ static void log_file_write(unsigned long instance_id, const char *data, unsigned
             } while (file_access(tmp) == 0);
 #ifdef _WIN32
             if (CopyFileExA(file_name, tmp, NULL, NULL, FALSE, COPY_FILE_NO_BUFFERING)) {
-                HANDLE fh = (HANDLE) _get_osfhandle(file_handle);
+                HANDLE fh = (HANDLE)_get_osfhandle(file_handle);
                 SetFilePointer(fh, 0, NULL, FILE_BEGIN);
                 SetEndOfFile(fh);
                 if (is_audit) {
@@ -445,15 +430,14 @@ static void log_file_write(unsigned long instance_id, const char *data, unsigned
                     file_cache->created_debug = time(NULL);
                 }
             } else {
-                fprintf(stderr, "log_file_write(): could not rotate log file %s (error: %d)\n",
-                        file_name, GetLastError());
+                fprintf(stderr, "log_file_write(): could not rotate log file %s (error: %d)\n", file_name,
+                        GetLastError());
             }
 #else
             file_close(file_handle);
             file_handle = -1;
             if (rename(file_name, tmp) != 0) {
-                fprintf(stderr, "log_file_write(): could not rotate log file %s (error: %d)\n",
-                        file_name, errno);
+                fprintf(stderr, "log_file_write(): could not rotate log file %s (error: %d)\n", file_name, errno);
             }
 #endif
             free(tmp);
@@ -511,15 +495,14 @@ static void log_buffer_read(struct log_file *fc) {
 
     if (file_write_enabled) {
         /* do the actual file write op */
-        log_file_write(block->instance_id, block->data, (unsigned int) block->size, file, file_cache,
-                (block->level & AM_LOG_LEVEL_AUDIT) != 0);
+        log_file_write(block->instance_id, block->data, (unsigned int)block->size, file, file_cache,
+                       (block->level & AM_LOG_LEVEL_AUDIT) != 0);
     }
 
     /* set done flag for this block */
     block->done_read = 1;
     for (;;) {
-        if (log_handle == NULL || log_handle->area == NULL ||
-                AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
+        if (log_handle == NULL || log_handle->area == NULL || AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
             break;
         /* try and get the right to move the cursor */
         uint32_t index = log_handle->area->read_end;
@@ -553,10 +536,10 @@ static void *am_log_worker(void *arg) {
     int i;
 
     /* local open file descriptor cache; last entry reserved for instanceid 0 */
-    struct log_file *fc = malloc(sizeof (struct log_file) * (AM_MAX_INSTANCES + 1));
+    struct log_file *fc = malloc(sizeof(struct log_file) * (AM_MAX_INSTANCES + 1));
     if (fc == NULL)
         return NULL;
-    
+
     /* reset local open file descriptor cache */
     for (i = 0; i < AM_MAX_INSTANCES + 1; i++) {
         struct log_file *file = &fc[i];
@@ -607,9 +590,8 @@ static void log_worker_register(int lock) {
     uint32_t pid = getpid();
     if (lock)
         log_mutex_lock(LOG_MUTEX);
-    if (log_handle->area->owner == 0 || (log_handle->area->owner != pid &&
-            !is_process_running(log_handle->area->owner))) {
-
+    if (log_handle->area->owner == 0 ||
+        (log_handle->area->owner != pid && !is_process_running(log_handle->area->owner))) {
         /* register & start log-writer thread in this process */
         log_handle->area->stop = 0;
         log_handle->area->owner = pid;
@@ -639,15 +621,16 @@ int am_log_init(int id) {
     am_bool_t opened = AM_FALSE;
     uint64_t disk_size;
 
-#define AM_LOG_EVENT_AVAILABLE      AM_GLOBAL_PREFIX AM_LOG_SHM_NAME "_avlb_ev"
-#define AM_LOG_EVENT_FILL           AM_GLOBAL_PREFIX AM_LOG_SHM_NAME "_fill_ev"
+#define AM_LOG_EVENT_AVAILABLE AM_GLOBAL_PREFIX AM_LOG_SHM_NAME "_avlb_ev"
+#define AM_LOG_EVENT_FILL AM_GLOBAL_PREFIX AM_LOG_SHM_NAME "_fill_ev"
 #ifdef __sun
-#define AM_LOG_SHM_NAME_INT         "/" AM_LOG_SHM_NAME "_s"
+#define AM_LOG_SHM_NAME_INT "/" AM_LOG_SHM_NAME "_s"
 #else
-#define AM_LOG_SHM_NAME_INT         AM_GLOBAL_PREFIX AM_LOG_SHM_NAME "_s"
+#define AM_LOG_SHM_NAME_INT AM_GLOBAL_PREFIX AM_LOG_SHM_NAME "_s"
 #endif
 
-    if (log_handle != NULL) return AM_SUCCESS;
+    if (log_handle != NULL)
+        return AM_SUCCESS;
 
     memset(&default_log_path[0], 0, sizeof(default_log_path));
 
@@ -656,8 +639,8 @@ int am_log_init(int id) {
     SECURITY_ATTRIBUTES sec_attr, *sec = NULL;
 
     if (InitializeSecurityDescriptor(&sec_descr, SECURITY_DESCRIPTOR_REVISION) &&
-            SetSecurityDescriptorDacl(&sec_descr, TRUE, (PACL) NULL, FALSE)) {
-        sec_attr.nLength = sizeof (SECURITY_ATTRIBUTES);
+        SetSecurityDescriptorDacl(&sec_descr, TRUE, (PACL)NULL, FALSE)) {
+        sec_attr.nLength = sizeof(SECURITY_ATTRIBUTES);
         sec_attr.lpSecurityDescriptor = &sec_descr;
         sec_attr.bInheritHandle = TRUE;
         sec = &sec_attr;
@@ -666,21 +649,22 @@ int am_log_init(int id) {
 
     disk_size = get_disk_free_space(
 #if defined(LINUX)
-            "/dev/shm/"
-#elif defined(__sun)   
-            "/tmp/"
+        "/dev/shm/"
+#elif defined(__sun)
+        "/tmp/"
 #else
-            "/"
+        "/"
 #endif
-            , NULL);
-    if (sizeof (struct log_buffer) > disk_size) {
-        fprintf(stderr, "am_log_init() free disk space on the system is only %"PR_L64" bytes, required %ld bytes\n",
-                disk_size, sizeof (struct log_buffer));
+        ,
+        NULL);
+    if (sizeof(struct log_buffer) > disk_size) {
+        fprintf(stderr, "am_log_init() free disk space on the system is only %" PR_L64 " bytes, required %ld bytes\n",
+                disk_size, sizeof(struct log_buffer));
         return AM_ENOSPC;
     }
 #endif
 
-    log_handle = (struct am_shared_log *) calloc(1, sizeof (struct am_shared_log));
+    log_handle = (struct am_shared_log *)calloc(1, sizeof(struct am_shared_log));
     if (log_handle == NULL) {
         return AM_ENOMEM;
     }
@@ -690,23 +674,24 @@ int am_log_init(int id) {
 #ifdef _WIN32
     HMODULE hm = NULL;
     void *caller = _ReturnAddress();
-    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR) caller, &hm) &&
-            GetModuleFileNameA(hm, default_log_path, sizeof (default_log_path) - 1) > 0) {
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (LPCSTR)caller, &hm) &&
+        GetModuleFileNameA(hm, default_log_path, sizeof(default_log_path) - 1) > 0) {
         PathRemoveFileSpecA(default_log_path);
-        strcat(default_log_path, "\\..\\log\\"DEFAULT_AGENT_LOG_FILE);
+        strcat(default_log_path, "\\..\\log\\" DEFAULT_AGENT_LOG_FILE);
     }
 #else
     Dl_info info;
     if (dladdr(
 #ifdef AIX
-            (void*) *((ulong *) & am_log_init)
+            (void *)*((ulong *)&am_log_init)
 #else
-            (void *) &am_log_init
+            (void *)&am_log_init
 #endif
-            , &info)) {
-        snprintf(default_log_path, sizeof (default_log_path),
-                "%s/../log/"DEFAULT_AGENT_LOG_FILE, dirname((char *) info.dli_fname));
+                ,
+            &info)) {
+        snprintf(default_log_path, sizeof(default_log_path), "%s/../log/" DEFAULT_AGENT_LOG_FILE,
+                 dirname((char *)info.dli_fname));
     }
 #endif
     char *env = getenv("AM_DEFAULT_LOG_LEVEL");
@@ -729,39 +714,38 @@ int am_log_init(int id) {
     }
 #endif
 
-    log_handle->mutex[LOG_MUTEX] = (struct log_mutex *) calloc(1, sizeof (struct log_mutex));
-    log_handle->mutex[LOG_URL_MUTEX] = (struct log_mutex *) calloc(1, sizeof (struct log_mutex));
-    log_handle->mutex[LOG_INIT_MUTEX] = (struct log_mutex *) calloc(1, sizeof (struct log_mutex));
+    log_handle->mutex[LOG_MUTEX] = (struct log_mutex *)calloc(1, sizeof(struct log_mutex));
+    log_handle->mutex[LOG_URL_MUTEX] = (struct log_mutex *)calloc(1, sizeof(struct log_mutex));
+    log_handle->mutex[LOG_INIT_MUTEX] = (struct log_mutex *)calloc(1, sizeof(struct log_mutex));
     if (log_handle->mutex[LOG_MUTEX] == NULL || log_handle->mutex[LOG_URL_MUTEX] == NULL ||
-            log_handle->mutex[LOG_INIT_MUTEX] == NULL) {
-        AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
-                log_handle->mutex[LOG_INIT_MUTEX], log_handle);
+        log_handle->mutex[LOG_INIT_MUTEX] == NULL) {
+        AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX], log_handle->mutex[LOG_INIT_MUTEX],
+                log_handle);
         log_handle = NULL;
         return AM_ENOMEM;
     }
 
-    log_handle->mutex[LOG_MUTEX]->pid = log_handle->mutex[LOG_URL_MUTEX]->pid =
-            log_handle->mutex[LOG_INIT_MUTEX]->pid = getpid();
+    log_handle->mutex[LOG_MUTEX]->pid = log_handle->mutex[LOG_URL_MUTEX]->pid = log_handle->mutex[LOG_INIT_MUTEX]->pid =
+        getpid();
 
     log_mutex_init(&log_handle->mutex[LOG_MUTEX]->lock);
     log_mutex_init(&log_handle->mutex[LOG_URL_MUTEX]->lock);
     log_mutex_init(&log_handle->mutex[LOG_INIT_MUTEX]->lock);
 
-    log_handle->area_size = page_size(sizeof (struct log_buffer));
+    log_handle->area_size = page_size(sizeof(struct log_buffer));
 
 #ifdef _WIN32
 
     log_handle->mapping = CreateFileMappingA(
-            INVALID_HANDLE_VALUE, sec, PAGE_READWRITE,
-            (DWORD) ((log_handle->area_size >> 32) & 0xFFFFFFFFul),
-            (DWORD) (log_handle->area_size & 0xFFFFFFFFul), get_global_name(AM_LOG_SHM_NAME_INT, id));
+        INVALID_HANDLE_VALUE, sec, PAGE_READWRITE, (DWORD)((log_handle->area_size >> 32) & 0xFFFFFFFFul),
+        (DWORD)(log_handle->area_size & 0xFFFFFFFFul), get_global_name(AM_LOG_SHM_NAME_INT, id));
     if (log_handle->mapping == NULL) {
         fprintf(stderr, "am_log_init() CreateFileMapping failed (%d)\n", GetLastError());
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_MUTEX]->lock);
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_URL_MUTEX]->lock);
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_INIT_MUTEX]->lock);
-        AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
-                log_handle->mutex[LOG_INIT_MUTEX], log_handle);
+        AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX], log_handle->mutex[LOG_INIT_MUTEX],
+                log_handle);
         log_handle = NULL;
         return AM_SHM_ERROR;
     }
@@ -769,31 +753,30 @@ int am_log_init(int id) {
         opened = AM_TRUE;
     }
 
-    log_handle->area = (struct log_buffer *) MapViewOfFile(
-            log_handle->mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof (struct log_buffer));
+    log_handle->area =
+        (struct log_buffer *)MapViewOfFile(log_handle->mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(struct log_buffer));
     if (log_handle->area == NULL) {
         fprintf(stderr, "am_log_init() MapViewOfFile failed (%d)\n", GetLastError());
         CloseHandle(log_handle->mapping);
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_MUTEX]->lock);
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_URL_MUTEX]->lock);
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_INIT_MUTEX]->lock);
-        AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
-                log_handle->mutex[LOG_INIT_MUTEX], log_handle);
+        AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX], log_handle->mutex[LOG_INIT_MUTEX],
+                log_handle);
         log_handle = NULL;
         return AM_SHM_ERROR;
     }
 
 #else
 
-    log_handle->mapping = shm_open(get_global_name(AM_LOG_SHM_NAME_INT, id),
-            O_CREAT | O_EXCL | O_RDWR, 0666);
+    log_handle->mapping = shm_open(get_global_name(AM_LOG_SHM_NAME_INT, id), O_CREAT | O_EXCL | O_RDWR, 0666);
     if (log_handle->mapping == -1 && errno != EEXIST) {
         fprintf(stderr, "am_log_init() shm_open failed (%d)\n", errno);
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_MUTEX]->lock);
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_URL_MUTEX]->lock);
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_INIT_MUTEX]->lock);
-        AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
-                log_handle->mutex[LOG_INIT_MUTEX], log_handle);
+        AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX], log_handle->mutex[LOG_INIT_MUTEX],
+                log_handle);
         log_handle = NULL;
         return AM_SHM_ERROR;
     }
@@ -804,8 +787,8 @@ int am_log_init(int id) {
             AM_MUTEX_DESTROY(&log_handle->mutex[LOG_MUTEX]->lock);
             AM_MUTEX_DESTROY(&log_handle->mutex[LOG_URL_MUTEX]->lock);
             AM_MUTEX_DESTROY(&log_handle->mutex[LOG_INIT_MUTEX]->lock);
-            AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
-                    log_handle->mutex[LOG_INIT_MUTEX], log_handle);
+            AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX], log_handle->mutex[LOG_INIT_MUTEX],
+                    log_handle);
             log_handle = NULL;
             return AM_SHM_ERROR;
         }
@@ -817,14 +800,13 @@ int am_log_init(int id) {
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_MUTEX]->lock);
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_URL_MUTEX]->lock);
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_INIT_MUTEX]->lock);
-        AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
-                log_handle->mutex[LOG_INIT_MUTEX], log_handle);
+        AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX], log_handle->mutex[LOG_INIT_MUTEX],
+                log_handle);
         log_handle = NULL;
         return AM_SHM_ERROR;
     }
 
-    log_handle->area = mmap(NULL, log_handle->area_size,
-            PROT_READ | PROT_WRITE, MAP_SHARED, log_handle->mapping, 0);
+    log_handle->area = mmap(NULL, log_handle->area_size, PROT_READ | PROT_WRITE, MAP_SHARED, log_handle->mapping, 0);
     if (log_handle->area == MAP_FAILED) {
         fprintf(stderr, "am_log_init() mmap failed (%d)\n", errno);
         close(log_handle->mapping);
@@ -832,8 +814,8 @@ int am_log_init(int id) {
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_MUTEX]->lock);
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_URL_MUTEX]->lock);
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_INIT_MUTEX]->lock);
-        AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
-                log_handle->mutex[LOG_INIT_MUTEX], log_handle);
+        AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX], log_handle->mutex[LOG_INIT_MUTEX],
+                log_handle);
         log_handle = NULL;
         return AM_SHM_ERROR;
     }
@@ -841,14 +823,12 @@ int am_log_init(int id) {
 #endif
 
 #ifdef _WIN32
-    log_handle->log_buffer_available = create_named_event(get_global_name(AM_LOG_EVENT_AVAILABLE, id),
-            NULL);
-    log_handle->log_buffer_filled = create_named_event(get_global_name(AM_LOG_EVENT_FILL, id),
-            NULL);
+    log_handle->log_buffer_available = create_named_event(get_global_name(AM_LOG_EVENT_AVAILABLE, id), NULL);
+    log_handle->log_buffer_filled = create_named_event(get_global_name(AM_LOG_EVENT_FILL, id), NULL);
 #endif
 
     if (!opened) {
-        memset(log_handle->area, 0, sizeof (struct log_buffer));
+        memset(log_handle->area, 0, sizeof(struct log_buffer));
 
 #ifndef _WIN32
         log_handle->log_buffer_available = create_named_event(NULL, &log_handle->area->sem[0]);
@@ -912,7 +892,6 @@ int perform_logging(unsigned long instance_id, int level) {
         log_level = default_log_level;
     } else {
         if (log_mutex_trylock(LOG_MUTEX) == AM_SUCCESS) {
-
             for (i = 0; i < AM_MAX_INSTANCES; i++) {
                 if (log_handle->area->files[i].instance_id == instance_id) {
                     log_level = log_handle->area->files[i].level_debug;
@@ -944,8 +923,8 @@ int perform_logging(unsigned long instance_id, int level) {
      * selected audit level is LEVEL_NONE and requested log level is LEVEL_AUDIT
      */
     if (level == AM_LOG_LEVEL_NONE ||
-            (log_level == AM_LOG_LEVEL_NONE && (level & AM_LOG_LEVEL_AUDIT) != AM_LOG_LEVEL_AUDIT) ||
-            (audit_level == AM_LOG_LEVEL_NONE && (level & AM_LOG_LEVEL_AUDIT) == AM_LOG_LEVEL_AUDIT)) {
+        (log_level == AM_LOG_LEVEL_NONE && (level & AM_LOG_LEVEL_AUDIT) != AM_LOG_LEVEL_AUDIT) ||
+        (audit_level == AM_LOG_LEVEL_NONE && (level & AM_LOG_LEVEL_AUDIT) == AM_LOG_LEVEL_AUDIT)) {
         return AM_FALSE;
     }
 
@@ -954,8 +933,8 @@ int perform_logging(unsigned long instance_id, int level) {
      * and requested log level is "higher" than selected log level according to
      * "DEBUG > INFO > WARNING > ERROR" schema - do not log.
      */
-    if ((level & AM_LOG_LEVEL_AUDIT) != AM_LOG_LEVEL_AUDIT &&
-            (level & AM_LOG_LEVEL_ALWAYS) != AM_LOG_LEVEL_ALWAYS && level > log_level) {
+    if ((level & AM_LOG_LEVEL_AUDIT) != AM_LOG_LEVEL_AUDIT && (level & AM_LOG_LEVEL_ALWAYS) != AM_LOG_LEVEL_ALWAYS &&
+        level > log_level) {
         return AM_FALSE;
     }
 
@@ -981,8 +960,7 @@ int perform_logging(unsigned long instance_id, int level) {
  * first as it will save you a lot of work figuring out you didn't really want to log a message at
  * your current logging level.
  */
-void am_log_write(unsigned long instance_id, int level, const char* header, int header_sz,
-        const char *format, ...) {
+void am_log_write(unsigned long instance_id, int level, const char *header, int header_sz, const char *format, ...) {
     va_list args;
     struct log_block *block;
 
@@ -1015,8 +993,7 @@ void am_log_write(unsigned long instance_id, int level, const char* header, int 
     if (strncpy(block->data, header, AM_LOG_MESSAGE_SIZE - 1) != NULL) {
         va_start(args, format);
         /* and the rest of the message */
-        block->size = vsnprintf(block->data + header_sz,
-                AM_LOG_MESSAGE_SIZE - header_sz, format, args) + header_sz;
+        block->size = vsnprintf(block->data + header_sz, AM_LOG_MESSAGE_SIZE - header_sz, format, args) + header_sz;
         if (block->size >= AM_LOG_MESSAGE_SIZE) {
             block->size = AM_LOG_MESSAGE_SIZE - 1;
         }
@@ -1032,8 +1009,7 @@ void am_log_write(unsigned long instance_id, int level, const char* header, int 
     /* set done flag for this block */
     block->done_write = 1;
     for (;;) {
-        if (log_handle == NULL || log_handle->area == NULL ||
-                AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
+        if (log_handle == NULL || log_handle->area == NULL || AM_ATOMIC_ADD_32(&log_handle->area->stop, 0) > 0)
             break;
         /* try and get the right to move the cursor */
         uint32_t index = log_handle->area->write_end;
@@ -1082,8 +1058,8 @@ void am_log_shutdown(int id) {
     AM_MUTEX_DESTROY(&log_handle->mutex[LOG_MUTEX]->lock);
     AM_MUTEX_DESTROY(&log_handle->mutex[LOG_URL_MUTEX]->lock);
     AM_MUTEX_DESTROY(&log_handle->mutex[LOG_INIT_MUTEX]->lock);
-    AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX],
-            log_handle->mutex[LOG_INIT_MUTEX], log_handle);
+    AM_FREE(log_handle->mutex[LOG_MUTEX], log_handle->mutex[LOG_URL_MUTEX], log_handle->mutex[LOG_INIT_MUTEX],
+            log_handle);
     log_handle = NULL;
 }
 
@@ -1100,12 +1076,12 @@ int am_log_cleanup(int id) {
 }
 
 void am_log_register_instance(unsigned long instance_id, const char *debug_log, int log_level, int log_size,
-        const char *audit_log, int audit_level, int audit_size, const char *config_file) {
+                              const char *audit_log, int audit_level, int audit_size, const char *config_file) {
     int i, exist = AM_NOT_FOUND;
     struct log_files *f;
 
-    if (log_handle == NULL || log_handle->area == NULL ||
-            instance_id == 0 || ISINVALID(debug_log) || ISINVALID(audit_log)) {
+    if (log_handle == NULL || log_handle->area == NULL || instance_id == 0 || ISINVALID(debug_log) ||
+        ISINVALID(audit_log)) {
         return;
     }
 
@@ -1126,8 +1102,8 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
             f = &log_handle->area->files[i];
             if (!f->used) {
                 f->instance_id = instance_id;
-                strncpy(f->name_debug, debug_log, sizeof (f->name_debug) - 1);
-                strncpy(f->name_audit, audit_log, sizeof (f->name_audit) - 1);
+                strncpy(f->name_debug, debug_log, sizeof(f->name_debug) - 1);
+                strncpy(f->name_audit, audit_log, sizeof(f->name_audit) - 1);
                 f->used = AM_TRUE;
                 f->max_size_debug = log_size > 0 && log_size < DEFAULT_LOG_SIZE ? DEFAULT_LOG_SIZE : log_size;
                 f->max_size_audit = audit_size > 0 && audit_size < DEFAULT_LOG_SIZE ? DEFAULT_LOG_SIZE : audit_size;
@@ -1139,10 +1115,13 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
                 log_level_cache[i].level_debug = f->level_debug;
                 log_level_cache[i].level_audit = f->level_audit;
 
-#define AM_LOG_HEADER "\r\n\r\n\t######################################################\r\n\t# %-51s#\r\n\t# Version: %-42s#\r\n\t# %-51s#\r\n\t# Container: %-40s#\r\n\t# Build date: %s %-27s#\r\n\t######################################################\r\n"
+#define AM_LOG_HEADER                                                                                                  \
+    "\r\n\r\n\t######################################################\r\n\t# %-51s#\r\n\t# Version: %-42s#\r\n\t# "    \
+    "%-51s#\r\n\t# Container: %-40s#\r\n\t# Build date: %s "                                                           \
+    "%-27s#\r\n\t######################################################\r\n"
 
-                AM_LOG_ALWAYS(instance_id, AM_LOG_HEADER, DESCRIPTION, VERSION,
-                        VERSION_VCS, CONTAINER, __DATE__, __TIME__);
+                AM_LOG_ALWAYS(instance_id, AM_LOG_HEADER, DESCRIPTION, VERSION, VERSION_VCS, CONTAINER, __DATE__,
+                              __TIME__);
 
                 /* This is an unknown instance - set it to uninitialized state */
                 am_agent_init_set_value(instance_id, AM_UNKNOWN);
@@ -1159,7 +1138,7 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
                     vf->url_index = 0;
                     vf->running = 0;
                     vf->last = time(NULL);
-                    strncpy(vf->config_path, config_file, sizeof (vf->config_path) - 1);
+                    strncpy(vf->config_path, config_file, sizeof(vf->config_path) - 1);
                     break;
                 }
             }
@@ -1170,7 +1149,7 @@ void am_log_register_instance(unsigned long instance_id, const char *debug_log, 
         f->max_size_audit = audit_size > 0 && audit_size < DEFAULT_LOG_SIZE ? DEFAULT_LOG_SIZE : audit_size;
         f->level_debug = log_level;
         f->level_audit = audit_level;
-        
+
         /* update local log level cache */
         log_level_cache[i].instance_id = instance_id;
         log_level_cache[i].level_debug = f->level_debug;
@@ -1310,12 +1289,13 @@ static int gettimeofday(struct timeval *tv, void *tz) {
     FILETIME ft;
     ULARGE_INTEGER tmp;
 
-    if (tv == NULL) return -1;
+    if (tv == NULL)
+        return -1;
 
     GetSystemTimeAsFileTime(&ft);
 
-    /* GetSystemTimeAsFileTime returns the number of 100 nanosecond 
-     * intervals since Jan 1, 1601 (UTC) 
+    /* GetSystemTimeAsFileTime returns the number of 100 nanosecond
+     * intervals since Jan 1, 1601 (UTC)
      */
     tmp.LowPart = ft.dwLowDateTime;
     tmp.HighPart = ft.dwHighDateTime;
@@ -1323,16 +1303,16 @@ static int gettimeofday(struct timeval *tv, void *tz) {
     /* convert to microseconds */
     tmp.QuadPart /= 10ULL;
 
-    /* the UNIX epoch starts on Jan 1 1970 - need to subtract the difference 
+    /* the UNIX epoch starts on Jan 1 1970 - need to subtract the difference
      * in seconds from Jan 1 1601
      */
     tmp.QuadPart -= 11644473600000000ULL;
 
-    /* finally change microseconds to seconds and place in the seconds value, 
+    /* finally change microseconds to seconds and place in the seconds value,
      * the modulus picks up the microseconds
      */
-    tv->tv_usec = (long) (tmp.QuadPart % 1000000LL);
-    tv->tv_sec = (long) (tmp.QuadPart / 1000000LL);
+    tv->tv_usec = (long)(tmp.QuadPart % 1000000LL);
+    tv->tv_sec = (long)(tmp.QuadPart / 1000000LL);
     return 0;
 }
 
@@ -1348,65 +1328,63 @@ char *log_header(int log_level, int *header_sz, const char *file, int line) {
     time_t rawtime;
 
     gettimeofday(&tv, NULL);
-    rawtime = (time_t) tv.tv_sec;
+    rawtime = (time_t)tv.tv_sec;
     localtime_r(&rawtime, &now);
 
     switch (log_level) {
-        case AM_LOG_LEVEL_AUDIT:
-            level = "AUDIT";
-            break;
-        case AM_LOG_LEVEL_DEBUG:
-            level = "DEBUG";
-            break;
-        case AM_LOG_LEVEL_ERROR:
-            level = "ERROR";
-            break;
-        case AM_LOG_LEVEL_WARNING:
-            level = "WARNING";
-            break;
-        default:
-            level = "INFO";
-            break;
+    case AM_LOG_LEVEL_AUDIT:
+        level = "AUDIT";
+        break;
+    case AM_LOG_LEVEL_DEBUG:
+        level = "DEBUG";
+        break;
+    case AM_LOG_LEVEL_ERROR:
+        level = "ERROR";
+        break;
+    case AM_LOG_LEVEL_WARNING:
+        level = "WARNING";
+        break;
+    default:
+        level = "INFO";
+        break;
     }
     /* format time */
-    time_string_sz = strftime(header, sizeof (header), "%Y-%m-%d %H:%M:%S", &now);
+    time_string_sz = strftime(header, sizeof(header), "%Y-%m-%d %H:%M:%S", &now);
 
     /* and time zone */
 #ifdef _WIN32
 #define LOG_HEADER_THREAD_ID "%d"
     TIME_ZONE_INFORMATION tz_info;
     GetTimeZoneInformation(&tz_info);
-    snprintf(tz, sizeof (tz), "%03d%02d", -(tz_info.Bias) / 60, abs(-(tz_info.Bias) % 60));
+    snprintf(tz, sizeof(tz), "%03d%02d", -(tz_info.Bias) / 60, abs(-(tz_info.Bias) % 60));
     if (tz[0] == '0') {
         tz[0] = '+';
     }
 #else
 #define LOG_HEADER_THREAD_ID "%p"
-    strftime(tz, sizeof (tz), "%z", &now);
+    strftime(tz, sizeof(tz), "%z", &now);
 #endif
 
     /* set all the data for the final log header */
     if (log_level == AM_LOG_LEVEL_DEBUG) {
-        *header_sz = snprintf(header + time_string_sz, sizeof (header) - time_string_sz,
-                ".%03ld %s %7.7s ["LOG_HEADER_THREAD_ID":%d][%s:%d] ",
-                tv.tv_usec / 1000L, tz, level,
+        *header_sz = snprintf(header + time_string_sz, sizeof(header) - time_string_sz,
+                              ".%03ld %s %7.7s [" LOG_HEADER_THREAD_ID ":%d][%s:%d] ", tv.tv_usec / 1000L, tz, level,
 #ifdef _WIN32
-                GetCurrentThreadId(),
+                              GetCurrentThreadId(),
 #else
-                (void *) (uintptr_t) pthread_self(),
+                              (void *)(uintptr_t)pthread_self(),
 #endif
-                getpid(), NOTNULL(file), line);
+                              getpid(), NOTNULL(file), line);
     } else {
-        *header_sz = snprintf(header + time_string_sz, sizeof (header) - time_string_sz,
-                ".%03ld %s %7.7s ["LOG_HEADER_THREAD_ID":%d] ",
-                tv.tv_usec / 1000L, tz, level,
+        *header_sz = snprintf(header + time_string_sz, sizeof(header) - time_string_sz,
+                              ".%03ld %s %7.7s [" LOG_HEADER_THREAD_ID ":%d] ", tv.tv_usec / 1000L, tz, level,
 #ifdef _WIN32
-                GetCurrentThreadId(),
+                              GetCurrentThreadId(),
 #else
-                (void *) (uintptr_t) pthread_self(),
+                              (void *)(uintptr_t)pthread_self(),
 #endif
-                getpid());
+                              getpid());
     }
-    *header_sz += (int) time_string_sz;
+    *header_sz += (int)time_string_sz;
     return header;
 }

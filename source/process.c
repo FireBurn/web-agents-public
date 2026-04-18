@@ -14,17 +14,17 @@
  * Copyright 2014 - 2016 ForgeRock AS.
  */
 
-#include "platform.h"
 #include "am.h"
-#include "utility.h"
 #include "list.h"
 #include "net_client.h"
+#include "platform.h"
+#include "utility.h"
 
-#define POST_PRESERVE_URI           "/dummypost/ampostpreserve"
-#define COMPOSITE_ADVICE_KEY        "sunamcompositeadvice"
-#define AUDIT_ALLOW_USER_MESSAGE    "user %s (%s) was allowed access to %s"
-#define AUDIT_DENY_USER_MESSAGE     "user %s (%s) was denied access to %s"
-#define AM_SESSION_ONLY_COOKIE      "AM_SESSION_ONLY_COOKIE"
+#define POST_PRESERVE_URI "/dummypost/ampostpreserve"
+#define COMPOSITE_ADVICE_KEY "sunamcompositeadvice"
+#define AUDIT_ALLOW_USER_MESSAGE "user %s (%s) was allowed access to %s"
+#define AUDIT_DENY_USER_MESSAGE "user %s (%s) was denied access to %s"
+#define AM_SESSION_ONLY_COOKIE "AM_SESSION_ONLY_COOKIE"
 
 enum {
     AM_SESSION_ATTRIBUTE = 0,
@@ -32,13 +32,9 @@ enum {
     AM_RESPONSE_ATTRIBUTE,
 };
 
-enum {
-    AM_SCOPE_SELF = 0,
-    AM_SCOPE_SUBTREE,
-    AM_SCOPE_RESPONSE_ATTRIBUTE_ONLY
-};
+enum { AM_SCOPE_SELF = 0, AM_SCOPE_SUBTREE, AM_SCOPE_RESPONSE_ATTRIBUTE_ONLY };
 
-typedef am_return_t(*am_state_func_t)(am_request_t *);
+typedef am_return_t (*am_state_func_t)(am_request_t *);
 
 typedef enum {
     setup_request_data_c,
@@ -58,44 +54,34 @@ struct transition {
 };
 
 static struct transition state_transitions[] = {
-    {setup_request_data_c, AM_OK, validate_url_c},
-    {setup_request_data_c, AM_FAIL, handle_exit_c},
+    {setup_request_data_c, AM_OK, validate_url_c},     {setup_request_data_c, AM_FAIL, handle_exit_c},
 
-    {validate_url_c, AM_OK, handle_notification_c},
-    {validate_url_c, AM_FAIL, handle_exit_c},
+    {validate_url_c, AM_OK, handle_notification_c},    {validate_url_c, AM_FAIL, handle_exit_c},
 
-    {handle_notification_c, AM_OK, handle_exit_c},
-    {handle_notification_c, AM_FAIL, validate_fqdn_access_c},
+    {handle_notification_c, AM_OK, handle_exit_c},     {handle_notification_c, AM_FAIL, validate_fqdn_access_c},
 
-    {validate_fqdn_access_c, AM_OK, validate_token_c},
-    {validate_fqdn_access_c, AM_FAIL, handle_exit_c},
+    {validate_fqdn_access_c, AM_OK, validate_token_c}, {validate_fqdn_access_c, AM_FAIL, handle_exit_c},
 
-    {handle_not_enforced_c, AM_OK, validate_policy_c},
-    {handle_not_enforced_c, AM_QUIT, handle_exit_c},
+    {handle_not_enforced_c, AM_OK, validate_policy_c}, {handle_not_enforced_c, AM_QUIT, handle_exit_c},
 
-    {validate_token_c, AM_OK, handle_not_enforced_c},
-    {validate_token_c, AM_FAIL, handle_exit_c},
+    {validate_token_c, AM_OK, handle_not_enforced_c},  {validate_token_c, AM_FAIL, handle_exit_c},
 
-    {validate_policy_c, AM_RETRY, validate_policy_c},
-    {validate_policy_c, AM_OK, handle_exit_c}
-};
+    {validate_policy_c, AM_RETRY, validate_policy_c},  {validate_policy_c, AM_OK, handle_exit_c}};
 
 #define EXIT_STATE handle_exit_c
 #define ENTRY_STATE setup_request_data_c
 
 static am_state_t lookup_transition(am_state_t c, am_return_t r) {
-    int i, s = sizeof (state_transitions) / sizeof (state_transitions[0]);
+    int i, s = sizeof(state_transitions) / sizeof(state_transitions[0]);
     for (i = 0; i < s; i++) {
-        if (state_transitions[i].src_state == c
-                && state_transitions[i].ret_code == r) {
+        if (state_transitions[i].src_state == c && state_transitions[i].ret_code == r) {
             return state_transitions[i].dst_state;
         }
     }
     return EXIT_STATE;
 }
 
-static am_bool_t url_matches_pattern(am_request_t *r, const char *pattern,
-        const char *url, am_bool_t regex_enable) {
+static am_bool_t url_matches_pattern(am_request_t *r, const char *pattern, const char *url, am_bool_t regex_enable) {
     if (regex_enable) {
         return match(r->instance_id, url, pattern) == AM_OK;
     }
@@ -112,12 +98,12 @@ static am_bool_t is_json_request(am_request_t *request) {
 
     for (i = 0; i < request->conf->json_url_map_sz; i++) {
         am_config_map_t *m = &request->conf->json_url_map[i];
-        if (ISINVALID(m->value)) continue;
+        if (ISINVALID(m->value))
+            continue;
 
         compare_status += url_matches_pattern(request, m->value, request->overridden_url, AM_FALSE);
         if (compare_status > 0 && !request->conf->json_url_invert) {
-            AM_LOG_DEBUG(request->instance_id, "%s %s is json response url",
-                    thisfunc, request->overridden_url);
+            AM_LOG_DEBUG(request->instance_id, "%s %s is json response url", thisfunc, request->overridden_url);
             return AM_TRUE;
         }
     }
@@ -125,13 +111,14 @@ static am_bool_t is_json_request(am_request_t *request) {
     if (request->am_get_request_header_f != NULL) {
         for (i = 0; i < request->conf->json_header_map_sz; i++) {
             am_config_map_t *m = &request->conf->json_header_map[i];
-            if (ISINVALID(m->name) || ISINVALID(m->value)) continue;
-            
+            if (ISINVALID(m->name) || ISINVALID(m->value))
+                continue;
+
             const char *header_value = request->am_get_request_header_f(request, m->name);
             compare_status += ISVALID(header_value) && strcasecmp(m->value, header_value) == 0;
             if (compare_status > 0 && !request->conf->json_url_invert) {
-                AM_LOG_DEBUG(request->instance_id, "%s %s is json response url (header match)",
-                        thisfunc, request->overridden_url);
+                AM_LOG_DEBUG(request->instance_id, "%s %s is json response url (header match)", thisfunc,
+                             request->overridden_url);
                 return AM_TRUE;
             }
         }
@@ -143,8 +130,7 @@ static am_bool_t is_json_request(am_request_t *request) {
         compare_status = !compare_status;
     }
     if (compare_status) {
-        AM_LOG_DEBUG(request->instance_id, "%s %s is json response url",
-                thisfunc, request->overridden_url);
+        AM_LOG_DEBUG(request->instance_id, "%s %s is json response url", thisfunc, request->overridden_url);
         return AM_TRUE;
     }
     return AM_FALSE;
@@ -153,7 +139,7 @@ static am_bool_t is_json_request(am_request_t *request) {
 #ifndef UNIT_TEST
 static
 #endif
-char *remove_pathinfo_from_url(struct url *url, const char *pathinfo) {
+    char *remove_pathinfo_from_url(struct url *url, const char *pathinfo) {
     char *pos, *tmp, *out = NULL;
     int sep_count;
 
@@ -195,7 +181,7 @@ char *remove_pathinfo_from_url(struct url *url, const char *pathinfo) {
             }
         }
 
-        /* path_info is found, but in url-decoded url path, 
+        /* path_info is found, but in url-decoded url path,
          * find out where the pathinfo is within the original (unencoded) url path */
         *pos = '\0';
 
@@ -216,8 +202,7 @@ char *remove_pathinfo_from_url(struct url *url, const char *pathinfo) {
     /* path_info value is found - remove it from url path */
     *pos = '\0';
 
-    am_asprintf(&out, "%s://%s:%d%s%s", url->proto, url->host,
-            url->port, tmp, url->query);
+    am_asprintf(&out, "%s://%s:%d%s%s", url->proto, url->host, url->port, tmp, url->query);
     free(tmp);
     return out;
 }
@@ -256,7 +241,7 @@ static am_return_t setup_request_data(am_request_t *r) {
 
     AM_LOG_DEBUG(r->instance_id, "%s client ip: %s", thisfunc, LOGEMPTY(r->client_ip));
 
-    //TODO: client_host is not used in a policy call?
+    // TODO: client_host is not used in a policy call?
     if (ISVALID(r->client_host)) {
         s = strstr(r->client_host, AM_COMMA_CHAR);
         /* if the client host header contains more than one value, use only the first one */
@@ -264,7 +249,8 @@ static am_return_t setup_request_data(am_request_t *r) {
         if (v != NULL) {
             s = strstr(v, ":");
             /* if client_host contains the port number, remove it */
-            if (s != NULL) *s = 0;
+            if (s != NULL)
+                *s = 0;
         }
         r->client_host = v;
     }
@@ -273,15 +259,15 @@ static am_return_t setup_request_data(am_request_t *r) {
         struct addrinfo hints, *res = NULL;
         SOCKLEN_T slen;
         char client_host[NI_MAXHOST + 1];
-        memset(&hints, 0, sizeof (hints));
+        memset(&hints, 0, sizeof(hints));
         hints.ai_family = AF_UNSPEC;
         hints.ai_socktype = SOCK_STREAM;
         errcode = getaddrinfo(r->client_ip, NULL, &hints, &res);
         if (errcode == 0) {
             while (res) {
-                slen = res->ai_family == AF_INET ? sizeof (struct sockaddr_in) : sizeof (struct sockaddr_in6);
-                errcode = getnameinfo((struct sockaddr *) res->ai_addr, slen,
-                        client_host, sizeof (client_host), NULL, 0, NI_NAMEREQD);
+                slen = res->ai_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
+                errcode = getnameinfo((struct sockaddr *)res->ai_addr, slen, client_host, sizeof(client_host), NULL, 0,
+                                      NI_NAMEREQD);
                 if (errcode == 0) {
                     am_free(r->client_host);
                     r->client_host = strdup(client_host);
@@ -289,7 +275,8 @@ static am_return_t setup_request_data(am_request_t *r) {
                 }
                 res = res->ai_next;
             }
-            if (res != NULL) freeaddrinfo(res);
+            if (res != NULL)
+                freeaddrinfo(res);
         }
     }
     AM_LOG_DEBUG(r->instance_id, "%s client hostname: %s", thisfunc, LOGEMPTY(r->client_host));
@@ -303,13 +290,13 @@ static am_return_t setup_request_data(am_request_t *r) {
     AM_LOG_DEBUG(r->instance_id, "%s original request url: %s", thisfunc, r->orig_url);
 
     if (parse_url(r->orig_url, &r->url)) {
-        AM_LOG_ERROR(r->instance_id, "%s failed to normalize request url: %s (%s)",
-                thisfunc, r->orig_url, am_strerror(r->url.error));
+        AM_LOG_ERROR(r->instance_id, "%s failed to normalize request url: %s (%s)", thisfunc, r->orig_url,
+                     am_strerror(r->url.error));
         return AM_FAIL;
     }
 
     /* do an early check for a session token in query parameters,
-     * remove if found (url evaluation later on 
+     * remove if found (url evaluation later on
      * should not contain session token value; aka cookie-less mode,
      * applies also to LARES sent as GET parameter)
      */
@@ -320,8 +307,8 @@ static am_return_t setup_request_data(am_request_t *r) {
         AM_LOG_DEBUG(r->instance_id, "%s no token in query parameters", thisfunc);
     }
 
-    am_asprintf(&r->normalized_url, "%s://%s:%d%s%s", r->url.proto, r->url.host,
-            r->url.port, r->url.path, r->url.query);
+    am_asprintf(&r->normalized_url, "%s://%s:%d%s%s", r->url.proto, r->url.host, r->url.port, r->url.path,
+                r->url.query);
     if (r->normalized_url == NULL) {
         AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
         r->status = AM_ENOMEM;
@@ -331,34 +318,33 @@ static am_return_t setup_request_data(am_request_t *r) {
     if (ISVALID(r->path_info) && (r->conf->path_info_ignore_not_enforced || r->conf->path_info_ignore)) {
         r->normalized_url_pathinfo = remove_pathinfo_from_url(&r->url, r->path_info);
         if (r->normalized_url_pathinfo == NULL) {
-            AM_LOG_ERROR(r->instance_id, "%s path_info %s is not part of the normalized request url %s",
-                    thisfunc, r->path_info, r->normalized_url);
+            AM_LOG_ERROR(r->instance_id, "%s path_info %s is not part of the normalized request url %s", thisfunc,
+                         r->path_info, r->normalized_url);
             return AM_FAIL;
         }
     }
 
     /* Re-format normalized request url based on override parameter values.
-     * In a case where none of the override parameters are set, overridden_url will 
-     * have the same value as normalized_url. 
+     * In a case where none of the override parameters are set, overridden_url will
+     * have the same value as normalized_url.
      **/
-    memcpy(&request_url, &r->url, sizeof (struct url));
+    memcpy(&request_url, &r->url, sizeof(struct url));
     if (parse_url(r->conf->agenturi, &agent_url) == 0) {
         if (r->conf->override_protocol) {
-            strncpy(request_url.proto, agent_url.proto, sizeof (request_url.proto) - 1);
+            strncpy(request_url.proto, agent_url.proto, sizeof(request_url.proto) - 1);
         }
         if (r->conf->override_host) {
-            strncpy(request_url.host, agent_url.host, sizeof (request_url.host) - 1);
+            strncpy(request_url.host, agent_url.host, sizeof(request_url.host) - 1);
         }
         if (r->conf->override_port) {
             request_url.port = agent_url.port;
         }
     } else {
-        AM_LOG_WARNING(r->instance_id, "%s failed to parse agenturi.prefix %s",
-                thisfunc, LOGEMPTY(r->conf->agenturi));
+        AM_LOG_WARNING(r->instance_id, "%s failed to parse agenturi.prefix %s", thisfunc, LOGEMPTY(r->conf->agenturi));
     }
 
-    am_asprintf(&r->overridden_url, "%s://%s:%d%s%s", request_url.proto, request_url.host,
-            request_url.port, request_url.path, request_url.query);
+    am_asprintf(&r->overridden_url, "%s://%s:%d%s%s", request_url.proto, request_url.host, request_url.port,
+                request_url.path, request_url.query);
     if (r->overridden_url == NULL) {
         AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
         r->status = AM_ENOMEM;
@@ -368,30 +354,32 @@ static am_return_t setup_request_data(am_request_t *r) {
     if (ISVALID(r->path_info) && r->conf->path_info_ignore) {
         r->overridden_url_pathinfo = remove_pathinfo_from_url(&request_url, r->path_info);
         if (r->overridden_url_pathinfo == NULL) {
-            AM_LOG_ERROR(r->instance_id, "%s path_info %s is not part of the overridden request url %s",
-                        thisfunc, r->path_info, r->overridden_url);
+            AM_LOG_ERROR(r->instance_id, "%s path_info %s is not part of the overridden request url %s", thisfunc,
+                         r->path_info, r->overridden_url);
             return AM_FAIL;
         }
     }
 
-    /* check if this request url (normalized) matches any of 
+    /* check if this request url (normalized) matches any of
      * org.forgerock.agents.config.json.url[] configuration parameter values
      */
     r->is_json_url = is_json_request(r);
 
-    AM_LOG_DEBUG(r->instance_id, "%s \nmethod: %s \noriginal url: %s"
-            "\nproto: %s\nhost: %s\nport: %d\npath: %s\nquery: %s\ncomplete: %s\noverridden: %s"
-            "\npathinfo: %s"
-            "\nnormalized (pathinfo removed): %s\noverridden (pathinfo removed): %s", thisfunc,
-            am_method_num_to_str(r->method), r->orig_url,
-            r->url.proto, r->url.host, r->url.port, r->url.path, r->url.query, r->normalized_url,
-            r->overridden_url, LOGEMPTY(r->path_info),
-            LOGEMPTY(r->normalized_url_pathinfo), LOGEMPTY(r->overridden_url_pathinfo));
+    AM_LOG_DEBUG(r->instance_id,
+                 "%s \nmethod: %s \noriginal url: %s"
+                 "\nproto: %s\nhost: %s\nport: %d\npath: %s\nquery: %s\ncomplete: %s\noverridden: %s"
+                 "\npathinfo: %s"
+                 "\nnormalized (pathinfo removed): %s\noverridden (pathinfo removed): %s",
+                 thisfunc, am_method_num_to_str(r->method), r->orig_url, r->url.proto, r->url.host, r->url.port,
+                 r->url.path, r->url.query, r->normalized_url, r->overridden_url, LOGEMPTY(r->path_info),
+                 LOGEMPTY(r->normalized_url_pathinfo), LOGEMPTY(r->overridden_url_pathinfo));
 
     if (r->method == AM_REQUEST_POST && !ISVALID(r->content_type)) {
         r->content_type = "application/octet-stream";
-        AM_LOG_WARNING(r->instance_id, "%s HTTP POST should contain a valid Content-Type header value, "
-                "defaulting to application/octet-stream", thisfunc);
+        AM_LOG_WARNING(r->instance_id,
+                       "%s HTTP POST should contain a valid Content-Type header value, "
+                       "defaulting to application/octet-stream",
+                       thisfunc);
     }
 
     r->status = status;
@@ -428,18 +416,19 @@ static am_return_t handle_notification(am_request_t *r) {
         struct notification_worker_data *wd;
         /* is override.notification.url set? */
         const char *url = r->conf->override_notif_url ? r->overridden_url : r->normalized_url;
-        //TODO: asp.net eurl.axd/xyz ?
-        int compare_status = r->conf->url_eval_case_ignore ?
-                strcasecmp(url, r->conf->notif_url) : strcmp(url, r->conf->notif_url);
+        // TODO: asp.net eurl.axd/xyz ?
+        int compare_status =
+            r->conf->url_eval_case_ignore ? strcasecmp(url, r->conf->notif_url) : strcmp(url, r->conf->notif_url);
         /* int compare_status = r->conf->url_eval_case_ignore == AM_TRUE ?
                 (stristr((char *) url, r->conf->notif_url) != NULL ? 0 : 1) :
                 (strstr(url, r->conf->notif_url) != NULL ? 0 : 1); */
         if (compare_status != 0) {
-            AM_LOG_DEBUG(r->instance_id, "%s %s is not an agent notification url %s", thisfunc, url, r->conf->notif_url);
+            AM_LOG_DEBUG(r->instance_id, "%s %s is not an agent notification url %s", thisfunc, url,
+                         r->conf->notif_url);
             return status;
         }
 
-        wd = malloc(sizeof (struct notification_worker_data));
+        wd = malloc(sizeof(struct notification_worker_data));
 
         AM_LOG_DEBUG(r->instance_id, "%s %s is an agent notification url", thisfunc, url);
 
@@ -475,7 +464,7 @@ static am_return_t handle_notification(am_request_t *r) {
 static am_return_t validate_fqdn_access(am_request_t *r) {
     static const char *thisfunc = "validate_fqdn_access():";
     int i;
-    int (*compare)(const char *, const char*);
+    int (*compare)(const char *, const char *);
 
     AM_LOG_DEBUG(r->instance_id, "%s", thisfunc);
 
@@ -485,8 +474,7 @@ static am_return_t validate_fqdn_access(am_request_t *r) {
     }
 
     if (ISINVALID(r->conf->fqdn_default)) {
-        AM_LOG_WARNING(r->instance_id,
-                "%s failed - default fqdn value is not set", thisfunc);
+        AM_LOG_WARNING(r->instance_id, "%s failed - default fqdn value is not set", thisfunc);
         r->status = AM_ACCESS_DENIED;
         return AM_FAIL;
     }
@@ -496,8 +484,8 @@ static am_return_t validate_fqdn_access(am_request_t *r) {
     /* check if its the default fqdn */
     if (compare(r->url.host, r->conf->fqdn_default) == 0) {
         r->client_fqdn = r->conf->fqdn_default;
-        AM_LOG_DEBUG(r->instance_id, "%s host name %s is valid (maps to fqdn default: %s)",
-                thisfunc, r->url.host, LOGEMPTY(r->conf->fqdn_default));
+        AM_LOG_DEBUG(r->instance_id, "%s host name %s is valid (maps to fqdn default: %s)", thisfunc, r->url.host,
+                     LOGEMPTY(r->conf->fqdn_default));
         return AM_OK;
     }
 
@@ -505,14 +493,13 @@ static am_return_t validate_fqdn_access(am_request_t *r) {
     for (i = 0; i < r->conf->fqdn_map_sz; i++) {
         am_config_map_t *m = &r->conf->fqdn_map[i];
         if (ISVALID(m->name)) {
-
-            AM_LOG_DEBUG(r->instance_id, "%s comparing a valid host name %s with %s",
-                    thisfunc, LOGEMPTY(m->value), r->url.host);
+            AM_LOG_DEBUG(r->instance_id, "%s comparing a valid host name %s with %s", thisfunc, LOGEMPTY(m->value),
+                         r->url.host);
 
             if (compare(r->url.host, NOTNULL(m->value)) == 0) {
                 r->client_fqdn = m->value;
-                AM_LOG_DEBUG(r->instance_id, "%s host name %s is valid (maps to %s, key: %s)",
-                        thisfunc, r->url.host, r->client_fqdn, m->name);
+                AM_LOG_DEBUG(r->instance_id, "%s host name %s is valid (maps to %s, key: %s)", thisfunc, r->url.host,
+                             r->client_fqdn, m->name);
                 return AM_OK;
             }
         }
@@ -523,13 +510,13 @@ static am_return_t validate_fqdn_access(am_request_t *r) {
         am_config_map_t *m = &r->conf->fqdn_map[i];
         if (ISVALID(m->name) && strcasecmp(m->name, "valid") != 0) { /* ignore 'valid' keys */
 
-            AM_LOG_DEBUG(r->instance_id, "%s comparing an invalid host name %s with %s",
-                    thisfunc, m->name, r->url.host);
+            AM_LOG_DEBUG(r->instance_id, "%s comparing an invalid host name %s with %s", thisfunc, m->name,
+                         r->url.host);
 
             if (compare(r->url.host, m->name) == 0) {
                 r->client_fqdn = m->value;
-                AM_LOG_DEBUG(r->instance_id, "%s host name %s is valid (maps to %s, key: %s), will redirect",
-                        thisfunc, r->url.host, LOGEMPTY(r->client_fqdn), m->name);
+                AM_LOG_DEBUG(r->instance_id, "%s host name %s is valid (maps to %s, key: %s), will redirect", thisfunc,
+                             r->url.host, LOGEMPTY(r->client_fqdn), m->name);
                 r->status = AM_INVALID_FQDN_ACCESS;
                 return AM_FAIL;
             }
@@ -537,8 +524,7 @@ static am_return_t validate_fqdn_access(am_request_t *r) {
     }
 
     /* since the client_fqdn is not set, this will redirect to the default fqdn */
-    AM_LOG_WARNING(r->instance_id,
-            "%s host name %s is not valid (no corresponding map value)", thisfunc, r->url.host);
+    AM_LOG_WARNING(r->instance_id, "%s host name %s is not valid (no corresponding map value)", thisfunc, r->url.host);
     r->status = AM_INVALID_FQDN_ACCESS;
     return AM_FAIL;
 }
@@ -551,26 +537,25 @@ static am_return_t handle_not_enforced(am_request_t *r) {
 
     AM_LOG_DEBUG(r->instance_id, "%s", thisfunc);
 
-    /* post preservation url is not enforced 
-     * (will use com.forgerock.agents.config.pdpuri.prefix value if set) 
+    /* post preservation url is not enforced
+     * (will use com.forgerock.agents.config.pdpuri.prefix value if set)
      */
-    am_asprintf(&pdp_path, "%s%s%s",
-            ISVALID(r->conf->pdp_uri_prefix) && r->conf->pdp_uri_prefix[0] != '/' ? "/" : "",
-            NOTNULL(r->conf->pdp_uri_prefix), POST_PRESERVE_URI);
+    am_asprintf(&pdp_path, "%s%s%s", ISVALID(r->conf->pdp_uri_prefix) && r->conf->pdp_uri_prefix[0] != '/' ? "/" : "",
+                NOTNULL(r->conf->pdp_uri_prefix), POST_PRESERVE_URI);
     if (ISVALID(pdp_path) && ISVALID(r->url.query) && strcmp(r->url.path, pdp_path) == 0) {
         const char *error = NULL;
         int erroroffset;
-        /* all other query parameters, apart from the pdp key, are removed. 
-         * pdp key format: %08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x 
+        /* all other query parameters, apart from the pdp key, are removed.
+         * pdp key format: %08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x
          * generated by uuid() utility method
          */
         size_t slen = strlen(r->url.query);
-        pcre *x = pcre_compile(".+([a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}).*",
-                0, &error, &erroroffset, NULL);
+        pcre *x = pcre_compile(".+([a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}).*", 0, &error,
+                               &erroroffset, NULL);
         if (x != NULL) {
             char *key = match_group(x, 1, r->url.query, &slen);
             if (key != NULL) {
-                strncpy(r->url.query, "?", sizeof (r->url.query) - 1);
+                strncpy(r->url.query, "?", sizeof(r->url.query) - 1);
                 strcat(r->url.query, key);
                 free(key);
             }
@@ -586,8 +571,9 @@ static am_return_t handle_not_enforced(am_request_t *r) {
     am_free(pdp_path);
 
     /* check if the request url (normalized) is an application logout url */
-    if (ISVALID(r->conf->logout_url_regex) && /* check legacy com.forgerock.agents.agent.logout.url.regex option first */
-            url_matches_pattern(r, r->conf->logout_url_regex, url, AM_TRUE)) {
+    if (ISVALID(
+            r->conf->logout_url_regex) && /* check legacy com.forgerock.agents.agent.logout.url.regex option first */
+        url_matches_pattern(r, r->conf->logout_url_regex, url, AM_TRUE)) {
         AM_LOG_DEBUG(r->instance_id, "%s %s is an application logout url (not enforced)", thisfunc, url);
         r->not_enforced = r->is_logout_url = AM_TRUE;
         if (!r->conf->not_enforced_fetch_attr) {
@@ -615,7 +601,7 @@ static am_return_t handle_not_enforced(am_request_t *r) {
 
     /* access denied url is not enforced */
     if (ISVALID(r->conf->access_denied_url)) {
-        static const char* fragment_query_chrs = "?#";
+        static const char *fragment_query_chrs = "?#";
 
         /* This access denied URL can either be absolute or relative.
          * If relative, then it either is a path as /val/val.../val.htm or similar
@@ -625,29 +611,32 @@ static am_return_t handle_not_enforced(am_request_t *r) {
          */
         if (r->conf->access_denied_url[0] == '/' || NULL == strchr(r->conf->access_denied_url, '/')) {
             /* relative with full path match - find the length to use for the path portion or
-             * relative path with no / so this is the end value therefore math the path from the / onwards 
+             * relative path with no / so this is the end value therefore math the path from the / onwards
              */
             int search_length = 0;
             int compare_status = 0;
-            char* start_of_path_match = NULL;
-            char* end_chr_psn = strpbrk(r->conf->access_denied_url, fragment_query_chrs);
-            AM_LOG_DEBUG(r->instance_id, "%s attempting match with relative access denied url %s", thisfunc, r->conf->access_denied_url);
-            search_length = (end_chr_psn != NULL)?(end_chr_psn - r->conf->access_denied_url):strlen(r->conf->access_denied_url);
-            
-            start_of_path_match = strrchr (r->url.path, '/');
+            char *start_of_path_match = NULL;
+            char *end_chr_psn = strpbrk(r->conf->access_denied_url, fragment_query_chrs);
+            AM_LOG_DEBUG(r->instance_id, "%s attempting match with relative access denied url %s", thisfunc,
+                         r->conf->access_denied_url);
+            search_length =
+                (end_chr_psn != NULL) ? (end_chr_psn - r->conf->access_denied_url) : strlen(r->conf->access_denied_url);
+
+            start_of_path_match = strrchr(r->url.path, '/');
             if (r->conf->access_denied_url[0] == '/' || NULL == start_of_path_match) {
                 /* match full path in this instance including leading / */
                 start_of_path_match = &(r->url.path[0]);
-            }
-            else {
-                /* currently points to the / so move forward by 1 position for name only matching - in worse case to the NULL str end */
+            } else {
+                /* currently points to the / so move forward by 1 position for name only matching - in worse case to the
+                 * NULL str end */
                 start_of_path_match++;
             }
-            
-            AM_LOG_DEBUG(r->instance_id, "%s looking for match %s with %s", thisfunc, start_of_path_match, r->conf->access_denied_url);
-            compare_status = r->conf->url_eval_case_ignore ?
-                strncasecmp(start_of_path_match, r->conf->access_denied_url, search_length) :
-                strncmp(start_of_path_match, r->conf->access_denied_url, search_length);
+
+            AM_LOG_DEBUG(r->instance_id, "%s looking for match %s with %s", thisfunc, start_of_path_match,
+                         r->conf->access_denied_url);
+            compare_status = r->conf->url_eval_case_ignore
+                                 ? strncasecmp(start_of_path_match, r->conf->access_denied_url, search_length)
+                                 : strncmp(start_of_path_match, r->conf->access_denied_url, search_length);
             if (compare_status == 0) {
                 AM_LOG_DEBUG(r->instance_id, "%s have found a match, setting not enforced on this URL", thisfunc);
                 r->not_enforced = AM_TRUE;
@@ -657,12 +646,12 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                 }
                 return AM_OK;
             }
-        }
-        else {
+        } else {
             /* absolute URL - use parseurl to normalise and then do a full compare*/
-            char* normalised_access_denied_url = NULL;
-            struct url* parsed_url = malloc(sizeof(struct url));
-            AM_LOG_DEBUG(r->instance_id, "%s attempting match with absolute access denied url %s", thisfunc, r->conf->access_denied_url);
+            char *normalised_access_denied_url = NULL;
+            struct url *parsed_url = malloc(sizeof(struct url));
+            AM_LOG_DEBUG(r->instance_id, "%s attempting match with absolute access denied url %s", thisfunc,
+                         r->conf->access_denied_url);
             if (NULL == parsed_url) {
                 AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
                 r->status = AM_ENOMEM;
@@ -670,15 +659,15 @@ static am_return_t handle_not_enforced(am_request_t *r) {
             }
 
             if (parse_url(r->conf->access_denied_url, parsed_url)) {
-                AM_LOG_ERROR(r->instance_id, "%s failed to normalize access denied url: %s (%s)",
-                        thisfunc, r->conf->access_denied_url, am_strerror(parsed_url->error));
+                AM_LOG_ERROR(r->instance_id, "%s failed to normalize access denied url: %s (%s)", thisfunc,
+                             r->conf->access_denied_url, am_strerror(parsed_url->error));
                 AM_FREE(parsed_url);
                 return AM_FAIL;
             }
 
             /* create the normalised url and free the parsing structure */
             am_asprintf(&normalised_access_denied_url, "%s://%s:%d%s%s", parsed_url->proto, parsed_url->host,
-            parsed_url->port, parsed_url->path, parsed_url->query);
+                        parsed_url->port, parsed_url->path, parsed_url->query);
             AM_FREE(parsed_url);
             parsed_url = NULL;
 
@@ -688,14 +677,16 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                 return AM_FAIL;
             }
 
-            AM_LOG_DEBUG(r->instance_id, "%s created normalised access denied url %s ready for matching with %s", thisfunc, normalised_access_denied_url, url);
+            AM_LOG_DEBUG(r->instance_id, "%s created normalised access denied url %s ready for matching with %s",
+                         thisfunc, normalised_access_denied_url, url);
 
             /* Now compare the normalised URL with that provided to determine the match */
-            int compare_status = r->conf->url_eval_case_ignore ?
-                        strncasecmp(url, normalised_access_denied_url, strlen(normalised_access_denied_url)) :
-                        strncmp(url, normalised_access_denied_url, strlen(normalised_access_denied_url));
+            int compare_status =
+                r->conf->url_eval_case_ignore
+                    ? strncasecmp(url, normalised_access_denied_url, strlen(normalised_access_denied_url))
+                    : strncmp(url, normalised_access_denied_url, strlen(normalised_access_denied_url));
             AM_FREE(normalised_access_denied_url);
-            
+
             if (compare_status == 0) {
                 AM_LOG_DEBUG(r->instance_id, "%s have found a match, setting not enforced on this URL", thisfunc);
                 r->not_enforced = AM_TRUE;
@@ -705,7 +696,6 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                 }
                 return AM_OK;
             }
-
         }
     }
 
@@ -726,8 +716,8 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                     }
                     return AM_OK;
                 }
-                AM_LOG_DEBUG(r->instance_id, "%s client ip address %s does not match %s",
-                        thisfunc, r->client_ip, LOGEMPTY(m->value));
+                AM_LOG_DEBUG(r->instance_id, "%s client ip address %s does not match %s", thisfunc, r->client_ip,
+                             LOGEMPTY(m->value));
             } else {
                 char *pv = strndup(m->name, p - m->name);
                 if (pv != NULL) {
@@ -743,8 +733,8 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                             }
                             return AM_OK;
                         }
-                        AM_LOG_DEBUG(r->instance_id, "%s client ip address %s does not match %s (%s)",
-                                thisfunc, r->client_ip, LOGEMPTY(m->value), am_method_num_to_str(mtn));
+                        AM_LOG_DEBUG(r->instance_id, "%s client ip address %s does not match %s (%s)", thisfunc,
+                                     r->client_ip, LOGEMPTY(m->value), am_method_num_to_str(mtn));
                     }
                 }
             }
@@ -764,15 +754,13 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                 char *p = strstr(m->name, AM_COMMA_CHAR);
                 AM_LOG_DEBUG(r->instance_id, "%s trying not enforced pattern %s", thisfunc, m->value);
                 if (p == NULL) {
-
                     /* regular [0]=not-enforced-url option */
 
                     if ((r->conf->path_info_ignore_not_enforced || r->conf->path_info_ignore) &&
-                            !r->conf->not_enforced_regex_enable) {
-
+                        !r->conf->not_enforced_regex_enable) {
                         if (ISVALID(r->normalized_url_pathinfo)) {
-                            AM_LOG_DEBUG(r->instance_id, "%s validating %s ignoring path_info",
-                                    thisfunc, r->normalized_url_pathinfo);
+                            AM_LOG_DEBUG(r->instance_id, "%s validating %s ignoring path_info", thisfunc,
+                                         r->normalized_url_pathinfo);
                             compare_status += url_matches_pattern(r, m->value, r->normalized_url_pathinfo, AM_FALSE);
                         } else {
                             char *url_query_removed = strdup(url);
@@ -781,8 +769,8 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                                 if (qmark != NULL) {
                                     *qmark = '\0';
                                 }
-                                AM_LOG_DEBUG(r->instance_id, "%s validating %s ignoring query attributes",
-                                        thisfunc, url_query_removed);
+                                AM_LOG_DEBUG(r->instance_id, "%s validating %s ignoring query attributes", thisfunc,
+                                             url_query_removed);
                                 compare_status += url_matches_pattern(r, m->value, url_query_removed, AM_FALSE);
                                 free(url_query_removed);
                             }
@@ -792,27 +780,30 @@ static am_return_t handle_not_enforced(am_request_t *r) {
                     }
 
                 } else {
-
                     /* method-extended [GET,0]=not-enforced-url option */
 
                     char *pv = strndup(m->name, p - m->name);
                     if (pv != NULL) {
                         int mtn = am_method_str_to_num(pv);
                         free(pv);
-                        if (r->method != mtn) continue;
+                        if (r->method != mtn)
+                            continue;
                         compare_status += url_matches_pattern(r, m->value, url, r->conf->not_enforced_regex_enable);
                     }
                 }
 
-                if (compare_status > 0 && !r->conf->not_enforced_invert) break;
+                if (compare_status > 0 && !r->conf->not_enforced_invert)
+                    break;
             }
         }
 
         compare_status = compare_status > 0;
 
         if (r->conf->not_enforced_invert) {
-            AM_LOG_DEBUG(r->instance_id, "%s not enforced list is inverted, "
-                    "only not enforced list of urls will be enforced", thisfunc);
+            AM_LOG_DEBUG(r->instance_id,
+                         "%s not enforced list is inverted, "
+                         "only not enforced list of urls will be enforced",
+                         thisfunc);
             compare_status = !compare_status;
         }
         if (compare_status) {
@@ -834,9 +825,11 @@ static am_return_t handle_not_enforced(am_request_t *r) {
         for (i = 0; i < r->conf->not_enforced_ext_map_sz; i++) {
             char *p, *v, *t, *is, *us, found = AM_FALSE;
             am_config_map_t *m = &r->conf->not_enforced_ext_map[i];
-            if (!ISVALID(m->value)) continue;
+            if (!ISVALID(m->value))
+                continue;
             p = strstr(m->value, AM_PIPE_CHAR); /* 10.1.1.0/24 10.1.2.1-10.1.2.7|url1 url2 */
-            if (p == NULL) continue;
+            if (p == NULL)
+                continue;
             is = strndup(m->value, p - m->value);
             us = strdup(p + 1);
             if (is == NULL || us == NULL) {
@@ -885,7 +878,8 @@ static am_bool_t skip_post_request(am_request_t *request) {
     }
     for (i = 0; i < request->conf->skip_post_url_map_sz; i++) {
         am_config_map_t *m = &(request->conf->skip_post_url_map[i]);
-        if (!ISVALID(m->value)) continue;
+        if (!ISVALID(m->value))
+            continue;
 
         compare_status = policy_compare_url(request, m->value, request->overridden_url);
         if (compare_status == AM_EXACT_MATCH || compare_status == AM_EXACT_PATTERN_MATCH) {
@@ -972,11 +966,12 @@ static am_return_t validate_token(am_request_t *r) {
 
     if (status != AM_SUCCESS) {
         /* finally, see if a token is in Cookie-s */
-        status = get_cookie_value(r, ";", r->conf->cookie_name,
-                r->cookies, &r->token);
+        status = get_cookie_value(r, ";", r->conf->cookie_name, r->cookies, &r->token);
         if (status != AM_SUCCESS && status != AM_NOT_FOUND) {
-            AM_LOG_ERROR(r->instance_id, "%s error while getting sso token "
-                    "from a cookie header: %s", thisfunc, am_strerror(status));
+            AM_LOG_ERROR(r->instance_id,
+                         "%s error while getting sso token "
+                         "from a cookie header: %s",
+                         thisfunc, am_strerror(status));
             return_status = AM_FAIL;
         } else if (status == AM_SUCCESS && !ISVALID(r->token)) {
             status = AM_NOT_FOUND;
@@ -985,7 +980,7 @@ static am_return_t validate_token(am_request_t *r) {
 
     if (status == AM_SUCCESS && ISVALID(r->token) && (strchr(r->token, '%') != NULL)) {
         /* token is url encoded and needs to be decoded */
-        char* decoded_token = url_decode(r->token);
+        char *decoded_token = url_decode(r->token);
         if (decoded_token != NULL) {
             am_free(r->token);
             r->token = decoded_token;
@@ -995,15 +990,14 @@ static am_return_t validate_token(am_request_t *r) {
         }
     }
 
-    AM_LOG_DEBUG(r->instance_id, "%s sso token: %s, status: %s", thisfunc,
-            LOGEMPTY(r->token), am_strerror(r->status));
+    AM_LOG_DEBUG(r->instance_id, "%s sso token: %s, status: %s", thisfunc, LOGEMPTY(r->token), am_strerror(r->status));
 
     /* get site/server info */
     if (status == AM_SUCCESS && ISVALID(r->token)) {
         int decode_status = am_session_decode(r);
         if (decode_status == AM_SUCCESS && r->session_info.error == AM_SUCCESS) {
-            AM_LOG_DEBUG(r->instance_id, "%s sso token SI: %s, S1: %s", thisfunc,
-                    LOGEMPTY(r->session_info.si), LOGEMPTY(r->session_info.s1));
+            AM_LOG_DEBUG(r->instance_id, "%s sso token SI: %s, S1: %s", thisfunc, LOGEMPTY(r->session_info.si),
+                         LOGEMPTY(r->session_info.s1));
         }
     }
 
@@ -1022,23 +1016,22 @@ static char *create_profile_attribute_request(am_request_t *r) {
      * to the list of LDAP attributes to fetch and parse.
      */
     if (ISVALID(r->conf->userid_param_type) && ISVALID(r->conf->userid_param) &&
-            strcasecmp(r->conf->userid_param_type, "LDAP") == 0) {
-        am_asprintf(&val, "%s<Attribute name=\"%s\"/>",
-                val == NULL ? "" : val, r->conf->userid_param);
+        strcasecmp(r->conf->userid_param_type, "LDAP") == 0) {
+        am_asprintf(&val, "%s<Attribute name=\"%s\"/>", val == NULL ? "" : val, r->conf->userid_param);
     }
     return val;
 }
 
 /**
  * Fetch an attribute value from a cached attribute list (read either from a shared cache
- * or directly from a server. 
- * 
+ * or directly from a server.
+ *
  * @param r: pointer to am_request_t;
  * @param name: attribute name;
  * @param mask: attribute type (AM_SESSION_ATTRIBUTE, AM_RESPONSE_ATTRIBUTE or AM_POLICY_ATTRIBUTE);
  * @param multiple: pointer to buffer to store multiple value result (if requested).
- * 
- * @return NULL if there is no entry; 
+ *
+ * @return NULL if there is no entry;
  *         attribute value if a single attribute value is requested;
  *         or multiple value buffer (multi_attr_separator separated; heap allocated).
  */
@@ -1047,63 +1040,58 @@ static const char *get_attr_value(am_request_t *r, const char *name, int mask, c
     struct am_namevalue *e, *t;
     char *values = NULL;
 
-    if (r == NULL || !ISVALID(name)) return NULL;
+    if (r == NULL || !ISVALID(name))
+        return NULL;
 
     switch (mask) {
-        case AM_SESSION_ATTRIBUTE:
-        {
-
-            /* session attribute search */
-            AM_LIST_FOR_EACH(r->sattr, e, t) {
-                if (strcmp(e->n, name) == 0) {
-                    if (multiple == NULL) {
-                        return e->v;
-                    }
-                    am_asprintf(&values, "%s%s%s",
-                            values != NULL ? values : "",
-                            values != NULL ? (ISVALID(r->conf->multi_attr_separator) ? r->conf->multi_attr_separator : "|") : "",
-                            e->v);
+    case AM_SESSION_ATTRIBUTE: {
+        /* session attribute search */
+        AM_LIST_FOR_EACH(r->sattr, e, t) {
+            if (strcmp(e->n, name) == 0) {
+                if (multiple == NULL) {
+                    return e->v;
                 }
+                am_asprintf(&values, "%s%s%s", values != NULL ? values : "",
+                            values != NULL
+                                ? (ISVALID(r->conf->multi_attr_separator) ? r->conf->multi_attr_separator : "|")
+                                : "",
+                            e->v);
             }
         }
-            break;
-        case AM_RESPONSE_ATTRIBUTE:
-        {
-
-            /* policy response attribute search */
-            AM_LIST_FOR_EACH(r->response_attributes, e, t) {
-                if (strcmp(e->n, name) == 0) {
-                    if (multiple == NULL) {
-                        return e->v;
-                    }
-                    am_asprintf(&values, "%s%s%s",
-                            values != NULL ? values : "",
-                            values != NULL ? (ISVALID(r->conf->multi_attr_separator) ? r->conf->multi_attr_separator : "|") : "",
-                            e->v);
+    } break;
+    case AM_RESPONSE_ATTRIBUTE: {
+        /* policy response attribute search */
+        AM_LIST_FOR_EACH(r->response_attributes, e, t) {
+            if (strcmp(e->n, name) == 0) {
+                if (multiple == NULL) {
+                    return e->v;
                 }
+                am_asprintf(&values, "%s%s%s", values != NULL ? values : "",
+                            values != NULL
+                                ? (ISVALID(r->conf->multi_attr_separator) ? r->conf->multi_attr_separator : "|")
+                                : "",
+                            e->v);
             }
         }
-            break;
-        case AM_POLICY_ATTRIBUTE:
-        {
-
-            /* policy response decision-attribute search (profile attribute)*/
-            AM_LIST_FOR_EACH(r->response_decisions, e, t) {
-                if (strcmp(e->n, name) == 0) {
-                    if (multiple == NULL) {
-                        return e->v;
-                    }
-                    am_asprintf(&values, "%s%s%s",
-                            values != NULL ? values : "",
-                            values != NULL ? (ISVALID(r->conf->multi_attr_separator) ? r->conf->multi_attr_separator : "|") : "",
-                            e->v);
+    } break;
+    case AM_POLICY_ATTRIBUTE: {
+        /* policy response decision-attribute search (profile attribute)*/
+        AM_LIST_FOR_EACH(r->response_decisions, e, t) {
+            if (strcmp(e->n, name) == 0) {
+                if (multiple == NULL) {
+                    return e->v;
                 }
+                am_asprintf(&values, "%s%s%s", values != NULL ? values : "",
+                            values != NULL
+                                ? (ISVALID(r->conf->multi_attr_separator) ? r->conf->multi_attr_separator : "|")
+                                : "",
+                            e->v);
             }
         }
-            break;
-        default:
-            AM_LOG_DEBUG(r->instance_id, "%s unknown mask value (%d)", thisfunc, mask);
-            break;
+    } break;
+    default:
+        AM_LOG_DEBUG(r->instance_id, "%s unknown mask value (%d)", thisfunc, mask);
+        break;
     }
 
     if (multiple != NULL) {
@@ -1124,18 +1112,18 @@ static am_return_t validate_policy(am_request_t *r) {
     uint64_t cache_ts = 0;
 
     char *pattrs = NULL;
-    const char *url = ISVALID(r->overridden_url_pathinfo) && r->conf->path_info_ignore ?
-            r->overridden_url_pathinfo : r->overridden_url;
+    const char *url = ISVALID(r->overridden_url_pathinfo) && r->conf->path_info_ignore ? r->overridden_url_pathinfo
+                                                                                       : r->overridden_url;
     int scope = r->conf->policy_scope_subtree;
 
-    AM_LOG_DEBUG(r->instance_id, "%s for %s (ignoring pathinfo: %s), entry status: %s", thisfunc,
-            url, (url == r->overridden_url_pathinfo ? "yes" : "no"), am_strerror(r->status));
+    AM_LOG_DEBUG(r->instance_id, "%s for %s (ignoring pathinfo: %s), entry status: %s", thisfunc, url,
+                 (url == r->overridden_url_pathinfo ? "yes" : "no"), am_strerror(r->status));
 
     if (r->not_enforced && (r->conf->not_enforced_fetch_attr || r->is_dummypost_url)) {
         if (!ISVALID(r->token)) {
             /* in case request url is not enforced and attribute fetch is enabled
              * but there is no session token - quit processing w/o policy evaluation.
-             * 
+             *
              * headers/cookies will be cleared in handle_exit->set_user_attributes
              */
             r->status = AM_SUCCESS;
@@ -1160,9 +1148,8 @@ static am_return_t validate_policy(am_request_t *r) {
     }
 
     if (r->retry >= MAX_VALIDATE_POLICY_RETRY) {
-        AM_LOG_ERROR(r->instance_id,
-                "%s validate policy for '%s' failed (max %d retries exhausted)",
-                thisfunc, url, MAX_VALIDATE_POLICY_RETRY);
+        AM_LOG_ERROR(r->instance_id, "%s validate policy for '%s' failed (max %d retries exhausted)", thisfunc, url,
+                     MAX_VALIDATE_POLICY_RETRY);
         /* status = AM_RETRY_ERROR; */
         r->response_attributes = NULL;
         r->response_decisions = NULL;
@@ -1173,15 +1160,14 @@ static am_return_t validate_policy(am_request_t *r) {
         return AM_OK;
     }
 
-    /* 
+    /*
      * Look for an entry in a session cache, but only when we are not here because
      * of a retry call of a failed cache lookup
      **/
-    status = entry_status == AM_EAGAIN && r->retry > 0 ?
-            AM_EAGAIN : am_get_session_policy_cache_entry(r, r->token,
-            &policy_cache, &session_cache, &cache_ts);
-    AM_LOG_DEBUG(r->instance_id, "%s get session cache status: %s",
-            thisfunc, am_strerror(status));
+    status = entry_status == AM_EAGAIN && r->retry > 0
+                 ? AM_EAGAIN
+                 : am_get_session_policy_cache_entry(r, r->token, &policy_cache, &session_cache, &cache_ts);
+    AM_LOG_DEBUG(r->instance_id, "%s get session cache status: %s", thisfunc, am_strerror(status));
 
     if ((status == AM_SUCCESS && cache_ts > 0) || status != AM_SUCCESS) {
         struct am_policy_result *policy_cache_new = NULL;
@@ -1203,9 +1189,9 @@ static am_return_t validate_policy(am_request_t *r) {
             policy_cache_new = NULL;
             session_cache_new = NULL;
 
-            status = am_agent_policy_request(r->instance_id, service_url, r->conf->token, r->token,
-                    url, am_scope_to_str(scope), r->client_ip, pattrs, r->conf->policy_eval_app,
-                    &net_options, &session_cache_new, &policy_cache_new);
+            status = am_agent_policy_request(r->instance_id, service_url, r->conf->token, r->token, url,
+                                             am_scope_to_str(scope), r->client_ip, pattrs, r->conf->policy_eval_app,
+                                             &net_options, &session_cache_new, &policy_cache_new);
             if (status == AM_SUCCESS && session_cache_new != NULL && policy_cache_new != NULL) {
                 remote = AM_TRUE;
                 break;
@@ -1216,9 +1202,9 @@ static am_return_t validate_policy(am_request_t *r) {
 
             if (status == AM_INVALID_SESSION && r->not_enforced && r->conf->not_enforced_fetch_attr) {
                 /* in case request url is not enforced and attribute fetch is enabled
-                 * but there is no a) cached session data for this token or 
+                 * but there is no a) cached session data for this token or
                  * b) remote session/policy call failed - quit w/o policy evaluation.
-                 * 
+                 *
                  * headers/cookies will be cleared in handle_exit->set_user_attributes
                  */
                 AM_LOG_DEBUG(r->instance_id, "%s fetch attributes for not enforced url failed", thisfunc);
@@ -1229,8 +1215,8 @@ static am_return_t validate_policy(am_request_t *r) {
                 return AM_OK;
             }
 
-            AM_LOG_WARNING(r->instance_id, "%s retry %d (remote session/policy call failure: %s)",
-                    thisfunc, (retry - max_retry) + 1, am_strerror(status));
+            AM_LOG_WARNING(r->instance_id, "%s retry %d (remote session/policy call failure: %s)", thisfunc,
+                           (retry - max_retry) + 1, am_strerror(status));
 
             if (status == AM_INVALID_SESSION) {
                 am_remove_cache_entry(r->instance_id, r->token);
@@ -1248,20 +1234,18 @@ static am_return_t validate_policy(am_request_t *r) {
 
         if (max_retry == 0) {
             AM_LOG_ERROR(r->instance_id,
-                    "%s remote session/policy call to validate '%s' failed (max %d retries exhausted)",
-                    thisfunc, url, retry);
+                         "%s remote session/policy call to validate '%s' failed (max %d retries exhausted)", thisfunc,
+                         url, retry);
             status = AM_RETRY_ERROR;
         }
 
         am_free(pattrs);
         if (status == AM_SUCCESS) {
-
             /* discard old entries */
             delete_am_policy_result_list(&policy_cache);
             delete_am_namevalue_list(&session_cache);
 
-            status = am_add_session_policy_cache_entry(r, r->token,
-                    policy_cache_new, session_cache_new);
+            status = am_add_session_policy_cache_entry(r, r->token, policy_cache_new, session_cache_new);
 
             policy_cache = policy_cache_new;
             session_cache = session_cache_new;
@@ -1270,9 +1254,9 @@ static am_return_t validate_policy(am_request_t *r) {
 
         if (status != AM_SUCCESS && cache_ts > 0) {
             /* re-use earlier cached session/policy data */
-            //TODO: skew? max?
-            //AM_LOG_WARNING(instance_id, "%s retry %d (remote session/policy call failure)",
-            //        thisfunc, (retry - max_retry) + 1);
+            // TODO: skew? max?
+            // AM_LOG_WARNING(instance_id, "%s retry %d (remote session/policy call failure)",
+            //         thisfunc, (retry - max_retry) + 1);
             is_valid = AM_TRUE;
         }
 
@@ -1283,17 +1267,15 @@ static am_return_t validate_policy(am_request_t *r) {
     if (status == AM_INVALID_AGENT_SESSION) {
         am_config_t *boot = NULL;
         int rv = AM_ERROR;
-        AM_LOG_WARNING(r->instance_id,
-                "%s agent session is invalid, trying to fetch new configuration/session",
-                thisfunc);
+        AM_LOG_WARNING(r->instance_id, "%s agent session is invalid, trying to fetch new configuration/session",
+                       thisfunc);
         /* delete all cached data for this agent instance */
         remove_agent_instance_byname(r->conf->user);
         /* fetch and update with the new configuration */
         rv = am_get_agent_config(r->instance_id, r->conf->config, &boot);
         if (rv == AM_SUCCESS && boot != NULL) {
             am_config_free(&r->conf);
-            AM_LOG_DEBUG(r->instance_id, "%s agent configuration/session updated",
-                    thisfunc);
+            AM_LOG_DEBUG(r->instance_id, "%s agent configuration/session updated", thisfunc);
             r->conf = boot; /* set new agent configuration for this request */
             r->response_attributes = NULL;
             r->response_decisions = NULL;
@@ -1306,8 +1288,7 @@ static am_return_t validate_policy(am_request_t *r) {
             r->retry++;
             return AM_RETRY;
         }
-        AM_LOG_ERROR(r->instance_id, "%s failed to fetch new agent configuration/session",
-                thisfunc);
+        AM_LOG_ERROR(r->instance_id, "%s failed to fetch new agent configuration/session", thisfunc);
     }
 
     if (status == AM_INVALID_SESSION) {
@@ -1326,47 +1307,45 @@ static am_return_t validate_policy(am_request_t *r) {
     }
 
     if (r->sattr != NULL && r->pattr != NULL) {
-
         if (r->conf->client_ip_validate) {
             /* check if client ip read from the environment matches token ip found in the session */
             const char *remote_ip = get_attr_value(r, "Host", AM_SESSION_ATTRIBUTE, NULL);
             if (!ISVALID(r->client_ip) || !ISVALID(remote_ip) || strcmp(remote_ip, r->client_ip) != 0) {
                 r->status = AM_ACCESS_DENIED;
-                AM_LOG_WARNING(r->instance_id,
-                        "%s decision: deny, reason: client ip %s does not match sso token ip %s",
-                        thisfunc, LOGEMPTY(r->client_ip), LOGEMPTY(remote_ip));
+                AM_LOG_WARNING(r->instance_id, "%s decision: deny, reason: client ip %s does not match sso token ip %s",
+                               thisfunc, LOGEMPTY(r->client_ip), LOGEMPTY(remote_ip));
                 return AM_OK;
             }
         }
 
         /* pre-fetch user parameter value (from session data) */
         if (ISVALID(r->conf->userid_param) && ISVALID(r->conf->userid_param_type) &&
-                strcasecmp(r->conf->userid_param_type, "SESSION") == 0) {
+            strcasecmp(r->conf->userid_param_type, "SESSION") == 0) {
             r->user_temp = get_attr_value(r, r->conf->userid_param, AM_SESSION_ATTRIBUTE, NULL);
         }
 
-        AM_LIST_FOR_EACH(r->pattr, e, t) {//TODO: work on loop in 2 threads (split loop in 2; search&match in each thread)
+        AM_LIST_FOR_EACH(r->pattr, e,
+                         t) { // TODO: work on loop in 2 threads (split loop in 2; search&match in each thread)
 
             if ((r->conf->debug_level & AM_LOG_LEVEL_DEBUG) != 0) {
-                AM_LOG_DEBUG(r->instance_id, "%s trying cache entry for: %s", thisfunc,
-                        LOGEMPTY(e->resource));
+                AM_LOG_DEBUG(r->instance_id, "%s trying cache entry for: %s", thisfunc, LOGEMPTY(e->resource));
             }
 
             if (e->scope == scope) {
                 const char *pattern = e->resource;
 
                 if (!r->conf->policy_scope_subtree) {
-                    /* agent is running in self mode and cached entry may or may not contain 
+                    /* agent is running in self mode and cached entry may or may not contain
                      * an asterisk character - do exact string match so that
-                     * earlier stored request url does not become a pattern to match against 
+                     * earlier stored request url does not become a pattern to match against
                      **/
                     policy_status = strcmp(pattern, url) == 0 ? AM_EXACT_MATCH : AM_NO_MATCH;
                 } else {
                     policy_status = policy_compare_url(r, pattern, url);
                 }
 
-                AM_LOG_DEBUG(r->instance_id, "%s cached entry: %s, resource: %s, status: %s", thisfunc,
-                        pattern, url, am_policy_strerror(policy_status));
+                AM_LOG_DEBUG(r->instance_id, "%s cached entry: %s, resource: %s, status: %s", thisfunc, pattern, url,
+                             am_policy_strerror(policy_status));
 
                 do {
                     int rv;
@@ -1384,8 +1363,7 @@ static am_return_t validate_policy(am_request_t *r) {
                     }
 
                     rv = am_check_policy_cache_epoch(e->created);
-                    AM_LOG_DEBUG(r->instance_id, "%s global policy cache status: %s", thisfunc,
-                            am_strerror(rv));
+                    AM_LOG_DEBUG(r->instance_id, "%s global policy cache status: %s", thisfunc, am_strerror(rv));
                     if (rv == AM_SUCCESS) {
                         break;
                     }
@@ -1413,14 +1391,14 @@ static am_return_t validate_policy(am_request_t *r) {
                 if (policy_status == AM_EXACT_MATCH || policy_status == AM_EXACT_PATTERN_MATCH) {
                     struct am_action_decision *ae, *at;
 
-                    if (((r->not_enforced && (r->conf->not_enforced_fetch_attr || r->is_dummypost_url))
-                            || r->conf->sso_only)) {
-                        /* allow, in case this is a) not-enforced url and attribute fetch is enabled or this is a dummypost_url
-                         * or b) agent is running in sso-only mode (ignoring policy result) */
-                        AM_LOG_DEBUG(r->instance_id,
-                                "%s method: %s, decision: allow, %s",
-                                thisfunc, am_method_num_to_str(r->method),
-                                r->conf->sso_only ? "running sso-only mode" : "not enforced url with attribute fetch enabled");
+                    if (((r->not_enforced && (r->conf->not_enforced_fetch_attr || r->is_dummypost_url)) ||
+                         r->conf->sso_only)) {
+                        /* allow, in case this is a) not-enforced url and attribute fetch is enabled or this is a
+                         * dummypost_url or b) agent is running in sso-only mode (ignoring policy result) */
+                        AM_LOG_DEBUG(r->instance_id, "%s method: %s, decision: allow, %s", thisfunc,
+                                     am_method_num_to_str(r->method),
+                                     r->conf->sso_only ? "running sso-only mode"
+                                                       : "not enforced url with attribute fetch enabled");
                         r->response_attributes = e->response_attributes;
                         r->response_decisions = e->response_decisions;
                         r->status = AM_SUCCESS;
@@ -1437,13 +1415,11 @@ static am_return_t validate_policy(am_request_t *r) {
                     }
 
                     if (e->action_decisions == NULL) {
-                        AM_LOG_WARNING(r->instance_id,
-                                "%s decision: deny, reason: no action decisions found",
-                                thisfunc);
+                        AM_LOG_WARNING(r->instance_id, "%s decision: deny, reason: no action decisions found",
+                                       thisfunc);
                     }
 
                     AM_LIST_FOR_EACH(e->action_decisions, ae, at) {
-
                         /* uint64_t ts = ae->ttl;
                         if (difftime(time(NULL), ts) >= 0) {
                             char tsu[32];
@@ -1457,30 +1433,32 @@ static am_return_t validate_policy(am_request_t *r) {
 
                         if (ae->method == r->method) {
                             if (ae->action /*allow*/) {
-                                r->response_attributes = e->response_attributes; /* will be used by set header/cookie later */
+                                r->response_attributes =
+                                    e->response_attributes; /* will be used by set header/cookie later */
                                 r->response_decisions = e->response_decisions;
                                 r->status = AM_SUCCESS;
 
                                 /* set user parameter value */
                                 if (ISVALID(r->conf->userid_param) && ISVALID(r->conf->userid_param_type)) {
                                     if (strcasecmp(r->conf->userid_param_type, "LDAP") == 0) {
-                                        r->user_temp = get_attr_value(r, r->conf->userid_param, AM_POLICY_ATTRIBUTE, NULL);
+                                        r->user_temp =
+                                            get_attr_value(r, r->conf->userid_param, AM_POLICY_ATTRIBUTE, NULL);
                                     }
                                     r->user = r->user_temp;
-                                    r->user_password = get_attr_value(r, "sunIdentityUserPassword", AM_SESSION_ATTRIBUTE, NULL);
+                                    r->user_password =
+                                        get_attr_value(r, "sunIdentityUserPassword", AM_SESSION_ATTRIBUTE, NULL);
                                 }
 
-                                AM_LOG_DEBUG(r->instance_id, "%s method: %s, decision: allow",
-                                        thisfunc, am_method_num_to_str(ae->method));
+                                AM_LOG_DEBUG(r->instance_id, "%s method: %s, decision: allow", thisfunc,
+                                             am_method_num_to_str(ae->method));
                                 return AM_OK;
                             }
                             /* deny */
                             /* set the pointer to the policy advice(s) if any */
                             r->policy_advice = ae->advices;
                             r->status = AM_ACCESS_DENIED;
-                            AM_LOG_DEBUG(r->instance_id, "%s method: %s, decision: deny, advice: %s",
-                                    thisfunc, am_method_num_to_str(ae->method),
-                                    ae->advices == NULL ? "n/a" : "available");
+                            AM_LOG_DEBUG(r->instance_id, "%s method: %s, decision: deny, advice: %s", thisfunc,
+                                         am_method_num_to_str(ae->method), ae->advices == NULL ? "n/a" : "available");
                             return AM_OK;
                         }
                     }
@@ -1490,8 +1468,10 @@ static am_return_t validate_policy(am_request_t *r) {
 
         /* in case we haven't found anything in a policy (cached) response - redo validate_policy */
         if (!remote && policy_status != AM_EXACT_MATCH && policy_status != AM_EXACT_PATTERN_MATCH) {
-            AM_LOG_WARNING(r->instance_id, "%s validate policy did not find a match for '%s' in the cached entries, "
-                    "retrying with the new request to the policy service", thisfunc, url);
+            AM_LOG_WARNING(r->instance_id,
+                           "%s validate policy did not find a match for '%s' in the cached entries, "
+                           "retrying with the new request to the policy service",
+                           thisfunc, url);
             r->response_attributes = NULL;
             r->response_decisions = NULL;
             r->policy_advice = NULL;
@@ -1521,14 +1501,15 @@ void encode_header_value(char **val) {
     char *it, *res;
     size_t sz;
 
-    if (val == NULL || ISINVALID((it = *val))) return;
+    if (val == NULL || ISINVALID((it = *val)))
+        return;
 
     /* RFC 2616 Section 4.2
-     * The content of a header field may only be the OCTETs making up the 
-     * field-value and consisting of either TEXT or combinations of token, 
+     * The content of a header field may only be the OCTETs making up the
+     * field-value and consisting of either TEXT or combinations of token,
      * separators, and quoted-string.
-     *  
-     * TEXT MAY contain characters from character sets other than 
+     *
+     * TEXT MAY contain characters from character sets other than
      * ISO-8859-1 only when encoded according to the rules of RFC 2047."
      */
     while (*it) {
@@ -1539,11 +1520,13 @@ void encode_header_value(char **val) {
         encode = AM_TRUE;
         break;
     }
-    if (!encode) return;
+    if (!encode)
+        return;
 
     sz = strlen(*val);
     res = base64_encode(*val, &sz);
-    if (res == NULL) return;
+    if (res == NULL)
+        return;
 
     free(*val);
     *val = NULL;
@@ -1554,7 +1537,7 @@ void encode_header_value(char **val) {
 
 /**
  * Build and set "Set-Cookie" HTTP header value
- * 
+ *
  * @param req pointer to am_request_t
  * @param prefix, cookie name prefix, can be NULL
  * @param name, cookie name, must not be NULL or empty
@@ -1563,8 +1546,8 @@ void encode_header_value(char **val) {
  * @param path, cookie path value, can be NULL
  * @param maxage, cookie max-age value in seconds, can be NULL
  */
-static void do_cookie_set_generic(am_request_t *r, const char *prefix, const char *name,
-        const char *value, const char *domain, const char *path, const char *maxage) {
+static void do_cookie_set_generic(am_request_t *r, const char *prefix, const char *name, const char *value,
+                                  const char *domain, const char *path, const char *maxage) {
     static const char *thisfunc = "do_cookie_set_generic():";
     char time_string[32];
     struct tm now;
@@ -1573,12 +1556,13 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
     char *cookie_value, *cookie = NULL, *name_tmp, *name_sep;
     int sep_count = 0;
 
-    if (r == NULL || r->conf == NULL || r->am_add_header_in_response_f == NULL || !ISVALID(name)) return;
+    if (r == NULL || r->conf == NULL || r->am_add_header_in_response_f == NULL || !ISVALID(name))
+        return;
 
     /* cookie-reset list can contain the following values:
      *  cookiename
      *  cookiename[=value][;Domain=value]
-     * 
+     *
      * sep_count with a value of:
      *  0 ==> just a cookie name
      *  1 ==> name and value
@@ -1586,7 +1570,7 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
      *  3 ==> name and domain
      */
     sep_count = ISVALID(value) ? 0 : char_count(name, '=', NULL);
-    if (sep_count == 1 && stristr((char *) name, ";Domain=") != NULL) {
+    if (sep_count == 1 && stristr((char *)name, ";Domain=") != NULL) {
         sep_count = 3;
     }
 
@@ -1620,18 +1604,18 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
     /* set cookie value */
     if (cookie != NULL) {
         const char *value_format;
-        if (ISVALID(value) && !r->conf->cookie_encode_chars && (strchr(value, '=') != NULL ||
-                strchr(value, ';') != NULL || strchr(value, ' ') != NULL ||
-                strchr(value, ',') != NULL || strchr(value, '\\') != NULL ||
-                contains_ctl(value))) {
+        if (ISVALID(value) && !r->conf->cookie_encode_chars &&
+            (strchr(value, '=') != NULL || strchr(value, ';') != NULL || strchr(value, ' ') != NULL ||
+             strchr(value, ',') != NULL || strchr(value, '\\') != NULL || contains_ctl(value))) {
             /* RFC6265#section-4.1.1, except double-quotes, which are handled by urlencoding value (forced) */
             AM_LOG_DEBUG(r->instance_id, "%s enclosing value %s in double quotes", thisfunc, value);
             value_format = "%s\"%s\"";
         } else {
             value_format = "%s%s";
         }
-        cookie_value = r->conf->cookie_encode_chars || (ISVALID(value) && strchr(value, '"') != NULL) ?
-                url_encode((char *) value) : (char *) value;
+        cookie_value = r->conf->cookie_encode_chars || (ISVALID(value) && strchr(value, '"') != NULL)
+                           ? url_encode((char *)value)
+                           : (char *)value;
         am_asprintf(&cookie, value_format, cookie, NOTNULL(cookie_value));
         if (r->conf->cookie_encode_chars) {
             am_free(cookie_value);
@@ -1643,7 +1627,7 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
             /* no value is provided - we are resetting a cookie */
             am_asprintf(&cookie, "%s;Max-Age=0;Expires=Thu, 01-Jan-1970 00:00:01 GMT", cookie);
         } else {
-            /* in case maxage is not set to AM_SESSION_ONLY_COOKIE, 
+            /* in case maxage is not set to AM_SESSION_ONLY_COOKIE,
              * add Max-Age and Expires attributes (create a persistent cookie) */
             if (ISINVALID(maxage) || strcmp(maxage, AM_SESSION_ONLY_COOKIE) != 0) {
                 /* check if maxage option is provided, if so - use it;
@@ -1653,11 +1637,13 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
 #define COOKIE_MAX_AGE_DEFAULT 300
 
                 errno = 0;
-                sec = ISVALID(maxage) ? strtol(maxage, NULL, AM_BASE_TEN)
-                        : r->conf->cookie_maxage > 0 ? r->conf->cookie_maxage : COOKIE_MAX_AGE_DEFAULT;
+                sec = ISVALID(maxage)              ? strtol(maxage, NULL, AM_BASE_TEN)
+                      : r->conf->cookie_maxage > 0 ? r->conf->cookie_maxage
+                                                   : COOKIE_MAX_AGE_DEFAULT;
                 if (sec <= 0 || errno == ERANGE) {
-                    AM_LOG_WARNING(r->instance_id, "%s failed to set max-age parameter value %s, defaulting to %d seconds",
-                            thisfunc, LOGEMPTY(maxage), COOKIE_MAX_AGE_DEFAULT);
+                    AM_LOG_WARNING(r->instance_id,
+                                   "%s failed to set max-age parameter value %s, defaulting to %d seconds", thisfunc,
+                                   LOGEMPTY(maxage), COOKIE_MAX_AGE_DEFAULT);
                     sec = COOKIE_MAX_AGE_DEFAULT;
                 }
 
@@ -1666,14 +1652,13 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
 #ifdef _WIN32
                 gmtime_s(&now, &raw);
 #endif
-                strftime(time_string, sizeof (time_string),
-                        "%a, %d-%b-%Y %H:%M:%S GMT",
+                strftime(time_string, sizeof(time_string), "%a, %d-%b-%Y %H:%M:%S GMT",
 #ifdef _WIN32
-                        &now
+                         &now
 #else
-                        gmtime_r(&raw, &now)
+                         gmtime_r(&raw, &now)
 #endif
-                        );
+                );
                 am_asprintf(&cookie, "%s;Max-Age=%d;Expires=%s", cookie, sec, time_string);
             }
         }
@@ -1709,8 +1694,7 @@ static void do_cookie_set_generic(am_request_t *r, const char *prefix, const cha
     am_free(cookie);
 }
 
-static void do_cookie_set_type(am_request_t *r, am_config_map_t *map, int sz,
-        int type, char cookie_reset_enable) {
+static void do_cookie_set_type(am_request_t *r, am_config_map_t *map, int sz, int type, char cookie_reset_enable) {
     int i;
     for (i = 0; i < sz; i++) {
         am_config_map_t *v = &map[i];
@@ -1721,8 +1705,7 @@ static void do_cookie_set_type(am_request_t *r, am_config_map_t *map, int sz,
             char *val = NULL;
             get_attr_value(r, v->name, type, &val);
             if (ISVALID(val)) {
-                AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): setting %s: %s",
-                        v->value, val);
+                AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): setting %s: %s", v->value, val);
                 do_cookie_set_generic(r, r->conf->cookie_prefix, v->value, val, NULL, NULL, NULL);
             }
             am_free(val);
@@ -1732,9 +1715,9 @@ static void do_cookie_set_type(am_request_t *r, am_config_map_t *map, int sz,
 
 static void do_cookie_set(am_request_t *r, char cookie_reset_list_enable, char cookie_reset_enable) {
     int i;
-    if (r->am_add_header_in_response_f == NULL) return;
-    if (cookie_reset_list_enable && r->conf->cookie_reset_enable
-            && r->conf->cookie_reset_map_sz > 0) {
+    if (r->am_add_header_in_response_f == NULL)
+        return;
+    if (cookie_reset_list_enable && r->conf->cookie_reset_enable && r->conf->cookie_reset_map_sz > 0) {
         /* process cookie reset list (agents.config.cookie.reset[0]) */
         const char *default_domain = strchr(NOTNULL(r->conf->fqdn_default), '.');
         if (default_domain != NULL) {
@@ -1748,19 +1731,18 @@ static void do_cookie_set(am_request_t *r, char cookie_reset_list_enable, char c
         }
     }
     if (r->conf->profile_attr_fetch == AM_SET_ATTRS_AS_COOKIE ||
-            r->conf->session_attr_fetch == AM_SET_ATTRS_AS_COOKIE ||
-            r->conf->response_attr_fetch == AM_SET_ATTRS_AS_COOKIE) {
-        do_cookie_set_type(r, r->conf->profile_attr_map, r->conf->profile_attr_map_sz,
-                AM_POLICY_ATTRIBUTE, cookie_reset_enable); //TODO: put each value into "val1,val2,val3.." format
-        do_cookie_set_type(r, r->conf->session_attr_map, r->conf->session_attr_map_sz,
-                AM_SESSION_ATTRIBUTE, cookie_reset_enable);
-        do_cookie_set_type(r, r->conf->response_attr_map, r->conf->response_attr_map_sz,
-                AM_RESPONSE_ATTRIBUTE, cookie_reset_enable);
+        r->conf->session_attr_fetch == AM_SET_ATTRS_AS_COOKIE ||
+        r->conf->response_attr_fetch == AM_SET_ATTRS_AS_COOKIE) {
+        do_cookie_set_type(r, r->conf->profile_attr_map, r->conf->profile_attr_map_sz, AM_POLICY_ATTRIBUTE,
+                           cookie_reset_enable); // TODO: put each value into "val1,val2,val3.." format
+        do_cookie_set_type(r, r->conf->session_attr_map, r->conf->session_attr_map_sz, AM_SESSION_ATTRIBUTE,
+                           cookie_reset_enable);
+        do_cookie_set_type(r, r->conf->response_attr_map, r->conf->response_attr_map_sz, AM_RESPONSE_ATTRIBUTE,
+                           cookie_reset_enable);
     }
 }
 
-static void do_header_set_type(am_request_t *r, am_config_map_t *map, int sz,
-        int type, char set_value) {
+static void do_header_set_type(am_request_t *r, am_config_map_t *map, int sz, int type, char set_value) {
     int i;
     for (i = 0; i < sz; i++) {
         am_config_map_t *v = &map[i];
@@ -1770,8 +1752,7 @@ static void do_header_set_type(am_request_t *r, am_config_map_t *map, int sz,
             if (ISVALID(val)) {
                 encode_header_value(&val);
                 r->am_set_header_in_request_f(r, v->value, val);
-                AM_LOG_DEBUG(r->instance_id, "do_header_set(): setting %s: %s",
-                        v->value, val);
+                AM_LOG_DEBUG(r->instance_id, "do_header_set(): setting %s: %s", v->value, val);
             }
             am_free(val);
         } else {
@@ -1782,16 +1763,16 @@ static void do_header_set_type(am_request_t *r, am_config_map_t *map, int sz,
 }
 
 static void do_header_set(am_request_t *r, char set_value) {
-    if (r->am_set_header_in_request_f == NULL) return;
+    if (r->am_set_header_in_request_f == NULL)
+        return;
     if (r->conf->profile_attr_fetch == AM_SET_ATTRS_AS_HEADER ||
-            r->conf->session_attr_fetch == AM_SET_ATTRS_AS_HEADER ||
-            r->conf->response_attr_fetch == AM_SET_ATTRS_AS_HEADER) {
-        do_header_set_type(r, r->conf->profile_attr_map, r->conf->profile_attr_map_sz,
-                AM_POLICY_ATTRIBUTE, set_value); //TODO: put each value into "val1,val2,val3.." format
-        do_header_set_type(r, r->conf->session_attr_map, r->conf->session_attr_map_sz,
-                AM_SESSION_ATTRIBUTE, set_value);
-        do_header_set_type(r, r->conf->response_attr_map, r->conf->response_attr_map_sz,
-                AM_RESPONSE_ATTRIBUTE, set_value);
+        r->conf->session_attr_fetch == AM_SET_ATTRS_AS_HEADER ||
+        r->conf->response_attr_fetch == AM_SET_ATTRS_AS_HEADER) {
+        do_header_set_type(r, r->conf->profile_attr_map, r->conf->profile_attr_map_sz, AM_POLICY_ATTRIBUTE,
+                           set_value); // TODO: put each value into "val1,val2,val3.." format
+        do_header_set_type(r, r->conf->session_attr_map, r->conf->session_attr_map_sz, AM_SESSION_ATTRIBUTE, set_value);
+        do_header_set_type(r, r->conf->response_attr_map, r->conf->response_attr_map_sz, AM_RESPONSE_ATTRIBUTE,
+                           set_value);
     }
 }
 
@@ -1799,10 +1780,11 @@ static void set_user_attributes(am_request_t *r) {
     static const char *thisfunc = "set_user_attributes():";
     int i;
     do {
-
         if (r->am_set_header_in_request_f == NULL || r->am_add_header_in_response_f == NULL) {
-            AM_LOG_ERROR(r->instance_id, "%s no set/add "
-                    "request/response header function is provided", thisfunc);
+            AM_LOG_ERROR(r->instance_id,
+                         "%s no set/add "
+                         "request/response header function is provided",
+                         thisfunc);
             break;
         }
 
@@ -1811,9 +1793,10 @@ static void set_user_attributes(am_request_t *r) {
             char *new_cookie_hdr = NULL;
             int rv = remove_cookie(r, r->conf->cookie_name, &new_cookie_hdr);
             if (rv != AM_SUCCESS && rv != AM_NOT_FOUND) {
-                AM_LOG_ERROR(r->instance_id, "%s error (%s) removing cookie %s from "
-                        "cookie header %s", thisfunc, am_strerror(rv),
-                        LOGEMPTY(r->conf->cookie_name), LOGEMPTY(r->cookies));
+                AM_LOG_ERROR(r->instance_id,
+                             "%s error (%s) removing cookie %s from "
+                             "cookie header %s",
+                             thisfunc, am_strerror(rv), LOGEMPTY(r->conf->cookie_name), LOGEMPTY(r->cookies));
             } else {
                 const char *timeleft = AM_SESSION_ONLY_COOKIE;
                 if (r->conf->persistent_cookie_enable) {
@@ -1829,11 +1812,8 @@ static void set_user_attributes(am_request_t *r) {
                     }
                 }
 
-                am_asprintf(&new_cookie_hdr, "%s%s%s=%s",
-                        new_cookie_hdr == NULL ? "" : new_cookie_hdr,
-                        new_cookie_hdr != NULL ? ";" : "",
-                        r->conf->cookie_name,
-                        r->token);
+                am_asprintf(&new_cookie_hdr, "%s%s%s=%s", new_cookie_hdr == NULL ? "" : new_cookie_hdr,
+                            new_cookie_hdr != NULL ? ";" : "", r->conf->cookie_name, r->token);
                 if (new_cookie_hdr != NULL) {
                     r->am_set_header_in_request_f(r, "Cookie", new_cookie_hdr);
                     free(new_cookie_hdr);
@@ -1845,8 +1825,8 @@ static void set_user_attributes(am_request_t *r) {
                 if (r->conf->cdsso_cookie_domain_map_sz > 0) {
                     for (i = 0; i < r->conf->cdsso_cookie_domain_map_sz; i++) {
                         am_config_map_t *m = &r->conf->cdsso_cookie_domain_map[i];
-                        AM_LOG_DEBUG(r->instance_id, "%s setting session cookie in %s domain",
-                                thisfunc, LOGEMPTY(m->value));
+                        AM_LOG_DEBUG(r->instance_id, "%s setting session cookie in %s domain", thisfunc,
+                                     LOGEMPTY(m->value));
                         do_cookie_set_generic(r, NULL, r->conf->cookie_name, r->token, m->value, NULL, timeleft);
                     }
                 } else {
@@ -1856,20 +1836,16 @@ static void set_user_attributes(am_request_t *r) {
         }
 
         /* if attributes mode is none, we're done */
-        if (r->conf->profile_attr_fetch == AM_SET_ATTRS_NONE &&
-                r->conf->session_attr_fetch == AM_SET_ATTRS_NONE &&
-                r->conf->response_attr_fetch == AM_SET_ATTRS_NONE) {
-            AM_LOG_DEBUG(r->instance_id, "%s all set user attribute options are set to none",
-                    thisfunc);
+        if (r->conf->profile_attr_fetch == AM_SET_ATTRS_NONE && r->conf->session_attr_fetch == AM_SET_ATTRS_NONE &&
+            r->conf->response_attr_fetch == AM_SET_ATTRS_NONE) {
+            AM_LOG_DEBUG(r->instance_id, "%s all set user attribute options are set to none", thisfunc);
             break;
         }
 
         /* if no attributes in result, we're done */
-        if (r->conf->profile_attr_map_sz == 0 &&
-                r->conf->session_attr_map_sz == 0 &&
-                r->conf->response_attr_map_sz == 0) {
-            AM_LOG_DEBUG(r->instance_id, "%s all attribute maps are empty - nothing to set",
-                    thisfunc);
+        if (r->conf->profile_attr_map_sz == 0 && r->conf->session_attr_map_sz == 0 &&
+            r->conf->response_attr_map_sz == 0) {
+            AM_LOG_DEBUG(r->instance_id, "%s all attribute maps are empty - nothing to set", thisfunc);
             if (!r->not_enforced || r->conf->not_enforced_fetch_attr) {
                 /* clear headers/cookies */
                 do_header_set(r, AM_FALSE);
@@ -1911,18 +1887,17 @@ static char *find_active_login_server(am_request_t *r, char add_goto_value) {
         SYSTEMTIME time;
         GetSystemTime(&time);
         msec = (time.wSecond * 1000) + time.wMilliseconds;
-        snprintf(tsc, sizeof (tsc), "%04d-%02d-%02dT%02d%%3A%02d%%3A%02dZ",
-                time.wYear, time.wMonth, time.wDay,
-                time.wHour, time.wMinute, time.wSecond);
+        snprintf(tsc, sizeof(tsc), "%04d-%02d-%02dT%02d%%3A%02d%%3A%02dZ", time.wYear, time.wMonth, time.wDay,
+                 time.wHour, time.wMinute, time.wSecond);
 #else
         struct tm tn;
         time_t now;
         struct timeval time;
         gettimeofday(&time, NULL);
         msec = (time.tv_sec * 1000) + (time.tv_usec / 1000);
-        now = (time_t) time.tv_sec;
+        now = (time_t)time.tv_sec;
         gmtime_r(&now, &tn);
-        strftime(tsc, sizeof (tsc), "%Y-%m-%dT%H%%3A%M%%3A%SZ", &tn);
+        strftime(tsc, sizeof(tsc), "%Y-%m-%dT%H%%3A%M%%3A%SZ", &tn);
 #endif
         map_sz = r->conf->cdsso_login_map_sz;
         map = r->conf->cdsso_login_map;
@@ -1934,9 +1909,8 @@ static char *find_active_login_server(am_request_t *r, char add_goto_value) {
             agent_url = url_encode(r->conf->agenturi);
         }
 
-        am_asprintf(&cdsso_elements,
-                "RequestID=%ld&MajorVersion=1&MinorVersion=0&ProviderID=%s&IssueInstant=%s",
-                msec, NOTNULL(agent_url), tsc);
+        am_asprintf(&cdsso_elements, "RequestID=%ld&MajorVersion=1&MinorVersion=0&ProviderID=%s&IssueInstant=%s", msec,
+                    NOTNULL(agent_url), tsc);
 
         AM_FREE(realm, agent_url);
     } else {
@@ -1957,20 +1931,20 @@ static char *find_active_login_server(am_request_t *r, char add_goto_value) {
                     continue;
                 }
                 /* try to locate given pattern in a request url */
-                compare_status = r->conf->url_eval_case_ignore ?
-                        (stristr((char *) url, cl) != NULL ? AM_TRUE : AM_FALSE) :
-                        (strstr(url, cl) != NULL ? AM_TRUE : AM_FALSE);
+                compare_status = r->conf->url_eval_case_ignore ? (stristr((char *)url, cl) != NULL ? AM_TRUE : AM_FALSE)
+                                                               : (strstr(url, cl) != NULL ? AM_TRUE : AM_FALSE);
 
-                AM_LOG_DEBUG(r->instance_id, "%s conditional login pattern: %s, url: %s, match status: %s",
-                        thisfunc, cl, url, compare_status ? "match" : "no match");
+                AM_LOG_DEBUG(r->instance_id, "%s conditional login pattern: %s, url: %s, match status: %s", thisfunc,
+                             cl, url, compare_status ? "match" : "no match");
 
                 if (compare_status) {
                     /* found a match */
                     char *tk, *tmp = strdup(cl + strlen(cl) + 1), *o = tmp;
-                    if (tmp == NULL) break;
+                    if (tmp == NULL)
+                        break;
                     /* set up url list */
                     map_sz = char_count(tmp, ',', NULL) + 1;
-                    map = (am_config_map_t *) malloc(map_sz * sizeof (am_config_map_t));
+                    map = (am_config_map_t *)malloc(map_sz * sizeof(am_config_map_t));
                     if (map != NULL) {
                         j = 0;
                         while ((tk = am_strsep(&tmp, AM_COMMA_CHAR)) != NULL) {
@@ -1997,21 +1971,13 @@ static char *find_active_login_server(am_request_t *r, char add_goto_value) {
         if (add_goto_value) {
             char *goto_encoded = url_encode(r->overridden_url);
 
-            if (r->conf->cdsso_enable &&
-                    ISVALID(r->conf->url_redirect_param) &&
-                    strstr(m->value, "goto=") != NULL &&
-                    strcmp(r->conf->url_redirect_param, "goto") != 0) {
-                am_asprintf(&login_url, "%s%s%s=%s",
-                        m->value,
-                        "?",
-                        r->conf->url_redirect_param,
-                        NOTNULL(goto_encoded));
+            if (r->conf->cdsso_enable && ISVALID(r->conf->url_redirect_param) && strstr(m->value, "goto=") != NULL &&
+                strcmp(r->conf->url_redirect_param, "goto") != 0) {
+                am_asprintf(&login_url, "%s%s%s=%s", m->value, "?", r->conf->url_redirect_param, NOTNULL(goto_encoded));
             } else {
-                am_asprintf(&login_url, "%s%s%s=%s",
-                        m->value,
-                        strchr(m->value, '?') == NULL ? "?" : "&",
-                        ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
-                        NOTNULL(goto_encoded));
+                am_asprintf(&login_url, "%s%s%s=%s", m->value, strchr(m->value, '?') == NULL ? "?" : "&",
+                            ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
+                            NOTNULL(goto_encoded));
             }
 
             if (ISVALID(cdsso_elements)) {
@@ -2020,12 +1986,8 @@ static char *find_active_login_server(am_request_t *r, char add_goto_value) {
             am_free(goto_encoded);
 
         } else {
-
             if (ISVALID(cdsso_elements)) {
-                am_asprintf(&login_url, "%s%s%s",
-                        m->value,
-                        strchr(m->value, '?') == NULL ? "?" : "&",
-                        cdsso_elements);
+                am_asprintf(&login_url, "%s%s%s", m->value, strchr(m->value, '?') == NULL ? "?" : "&", cdsso_elements);
             } else {
                 login_url = strdup(m->value);
             }
@@ -2048,7 +2010,8 @@ static am_return_t handle_exit(am_request_t *r) {
     char *url = NULL;
 
     if (r == NULL || r->ctx == NULL || r->conf == NULL) {
-        if (r != NULL) r->status = AM_ERROR;
+        if (r != NULL)
+            r->status = AM_ERROR;
         return AM_FAIL;
     }
 
@@ -2061,566 +2024,105 @@ static am_return_t handle_exit(am_request_t *r) {
         return AM_OK;
     }
 
-    if (status != AM_SUCCESS && r->conf->cache_control_enable &&
-            r->am_add_header_in_response_f != NULL) {
+    if (status != AM_SUCCESS && r->conf->cache_control_enable && r->am_add_header_in_response_f != NULL) {
         /* do not cache any unauthenticated response */
         r->am_add_header_in_response_f(r, "Cache-Control", "no-store"); /* HTTP 1.1 */
         r->am_add_header_in_response_f(r, "Cache-Control", "no-cache"); /* HTTP 1.1 */
-        r->am_add_header_in_response_f(r, "Pragma", "no-cache"); /* HTTP 1.0 */
-        r->am_add_header_in_response_f(r, "Expires", "0"); /* prevents caching at a proxy server */
+        r->am_add_header_in_response_f(r, "Pragma", "no-cache");        /* HTTP 1.0 */
+        r->am_add_header_in_response_f(r, "Expires", "0");              /* prevents caching at a proxy server */
     }
 
     switch (status) {
-        case AM_SUCCESS:
-        {
-            if (r->is_logout_url) {
-
-                if (r->conf->logout_cookie_reset_map_sz > 0) {
-                    /* process logout cookie reset list (logout.cookie.reset) */
-                    const char *default_domain = strchr(NOTNULL(r->conf->fqdn_default), '.');
-                    if (default_domain != NULL) {
-                        /* move past the dot */
-                        default_domain++;
-                    }
-                    for (i = 0; i < r->conf->logout_cookie_reset_map_sz; i++) {
-                        am_config_map_t *m = &r->conf->logout_cookie_reset_map[i];
-                        AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): logout resetting %s", m->value);
-                        do_cookie_set_generic(r, NULL, m->value, NULL, default_domain, NULL, NULL);
-                    }
+    case AM_SUCCESS: {
+        if (r->is_logout_url) {
+            if (r->conf->logout_cookie_reset_map_sz > 0) {
+                /* process logout cookie reset list (logout.cookie.reset) */
+                const char *default_domain = strchr(NOTNULL(r->conf->fqdn_default), '.');
+                if (default_domain != NULL) {
+                    /* move past the dot */
+                    default_domain++;
                 }
-
-                if (r->conf->cdsso_enable) {
-                    /* reset CDSSO cookie in all domains */
-                    for (i = 0; i < r->conf->cdsso_cookie_domain_map_sz; i++) {
-                        am_config_map_t *m = &r->conf->cdsso_cookie_domain_map[i];
-                        AM_LOG_DEBUG(r->instance_id, "do_cookie_set() logout resetting session cookie in %s domain",
-                                m->value);
-                        do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, m->value, NULL, NULL);
-                    }
-                    /* reset CDSSO cookie in default domain */
-                    do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, NULL, NULL, NULL);
+                for (i = 0; i < r->conf->logout_cookie_reset_map_sz; i++) {
+                    am_config_map_t *m = &r->conf->logout_cookie_reset_map[i];
+                    AM_LOG_DEBUG(r->instance_id, "do_cookie_set(): logout resetting %s", m->value);
+                    do_cookie_set_generic(r, NULL, m->value, NULL, default_domain, NULL, NULL);
                 }
+            }
 
-                /* reset headers/cookies */
-                do_header_set(r, AM_FALSE);
-                do_cookie_set(r, AM_FALSE, AM_TRUE);
+            if (r->conf->cdsso_enable) {
+                /* reset CDSSO cookie in all domains */
+                for (i = 0; i < r->conf->cdsso_cookie_domain_map_sz; i++) {
+                    am_config_map_t *m = &r->conf->cdsso_cookie_domain_map[i];
+                    AM_LOG_DEBUG(r->instance_id, "do_cookie_set() logout resetting session cookie in %s domain",
+                                 m->value);
+                    do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, m->value, NULL, NULL);
+                }
+                /* reset CDSSO cookie in default domain */
+                do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, NULL, NULL, NULL);
+            }
 
-                if (r->conf->logout_redirect_disable) {
-                    /* logout.redirect.disable is set */
-                    if (ISVALID(r->token)) {
-                        /* do background logout and cache cleanup if token is available */
-                        struct logout_worker_data *wd = malloc(sizeof (struct logout_worker_data));
-                        if (wd != NULL) {
-                            const char *oam = get_valid_openam_url(r);
-                            wd->instance_id = r->instance_id;
-                            /* find an active OpenAM service URL */
-                            if (oam != NULL) {
-                                wd->token = strdup(r->token);
-                                wd->openam = strdup(oam);
-                                wd->options = malloc(sizeof (am_net_options_t));
-                                am_net_options_create(r->conf, wd->options, NULL);
-                                if (wd->options != NULL) {
-                                    wd->options->server_id = r->conf->lb_enable && ISVALID(r->session_info.si) ? strdup(r->session_info.si) : NULL;
-                                }
+            /* reset headers/cookies */
+            do_header_set(r, AM_FALSE);
+            do_cookie_set(r, AM_FALSE, AM_TRUE);
 
-                                if (am_worker_dispatch(session_logout_worker, wd) != 0) {
-                                    am_net_options_delete(wd->options);
-                                    AM_FREE(wd->token, wd->openam, wd->options, wd);
-                                    r->status = AM_ERROR;
-                                    AM_LOG_WARNING(r->instance_id, "%s failed to dispatch logout worker", thisfunc);
-                                    break;
-                                }
-                            } else {
+            if (r->conf->logout_redirect_disable) {
+                /* logout.redirect.disable is set */
+                if (ISVALID(r->token)) {
+                    /* do background logout and cache cleanup if token is available */
+                    struct logout_worker_data *wd = malloc(sizeof(struct logout_worker_data));
+                    if (wd != NULL) {
+                        const char *oam = get_valid_openam_url(r);
+                        wd->instance_id = r->instance_id;
+                        /* find an active OpenAM service URL */
+                        if (oam != NULL) {
+                            wd->token = strdup(r->token);
+                            wd->openam = strdup(oam);
+                            wd->options = malloc(sizeof(am_net_options_t));
+                            am_net_options_create(r->conf, wd->options, NULL);
+                            if (wd->options != NULL) {
+                                wd->options->server_id = r->conf->lb_enable && ISVALID(r->session_info.si)
+                                                             ? strdup(r->session_info.si)
+                                                             : NULL;
+                            }
+
+                            if (am_worker_dispatch(session_logout_worker, wd) != 0) {
+                                am_net_options_delete(wd->options);
+                                AM_FREE(wd->token, wd->openam, wd->options, wd);
                                 r->status = AM_ERROR;
-                                free(wd);
-                                AM_LOG_WARNING(r->instance_id, "%s logout failed (could not find a valid OpenAM URL)", thisfunc);
+                                AM_LOG_WARNING(r->instance_id, "%s failed to dispatch logout worker", thisfunc);
+                                break;
                             }
                         } else {
-                            r->status = AM_ENOMEM;
-                            break;
+                            r->status = AM_ERROR;
+                            free(wd);
+                            AM_LOG_WARNING(r->instance_id, "%s logout failed (could not find a valid OpenAM URL)",
+                                           thisfunc);
                         }
+                    } else {
+                        r->status = AM_ENOMEM;
+                        break;
                     }
-
-                    r->status = AM_SUCCESS;
-                    break; /* early exit - we're done with this resource */
                 }
 
-                /* do OpenAM logout redirect with a goto value of logout_redirect_url */
-                valid_idx = get_valid_url_index(r->instance_id);
-                if (r->conf->openam_logout_map_sz > 0) {
-                    am_config_map_t *m = (valid_idx >= r->conf->openam_logout_map_sz) ?
-                            &r->conf->openam_logout_map[0] : &r->conf->openam_logout_map[valid_idx];
+                r->status = AM_SUCCESS;
+                break; /* early exit - we're done with this resource */
+            }
 
-                    char *goto_encoded = url_encode(r->conf->logout_redirect_url);
-                    am_asprintf(&url, "%s%s%s=%s",
-                            m->value,
-                            strchr(m->value, '?') == NULL ? "?" : "&",
+            /* do OpenAM logout redirect with a goto value of logout_redirect_url */
+            valid_idx = get_valid_url_index(r->instance_id);
+            if (r->conf->openam_logout_map_sz > 0) {
+                am_config_map_t *m = (valid_idx >= r->conf->openam_logout_map_sz)
+                                         ? &r->conf->openam_logout_map[0]
+                                         : &r->conf->openam_logout_map[valid_idx];
+
+                char *goto_encoded = url_encode(r->conf->logout_redirect_url);
+                am_asprintf(&url, "%s%s%s=%s", m->value, strchr(m->value, '?') == NULL ? "?" : "&",
                             ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
                             NOTNULL(goto_encoded));
-                    am_free(goto_encoded);
-                } else {
-                    r->status = AM_EINVAL;
-                    break;
-                }
-
-                if (url == NULL) {
-                    r->status = AM_ENOMEM;
-                    break;
-                }
-
-                r->status = AM_REDIRECT;
-                r->am_set_custom_response_f(r, url, NULL);
-                free(url);
-                break;
-            }
-
-            if (ISINVALID(r->user) && r->conf->anon_remote_user_enable
-                    && ISVALID(r->conf->unauthenticated_user)) {
-                r->user = r->conf->unauthenticated_user;
-                AM_LOG_DEBUG(r->instance_id, "%s remote user set to unauthenticated user %s",
-                        thisfunc, r->user);
-            }
-
-            /* set user */
-            if (r->am_set_user_f != NULL && ISVALID(r->user)) {
-                r->am_set_user_f(r, r->user);
-            }
-
-            /* set user attributes */
-            set_user_attributes(r);
-
-            if (!r->not_enforced && AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_ALLOW)) {
-                const char *user_name_log = ISVALID(r->user) ? r->user : r->user_temp;
-
-                if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT)) {
-                    AM_LOG_AUDIT(r->instance_id, AUDIT_ALLOW_USER_MESSAGE,
-                            LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
-                }
-
-                if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE) && ISVALID(r->token)) {
-                    int audit_status = am_add_remote_audit_entry(r->instance_id, r->conf->token,
-                            r->session_info.si, r->conf->audit_file_remote,
-                            r->token, AUDIT_ALLOW_USER_MESSAGE,
-                            LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
-                    if (audit_status != AM_SUCCESS) {
-                        AM_LOG_ERROR(r->instance_id, "%s failed to store remote audit log message (%s)",
-                                thisfunc, am_strerror(audit_status));
-                    }
-                }
-            }
-
-            if (r->token_in_post && r->conf->cdsso_enable &&
-                    !r->is_dummypost_url && r->am_set_custom_response_f != NULL) {
-                /* special GET handling after LARES re-post (do redirect only on memory failure) */
-                am_asprintf(&url, "<html><head><script type=\"text/javascript\">function submitform(sform) {window.location.href = sform.action;}</script></head>"
-                        "<body onload=\"return submitform(document.getform);\">"
-                        "<form name=\"getform\" method=\"GET\" action=\"%s\">"
-                        "</form></body></html>",
-                        r->overridden_url);
-                if (url != NULL) {
-                    AM_LOG_DEBUG(r->instance_id, "%s CDSSO GET request form auto-submitted to %s",
-                            thisfunc, r->overridden_url);
-                    r->status = AM_DONE;
-                    r->am_set_custom_response_f(r, url, "text/html");
-                    free(url);
-                } else {
-                    /* r->status = AM_INTERNAL_REDIRECT; */
-                    r->status = AM_REDIRECT;
-                    r->am_set_custom_response_f(r, r->overridden_url, NULL);
-                }
-                break;
-            }
-
-            if (r->is_dummypost_url) {
-                /* post (pdp) data reply */
-
-                am_status_t pdp_status;
-                char *url = NULL, *file = NULL, *content_type = NULL;
-                int method = AM_REQUEST_POST;
-                const char *key = r->url.query + 1; /* skip '?' */
-
-                if (ISINVALID(key)) {
-                    AM_LOG_WARNING(r->instance_id,
-                            "%s invalid post data preservation key value", thisfunc);
-                    r->status = AM_NOT_FOUND;
-                    break;
-                }
-
-                pdp_status = am_get_pdp_cache_entry(r, key, &url, &file, &content_type, &method);
-
-                if (pdp_status != AM_SUCCESS) {
-                    AM_LOG_WARNING(r->instance_id,
-                            "%s post data preservation cache entry %s is not available (%s)",
-                            thisfunc, key, am_strerror(pdp_status));
-                    AM_FREE(url, file, content_type);
-                    r->status = AM_NOT_FOUND;
-                    break;
-                }
-
-                AM_LOG_DEBUG(r->instance_id, "%s found post data preservation cache "
-                        "entry: %s, url: %s, file: %s, content type: %s",
-                        thisfunc, key, LOGEMPTY(url), LOGEMPTY(file), LOGEMPTY(content_type));
-
-                /* reset pdp sticky-session load-balancer cookie */
-                if (ISVALID(r->conf->pdp_sess_mode) && ISVALID(r->conf->pdp_sess_value)
-                        && strcmp(r->conf->pdp_sess_mode, "COOKIE") == 0
-                        && match(r->instance_id, r->conf->pdp_sess_value, "^(\\w+)=([^\\s]+)$") == AM_OK) {
-                    char *sess_cookie = strdup(r->conf->pdp_sess_value);
-                    if (sess_cookie != NULL) {
-                        char *eq = strchr(sess_cookie, '=');
-                        if (eq != NULL) {
-                            *eq++ = 0;
-                            do_cookie_set_generic(r, NULL, sess_cookie, NULL, NULL, NULL, NULL);
-                        }
-                        free(sess_cookie);
-                    } else {
-                        AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
-                    }
-                }
-
-                if (strcmp(file, "0") == 0) {
-                    /* empty post */
-                    r->method = method;
-                    r->status = AM_PDP_DONE;
-                    r->post_data_url = strdup(url); /* FIXME: this was being freed below, as 'data' variable */
-                    r->post_data_sz = 0;
-                    am_free(r->post_data);
-                    r->post_data = NULL;
-                    /* empty pdp does not need post data to be set */
-                    r->am_set_custom_response_f(r, AM_SPACE_CHAR, content_type);
-                } else {
-
-                    if (r->conf->pdp_js_repost) {
-                        char *repost = NULL;
-                        size_t post_sz = 0;
-                        char *post = load_file(file, &post_sz);
-                        char *post_enc = base64_encode(post, &post_sz);
-
-                        /* IE10+ only */
-
-                        am_asprintf(&repost, "<html><head><script type=\"text/javascript\">"
-                                "function base64toBlob(b64Data, contentType, sliceSize) {contentType = contentType || '';"
-                                "sliceSize = sliceSize || 512;var byteCharacters = atob(b64Data);var byteArrays = [];"
-                                "for (var offset = 0; offset < byteCharacters.length; offset += sliceSize) {"
-                                "var slice = byteCharacters.slice(offset, offset + sliceSize);"
-                                "var byteNumbers = new Array(slice.length);"
-                                "for (var i = 0; i < slice.length; i++) {byteNumbers[i] = slice.charCodeAt(i);}"
-                                "var byteArray = new Uint8Array(byteNumbers);byteArrays.push(byteArray);}"
-                                "var blob = new Blob(byteArrays, {type: contentType});"
-                                "return blob;}"
-                                "function sendpost() {var r = new XMLHttpRequest();r.open(\"POST\", \"%s\", true);"
-                                "r.onreadystatechange=function(e) {var x = e.target; "
-                                "if (x.readyState==4 && x.status === 200) {"
-                                "document.body.innerHTML = x.responseText;"
-                                "document.title = !x.response.pageTitle ? x.responseURL : x.response.pageTitle;"
-                                "window.history.pushState({\"html\":x.response,\"pageTitle\":x.response.pageTitle},\"\",\"%s\");}};"
-                                "var b = base64toBlob(\"%s\", \"%s\");r.send(b);"
-                                "}</script></head><body onload=\"sendpost();\">"
-                                "</body><p></p></html>",
-                                url, url,
-                                NOTNULL(post_enc),
-                                content_type);
-                        r->status = AM_SUCCESS;
-                        r->am_set_custom_response_f(r, repost, "text/html");
-                        AM_FREE(post, post_enc, repost);
-
-                    } else {
-
-                        struct stat st;
-                        if (stat(file, &st) == 0) {
-                            r->method = method;
-                            r->status = AM_PDP_DONE;
-                            r->post_data_url = url;
-                            r->post_data_sz = st.st_size;
-                            am_free(r->post_data);
-                            r->post_data = NULL;
-                            am_free(r->post_data_fn);
-                            r->post_data_fn = strdup(file); /* will be released with am_request_t cleanup */
-
-                            if (r->am_set_post_data_f != NULL) {
-                                r->am_set_post_data_f(r);
-                            }
-                            r->am_set_custom_response_f(r, AM_SPACE_CHAR, content_type);
-                        } else {
-                            AM_LOG_WARNING(r->instance_id,
-                                    "%s post data preservation file %s is not available (%d)", thisfunc, file, errno);
-                            pdp_status = AM_ERROR;
-                        }
-                    }
-                }
-
-                /* delete cache entry */
-                am_remove_cache_entry(r->instance_id, key);
-
-                AM_FREE(url, file, content_type);
-
-                if (pdp_status != AM_SUCCESS) {
-                    r->status = AM_NOT_FOUND;
-                }
-                break;
-            }
-
-            /* allow access to the resource */
-            r->status = AM_SUCCESS;
-        }
-            break;
-
-        case AM_INVALID_SESSION:
-        case AM_ACCESS_DENIED:
-        case AM_INVALID_FQDN_ACCESS:
-
-            if (status == AM_ACCESS_DENIED && !r->not_enforced &&
-                    AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_DENY)) {
-                const char *user_name_log = ISVALID(r->user) ? r->user : r->user_temp;
-
-                if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT)) {
-                    AM_LOG_AUDIT(r->instance_id, AUDIT_DENY_USER_MESSAGE,
-                            LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
-                }
-
-                if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE) && ISVALID(r->token)) {
-                    int audit_status = am_add_remote_audit_entry(r->instance_id, r->conf->token,
-                            r->session_info.si, r->conf->audit_file_remote,
-                            r->token, AUDIT_DENY_USER_MESSAGE,
-                            LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
-                    if (audit_status != AM_SUCCESS) {
-                        AM_LOG_ERROR(r->instance_id, "%s failed to store remote audit log message (%s)",
-                                thisfunc, am_strerror(audit_status));
-                    }
-                }
-            }
-
-            if (r->am_set_custom_response_f == NULL) {
-                r->status = AM_ERROR;
-                break;
-            }
-
-            if (status == AM_INVALID_SESSION || (status == AM_ACCESS_DENIED && r->conf->cdsso_enable)) {
-                /* reset LDAP cookies */
-                do_cookie_set(r, AM_TRUE, AM_TRUE);
-
-                if (r->conf->cdsso_enable &&
-                        (status == AM_INVALID_SESSION || !r->conf->cdsso_deny_cleanup_disable)) {
-                    /* reset CDSSO cookie in all domains */
-                    for (i = 0; i < r->conf->cdsso_cookie_domain_map_sz; i++) {
-                        am_config_map_t *m = &r->conf->cdsso_cookie_domain_map[i];
-                        AM_LOG_DEBUG(r->instance_id, "%s resetting session cookie in %s domain",
-                                thisfunc, m->value);
-                        do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, m->value, NULL, NULL);
-                    }
-                    /* reset CDSSO cookie in default domain */
-                    do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, NULL, NULL, NULL);
-                }
-            }
-
-            if ((r->method == AM_REQUEST_POST || r->method == AM_REQUEST_PUT) &&
-                    r->conf->pdp_enable && status == AM_INVALID_SESSION) {
-                /* post data preservation */
-                am_status_t pdp_status = AM_SUCCESS;
-                char key[37];
-
-                /* check if we have access to the post data file directory */
-                if (!ISVALID(r->conf->pdp_dir) || !file_exists(r->conf->pdp_dir)) {
-                    AM_LOG_ERROR(r->instance_id,
-                            "%s post data preservation module has no access to %s directory",
-                            thisfunc, LOGEMPTY(r->conf->pdp_dir));
-                    pdp_status = AM_ERROR;
-                }
-
-                if (r->am_get_post_data_f == NULL) {
-                    pdp_status = AM_ERROR;
-                }
-
-                /* post data should already be read in validate_token (with cdsso)
-                 * if not - read it here (blocking) */
-                if (pdp_status == AM_SUCCESS && !r->conf->cdsso_enable) {
-                    pdp_status = r->am_get_post_data_f(r);
-                }
-
-                if (pdp_status == AM_SUCCESS && ISINVALID(r->post_data_fn) && r->post_data_sz > 0) {
-                    AM_LOG_ERROR(r->instance_id,
-                            "%s no data available for post data preservation module", thisfunc);
-                    pdp_status = AM_ERROR;
-                }
-
-                if (pdp_status == AM_SUCCESS) {
-                    char *repost_uri = NULL, *goto_value = NULL, *goto_encoded = NULL;
-                    am_bool_t pdp_sess_mode, pdp_sess_mode_url, pdp_sess_mode_cookie;
-                    char *goto_proto = r->url.proto;
-                    char *goto_host = r->url.host;
-                    unsigned int goto_port = r->url.port;
-                    struct url goto_url;
-
-                    /* get post data identifier out of pdp file name */
-                    const char *fs = ISVALID(r->post_data_fn) ? strrchr(r->post_data_fn, '/') : NULL;
-                    if (fs != NULL) {
-                        strncpy(key, fs + 1, sizeof (key) - 1);
-                    } else {
-                        /* empty post has no pdp file - key needs to be created */
-                        uuid(key, sizeof (key));
-                    }
-
-                    am_asprintf(&repost_uri, "%s%s", r->url.path, r->url.query);
-
-                    /* store pdp metadata in shared cache */
-                    am_add_pdp_cache_entry(r, key, repost_uri,
-                            r->post_data_sz > 0 ? r->post_data_fn : "0",
-                            r->content_type, r->method);
-
-                    if (r->am_set_post_data_filename_f != NULL) {
-                        /* IIS specific: do not remove temporary file at the end of the request processor. */
-                        r->am_set_post_data_filename_f(r, NULL);
-                    }
-
-                    /* pdp sticky session value, if set, has to be in a correct format: param=value */
-                    pdp_sess_mode = ISVALID(r->conf->pdp_sess_mode) && ISVALID(r->conf->pdp_sess_value)
-                            && match(r->instance_id, r->conf->pdp_sess_value, "^(\\w+)=([^\\s]+)$") == AM_OK;
-
-                    pdp_sess_mode_url = pdp_sess_mode && strcmp(r->conf->pdp_sess_mode, "URL") == 0;
-                    pdp_sess_mode_cookie = pdp_sess_mode && strcmp(r->conf->pdp_sess_mode, "COOKIE") == 0;
-
-                    /* create "goto" value for PDP redirect */
-                    
-                    if (parse_url(r->overridden_url, &goto_url) == 0) {
-                        goto_proto = goto_url.proto;
-                        goto_host = goto_url.host;
-                        goto_port = goto_url.port;
-                    } 
-                    
-                    am_asprintf(&goto_value, "%s://%s:%d%s%s"POST_PRESERVE_URI"?%s%s%s",
-                            goto_proto, goto_host, goto_port,
-                            ISVALID(r->conf->pdp_uri_prefix) && r->conf->pdp_uri_prefix[0] != '/' ? "/" : "",
-                            NOTNULL(r->conf->pdp_uri_prefix),
-                            key,
-                            pdp_sess_mode_url ? "&" : "",
-                            pdp_sess_mode_url ? r->conf->pdp_sess_value : ""
-                            );
-                    
-                    AM_LOG_DEBUG(r->instance_id, "%s unencoded pdp redirect goto value: %s", 
-                            thisfunc, LOGEMPTY(goto_value));
-                    goto_encoded = url_encode(goto_value);
-
-                    /* create a redirect url value */
-                    url = find_active_login_server(r, AM_FALSE);
-
-                    if (r->conf->cdsso_enable &&
-                            ISVALID(r->conf->url_redirect_param) &&
-                            strstr(url, "goto=") != NULL &&
-                            strcmp(r->conf->url_redirect_param, "goto") != 0) {
-                        am_asprintf(&url, "%s%s%s=%s",
-                                url,
-                                "?",
-                                r->conf->url_redirect_param,
-                                NOTNULL(goto_encoded));
-                    } else {
-                        am_asprintf(&url, "%s%s%s=%s",
-                                url,
-                                strchr(url, '?') != NULL ? "&" : "?",
-                                ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
-                                NOTNULL(goto_encoded));
-                    }
-
-                    if (pdp_sess_mode_cookie) {
-                        /* create pdp sticky-session load-balancer cookie */
-                        char *sess_cookie = strdup(r->conf->pdp_sess_value);
-                        if (sess_cookie != NULL) {
-                            char *eq = strchr(sess_cookie, '=');
-                            if (eq != NULL) {
-                                *eq++ = 0;
-                                do_cookie_set_generic(r, NULL, sess_cookie, eq, NULL, r->conf->pdp_uri_prefix, NULL);
-                            }
-                            free(sess_cookie);
-                        } else {
-                            AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
-                        }
-                    }
-
-                    AM_FREE(goto_value, goto_encoded, repost_uri);
-                }
-
-            } else if (status == AM_INVALID_FQDN_ACCESS) {
-                /* if previous status was invalid fqdn access,
-                 * redirect to a valid fqdn url
-                 */
-                const char *host = ISVALID(r->client_fqdn) ? r->client_fqdn : r->conf->fqdn_default;
-                if (ISINVALID(host)) {
-                    /* still nothing - return http403 error
-                     * TODO: redirect to access denied page?
-                     */
-                    r->status = AM_FORBIDDEN;
-                    break;
-                }
-
-                am_asprintf(&url, "%s://%s:%d%s%s", r->url.proto, host,
-                        r->url.port, r->url.path, r->url.query);
+                am_free(goto_encoded);
             } else {
-                /* if previous status was invalid session or if there was a policy
-                 * advice, redirect to the OpenAM login page. If not, redirect to the
-                 * configured access denied url if any 
-                 */
-                if (status == AM_INVALID_SESSION || r->policy_advice != NULL /* || session advice? */) {
-
-                    url = find_active_login_server(r, AM_TRUE); /* contains goto value */
-
-                    AM_LOG_DEBUG(r->instance_id, "%s find_active_login_server value: %s", thisfunc,
-                            LOGEMPTY(url));
-
-                    if (r->policy_advice != NULL) {
-                        //TODO: session advice ?
-
-                        char *composite_advice = NULL, *composite_advice_encoded = NULL;
-                        struct am_namevalue *e, *t;
-
-                        AM_LIST_FOR_EACH(r->policy_advice, e, t) {
-                            am_asprintf(&composite_advice,
-                                    "%s<AttributeValuePair><Attribute name=\"%s\"/><Value>%s</Value></AttributeValuePair>",
-                                    composite_advice == NULL ? "" : composite_advice,
-                                    e->n, e->v);
-                        }
-                        if (composite_advice != NULL) {
-                            am_asprintf(&composite_advice, "<Advices>%s</Advices>", composite_advice);
-                        }
-
-                        composite_advice_encoded = url_encode(composite_advice);
-                        am_free(composite_advice);
-
-                        if (!r->conf->use_redirect_for_advice) {
-                            am_asprintf(&url, "<html><head></head><body onload=\"document.postform.submit()\">"
-                                    "<form name=\"postform\" method=\"POST\" action=\"%s\">"
-                                    "<input type=\"hidden\" name=\""COMPOSITE_ADVICE_KEY"\" value=\"%s\"/>"
-                                    "</form></body></html>",
-                                    url,
-                                    NOTNULL(composite_advice_encoded));
-
-                            r->status = AM_DONE;
-                            r->am_set_custom_response_f(r, url, "text/html");
-                            free(url);
-                            am_free(composite_advice_encoded);
-                            break;
-                        } else {
-                            am_asprintf(&url, "%s&"COMPOSITE_ADVICE_KEY"=%s",
-                                    url,
-                                    NOTNULL(composite_advice_encoded));
-                        }
-                        am_free(composite_advice_encoded);
-                    }
-
-                } else if (ISVALID(r->conf->access_denied_url)) {
-                    char *goto_encoded = url_encode(r->overridden_url);
-
-                    am_asprintf(&url, "%s%s%s=%s", r->conf->access_denied_url,
-                            strchr(r->conf->access_denied_url, '?') == NULL ? "?" : "&",
-                            ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
-                            NOTNULL(goto_encoded));
-                    
-                    AM_LOG_DEBUG(r->instance_id, "%s access denied redirect to %s", thisfunc,
-                            LOGEMPTY(url));
-
-                    am_free(goto_encoded);
-                } else {
-                    r->status = AM_FORBIDDEN;
-                    break;
-                }
+                r->status = AM_EINVAL;
+                break;
             }
 
             if (url == NULL) {
@@ -2628,31 +2130,456 @@ static am_return_t handle_exit(am_request_t *r) {
                 break;
             }
 
-            /* set Location header and instruct the container to do a redirect */
             r->status = AM_REDIRECT;
             r->am_set_custom_response_f(r, url, NULL);
             free(url);
+            break;
+        }
 
+        if (ISINVALID(r->user) && r->conf->anon_remote_user_enable && ISVALID(r->conf->unauthenticated_user)) {
+            r->user = r->conf->unauthenticated_user;
+            AM_LOG_DEBUG(r->instance_id, "%s remote user set to unauthenticated user %s", thisfunc, r->user);
+        }
+
+        /* set user */
+        if (r->am_set_user_f != NULL && ISVALID(r->user)) {
+            r->am_set_user_f(r, r->user);
+        }
+
+        /* set user attributes */
+        set_user_attributes(r);
+
+        if (!r->not_enforced && AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_ALLOW)) {
+            const char *user_name_log = ISVALID(r->user) ? r->user : r->user_temp;
+
+            if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT)) {
+                AM_LOG_AUDIT(r->instance_id, AUDIT_ALLOW_USER_MESSAGE, LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip),
+                             LOGEMPTY(r->overridden_url));
+            }
+
+            if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE) && ISVALID(r->token)) {
+                int audit_status = am_add_remote_audit_entry(r->instance_id, r->conf->token, r->session_info.si,
+                                                             r->conf->audit_file_remote, r->token,
+                                                             AUDIT_ALLOW_USER_MESSAGE, LOGEMPTY(user_name_log),
+                                                             LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
+                if (audit_status != AM_SUCCESS) {
+                    AM_LOG_ERROR(r->instance_id, "%s failed to store remote audit log message (%s)", thisfunc,
+                                 am_strerror(audit_status));
+                }
+            }
+        }
+
+        if (r->token_in_post && r->conf->cdsso_enable && !r->is_dummypost_url && r->am_set_custom_response_f != NULL) {
+            /* special GET handling after LARES re-post (do redirect only on memory failure) */
+            am_asprintf(&url,
+                        "<html><head><script type=\"text/javascript\">function submitform(sform) {window.location.href "
+                        "= sform.action;}</script></head>"
+                        "<body onload=\"return submitform(document.getform);\">"
+                        "<form name=\"getform\" method=\"GET\" action=\"%s\">"
+                        "</form></body></html>",
+                        r->overridden_url);
+            if (url != NULL) {
+                AM_LOG_DEBUG(r->instance_id, "%s CDSSO GET request form auto-submitted to %s", thisfunc,
+                             r->overridden_url);
+                r->status = AM_DONE;
+                r->am_set_custom_response_f(r, url, "text/html");
+                free(url);
+            } else {
+                /* r->status = AM_INTERNAL_REDIRECT; */
+                r->status = AM_REDIRECT;
+                r->am_set_custom_response_f(r, r->overridden_url, NULL);
+            }
             break;
-        default:
-            AM_LOG_ERROR(r->instance_id, "%s status: %s", thisfunc,
-                    am_strerror(r->status));
+        }
+
+        if (r->is_dummypost_url) {
+            /* post (pdp) data reply */
+
+            am_status_t pdp_status;
+            char *url = NULL, *file = NULL, *content_type = NULL;
+            int method = AM_REQUEST_POST;
+            const char *key = r->url.query + 1; /* skip '?' */
+
+            if (ISINVALID(key)) {
+                AM_LOG_WARNING(r->instance_id, "%s invalid post data preservation key value", thisfunc);
+                r->status = AM_NOT_FOUND;
+                break;
+            }
+
+            pdp_status = am_get_pdp_cache_entry(r, key, &url, &file, &content_type, &method);
+
+            if (pdp_status != AM_SUCCESS) {
+                AM_LOG_WARNING(r->instance_id, "%s post data preservation cache entry %s is not available (%s)",
+                               thisfunc, key, am_strerror(pdp_status));
+                AM_FREE(url, file, content_type);
+                r->status = AM_NOT_FOUND;
+                break;
+            }
+
+            AM_LOG_DEBUG(r->instance_id,
+                         "%s found post data preservation cache "
+                         "entry: %s, url: %s, file: %s, content type: %s",
+                         thisfunc, key, LOGEMPTY(url), LOGEMPTY(file), LOGEMPTY(content_type));
+
+            /* reset pdp sticky-session load-balancer cookie */
+            if (ISVALID(r->conf->pdp_sess_mode) && ISVALID(r->conf->pdp_sess_value) &&
+                strcmp(r->conf->pdp_sess_mode, "COOKIE") == 0 &&
+                match(r->instance_id, r->conf->pdp_sess_value, "^(\\w+)=([^\\s]+)$") == AM_OK) {
+                char *sess_cookie = strdup(r->conf->pdp_sess_value);
+                if (sess_cookie != NULL) {
+                    char *eq = strchr(sess_cookie, '=');
+                    if (eq != NULL) {
+                        *eq++ = 0;
+                        do_cookie_set_generic(r, NULL, sess_cookie, NULL, NULL, NULL, NULL);
+                    }
+                    free(sess_cookie);
+                } else {
+                    AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
+                }
+            }
+
+            if (strcmp(file, "0") == 0) {
+                /* empty post */
+                r->method = method;
+                r->status = AM_PDP_DONE;
+                r->post_data_url = strdup(url); /* FIXME: this was being freed below, as 'data' variable */
+                r->post_data_sz = 0;
+                am_free(r->post_data);
+                r->post_data = NULL;
+                /* empty pdp does not need post data to be set */
+                r->am_set_custom_response_f(r, AM_SPACE_CHAR, content_type);
+            } else {
+                if (r->conf->pdp_js_repost) {
+                    char *repost = NULL;
+                    size_t post_sz = 0;
+                    char *post = load_file(file, &post_sz);
+                    char *post_enc = base64_encode(post, &post_sz);
+
+                    /* IE10+ only */
+
+                    am_asprintf(
+                        &repost,
+                        "<html><head><script type=\"text/javascript\">"
+                        "function base64toBlob(b64Data, contentType, sliceSize) {contentType = contentType || '';"
+                        "sliceSize = sliceSize || 512;var byteCharacters = atob(b64Data);var byteArrays = [];"
+                        "for (var offset = 0; offset < byteCharacters.length; offset += sliceSize) {"
+                        "var slice = byteCharacters.slice(offset, offset + sliceSize);"
+                        "var byteNumbers = new Array(slice.length);"
+                        "for (var i = 0; i < slice.length; i++) {byteNumbers[i] = slice.charCodeAt(i);}"
+                        "var byteArray = new Uint8Array(byteNumbers);byteArrays.push(byteArray);}"
+                        "var blob = new Blob(byteArrays, {type: contentType});"
+                        "return blob;}"
+                        "function sendpost() {var r = new XMLHttpRequest();r.open(\"POST\", \"%s\", true);"
+                        "r.onreadystatechange=function(e) {var x = e.target; "
+                        "if (x.readyState==4 && x.status === 200) {"
+                        "document.body.innerHTML = x.responseText;"
+                        "document.title = !x.response.pageTitle ? x.responseURL : x.response.pageTitle;"
+                        "window.history.pushState({\"html\":x.response,\"pageTitle\":x.response.pageTitle},\"\",\"%s\")"
+                        ";}};"
+                        "var b = base64toBlob(\"%s\", \"%s\");r.send(b);"
+                        "}</script></head><body onload=\"sendpost();\">"
+                        "</body><p></p></html>",
+                        url, url, NOTNULL(post_enc), content_type);
+                    r->status = AM_SUCCESS;
+                    r->am_set_custom_response_f(r, repost, "text/html");
+                    AM_FREE(post, post_enc, repost);
+
+                } else {
+                    struct stat st;
+                    if (stat(file, &st) == 0) {
+                        r->method = method;
+                        r->status = AM_PDP_DONE;
+                        r->post_data_url = url;
+                        r->post_data_sz = st.st_size;
+                        am_free(r->post_data);
+                        r->post_data = NULL;
+                        am_free(r->post_data_fn);
+                        r->post_data_fn = strdup(file); /* will be released with am_request_t cleanup */
+
+                        if (r->am_set_post_data_f != NULL) {
+                            r->am_set_post_data_f(r);
+                        }
+                        r->am_set_custom_response_f(r, AM_SPACE_CHAR, content_type);
+                    } else {
+                        AM_LOG_WARNING(r->instance_id, "%s post data preservation file %s is not available (%d)",
+                                       thisfunc, file, errno);
+                        pdp_status = AM_ERROR;
+                    }
+                }
+            }
+
+            /* delete cache entry */
+            am_remove_cache_entry(r->instance_id, key);
+
+            AM_FREE(url, file, content_type);
+
+            if (pdp_status != AM_SUCCESS) {
+                r->status = AM_NOT_FOUND;
+            }
             break;
+        }
+
+        /* allow access to the resource */
+        r->status = AM_SUCCESS;
+    } break;
+
+    case AM_INVALID_SESSION:
+    case AM_ACCESS_DENIED:
+    case AM_INVALID_FQDN_ACCESS:
+
+        if (status == AM_ACCESS_DENIED && !r->not_enforced &&
+            AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_DENY)) {
+            const char *user_name_log = ISVALID(r->user) ? r->user : r->user_temp;
+
+            if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT)) {
+                AM_LOG_AUDIT(r->instance_id, AUDIT_DENY_USER_MESSAGE, LOGEMPTY(user_name_log), LOGEMPTY(r->client_ip),
+                             LOGEMPTY(r->overridden_url));
+            }
+
+            if (AM_BITMASK_CHECK(r->conf->audit_level, AM_LOG_LEVEL_AUDIT_REMOTE) && ISVALID(r->token)) {
+                int audit_status = am_add_remote_audit_entry(r->instance_id, r->conf->token, r->session_info.si,
+                                                             r->conf->audit_file_remote, r->token,
+                                                             AUDIT_DENY_USER_MESSAGE, LOGEMPTY(user_name_log),
+                                                             LOGEMPTY(r->client_ip), LOGEMPTY(r->overridden_url));
+                if (audit_status != AM_SUCCESS) {
+                    AM_LOG_ERROR(r->instance_id, "%s failed to store remote audit log message (%s)", thisfunc,
+                                 am_strerror(audit_status));
+                }
+            }
+        }
+
+        if (r->am_set_custom_response_f == NULL) {
+            r->status = AM_ERROR;
+            break;
+        }
+
+        if (status == AM_INVALID_SESSION || (status == AM_ACCESS_DENIED && r->conf->cdsso_enable)) {
+            /* reset LDAP cookies */
+            do_cookie_set(r, AM_TRUE, AM_TRUE);
+
+            if (r->conf->cdsso_enable && (status == AM_INVALID_SESSION || !r->conf->cdsso_deny_cleanup_disable)) {
+                /* reset CDSSO cookie in all domains */
+                for (i = 0; i < r->conf->cdsso_cookie_domain_map_sz; i++) {
+                    am_config_map_t *m = &r->conf->cdsso_cookie_domain_map[i];
+                    AM_LOG_DEBUG(r->instance_id, "%s resetting session cookie in %s domain", thisfunc, m->value);
+                    do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, m->value, NULL, NULL);
+                }
+                /* reset CDSSO cookie in default domain */
+                do_cookie_set_generic(r, NULL, r->conf->cookie_name, NULL, NULL, NULL, NULL);
+            }
+        }
+
+        if ((r->method == AM_REQUEST_POST || r->method == AM_REQUEST_PUT) && r->conf->pdp_enable &&
+            status == AM_INVALID_SESSION) {
+            /* post data preservation */
+            am_status_t pdp_status = AM_SUCCESS;
+            char key[37];
+
+            /* check if we have access to the post data file directory */
+            if (!ISVALID(r->conf->pdp_dir) || !file_exists(r->conf->pdp_dir)) {
+                AM_LOG_ERROR(r->instance_id, "%s post data preservation module has no access to %s directory", thisfunc,
+                             LOGEMPTY(r->conf->pdp_dir));
+                pdp_status = AM_ERROR;
+            }
+
+            if (r->am_get_post_data_f == NULL) {
+                pdp_status = AM_ERROR;
+            }
+
+            /* post data should already be read in validate_token (with cdsso)
+             * if not - read it here (blocking) */
+            if (pdp_status == AM_SUCCESS && !r->conf->cdsso_enable) {
+                pdp_status = r->am_get_post_data_f(r);
+            }
+
+            if (pdp_status == AM_SUCCESS && ISINVALID(r->post_data_fn) && r->post_data_sz > 0) {
+                AM_LOG_ERROR(r->instance_id, "%s no data available for post data preservation module", thisfunc);
+                pdp_status = AM_ERROR;
+            }
+
+            if (pdp_status == AM_SUCCESS) {
+                char *repost_uri = NULL, *goto_value = NULL, *goto_encoded = NULL;
+                am_bool_t pdp_sess_mode, pdp_sess_mode_url, pdp_sess_mode_cookie;
+                char *goto_proto = r->url.proto;
+                char *goto_host = r->url.host;
+                unsigned int goto_port = r->url.port;
+                struct url goto_url;
+
+                /* get post data identifier out of pdp file name */
+                const char *fs = ISVALID(r->post_data_fn) ? strrchr(r->post_data_fn, '/') : NULL;
+                if (fs != NULL) {
+                    strncpy(key, fs + 1, sizeof(key) - 1);
+                } else {
+                    /* empty post has no pdp file - key needs to be created */
+                    uuid(key, sizeof(key));
+                }
+
+                am_asprintf(&repost_uri, "%s%s", r->url.path, r->url.query);
+
+                /* store pdp metadata in shared cache */
+                am_add_pdp_cache_entry(r, key, repost_uri, r->post_data_sz > 0 ? r->post_data_fn : "0", r->content_type,
+                                       r->method);
+
+                if (r->am_set_post_data_filename_f != NULL) {
+                    /* IIS specific: do not remove temporary file at the end of the request processor. */
+                    r->am_set_post_data_filename_f(r, NULL);
+                }
+
+                /* pdp sticky session value, if set, has to be in a correct format: param=value */
+                pdp_sess_mode = ISVALID(r->conf->pdp_sess_mode) && ISVALID(r->conf->pdp_sess_value) &&
+                                match(r->instance_id, r->conf->pdp_sess_value, "^(\\w+)=([^\\s]+)$") == AM_OK;
+
+                pdp_sess_mode_url = pdp_sess_mode && strcmp(r->conf->pdp_sess_mode, "URL") == 0;
+                pdp_sess_mode_cookie = pdp_sess_mode && strcmp(r->conf->pdp_sess_mode, "COOKIE") == 0;
+
+                /* create "goto" value for PDP redirect */
+
+                if (parse_url(r->overridden_url, &goto_url) == 0) {
+                    goto_proto = goto_url.proto;
+                    goto_host = goto_url.host;
+                    goto_port = goto_url.port;
+                }
+
+                am_asprintf(&goto_value, "%s://%s:%d%s%s" POST_PRESERVE_URI "?%s%s%s", goto_proto, goto_host, goto_port,
+                            ISVALID(r->conf->pdp_uri_prefix) && r->conf->pdp_uri_prefix[0] != '/' ? "/" : "",
+                            NOTNULL(r->conf->pdp_uri_prefix), key, pdp_sess_mode_url ? "&" : "",
+                            pdp_sess_mode_url ? r->conf->pdp_sess_value : "");
+
+                AM_LOG_DEBUG(r->instance_id, "%s unencoded pdp redirect goto value: %s", thisfunc,
+                             LOGEMPTY(goto_value));
+                goto_encoded = url_encode(goto_value);
+
+                /* create a redirect url value */
+                url = find_active_login_server(r, AM_FALSE);
+
+                if (r->conf->cdsso_enable && ISVALID(r->conf->url_redirect_param) && strstr(url, "goto=") != NULL &&
+                    strcmp(r->conf->url_redirect_param, "goto") != 0) {
+                    am_asprintf(&url, "%s%s%s=%s", url, "?", r->conf->url_redirect_param, NOTNULL(goto_encoded));
+                } else {
+                    am_asprintf(&url, "%s%s%s=%s", url, strchr(url, '?') != NULL ? "&" : "?",
+                                ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
+                                NOTNULL(goto_encoded));
+                }
+
+                if (pdp_sess_mode_cookie) {
+                    /* create pdp sticky-session load-balancer cookie */
+                    char *sess_cookie = strdup(r->conf->pdp_sess_value);
+                    if (sess_cookie != NULL) {
+                        char *eq = strchr(sess_cookie, '=');
+                        if (eq != NULL) {
+                            *eq++ = 0;
+                            do_cookie_set_generic(r, NULL, sess_cookie, eq, NULL, r->conf->pdp_uri_prefix, NULL);
+                        }
+                        free(sess_cookie);
+                    } else {
+                        AM_LOG_ERROR(r->instance_id, "%s memory allocation failure", thisfunc);
+                    }
+                }
+
+                AM_FREE(goto_value, goto_encoded, repost_uri);
+            }
+
+        } else if (status == AM_INVALID_FQDN_ACCESS) {
+            /* if previous status was invalid fqdn access,
+             * redirect to a valid fqdn url
+             */
+            const char *host = ISVALID(r->client_fqdn) ? r->client_fqdn : r->conf->fqdn_default;
+            if (ISINVALID(host)) {
+                /* still nothing - return http403 error
+                 * TODO: redirect to access denied page?
+                 */
+                r->status = AM_FORBIDDEN;
+                break;
+            }
+
+            am_asprintf(&url, "%s://%s:%d%s%s", r->url.proto, host, r->url.port, r->url.path, r->url.query);
+        } else {
+            /* if previous status was invalid session or if there was a policy
+             * advice, redirect to the OpenAM login page. If not, redirect to the
+             * configured access denied url if any
+             */
+            if (status == AM_INVALID_SESSION || r->policy_advice != NULL /* || session advice? */) {
+                url = find_active_login_server(r, AM_TRUE); /* contains goto value */
+
+                AM_LOG_DEBUG(r->instance_id, "%s find_active_login_server value: %s", thisfunc, LOGEMPTY(url));
+
+                if (r->policy_advice != NULL) {
+                    // TODO: session advice ?
+
+                    char *composite_advice = NULL, *composite_advice_encoded = NULL;
+                    struct am_namevalue *e, *t;
+
+                    AM_LIST_FOR_EACH(r->policy_advice, e, t) {
+                        am_asprintf(
+                            &composite_advice,
+                            "%s<AttributeValuePair><Attribute name=\"%s\"/><Value>%s</Value></AttributeValuePair>",
+                            composite_advice == NULL ? "" : composite_advice, e->n, e->v);
+                    }
+                    if (composite_advice != NULL) {
+                        am_asprintf(&composite_advice, "<Advices>%s</Advices>", composite_advice);
+                    }
+
+                    composite_advice_encoded = url_encode(composite_advice);
+                    am_free(composite_advice);
+
+                    if (!r->conf->use_redirect_for_advice) {
+                        am_asprintf(&url,
+                                    "<html><head></head><body onload=\"document.postform.submit()\">"
+                                    "<form name=\"postform\" method=\"POST\" action=\"%s\">"
+                                    "<input type=\"hidden\" name=\"" COMPOSITE_ADVICE_KEY "\" value=\"%s\"/>"
+                                    "</form></body></html>",
+                                    url, NOTNULL(composite_advice_encoded));
+
+                        r->status = AM_DONE;
+                        r->am_set_custom_response_f(r, url, "text/html");
+                        free(url);
+                        am_free(composite_advice_encoded);
+                        break;
+                    } else {
+                        am_asprintf(&url, "%s&" COMPOSITE_ADVICE_KEY "=%s", url, NOTNULL(composite_advice_encoded));
+                    }
+                    am_free(composite_advice_encoded);
+                }
+
+            } else if (ISVALID(r->conf->access_denied_url)) {
+                char *goto_encoded = url_encode(r->overridden_url);
+
+                am_asprintf(&url, "%s%s%s=%s", r->conf->access_denied_url,
+                            strchr(r->conf->access_denied_url, '?') == NULL ? "?" : "&",
+                            ISVALID(r->conf->url_redirect_param) ? r->conf->url_redirect_param : "goto",
+                            NOTNULL(goto_encoded));
+
+                AM_LOG_DEBUG(r->instance_id, "%s access denied redirect to %s", thisfunc, LOGEMPTY(url));
+
+                am_free(goto_encoded);
+            } else {
+                r->status = AM_FORBIDDEN;
+                break;
+            }
+        }
+
+        if (url == NULL) {
+            r->status = AM_ENOMEM;
+            break;
+        }
+
+        /* set Location header and instruct the container to do a redirect */
+        r->status = AM_REDIRECT;
+        r->am_set_custom_response_f(r, url, NULL);
+        free(url);
+
+        break;
+    default:
+        AM_LOG_ERROR(r->instance_id, "%s status: %s", thisfunc, am_strerror(r->status));
+        break;
     }
 
     return AM_OK;
 }
 
-static am_state_func_t const am_request_state[] = {
-    setup_request_data,
-    validate_url,
-    handle_notification,
-    validate_token,
-    validate_fqdn_access,
-    handle_not_enforced,
-    validate_policy,
-    handle_exit
-};
+static am_state_func_t const am_request_state[] = {setup_request_data, validate_url,         handle_notification,
+                                                   validate_token,     validate_fqdn_access, handle_not_enforced,
+                                                   validate_policy,    handle_exit};
 
 void am_process_request(am_request_t *r) {
     am_state_t cur_state = ENTRY_STATE;
@@ -2661,7 +2588,8 @@ void am_process_request(am_request_t *r) {
     for (;;) {
         fn = am_request_state[cur_state];
         rc = fn(r);
-        if (EXIT_STATE == cur_state) break;
+        if (EXIT_STATE == cur_state)
+            break;
         cur_state = lookup_transition(cur_state, rc);
     }
 }
@@ -2673,8 +2601,7 @@ void am_process_request(am_request_t *r) {
  * @param func_array_ptr address of pointer to be set
  * @param array_len_ptr the number of functions returned
  */
-void am_test_get_state_funcs(am_state_func_t const ** func_array_ptr, int * array_len_ptr) {
-    * func_array_ptr = am_request_state;
-    * array_len_ptr = (&am_request_state)[1] - am_request_state;
+void am_test_get_state_funcs(am_state_func_t const **func_array_ptr, int *array_len_ptr) {
+    *func_array_ptr = am_request_state;
+    *array_len_ptr = (&am_request_state)[1] - am_request_state;
 }
-

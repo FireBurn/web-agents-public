@@ -14,79 +14,79 @@
  * Copyright 2014 - 2016 ForgeRock AS.
  */
 
-#include "platform.h"
-#include "am.h"
 #include "utility.h"
+#include "am.h"
 #include "error.h"
+#include "list.h"
 #include "pcre.h"
-#include "zlib.h"  
-#include "list.h" 
+#include "platform.h"
 #include "thread.h"
+#include "zlib.h"
 
-#define AM_STRERROR_GEN(name, msg) case AM_ ## name: return msg;
+#define AM_STRERROR_GEN(name, msg)                                                                                     \
+    case AM_##name:                                                                                                    \
+        return msg;
 
 const char *am_strerror(int err) {
     switch (err) {
-            AM_ERRNO_MAP(AM_STRERROR_GEN)
-        default:
-            return "unknown system error";
+        AM_ERRNO_MAP(AM_STRERROR_GEN)
+    default:
+        return "unknown system error";
     }
 }
 #undef AM_STRERROR_GEN
 
-const char *request_method_str[] = {
-    "UNKNOWN",
-    "GET",
-    "POST",
-    "HEAD",
-    "PUT",
-    "DELETE",
-    "TRACE",
-    "OPTIONS",
-    "CONNECT",
-    "COPY",
-    "INVALID",
-    "LOCK",
-    "UNLOCK",
-    "MKCOL",
-    "MOVE",
-    "PATCH",
-    "PROPFIND",
-    "PROPPATCH",
-    "VERSION_CONTROL",
-    "CHECKOUT",
-    "UNCHECKOUT",
-    "CHECKIN",
-    "UPDATE",
-    "LABEL",
-    "REPORT",
-    "MKWORKSPACE",
-    "MKACTIVITY",
-    "BASELINE_CONTROL",
-    "MERGE",
-    "CONFIG",
-    "ENABLE-APP",
-    "DISABLE-APP",
-    "STOP-APP",
-    "STOP-APP-RSP",
-    "REMOVE-APP",
-    "STATUS",
-    "STATUS-RSP",
-    "INFO",
-    "INFO-RSP",
-    "DUMP",
-    "DUMP-RSP",
-    "PING",
-    "PING-RSP"
-};
+const char *request_method_str[] = {"UNKNOWN",
+                                    "GET",
+                                    "POST",
+                                    "HEAD",
+                                    "PUT",
+                                    "DELETE",
+                                    "TRACE",
+                                    "OPTIONS",
+                                    "CONNECT",
+                                    "COPY",
+                                    "INVALID",
+                                    "LOCK",
+                                    "UNLOCK",
+                                    "MKCOL",
+                                    "MOVE",
+                                    "PATCH",
+                                    "PROPFIND",
+                                    "PROPPATCH",
+                                    "VERSION_CONTROL",
+                                    "CHECKOUT",
+                                    "UNCHECKOUT",
+                                    "CHECKIN",
+                                    "UPDATE",
+                                    "LABEL",
+                                    "REPORT",
+                                    "MKWORKSPACE",
+                                    "MKACTIVITY",
+                                    "BASELINE_CONTROL",
+                                    "MERGE",
+                                    "CONFIG",
+                                    "ENABLE-APP",
+                                    "DISABLE-APP",
+                                    "STOP-APP",
+                                    "STOP-APP-RSP",
+                                    "REMOVE-APP",
+                                    "STATUS",
+                                    "STATUS-RSP",
+                                    "INFO",
+                                    "INFO-RSP",
+                                    "DUMP",
+                                    "DUMP-RSP",
+                                    "PING",
+                                    "PING-RSP"};
 
 #define AM_XSTR(s) AM_STR(s)
 #define AM_STR(s) #s
 
-#define URI_HTTP "%"AM_XSTR(AM_PROTO_SIZE)"[HTPShtps]"
-#define URI_HOST "%"AM_XSTR(AM_HOST_SIZE)"[-_.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789]"
+#define URI_HTTP "%" AM_XSTR(AM_PROTO_SIZE) "[HTPShtps]"
+#define URI_HOST "%" AM_XSTR(AM_HOST_SIZE) "[-_.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789]"
 #define URI_PORT "%6d"
-#define URI_PATH "%"AM_XSTR(AM_URI_SIZE)"s"
+#define URI_PATH "%" AM_XSTR(AM_URI_SIZE) "s"
 #define HD1 URI_HTTP "://" URI_HOST ":" URI_PORT "/" URI_PATH
 #define HD2 URI_HTTP "://" URI_HOST "/" URI_PATH
 #define HD3 URI_HTTP "://" URI_HOST ":" URI_PORT
@@ -97,15 +97,11 @@ struct query_attribute {
     char *key_value;
 };
 
-enum {
-    AM_TIMER_INACTIVE = 0,
-    AM_TIMER_ACTIVE = 1 << 0,
-    AM_TIMER_PAUSED = 1 << 1
-};
+enum { AM_TIMER_INACTIVE = 0, AM_TIMER_ACTIVE = 1 << 0, AM_TIMER_PAUSED = 1 << 1 };
 
 #define AM_TIMER_USEC_PER_SEC 1000000
 
-#ifdef _WIN32 
+#ifdef _WIN32
 
 struct dirent {
     long d_ino;
@@ -130,8 +126,7 @@ static am_timer_t am_timer_s = {0, 0, 0, 0};
 
 static const char *hex_chars = "0123456789ABCDEF";
 
-static const unsigned char base64_table[64] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static const unsigned char base64_table[64] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 static struct http_status http_status_list[] = {
 #define HTTP_STATUS_CODE(c) c, AM_XSTR(c)
@@ -219,12 +214,12 @@ void am_secure_zero_memory(void *v, size_t sz) {
 #else
     size_t n = sz;
     volatile unsigned char *p = v;
-    while (n--) *p++ = 0;
+    while (n--)
+        *p++ = 0;
 #endif
 }
 
 char is_big_endian() {
-
     union {
         uint32_t i;
         char c[4];
@@ -235,17 +230,17 @@ char is_big_endian() {
 
 /**
  * Match a subject against a pattern.
- * 
+ *
  * @param instance_id: the current instance id for debugging purposes
  * @param subject: the subject we're matching
  * @param pattern: the pattern we're using to match
- * 
+ *
  * @return AM_OK (0) if there is a match, or we pass in NULL for the subject and/or pattern
  *         AM_FAIL (1) if there is no match, or the pattern doesn't compile
  */
 am_return_t match(unsigned long instance_id, const char *subject, const char *pattern) {
-    pcre* x = NULL;
-    const char* error;
+    pcre *x = NULL;
+    const char *error;
     int erroroffset, rc = -1;
     int offsets[3];
     am_return_t result = AM_OK;
@@ -255,11 +250,12 @@ am_return_t match(unsigned long instance_id, const char *subject, const char *pa
     }
     x = pcre_compile(pattern, 0, &error, &erroroffset, NULL);
     if (x == NULL) {
-        AM_LOG_DEBUG(instance_id, "match: pcre_compile failed on \"%s\" with error %s", pattern, (error == NULL) ? "unknown" : error);
+        AM_LOG_DEBUG(instance_id, "match: pcre_compile failed on \"%s\" with error %s", pattern,
+                     (error == NULL) ? "unknown" : error);
         return AM_FAIL;
     }
 
-    rc = pcre_exec(x, NULL, subject, (int) strlen(subject), 0, 0, offsets, 3);
+    rc = pcre_exec(x, NULL, subject, (int)strlen(subject), 0, 0, offsets, 3);
     if (rc < 0) {
         AM_LOG_DEBUG(instance_id, "match(): '%s' does not match '%s'", subject, pattern);
         result = AM_FAIL;
@@ -280,30 +276,30 @@ am_return_t match(unsigned long instance_id, const char *subject, const char *pa
  * @param subject: the string to be matched against the regular expression
  * @param len: initially set to the length of the subject, this is changed to be a count of the number
  *        of strings stored in the return value, separated by null strings.
- * 
+ *
  * @return null separated matching strings
  */
 char *match_group(pcre *x, int capture_groups, const char *subject, size_t *len) {
-
     /* pcre itself needs space in the max_capture_groups */
     int max_capture_groups = (capture_groups + 1) * 3;
     size_t k = 0, slen = *len;
     int i, substring_len, rc, ret_len = 0;
     unsigned int offset = 0;
-    char* result = NULL;
-    int* ovector;
+    char *result = NULL;
+    int *ovector;
 
     if (x == NULL || subject == NULL) {
         return NULL;
     }
-    if ((ovector = calloc(max_capture_groups, sizeof (int))) == NULL) {
+    if ((ovector = calloc(max_capture_groups, sizeof(int))) == NULL) {
         return NULL;
     }
-    while (offset < slen && (rc = pcre_exec(x, 0, subject, (int) slen, offset, 0, ovector, max_capture_groups)) >= 0) {
-        for (i = 1 /* skip the first pair: "identify the portion of the subject string matched by the entire pattern" */;
-                i < rc; ++i) {
+    while (offset < slen && (rc = pcre_exec(x, 0, subject, (int)slen, offset, 0, ovector, max_capture_groups)) >= 0) {
+        for (i = 1 /* skip the first pair: "identify the portion of the subject string matched by the entire pattern" */
+             ;
+             i < rc; ++i) {
             char *rslt, *ret_tmp;
-            if ((substring_len = pcre_get_substring(subject, ovector, rc, i, (const char **) &rslt)) > 0) {
+            if ((substring_len = pcre_get_substring(subject, ovector, rc, i, (const char **)&rslt)) > 0) {
                 ret_tmp = realloc(result, ret_len + substring_len + 1);
                 if (ret_tmp == NULL) {
                     am_free(result);
@@ -331,7 +327,6 @@ char *match_group(pcre *x, int capture_groups, const char *subject, size_t *len)
 }
 
 static void uri_normalize(struct url *url, char *path) {
-
     char *s, *o, *p = path != NULL ? strdup(path) : NULL;
     int i, m = 0, list_sz = 0;
     char **segment_list = NULL, **segment_list_norm = NULL, **tmp;
@@ -350,7 +345,7 @@ static void uri_normalize(struct url *url, char *path) {
         if (strcmp(s, ".") == 0) {
             continue; /* remove (ignore) single dot segments */
         }
-        tmp = (char **) realloc(segment_list, sizeof (char *) * (++list_sz));
+        tmp = (char **)realloc(segment_list, sizeof(char *) * (++list_sz));
         if (tmp == NULL) {
             AM_FREE(o, segment_list);
             url->error = AM_ENOMEM;
@@ -369,7 +364,7 @@ static void uri_normalize(struct url *url, char *path) {
     }
 
     /* create a list for normalized segment storage */
-    segment_list_norm = (char **) calloc(list_sz, sizeof (char *));
+    segment_list_norm = (char **)calloc(list_sz, sizeof(char *));
     if (segment_list_norm == NULL) {
         AM_FREE(o, segment_list);
         if (url != NULL) {
@@ -391,25 +386,25 @@ static void uri_normalize(struct url *url, char *path) {
         }
     }
 
-    memset(&u[0], 0, sizeof (u));
+    memset(&u[0], 0, sizeof(u));
     /* join normalized segments */
     for (i = 0; i < list_sz; i++) {
         if (segment_list_norm[i] == NULL) {
             break;
         }
         if (i == 0) {
-            strncpy(u, segment_list_norm[i], sizeof (u) - 1);
+            strncpy(u, segment_list_norm[i], sizeof(u) - 1);
             if ((i + 1) < list_sz && segment_list_norm[i + 1] != NULL) {
-                strncat(u, "/", sizeof (u) - 1);
+                strncat(u, "/", sizeof(u) - 1);
             }
         } else {
-            strncat(u, segment_list_norm[i], sizeof (u) - 1);
+            strncat(u, segment_list_norm[i], sizeof(u) - 1);
             if ((i + 1) < list_sz && segment_list_norm[i + 1] != NULL) {
-                strncat(u, "/", sizeof (u) - 1);
+                strncat(u, "/", sizeof(u) - 1);
             }
         }
     }
-    memcpy(path, u, sizeof (u));
+    memcpy(path, u, sizeof(u));
 
     AM_FREE(segment_list_norm, segment_list, o);
 
@@ -420,8 +415,8 @@ static void uri_normalize(struct url *url, char *path) {
 
 static int query_attribute_compare(const void *a, const void *b) {
     int status;
-    struct query_attribute *ia = (struct query_attribute *) a;
-    struct query_attribute *ib = (struct query_attribute *) b;
+    struct query_attribute *ia = (struct query_attribute *)a;
+    struct query_attribute *ib = (struct query_attribute *)b;
     status = strcmp(ia->key, ib->key);
     if (status == 0) {
         /* variable names (keys) are the same, we need to further compare the values */
@@ -455,11 +450,11 @@ int parse_url(const char *u, struct url *url) {
     }
 
     url->error = url->ssl = url->port = 0;
-    memset(&uri[0], 0, sizeof (uri));
-    memset(&url->proto[0], 0, sizeof (url->proto));
-    memset(&url->host[0], 0, sizeof (url->host));
-    memset(&url->path[0], 0, sizeof (url->path));
-    memset(&url->query[0], 0, sizeof (url->query));
+    memset(&uri[0], 0, sizeof(uri));
+    memset(&url->proto[0], 0, sizeof(url->proto));
+    memset(&url->host[0], 0, sizeof(url->host));
+    memset(&url->path[0], 0, sizeof(url->path));
+    memset(&url->query[0], 0, sizeof(url->query));
 
     if (sscanf(u, HD1, url->proto, url->host, &port, url->path) == 4) {
         ;
@@ -489,7 +484,7 @@ int parse_url(const char *u, struct url *url) {
         strcpy(url->path, "/");
     } else if (url->path[0] != '/') {
         size_t ul = strlen(url->path);
-        if (ul < sizeof (url->path)) {
+        if (ul < sizeof(url->path)) {
             memmove(url->path + 1, url->path, ul);
         }
         url->path[0] = '/';
@@ -501,13 +496,13 @@ int parse_url(const char *u, struct url *url) {
         char *token, *temp, query[AM_URI_SIZE + 1], *sep;
         struct query_attribute *list;
         int sep_count, sep_count_init, j;
-        strncpy(url->query, p, sizeof (url->query) - 1);
+        strncpy(url->query, p, sizeof(url->query) - 1);
         *p = 0;
 
-        strncpy(query, url->query + 1 /* skip '?' */, sizeof (url->query) - 1);
+        strncpy(query, url->query + 1 /* skip '?' */, sizeof(url->query) - 1);
         sep_count = char_count(query, '&', NULL);
         if (sep_count > 0) {
-            list = (struct query_attribute *) calloc(++sep_count, sizeof (struct query_attribute));
+            list = (struct query_attribute *)calloc(++sep_count, sizeof(struct query_attribute));
             if (list == NULL) {
                 url->error = AM_ENOMEM;
                 return AM_ERROR;
@@ -534,9 +529,9 @@ int parse_url(const char *u, struct url *url) {
                 }
             }
 
-            qsort(list, sep_count, sizeof (struct query_attribute), query_attribute_compare);
+            qsort(list, sep_count, sizeof(struct query_attribute), query_attribute_compare);
 
-            strncpy(url->query, "?", sizeof (url->query) - 1);
+            strncpy(url->query, "?", sizeof(url->query) - 1);
             for (j = 0; j < sep_count; j++) {
                 struct query_attribute *elm = &list[j];
                 if (j > 0) {
@@ -554,7 +549,7 @@ int parse_url(const char *u, struct url *url) {
         url->error = AM_ENOMEM;
         return AM_ERROR;
     }
-    
+
     p = d;
     /* replace all consecutive '/' with a single '/' */
     while (*p != '\0') {
@@ -569,7 +564,7 @@ int parse_url(const char *u, struct url *url) {
     /* normalize path segments, RFC-2396, section-5.2 */
     uri_normalize(url, uri);
 
-    strncpy(url->path, uri, sizeof (url->path) - 1);
+    strncpy(url->path, uri, sizeof(url->path) - 1);
     return AM_SUCCESS;
 }
 
@@ -582,8 +577,8 @@ int parse_url(const char *u, struct url *url) {
  */
 char *url_encode(const char *str) {
     if (str != NULL) {
-        unsigned char *pstr = (unsigned char *) str;
-        char *buf = (char *) calloc(1, strlen(str) * 3 + 1);
+        unsigned char *pstr = (unsigned char *)str;
+        char *buf = (char *)calloc(1, strlen(str) * 3 + 1);
         char *pbuf = buf;
 
         if (buf == NULL) {
@@ -745,11 +740,12 @@ int gzip_inflate(const char *compressed, size_t *compressed_sz, char **uncompres
     half_length = *compressed_sz / 2;
     uncompLength = full_length;
 
-    uncomp = (char *) calloc(sizeof (char), uncompLength);
-    if (uncomp == NULL) return 1;
+    uncomp = (char *)calloc(sizeof(char), uncompLength);
+    if (uncomp == NULL)
+        return 1;
 
-    strm.next_in = (Bytef *) compressed;
-    strm.avail_in = (uInt) * compressed_sz;
+    strm.next_in = (Bytef *)compressed;
+    strm.avail_in = (uInt)*compressed_sz;
     strm.total_out = 0;
     strm.zalloc = Z_NULL;
     strm.zfree = Z_NULL;
@@ -763,7 +759,7 @@ int gzip_inflate(const char *compressed, size_t *compressed_sz, char **uncompres
         int err;
 
         if (strm.total_out >= uncompLength) {
-            char *uncomp2 = (char *) calloc(sizeof (char), uncompLength + half_length);
+            char *uncomp2 = (char *)calloc(sizeof(char), uncompLength + half_length);
             if (uncomp2 == NULL) {
                 free(uncomp);
                 return 1;
@@ -774,11 +770,12 @@ int gzip_inflate(const char *compressed, size_t *compressed_sz, char **uncompres
             uncomp = uncomp2;
         }
 
-        strm.next_out = (Bytef *) (uncomp + strm.total_out);
-        strm.avail_out = (uInt) uncompLength - strm.total_out;
+        strm.next_out = (Bytef *)(uncomp + strm.total_out);
+        strm.avail_out = (uInt)uncompLength - strm.total_out;
 
         err = inflate(&strm, Z_SYNC_FLUSH);
-        if (err == Z_STREAM_END) done = 0;
+        if (err == Z_STREAM_END)
+            done = 0;
         else if (err != Z_OK) {
             break;
         }
@@ -804,29 +801,28 @@ int gzip_deflate(const char *uncompressed, size_t *uncompressed_sz, char **compr
         return 1;
     }
 
-    ucomp_length = (uLong) * uncompressed_sz;
+    ucomp_length = (uLong)*uncompressed_sz;
     strm.zalloc = Z_NULL;
     strm.zfree = Z_NULL;
     strm.opaque = Z_NULL;
     strm.total_out = 0;
-    strm.next_in = (Bytef *) uncompressed;
+    strm.next_in = (Bytef *)uncompressed;
     strm.avail_in = ucomp_length;
 
-    if (deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, (15 + 16),
-            8, Z_DEFAULT_STRATEGY) != Z_OK) {
+    if (deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, (15 + 16), 8, Z_DEFAULT_STRATEGY) != Z_OK) {
         free(comp);
         return 1;
     }
 
     comp_length = deflateBound(&strm, ucomp_length);
-    comp = (char *) calloc(sizeof (char), comp_length);
+    comp = (char *)calloc(sizeof(char), comp_length);
     if (comp == NULL) {
         deflateEnd(&strm);
         return 1;
     }
 
     do {
-        strm.next_out = (Bytef *) (comp + strm.total_out);
+        strm.next_out = (Bytef *)(comp + strm.total_out);
         strm.avail_out = comp_length - strm.total_out;
         deflate_status = deflate(&strm, Z_FINISH);
     } while (deflate_status == Z_OK);
@@ -849,8 +845,9 @@ int gzip_deflate(const char *uncompressed, size_t *uncompressed_sz, char **compr
 
 unsigned long am_instance_id(const char *instance_id) {
     uLong crc = crc32(0L, Z_NULL, 0);
-    if (instance_id == NULL) return 0;
-    crc = crc32(crc, (const Bytef *) instance_id, (uInt) strlen(instance_id));
+    if (instance_id == NULL)
+        return 0;
+    crc = crc32(crc, (const Bytef *)instance_id, (uInt)strlen(instance_id));
     return crc;
 }
 
@@ -864,9 +861,10 @@ unsigned long am_instance_id(const char *instance_id) {
 void trim(char *str, char w) {
     char *in = str, *out = str;
     int i = 0;
-#define TRIM_TEST(x,y) ((x == 0 || isspace(x)) ? isspace(y) : (y == x))
+#define TRIM_TEST(x, y) ((x == 0 || isspace(x)) ? isspace(y) : (y == x))
 
-    if (ISINVALID(str)) return;
+    if (ISINVALID(str))
+        return;
 
     for (in = str; *in && TRIM_TEST(w, *in); ++in)
         ;
@@ -883,7 +881,8 @@ void trim(char *str, char w) {
     out[i] = 0;
 
     while (--i >= 0) {
-        if (!TRIM_TEST(w, out[i])) break;
+        if (!TRIM_TEST(w, out[i]))
+            break;
     }
     out[++i] = 0;
 }
@@ -930,7 +929,7 @@ char *am_strsep(char **str, const char *delim) {
 /* Reverse function of strstr() */
 char *am_strrstr(const char *str, const char *search) {
     char *last = NULL;
-    char *ptr = (char *) str;
+    char *ptr = (char *)str;
     while ((ptr = strstr(ptr, search))) {
         last = ptr++;
     }
@@ -941,7 +940,7 @@ int compare_property(const char *line, const char *property) {
     if (ISVALID(line) && ISVALID(property)) {
         size_t l = strlen(property);
         if (strncmp(line, property, l) == 0 && line[l] != '\0' &&
-                (line[l] == ' ' || line[l] == '=' || line[l] == '[')) {
+            (line[l] == ' ' || line[l] == '=' || line[l] == '[')) {
             return AM_SUCCESS;
         }
     }
@@ -972,7 +971,7 @@ int get_line(char **line, size_t *size, FILE *file) {
             }
         }
 
-        (*line)[i++] = (char) c;
+        (*line)[i++] = (char)c;
         /* time to expand the buffer? */
         if (i >= *size) {
             size_t newsize = (*size) << 1;
@@ -1002,7 +1001,7 @@ int get_line(char **line, size_t *size, FILE *file) {
  */
 const char *am_method_num_to_str(int method) {
     if (method >= 0 && method < ARRAY_SIZE(request_method_str)) {
-        return request_method_str[(unsigned char) method];
+        return request_method_str[(unsigned char)method];
     }
     return request_method_str[0];
 }
@@ -1027,7 +1026,7 @@ int am_method_str_to_num(const char *method_str) {
 }
 
 am_status_t get_cookie_value(am_request_t *rq, const char *separator, const char *cookie_name,
-        const char *cookie_header_val, char **value) {
+                             const char *cookie_header_val, char **value) {
     size_t value_len = 0, ec = 0;
     am_status_t found = AM_NOT_FOUND;
     char *a, *b, *header_val = NULL, *c = NULL;
@@ -1045,14 +1044,14 @@ am_status_t get_cookie_value(am_request_t *rq, const char *separator, const char
         return AM_ENOMEM;
     }
 
-    AM_LOG_DEBUG(rq->instance_id, "get_cookie_value(%s): parsing cookie header: %s",
-            separator, cookie_header_val);
+    AM_LOG_DEBUG(rq->instance_id, "get_cookie_value(%s): parsing cookie header: %s", separator, cookie_header_val);
 
     for ((a = strtok_r(header_val, separator, &b)); a; (a = strtok_r(NULL, separator, &b))) {
         if (strcmp(separator, "=") == 0 || strcmp(separator, "~") == 0) {
             /* trim any leading/trailing whitespace */
             trim(a, ' ');
-            if (found != AM_SUCCESS && strcmp(a, cookie_name) == 0) found = AM_SUCCESS;
+            if (found != AM_SUCCESS && strcmp(a, cookie_name) == 0)
+                found = AM_SUCCESS;
             else if (found == AM_SUCCESS && a[0] != '\0') {
                 value_len = strlen(a);
                 if ((*value = strdup(a)) == NULL) {
@@ -1064,16 +1063,20 @@ am_status_t get_cookie_value(am_request_t *rq, const char *separator, const char
                 }
             }
         } else {
-            if (strstr(a, cookie_name) == NULL) continue;
+            if (strstr(a, cookie_name) == NULL)
+                continue;
             for (ec = 0, c = a; *c != '\0'; ++c) {
-                if (*c == '=') ++ec;
+                if (*c == '=')
+                    ++ec;
             }
             if (ec > 1) {
                 c = strchr(a, '=');
                 *c = '~';
-                if ((found = get_cookie_value(rq, "~", cookie_name, a, value)) == AM_SUCCESS) break;
+                if ((found = get_cookie_value(rq, "~", cookie_name, a, value)) == AM_SUCCESS)
+                    break;
             } else {
-                if ((found = get_cookie_value(rq, "=", cookie_name, a, value)) == AM_SUCCESS) break;
+                if ((found = get_cookie_value(rq, "=", cookie_name, a, value)) == AM_SUCCESS)
+                    break;
             }
         }
     }
@@ -1082,14 +1085,14 @@ am_status_t get_cookie_value(am_request_t *rq, const char *separator, const char
 }
 
 am_status_t get_token_from_url(am_request_t *rq) {
-    char *token, *tmp = ISVALID(rq->url.query) ?
-            strdup(rq->url.query + 1) : NULL;
+    char *token, *tmp = ISVALID(rq->url.query) ? strdup(rq->url.query + 1) : NULL;
     char *query = NULL;
     int ql = 0;
     char *o = tmp;
     size_t cn_sz;
 
-    if (tmp == NULL) return AM_ENOMEM;
+    if (tmp == NULL)
+        return AM_ENOMEM;
     if (!ISVALID(rq->conf->cookie_name)) {
         free(tmp);
         return AM_EINVAL;
@@ -1097,15 +1100,13 @@ am_status_t get_token_from_url(am_request_t *rq) {
     cn_sz = strlen(rq->conf->cookie_name);
 
     while ((token = am_strsep(&tmp, "&")) != NULL) {
-        if (!ISVALID(rq->token) &&
-                strncmp(token, rq->conf->cookie_name, cn_sz) == 0) {
+        if (!ISVALID(rq->token) && strncmp(token, rq->conf->cookie_name, cn_sz) == 0) {
             /* session token as a query parameter (cookie-less mode) */
             char *v = strstr(token, "=");
             if (v != NULL && *(v + 1) != '\n') {
                 rq->token = strdup(v + 1);
             }
-        } else if (!ISVALID(rq->token) &&
-                rq->conf->cdsso_enable && strncmp(token, "LARES=", 6) == 0) {
+        } else if (!ISVALID(rq->token) && rq->conf->cdsso_enable && strncmp(token, "LARES=", 6) == 0) {
             /* session token (LARES/SAML encoded) as a query parameter */
             size_t clear_sz = strlen(token) - 6;
             char *clear = clear_sz > 0 ? base64_decode(token + 6, &clear_sz) : NULL;
@@ -1134,10 +1135,10 @@ am_status_t get_token_from_url(am_request_t *rq) {
 
     if (ql > 0 && query[ql - 1] == '&') {
         query[ql - 1] = 0;
-        strncpy(rq->url.query, query, sizeof (rq->url.query) - 1);
+        strncpy(rq->url.query, query, sizeof(rq->url.query) - 1);
     } else if (ql == 0 && ISVALID(rq->token)) {
         /* token is the only query parameter - clear it */
-        memset(rq->url.query, 0, sizeof (rq->url.query));
+        memset(rq->url.query, 0, sizeof(rq->url.query));
         /* TODO: should a question mark be left there even when token is the only parameter? */
     }
     AM_FREE(query, o);
@@ -1161,7 +1162,8 @@ int remove_cookie(am_request_t *rq, const char *cookie_name, char **cookie_hdr) 
     }
 
     tmp = strdup(rq->cookies);
-    if (tmp == NULL) return AM_ENOMEM;
+    if (tmp == NULL)
+        return AM_ENOMEM;
 
     cookie_name_len = strlen(cookie_name);
 
@@ -1170,7 +1172,8 @@ int remove_cookie(am_request_t *rq, const char *cookie_name, char **cookie_hdr) 
         char match = AM_FALSE;
         char *equal_sign = strchr(tok, '=');
         /* trim space before the cookie name in the cookie header */
-        while (isspace(*tok)) tok++;
+        while (isspace(*tok))
+            tok++;
         if (equal_sign != NULL && equal_sign != tok) {
             /* trim white space after the cookie name in the cookie header */
             while ((--equal_sign) >= tok && isspace(*equal_sign))
@@ -1178,16 +1181,14 @@ int remove_cookie(am_request_t *rq, const char *cookie_name, char **cookie_hdr) 
             equal_sign++;
             /* now compare the cookie names */
             if (equal_sign != tok && (equal_sign - tok) == cookie_name_len &&
-                    !strncmp(tok, cookie_name, cookie_name_len)) {
+                !strncmp(tok, cookie_name, cookie_name_len)) {
                 match = AM_TRUE;
             }
         }
         /* put cookie in a header only if it didn't match cookie name */
         if (!match) {
-            am_asprintf(cookie_hdr, "%s%s%s",
-                    *cookie_hdr == NULL ? "" : *cookie_hdr,
-                    *cookie_hdr != NULL ? ";" : "",
-                    tok);
+            am_asprintf(cookie_hdr, "%s%s%s", *cookie_hdr == NULL ? "" : *cookie_hdr, *cookie_hdr != NULL ? ";" : "",
+                        tok);
         }
         tok = strtok_r(NULL, ";", &last);
     }
@@ -1230,7 +1231,8 @@ char *load_file(const char *filepath, size_t *data_sz) {
 ssize_t write_file(const char *filepath, const void *data, size_t data_sz) {
     int fd;
     ssize_t wr = 0;
-    if (data == NULL) return AM_EINVAL;
+    if (data == NULL)
+        return AM_EINVAL;
 #ifdef _WIN32
     fd = _open(filepath, _O_CREAT | _O_WRONLY | _O_TRUNC | _O_BINARY, _S_IWRITE);
 #else
@@ -1239,11 +1241,11 @@ ssize_t write_file(const char *filepath, const void *data, size_t data_sz) {
     if (fd == -1) {
         return AM_EPERM;
     }
-    if (data_sz != (size_t) (wr = write(fd, data,
+    if (data_sz != (size_t)(wr = write(fd, data,
 #ifdef _WIN32
-            (unsigned int)
+                                       (unsigned int)
 #endif
-            data_sz))) {
+                                           data_sz))) {
         close(fd);
         return AM_EOF;
     } else {
@@ -1297,7 +1299,7 @@ size_t strnlen(const char *string, size_t maxlen) {
 #endif
 
 /**
- * The strndup() function copies at most n characters from the string s1 always null 
+ * The strndup() function copies at most n characters from the string s1 always null
  * terminating the copied string. If insufficient memory is available, NULL is returned.
  */
 char *strndup(const char *s, size_t n) {
@@ -1317,9 +1319,9 @@ char *strndup(const char *s, size_t n) {
  * @param src String to duplicate into dynamic memory and convert to lowercase.
  * @return heap based storage containing the source string's contents converted to lowercase.
  */
-char* am_strldup(const char* src) {
-    char* result = NULL;
-    char* dest;
+char *am_strldup(const char *src) {
+    char *result = NULL;
+    char *dest;
     if (src == NULL) {
         return result;
     }
@@ -1341,12 +1343,11 @@ char* am_strldup(const char* src) {
  * Returns a pointer to the first occurrence of str2 in str1 (in a case, insensitive manner),
  * or a null pointer if str2 is not part of str1.
  */
-char* stristr(char* str1, char* str2) {
-
-    char* dup1;
-    char* dup2;
-    char* p;
-    char* result = NULL;
+char *stristr(char *str1, char *str2) {
+    char *dup1;
+    char *dup2;
+    char *p;
+    char *result = NULL;
 
     if (str1 == NULL || str2 == NULL) {
         return NULL;
@@ -1376,17 +1377,17 @@ char* stristr(char* str1, char* str2) {
  * @param sz The number of bytes in the clear text result
  * @return The decoded result, stored in dynamic memory and null terminated.
  */
-char* base64_decode(const char* src, size_t* sz) {
+char *base64_decode(const char *src, size_t *sz) {
 #ifdef _WIN32
     DWORD ulBlobSz = 0, ulSkipped = 0, ulFmt = 0;
     BYTE *out = NULL;
-    if (src == NULL || sz == NULL) return NULL;
-    if (CryptStringToBinaryA(src, (DWORD) * sz, CRYPT_STRING_BASE64, NULL,
-            &ulBlobSz, &ulSkipped, &ulFmt) == TRUE) {
+    if (src == NULL || sz == NULL)
+        return NULL;
+    if (CryptStringToBinaryA(src, (DWORD)*sz, CRYPT_STRING_BASE64, NULL, &ulBlobSz, &ulSkipped, &ulFmt) == TRUE) {
         if ((out = malloc(ulBlobSz + 1)) != NULL) {
             memset(out, 0, ulBlobSz + 1);
-            if (CryptStringToBinaryA(src, (DWORD) * sz, CRYPT_STRING_BASE64,
-                    out, &ulBlobSz, &ulSkipped, &ulFmt) == TRUE) {
+            if (CryptStringToBinaryA(src, (DWORD)*sz, CRYPT_STRING_BASE64, out, &ulBlobSz, &ulSkipped, &ulFmt) ==
+                TRUE) {
                 out[ulBlobSz] = 0;
                 *sz = ulBlobSz;
             }
@@ -1394,9 +1395,9 @@ char* base64_decode(const char* src, size_t* sz) {
     }
 #else
     unsigned char table[256];
-    unsigned char* out;
-    unsigned char* pos;
-    unsigned char* in;
+    unsigned char *out;
+    unsigned char *pos;
+    unsigned char *in;
     size_t i, count;
 
     if (src == NULL || sz == NULL) {
@@ -1404,14 +1405,14 @@ char* base64_decode(const char* src, size_t* sz) {
     }
 
     memset(table, 64, 256);
-    for (i = 0; i < sizeof (base64_table); i++) {
+    for (i = 0; i < sizeof(base64_table); i++) {
         table[base64_table[i]] = i;
     }
 
-    for (in = (unsigned char *) src; table[*in++] <= 63; /* void */)
+    for (in = (unsigned char *)src; table[*in++] <= 63; /* void */)
         ;
 
-    i = (in - (unsigned char *) src) - 1;
+    i = (in - (unsigned char *)src) - 1;
     count = (((i + 3) / 4) * 3) + 1;
 
     pos = out = malloc(count);
@@ -1419,31 +1420,31 @@ char* base64_decode(const char* src, size_t* sz) {
         return NULL;
     }
 
-    in = (unsigned char *) src;
+    in = (unsigned char *)src;
 
     while (i > 4) {
-        *pos++ = (unsigned char) (table[in[0]] << 2 | table[in[1]] >> 4);
-        *pos++ = (unsigned char) (table[in[1]] << 4 | table[in[2]] >> 2);
-        *pos++ = (unsigned char) (table[in[2]] << 6 | table[in[3]]);
+        *pos++ = (unsigned char)(table[in[0]] << 2 | table[in[1]] >> 4);
+        *pos++ = (unsigned char)(table[in[1]] << 4 | table[in[2]] >> 2);
+        *pos++ = (unsigned char)(table[in[2]] << 6 | table[in[3]]);
         in += 4;
         i -= 4;
     }
 
     if (i > 1) {
-        *pos++ = (unsigned char) (table[in[0]] << 2 | table[in[1]] >> 4);
+        *pos++ = (unsigned char)(table[in[0]] << 2 | table[in[1]] >> 4);
     }
     if (i > 2) {
-        *pos++ = (unsigned char) (table[in[1]] << 4 | table[in[2]] >> 2);
+        *pos++ = (unsigned char)(table[in[1]] << 4 | table[in[2]] >> 2);
     }
     if (i > 3) {
-        *pos++ = (unsigned char) (table[in[2]] << 6 | table[in[3]]);
+        *pos++ = (unsigned char)(table[in[2]] << 6 | table[in[3]]);
     }
 
     *pos = '\0';
     count -= (4 - i) & 3;
     *sz = count - 1;
 #endif
-    return (char *) out;
+    return (char *)out;
 }
 
 /**
@@ -1459,8 +1460,8 @@ char* base64_decode(const char* src, size_t* sz) {
  */
 char *base64_encode(const void *in, size_t *sz) {
     size_t i;
-    char* p;
-    char* out;
+    char *p;
+    char *out;
     const uint8_t *src = in;
 
     if (src == NULL || sz == NULL) {
@@ -1474,8 +1475,8 @@ char *base64_encode(const void *in, size_t *sz) {
 
     for (i = 0; i < *sz - 2; i += 3) {
         *p++ = base64_table[(src[i] >> 2) & 0x3F];
-        *p++ = base64_table[((src[i] & 0x3) << 4) | ((int) (src[i + 1] & 0xF0) >> 4)];
-        *p++ = base64_table[((src[i + 1] & 0xF) << 2) | ((int) (src[i + 2] & 0xC0) >> 6)];
+        *p++ = base64_table[((src[i] & 0x3) << 4) | ((int)(src[i + 1] & 0xF0) >> 4)];
+        *p++ = base64_table[((src[i + 1] & 0xF) << 2) | ((int)(src[i + 2] & 0xC0) >> 6)];
         *p++ = base64_table[src[i + 2] & 0x3F];
     }
 
@@ -1485,7 +1486,7 @@ char *base64_encode(const void *in, size_t *sz) {
             *p++ = base64_table[((src[i] & 0x3) << 4)];
             *p++ = '=';
         } else {
-            *p++ = base64_table[((src[i] & 0x3) << 4) | ((int) (src[i + 1] & 0xF0) >> 4)];
+            *p++ = base64_table[((src[i] & 0x3) << 4) | ((int)(src[i + 1] & 0xF0) >> 4)];
             *p++ = base64_table[((src[i + 1] & 0xF) << 2)];
         }
         *p++ = '=';
@@ -1499,8 +1500,8 @@ char *base64_encode(const void *in, size_t *sz) {
 /**
  * Recursively delete all elements in a list of am_cookie structures.
  */
-void delete_am_cookie_list(struct am_cookie** list) {
-    struct am_cookie* t;
+void delete_am_cookie_list(struct am_cookie **list) {
+    struct am_cookie *t;
 
     if (list == NULL || *list == NULL) {
         return;
@@ -1576,9 +1577,7 @@ am_status_t concat(char **str, size_t *str_sz, const char *s2, size_t s2sz) {
  * of uniqueness other than it is random.
  */
 void uuid(char *buf, size_t buflen) {
-
     union {
-
         struct {
             uint32_t time_low;
             uint16_t time_mid;
@@ -1594,16 +1593,15 @@ void uuid(char *buf, size_t buflen) {
 
 #ifdef _WIN32
     HCRYPTPROV hcp;
-    if (CryptAcquireContextA(&hcp, NULL, NULL, PROV_RSA_FULL,
-            CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
-        CryptGenRandom(hcp, sizeof (uuid_data), uuid_data.__rnd);
+    if (CryptAcquireContextA(&hcp, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
+        CryptGenRandom(hcp, sizeof(uuid_data), uuid_data.__rnd);
         CryptReleaseContext(hcp, 0);
     }
 #else
     size_t sz;
     FILE *fp = fopen("/dev/urandom", "r");
     if (fp != NULL) {
-        sz = fread(uuid_data.__rnd, 1, sizeof (uuid_data), fp);
+        sz = fread(uuid_data.__rnd, 1, sizeof(uuid_data), fp);
         fclose(fp);
     }
 #endif
@@ -1611,11 +1609,10 @@ void uuid(char *buf, size_t buflen) {
     uuid_data.u.clk_seq_hi_res = (uuid_data.u.clk_seq_hi_res & ~0xC0) | 0x80;
     uuid_data.u.time_hi_and_version = htons((uuid_data.u.time_hi_and_version & ~0xF000) | 0x4000);
 
-    snprintf(buf, buflen, "%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-            uuid_data.u.time_low, uuid_data.u.time_mid, uuid_data.u.time_hi_and_version,
-            uuid_data.u.clk_seq_hi_res, uuid_data.u.clk_seq_low,
-            uuid_data.u.node[0], uuid_data.u.node[1], uuid_data.u.node[2],
-            uuid_data.u.node[3], uuid_data.u.node[4], uuid_data.u.node[5]);
+    snprintf(buf, buflen, "%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x", uuid_data.u.time_low,
+             uuid_data.u.time_mid, uuid_data.u.time_hi_and_version, uuid_data.u.clk_seq_hi_res, uuid_data.u.clk_seq_low,
+             uuid_data.u.node[0], uuid_data.u.node[1], uuid_data.u.node[2], uuid_data.u.node[3], uuid_data.u.node[4],
+             uuid_data.u.node[5]);
 }
 
 int am_session_decode(am_request_t *r) {
@@ -1623,16 +1620,14 @@ int am_session_decode(am_request_t *r) {
     int nv = 0;
     char *begin, *end;
 
-    enum {
-        AM_NA, AM_SI, AM_SK, AM_S1
-    } ty = AM_NA;
+    enum { AM_NA, AM_SI, AM_SK, AM_S1 } ty = AM_NA;
 
-    char *token = (r != NULL && ISVALID(r->token)) ?
-            strdup(r->token) : NULL;
+    char *token = (r != NULL && ISVALID(r->token)) ? strdup(r->token) : NULL;
 
-    if (token == NULL) return AM_EINVAL;
+    if (token == NULL)
+        return AM_EINVAL;
 
-    memset(&r->session_info, 0, sizeof (struct am_session_info));
+    memset(&r->session_info, 0, sizeof(struct am_session_info));
     tl = strlen(token);
 
     if (strchr(token, '*') != NULL) {
@@ -1661,8 +1656,7 @@ int am_session_decode(am_request_t *r) {
         end = strstr(begin + 1, "#");
         if (end != NULL) {
             size_t ssz = end - begin - 1;
-            unsigned char *c = ssz > 0 ?
-                    (unsigned char *) base64_decode(begin + 1, &ssz) : NULL;
+            unsigned char *c = ssz > 0 ? (unsigned char *)base64_decode(begin + 1, &ssz) : NULL;
             if (c != NULL) {
                 unsigned char *raw = c;
                 size_t l = ssz;
@@ -1671,15 +1665,15 @@ int am_session_decode(am_request_t *r) {
                     uint16_t sz;
                     uint8_t len[2]; /* network byte order */
 
-                    memcpy(len, raw, sizeof (len));
+                    memcpy(len, raw, sizeof(len));
                     if (is_big_endian()) {
-                        sz = (*((uint16_t *) len));
+                        sz = (*((uint16_t *)len));
                     } else {
                         sz = len[1] | len[0] << 8;
                     }
 
-                    l -= sizeof (len);
-                    raw += sizeof (len);
+                    l -= sizeof(len);
+                    raw += sizeof(len);
 
                     if (nv % 2 == 0) {
                         if (memcmp(raw, "SI", 2) == 0) {
@@ -1736,11 +1730,8 @@ const char *get_valid_openam_url(am_request_t *r) {
     int valid_idx = get_valid_url_index(r->instance_id);
     /* find active OpenAM service URL */
     if (r->conf->naming_url_sz > 0) {
-        val = valid_idx >= r->conf->naming_url_sz ?
-                r->conf->naming_url[0] : r->conf->naming_url[valid_idx];
-        AM_LOG_DEBUG(r->instance_id,
-                "get_valid_openam_url(): active OpenAM service url: %s (%d)",
-                val, valid_idx);
+        val = valid_idx >= r->conf->naming_url_sz ? r->conf->naming_url[0] : r->conf->naming_url[valid_idx];
+        AM_LOG_DEBUG(r->instance_id, "get_valid_openam_url(): active OpenAM service url: %s (%d)", val, valid_idx);
     }
     return val;
 }
@@ -1756,15 +1747,13 @@ const char *get_valid_openam_url(am_request_t *r) {
 void xml_entity_escape(char *temp_str, size_t str_len) {
     int k, nshifts = 0;
     const char ec[6] = "&'\"><";
-    const char * const est[] = {
-        "&amp;", "&apos;", "&quot;", "&gt;", "&lt;"
-    };
+    const char *const est[] = {"&amp;", "&apos;", "&quot;", "&gt;", "&lt;"};
     size_t i, j, nref = 0, ecl = strlen(ec);
 
     for (i = 0; i < str_len; i++) {
         for (nref = 0; nref < ecl; nref++) {
             if (temp_str[i] == ec[nref]) {
-                if ((nshifts = (int) strlen(est[nref]) - 1) > 0) {
+                if ((nshifts = (int)strlen(est[nref]) - 1) > 0) {
                     memmove(temp_str + i + nshifts, temp_str + i, str_len - i + nshifts);
                     for (j = i, k = 0; k <= nshifts; j++, k++) {
                         temp_str[j] = est[nref][k];
@@ -1783,11 +1772,11 @@ void xml_entity_escape(char *temp_str, size_t str_len) {
 
 void am_timer(uint64_t *t) {
 #ifdef _WIN32
-    QueryPerformanceCounter((LARGE_INTEGER *) t);
+    QueryPerformanceCounter((LARGE_INTEGER *)t);
 #else
     struct timeval tv;
-    gettimeofday(&tv, NULL); //TODO: gethrtime
-    *t = ((uint64_t) tv.tv_sec * AM_TIMER_USEC_PER_SEC) + tv.tv_usec;
+    gettimeofday(&tv, NULL); // TODO: gethrtime
+    *t = ((uint64_t)tv.tv_sec * AM_TIMER_USEC_PER_SEC) + tv.tv_usec;
 #endif
 }
 
@@ -1832,7 +1821,7 @@ double am_timer_elapsed(am_timer_t *t) {
     uint64_t d, s;
     t = t ? t : &am_timer_s;
 #ifdef _WIN32
-    QueryPerformanceFrequency((LARGE_INTEGER *) & t->freq);
+    QueryPerformanceFrequency((LARGE_INTEGER *)&t->freq);
 #endif
     if (t->state != AM_TIMER_ACTIVE) {
         s = t->stop;
@@ -1840,12 +1829,11 @@ double am_timer_elapsed(am_timer_t *t) {
         am_timer(&s);
     }
     d = s - t->start;
-    return (double) d / (double) t->freq;
+    return (double)d / (double)t->freq;
 }
 
 void am_timer_report(unsigned long instance_id, am_timer_t *t, const char *op) {
-    AM_LOG_DEBUG(instance_id, "am_timer(): %s took %.0f seconds",
-            NOTNULL(op), am_timer_elapsed(t));
+    AM_LOG_DEBUG(instance_id, "am_timer(): %s took %.0f seconds", NOTNULL(op), am_timer_elapsed(t));
 }
 
 /*********************************************************************************************
@@ -1854,7 +1842,8 @@ static char *rc4(const char *input, size_t input_sz, const char *key, size_t key
     int x, y, i, j = 0;
     int box[256];
     char *r = malloc(input_sz + 1);
-    if (r == NULL) return NULL;
+    if (r == NULL)
+        return NULL;
     for (i = 0; i < 256; i++) {
         box[i] = i;
     }
@@ -1864,13 +1853,13 @@ static char *rc4(const char *input, size_t input_sz, const char *key, size_t key
         box[i] = box[j];
         box[j] = x;
     }
-    for (i = 0; i < (int) input_sz; i++) {
+    for (i = 0; i < (int)input_sz; i++) {
         y = (i + 1) % 256;
         j = (box[y] + j) % 256;
         x = box[y];
         box[y] = box[j];
         box[j] = x;
-        r[i] = (char) (input[i] ^ box[(box[y] + box[j]) % 256]);
+        r[i] = (char)(input[i] ^ box[(box[y] + box[j]) % 256]);
     }
     r[input_sz] = 0;
     return r;
@@ -1919,7 +1908,7 @@ int decrypt_password(const char *key, char **password) {
     }
     free(key_clear);
     free(pass_clear);
-    return (int) pass_sz;
+    return (int)pass_sz;
 }
 
 /**
@@ -1966,7 +1955,7 @@ int encrypt_password(const char *key, char **password) {
     }
     AM_FREE(key_clear, pass_enc, *password);
     *password = pass_enc_b64;
-    return (int) pass_sz;
+    return (int)pass_sz;
 }
 
 void decrypt_agent_passwords(am_config_t *r) {
@@ -2000,7 +1989,7 @@ void decrypt_agent_passwords(am_config_t *r) {
             am_free(pass);
         }
     }
-    
+
     if (ISVALID(r->proxy_password)) {
         pass = strdup(r->proxy_password);
         if (pass != NULL && (pass_sz = decrypt_password(r->key, &pass)) > 0) {
@@ -2016,10 +2005,9 @@ void decrypt_agent_passwords(am_config_t *r) {
 
 void am_request_free(am_request_t *r) {
     if (r != NULL) {
-        AM_FREE(r->normalized_url, r->overridden_url, r->normalized_url_pathinfo,
-                r->overridden_url_pathinfo, r->token,
-                r->client_ip, r->client_host, r->post_data, r->post_data_fn,
-                r->session_info.s1, r->session_info.si, r->session_info.sk);
+        AM_FREE(r->normalized_url, r->overridden_url, r->normalized_url_pathinfo, r->overridden_url_pathinfo, r->token,
+                r->client_ip, r->client_host, r->post_data, r->post_data_fn, r->session_info.s1, r->session_info.si,
+                r->session_info.sk);
         delete_am_policy_result_list(&r->pattr);
         delete_am_namevalue_list(&r->sattr);
     }
@@ -2027,30 +2015,31 @@ void am_request_free(am_request_t *r) {
 
 size_t am_bin_path(char *buffer, size_t len) {
 #ifdef _WIN32
-    if (GetModuleFileNameA(NULL, buffer, (DWORD) len) != 0) {
+    if (GetModuleFileNameA(NULL, buffer, (DWORD)len) != 0) {
         PathRemoveFileSpecA(buffer);
         strcat(buffer, FILE_PATH_SEP);
-        return (int) strlen(buffer);
+        return (int)strlen(buffer);
     }
     return AM_ERROR;
 #else
     char *path_end;
 #ifdef __APPLE__
-    uint32_t size = (uint32_t) len;
+    uint32_t size = (uint32_t)len;
     if (_NSGetExecutablePath(buffer, &size) != 0) {
         return AM_ENOMEM;
     }
 #else
     char path[64];
-    snprintf(path, sizeof (path),
+    snprintf(path, sizeof(path),
 #if defined(__sun)
-            "/proc/%d/path/a.out"
+             "/proc/%d/path/a.out"
 #elif defined(LINUX)
-            "/proc/%d/exe"
+             "/proc/%d/exe"
 #elif defined(AIX)
-            "/proc/%d/cwd"
+             "/proc/%d/cwd"
 #endif
-            , getpid());
+             ,
+             getpid());
     int r = readlink(path, buffer, len);
     if (r <= 0) {
         fprintf(stderr, "readlink error %d\n", errno);
@@ -2067,15 +2056,14 @@ size_t am_bin_path(char *buffer, size_t len) {
 #endif
 }
 
-
-
-#ifdef _WIN32 
+#ifdef _WIN32
 
 int am_delete_directory(const char *path) {
     SHFILEOPSTRUCT file_op;
-    int ret, len = (int) strlen(path) + 2; /* required by SHFileOperation */
-    char *tempdir = (char *) calloc(1, len);
-    if (tempdir == NULL) return AM_ENOMEM;
+    int ret, len = (int)strlen(path) + 2; /* required by SHFileOperation */
+    char *tempdir = (char *)calloc(1, len);
+    if (tempdir == NULL)
+        return AM_ENOMEM;
     strcpy(tempdir, path);
 
     file_op.hwnd = NULL;
@@ -2097,9 +2085,11 @@ static int delete_directory(const char *path, const struct stat *s, int flag, st
     int status;
     int (*rm_func)(const char *);
     switch (flag) {
-        default: rm_func = unlink;
-            break;
-        case FTW_DP: rm_func = rmdir;
+    default:
+        rm_func = unlink;
+        break;
+    case FTW_DP:
+        rm_func = rmdir;
     }
     status = rm_func(path);
     return status;
@@ -2116,7 +2106,7 @@ int am_delete_directory(const char *path) {
 int am_delete_file(const char *fn) {
     struct stat sb;
     if (stat(fn, &sb) == 0) {
-#ifdef _WIN32 
+#ifdef _WIN32
         return am_delete_directory(fn);
 #else
         if (S_ISREG(sb.st_mode) || S_ISLNK(sb.st_mode)) {
@@ -2140,8 +2130,8 @@ int am_delete_file(const char *fn) {
  * @param gid Pointer to the group id, null if not available.
  * @param log Pointer to the agentadmin logger, null if not available.
  */
-int am_make_path(const char* path, uid_t* uid, gid_t* gid, void (*log)(const char *, ...)) {
-#ifdef _WIN32 
+int am_make_path(const char *path, uid_t *uid, gid_t *gid, void (*log)(const char *, ...)) {
+#ifdef _WIN32
     int skip = 0, s = '\\';
     int nmode = _S_IREAD | _S_IWRITE;
 #else
@@ -2166,9 +2156,9 @@ int am_make_path(const char* path, uid_t* uid, gid_t* gid, void (*log)(const cha
                 /* only do this if the entry does not exist in the file system */
                 if (stat(tmp, &st) != 0
 #ifdef _WIN32
-                        && skip++ > 0  /* on Windows first segment is the drive name - skip it */
-#endif           
-                        ) {
+                    && skip++ > 0 /* on Windows first segment is the drive name - skip it */
+#endif
+                ) {
                     rv = mkdir(tmp, nmode);
                     if (rv != 0 && log != NULL) {
                         log("failed to create directory %s (error: %d)", LOGEMPTY(tmp), errno);
@@ -2177,8 +2167,8 @@ int am_make_path(const char* path, uid_t* uid, gid_t* gid, void (*log)(const cha
                     if (uid != NULL) {
                         rv = chown(tmp, *uid, *gid);
                         if (rv != 0 && log != NULL) {
-                            log("failed to change directory %s owner to %d:%d (error: %d)",
-                                    LOGEMPTY(tmp), *uid, *gid, errno);
+                            log("failed to change directory %s owner to %d:%d (error: %d)", LOGEMPTY(tmp), *uid, *gid,
+                                errno);
                         }
                     }
 #endif
@@ -2197,8 +2187,7 @@ int am_make_path(const char* path, uid_t* uid, gid_t* gid, void (*log)(const cha
             if (uid != NULL) {
                 rv = chown(tmp, *uid, *gid);
                 if (rv != 0 && log != NULL) {
-                    log("failed to change directory %s owner to %d:%d (error: %d)",
-                            LOGEMPTY(tmp), *uid, *gid, errno);
+                    log("failed to change directory %s owner to %d:%d (error: %d)", LOGEMPTY(tmp), *uid, *gid, errno);
                 }
             }
 #endif
@@ -2208,7 +2197,7 @@ int am_make_path(const char* path, uid_t* uid, gid_t* gid, void (*log)(const cha
     return 0;
 }
 
-#ifdef _WIN32 
+#ifdef _WIN32
 
 static DIR *opendir(const char *dir) {
     DIR *dp;
@@ -2216,18 +2205,20 @@ static DIR *opendir(const char *dir) {
     intptr_t handle;
     int index;
 
-    if (dir == NULL) return NULL;
+    if (dir == NULL)
+        return NULL;
     filespec = malloc(strlen(dir) + 2 + 1);
-    if (filespec == NULL) return NULL;
+    if (filespec == NULL)
+        return NULL;
 
     strcpy(filespec, dir);
-    index = (int) strlen(filespec) - 1;
+    index = (int)strlen(filespec) - 1;
     if (index >= 0 && (filespec[index] == '/' || filespec[index] == '\\')) {
         filespec[index] = '\0';
     }
     strcat(filespec, "\\*");
 
-    dp = (DIR *) malloc(sizeof (DIR));
+    dp = (DIR *)malloc(sizeof(DIR));
     if (dp == NULL) {
         free(filespec);
         return NULL;
@@ -2283,7 +2274,7 @@ struct dirent *readdir(DIR *dp) {
         dp->dent.d_type = 1;
     }
     dp->dent.d_ino = 1;
-    dp->dent.d_reclen = (unsigned short) strlen(dp->dent.d_name);
+    dp->dent.d_reclen = (unsigned short)strlen(dp->dent.d_name);
     dp->dent.d_off = dp->offset;
     return &(dp->dent);
 }
@@ -2308,9 +2299,9 @@ static int readdir_r(DIR *dp, struct dirent *entry, struct dirent **result) {
         dp->dent.d_type = 1;
     }
     dp->dent.d_ino = 1;
-    dp->dent.d_reclen = (unsigned short) strlen(dp->dent.d_name);
+    dp->dent.d_reclen = (unsigned short)strlen(dp->dent.d_name);
     dp->dent.d_off = dp->offset;
-    memcpy(entry, &dp->dent, sizeof (*entry));
+    memcpy(entry, &dp->dent, sizeof(*entry));
     *result = &dp->dent;
     return 0;
 }
@@ -2318,8 +2309,8 @@ static int readdir_r(DIR *dp, struct dirent *entry, struct dirent **result) {
 #endif /* _WIN32 */
 
 static int am_alphasort(const struct dirent **_a, const struct dirent **_b) {
-    struct dirent **a = (struct dirent **) _a;
-    struct dirent **b = (struct dirent **) _b;
+    struct dirent **a = (struct dirent **)_a;
+    struct dirent **b = (struct dirent **)_b;
     int a_idx = atoi((*a)->d_name + 6); /* am_file_filter allows only 'agent_XYZ' file names here */
     int b_idx = atoi((*b)->d_name + 6);
     return a_idx == b_idx ? 0 : (a_idx > b_idx ? 1 : -1);
@@ -2329,9 +2320,8 @@ static int am_file_filter(const struct dirent *_a) {
     return (strncasecmp(_a->d_name, "agent_", 6) == 0);
 }
 
-static int am_scandir(const char *dirname, struct dirent ***ret_namelist,
-        int (*select)(const struct dirent *),
-        int (*compar)(const struct dirent **, const struct dirent **)) {
+static int am_scandir(const char *dirname, struct dirent ***ret_namelist, int (*select)(const struct dirent *),
+                      int (*compar)(const struct dirent **, const struct dirent **)) {
     int len, used, allocated, i;
     DIR *dir;
     struct dirent *ent, *ent2, *dirbuf;
@@ -2342,12 +2332,12 @@ static int am_scandir(const char *dirname, struct dirent ***ret_namelist,
     }
     used = 0;
     allocated = 2;
-    namelist = malloc(allocated * sizeof (struct dirent *));
+    namelist = malloc(allocated * sizeof(struct dirent *));
     if (namelist == NULL) {
         closedir(dir);
         return AM_ENOMEM;
     }
-    dirbuf = malloc(sizeof (struct dirent) + 255 + 1);
+    dirbuf = malloc(sizeof(struct dirent) + 255 + 1);
     if (dirbuf == NULL) {
         free(namelist);
         closedir(dir);
@@ -2358,7 +2348,7 @@ static int am_scandir(const char *dirname, struct dirent ***ret_namelist,
             continue;
         if (select != NULL && !select(ent))
             continue;
-        len = offsetof(struct dirent, d_name) + (int) strlen(ent->d_name) + 1;
+        len = offsetof(struct dirent, d_name) + (int)strlen(ent->d_name) + 1;
         if ((ent2 = malloc(len)) == NULL) {
             for (i = 0; i < used; i++) {
                 am_free(namelist[i]);
@@ -2369,7 +2359,7 @@ static int am_scandir(const char *dirname, struct dirent ***ret_namelist,
         }
         if (used >= allocated) {
             allocated *= 2;
-            namelist_tmp = realloc(namelist, allocated * sizeof (struct dirent *));
+            namelist_tmp = realloc(namelist, allocated * sizeof(struct dirent *));
             if (namelist_tmp == NULL) {
                 for (i = 0; i < used; i++) {
                     am_free(namelist[i]);
@@ -2387,8 +2377,7 @@ static int am_scandir(const char *dirname, struct dirent ***ret_namelist,
     free(dirbuf);
     closedir(dir);
     if (compar) {
-        qsort(namelist, used, sizeof (struct dirent *),
-                (int (*)(const void *, const void *)) compar);
+        qsort(namelist, used, sizeof(struct dirent *), (int (*)(const void *, const void *))compar);
     }
     *ret_namelist = namelist;
     return used;
@@ -2405,16 +2394,13 @@ static int am_scandir(const char *dirname, struct dirent ***ret_namelist,
  * @param gid The group id which will own the directory, if not NULL
  * @param log Pointer to the agentadmin logger, NULL if not available
  */
-int am_create_agent_dir(const char* sep, const char* path,
-        char** created_name, char** created_name_simple,
-        uid_t* uid, gid_t* gid, void (*log)(const char *, ...)) {
-
-    struct dirent** instlist = NULL;
+int am_create_agent_dir(const char *sep, const char *path, char **created_name, char **created_name_simple, uid_t *uid,
+                        gid_t *gid, void (*log)(const char *, ...)) {
+    struct dirent **instlist = NULL;
     int i, n, result = AM_ERROR, idx = 0;
-    char* p = NULL;
+    char *p = NULL;
 
     if ((n = am_scandir(path, &instlist, am_file_filter, am_alphasort)) <= 0) {
-
         /* report back an agent instance path and a configuration name */
         if (created_name != NULL) {
             am_asprintf(created_name, "%s%sagent_1", path, sep);
@@ -2469,7 +2455,7 @@ int am_create_agent_dir(const char* sep, const char* path,
     /* the same as above, but there is an agent_x directory already */
     for (i = 0; i < n; i++) {
         if (i == n - 1) {
-            char* id = strstr(instlist[i]->d_name, "_");
+            char *id = strstr(instlist[i]->d_name, "_");
             if (id != NULL && (idx = atoi(id + 1)) > 0) {
                 if (created_name != NULL) {
                     am_asprintf(created_name, "%s%sagent_%d", path, sep, idx + 1);
@@ -2528,28 +2514,27 @@ int string_replace(char **original, const char *pattern, const char *replace, si
     size_t pcnt = 0;
     size_t replace_sz, pattern_sz, new_sz, e;
     char *p, *new_str;
-    
-    if (original == NULL || *original == NULL || pattern == NULL
-            || replace == NULL || sz == NULL) {
+
+    if (original == NULL || *original == NULL || pattern == NULL || replace == NULL || sz == NULL) {
         return AM_EINVAL;
     }
-    
+
     pattern_sz = strlen(pattern);
     replace_sz = strlen(replace);
-    
+
     // strstr requires this and an empty pattern is nonsense
     if (pattern_sz == 0) {
         return AM_NOT_FOUND;
     }
-    
+
     // count number of times pattern occurs
-    for (p = * original; ( p = strstr(p, pattern) ); p += pattern_sz) {
+    for (p = *original; (p = strstr(p, pattern)); p += pattern_sz) {
         pcnt++;
     }
     if (pcnt == 0) {
         return AM_NOT_FOUND;
     }
-    
+
     // reallocate only if replacement is larger than pattern
     new_sz = *sz + pcnt * (replace_sz - pattern_sz);
     if (*sz < new_sz) {
@@ -2561,19 +2546,19 @@ int string_replace(char **original, const char *pattern, const char *replace, si
     } else {
         new_str = *original;
     }
-    
+
     // step through patterns, shifting from end of pattern and inserting replacement
     e = (*sz) + 1;
-    for (p = new_str; ( p = strstr(p, pattern) ); p += replace_sz, e += (replace_sz - pattern_sz)) {
+    for (p = new_str; (p = strstr(p, pattern)); p += replace_sz, e += (replace_sz - pattern_sz)) {
         char *src = p + pattern_sz, *dest = p + replace_sz;
         memmove(dest, src, e - (src - new_str));
         memcpy(p, replace, replace_sz);
     }
-    
+
     // set return values
     *sz = new_sz;
     *original = new_str;
-    
+
     return AM_SUCCESS;
 }
 
@@ -2591,14 +2576,14 @@ int copy_file(const char *from, const char *to) {
         struct tm now;
         time_t tv = time(NULL);
         localtime_r(&tv, &now);
-        strftime(tm, sizeof (tm) - 1, "%Y%m%d%H%M%S", &now);
+        strftime(tm, sizeof(tm) - 1, "%Y%m%d%H%M%S", &now);
         am_asprintf(&to_tmp, "%s_amagent_%s", from, tm);
         if (to_tmp == NULL) {
             return AM_ENOMEM;
         }
         local_alloc = AM_TRUE;
     } else {
-        to_tmp = (char *) to;
+        to_tmp = (char *)to;
     }
 #ifdef _WIN32
     if (CopyFileExA(from, to_tmp, NULL, NULL, FALSE, COPY_FILE_NO_BUFFERING) != 0) {
@@ -2622,7 +2607,7 @@ int copy_file(const char *from, const char *to) {
                 rv = AM_FILE_ERROR;
         }
     }
-#endif 
+#endif
     if (local_alloc) {
         free(to_tmp);
     }
@@ -2640,13 +2625,13 @@ void read_directory(const char *path, struct am_namevalue **list) {
             if (e == NULL) {
                 break;
             }
-            snprintf(npath, sizeof (npath), "%s/%s", path, e->d_name);
+            snprintf(npath, sizeof(npath), "%s/%s", path, e->d_name);
             if (stat(npath, &s) == -1) {
                 break;
             }
 
             if (strcmp(e->d_name, "..") != 0 && strcmp(e->d_name, ".") != 0) {
-                struct am_namevalue *el = calloc(1, sizeof (struct am_namevalue));
+                struct am_namevalue *el = calloc(1, sizeof(struct am_namevalue));
                 if (el == NULL) {
                     break;
                 }
@@ -2665,7 +2650,7 @@ void read_directory(const char *path, struct am_namevalue **list) {
     } else {
         if (errno == ENOTDIR) {
             /* not a directory - add to the list as a file */
-            struct am_namevalue *el = calloc(1, sizeof (struct am_namevalue));
+            struct am_namevalue *el = calloc(1, sizeof(struct am_namevalue));
             if (el != NULL) {
                 el->ns = 0;
                 el->n = strdup(path);
@@ -2684,7 +2669,7 @@ int get_ttl_value(struct am_namevalue *session, const char *name, int def, int v
     AM_LIST_FOR_EACH(session, element, tmp) {
         if (strcmp(element->n, name) == 0) {
             errno = 0;
-            result = (int) strtol(element->v, NULL, AM_BASE_TEN);
+            result = (int)strtol(element->v, NULL, AM_BASE_TEN);
             if (result < 0 || errno == ERANGE) {
                 break;
             }
@@ -2706,9 +2691,8 @@ int get_ttl_value(struct am_namevalue *session, const char *name, int def, int v
  * @param size3 bytes to copy from source3
  * @return dest
  */
-void* mem2cpy(void* dest, const void* source1, size_t size1, const void* source2, size_t size2) {
-
-    char* d = dest;
+void *mem2cpy(void *dest, const void *source1, size_t size1, const void *source2, size_t size2) {
+    char *d = dest;
 
     memcpy(d, source1, size1);
     d[size1] = '\0';
@@ -2731,11 +2715,9 @@ void* mem2cpy(void* dest, const void* source1, size_t size1, const void* source2
  * @param size3 bytes to copy from source3
  * @return dest
  */
-void* mem3cpy(void* dest, const void* source1, size_t size1,
-        const void* source2, size_t size2,
-        const void* source3, size_t size3) {
-
-    char* d = dest;
+void *mem3cpy(void *dest, const void *source1, size_t size1, const void *source2, size_t size2, const void *source3,
+              size_t size3) {
+    char *d = dest;
 
     memcpy(d, source1, size1);
     d[size1] = '\0';
@@ -2771,8 +2753,7 @@ char *am_json_escape(const char *str, size_t *escaped_sz) {
         char seq[7];
         int length;
 
-        while (*end && *end != '\\' && *end != '"' && *end != '/' &&
-                (unsigned char) *end > 0x1F) {
+        while (*end && *end != '\\' && *end != '"' && *end != '/' && (unsigned char)*end > 0x1F) {
             end++;
         }
         if (end != str) {
@@ -2789,29 +2770,36 @@ char *am_json_escape(const char *str, size_t *escaped_sz) {
         /* handle \, /, ", and control codes */
         length = 2;
         switch (*end) {
-            case '/': text = "\\/";
-                break;
-            case '\\': text = "\\\\";
-                break;
-            case '\"': text = "\\\"";
-                break;
-            case '\b': text = "\\b";
-                break;
-            case '\f': text = "\\f";
-                break;
-            case '\n': text = "\\n";
-                break;
-            case '\r': text = "\\r";
-                break;
-            case '\t': text = "\\t";
-                break;
-            default:
-            {
-                snprintf(seq, sizeof (seq), "\\u%04X", *end);
-                text = seq;
-                length = 6;
-                break;
-            }
+        case '/':
+            text = "\\/";
+            break;
+        case '\\':
+            text = "\\\\";
+            break;
+        case '\"':
+            text = "\\\"";
+            break;
+        case '\b':
+            text = "\\b";
+            break;
+        case '\f':
+            text = "\\f";
+            break;
+        case '\n':
+            text = "\\n";
+            break;
+        case '\r':
+            text = "\\r";
+            break;
+        case '\t':
+            text = "\\t";
+            break;
+        default: {
+            snprintf(seq, sizeof(seq), "\\u%04X", *end);
+            text = seq;
+            length = 6;
+            break;
+        }
         }
 
         err = concat(&data, &len, text, length);
@@ -2836,7 +2824,7 @@ char *am_json_escape(const char *str, size_t *escaped_sz) {
 }
 
 /**
- * Convert and update (to seconds) agent configuration parameter values 
+ * Convert and update (to seconds) agent configuration parameter values
  * set in minutes (legacy).
  *
  * @param conf The pointer to am_config_t instance
@@ -2850,13 +2838,13 @@ void update_agent_configuration_ttl(am_config_t *conf) {
 
     /* com.sun.identity.agents.config.polling.interval */
     UPDATE_VALUE_TO_SEC(conf->config_valid);
-    
+
     /* com.sun.identity.agents.config.policy.cache.polling.interval */
     UPDATE_VALUE_TO_SEC(conf->policy_cache_valid);
-    
+
     /* com.sun.identity.agents.config.sso.cache.polling.interval */
     UPDATE_VALUE_TO_SEC(conf->token_cache_valid);
-    
+
     /* com.sun.identity.agents.config.postcache.entry.lifetime */
     UPDATE_VALUE_TO_SEC(conf->pdp_cache_valid);
 }
@@ -2869,7 +2857,6 @@ void update_agent_configuration_audit(am_config_t *conf) {
     }
 
     if (AM_BITMASK_CHECK(conf->audit_level, (AM_LOG_LEVEL_AUDIT_ALLOW | AM_LOG_LEVEL_AUDIT_DENY))) {
-
         value = conf->audit_level;
 
         if (ISINVALID(conf->audit_file_disposition) || strcasecmp(conf->audit_file_disposition, "LOCAL") == 0) {
@@ -2890,10 +2877,10 @@ void update_agent_configuration_audit(am_config_t *conf) {
  * NOTE: the name and value are allocated in the same block, and only the name should be
  * freed.
  */
-am_status_t remap_config_value(am_config_map_t * mapping, char *newvalue) {
+am_status_t remap_config_value(am_config_map_t *mapping, char *newvalue) {
     char *buffer = NULL;
     size_t name_sz;
-    
+
     if (!ISVALID(mapping->name)) {
         return AM_EINVAL;
     }
@@ -2903,7 +2890,7 @@ am_status_t remap_config_value(am_config_map_t * mapping, char *newvalue) {
         return AM_ENOMEM;
     }
     strcpy(buffer + name_sz + 1, newvalue);
-    
+
     mapping->name = buffer;
     mapping->value = buffer + name_sz + 1;
     return AM_SUCCESS;
@@ -2919,16 +2906,17 @@ void update_agent_configuration_normalise_map_urls(am_config_t *conf) {
     if (conf == NULL) {
         return;
     }
-    
+
     /* normalise not enforced map values if they are not regular expressions */
     if (!conf->not_enforced_regex_enable) {
         for (i = 0; i < conf->not_enforced_map_sz; i++) {
-            if ( (value = conf->not_enforced_map[i].value) ) {
-                if ( (newvalue = am_normalize_pattern(value)) ) {
+            if ((value = conf->not_enforced_map[i].value)) {
+                if ((newvalue = am_normalize_pattern(value))) {
                     remap_status = remap_config_value(conf->not_enforced_map + i, newvalue);
                     am_free(newvalue);
                     if (remap_status != AM_SUCCESS)
-                        AM_LOG_WARNING(conf->instance_id, "%s error normalising not enforced URL %s (%s)", thisfunc, value, am_strerror(remap_status));
+                        AM_LOG_WARNING(conf->instance_id, "%s error normalising not enforced URL %s (%s)", thisfunc,
+                                       value, am_strerror(remap_status));
                 }
             }
         }
@@ -2936,12 +2924,13 @@ void update_agent_configuration_normalise_map_urls(am_config_t *conf) {
     /* normalise not enforced extended map values if they are not regular expressions */
     if (!conf->not_enforced_ext_regex_enable) {
         for (i = 0; i < conf->not_enforced_ext_map_sz; i++) {
-            if ( (value = conf->not_enforced_ext_map[i].value) ) {
-                if ( (newvalue = am_normalize_pattern(value)) ) {
+            if ((value = conf->not_enforced_ext_map[i].value)) {
+                if ((newvalue = am_normalize_pattern(value))) {
                     remap_status = remap_config_value(conf->not_enforced_ext_map + i, newvalue);
                     am_free(newvalue);
                     if (remap_status != AM_SUCCESS)
-                        AM_LOG_WARNING(conf->instance_id, "%s error normalising extended not enforced URL %s (%s)", thisfunc, value, am_strerror(remap_status));
+                        AM_LOG_WARNING(conf->instance_id, "%s error normalising extended not enforced URL %s (%s)",
+                                       thisfunc, value, am_strerror(remap_status));
                 }
             }
         }
@@ -2949,43 +2938,46 @@ void update_agent_configuration_normalise_map_urls(am_config_t *conf) {
     /* normalise logout map values if they are not regular expressions */
     if (!conf->logout_regex_enable) {
         for (i = 0; i < conf->logout_map_sz; i++) {
-            if ( (value = conf->logout_map[i].value) ) {
-                if ( (newvalue = am_normalize_pattern(value)) ) {
+            if ((value = conf->logout_map[i].value)) {
+                if ((newvalue = am_normalize_pattern(value))) {
                     remap_status = remap_config_value(conf->logout_map + i, newvalue);
                     am_free(newvalue);
                     if (remap_status != AM_SUCCESS)
-                        AM_LOG_WARNING(conf->instance_id, "%s error normalising logout URL %s (%s)", thisfunc, value, am_strerror(remap_status));
+                        AM_LOG_WARNING(conf->instance_id, "%s error normalising logout URL %s (%s)", thisfunc, value,
+                                       am_strerror(remap_status));
                 }
             }
         }
     }
     /* normalise json URL map values */
     for (i = 0; i < conf->json_url_map_sz; i++) {
-        if ( (value = conf->json_url_map[i].value) ) {
-            if ( (newvalue = am_normalize_pattern(value)) ) {
+        if ((value = conf->json_url_map[i].value)) {
+            if ((newvalue = am_normalize_pattern(value))) {
                 remap_status = remap_config_value(conf->json_url_map + i, newvalue);
                 am_free(newvalue);
                 if (remap_status != AM_SUCCESS)
-                    AM_LOG_WARNING(conf->instance_id, "%s error normalising JSON URL %s (%s)", thisfunc, value, am_strerror(remap_status));
+                    AM_LOG_WARNING(conf->instance_id, "%s error normalising JSON URL %s (%s)", thisfunc, value,
+                                   am_strerror(remap_status));
             }
         }
     }
     /* normalise skip-post URL map values */
     for (i = 0; i < conf->skip_post_url_map_sz; i++) {
-        if ( (value = conf->skip_post_url_map[i].value) ) {
-            if ( (newvalue = am_normalize_pattern(value)) ) {
+        if ((value = conf->skip_post_url_map[i].value)) {
+            if ((newvalue = am_normalize_pattern(value))) {
                 remap_status = remap_config_value(conf->skip_post_url_map + i, newvalue);
                 am_free(newvalue);
                 if (remap_status != AM_SUCCESS)
-                    AM_LOG_WARNING(conf->instance_id, "%s error normalising SKIP-POST URL %s (%s)", thisfunc, value, am_strerror(remap_status));
+                    AM_LOG_WARNING(conf->instance_id, "%s error normalising SKIP-POST URL %s (%s)", thisfunc, value,
+                                   am_strerror(remap_status));
             }
         }
     }
 }
 
 static int config_map_name_compare(const void *a, const void *b) {
-    int index_a = (int) strtol(((am_config_map_t *) a)->name, NULL, AM_BASE_TEN);
-    int index_b = (int) strtol(((am_config_map_t *) b)->name, NULL, AM_BASE_TEN);
+    int index_a = (int)strtol(((am_config_map_t *)a)->name, NULL, AM_BASE_TEN);
+    int index_b = (int)strtol(((am_config_map_t *)b)->name, NULL, AM_BASE_TEN);
     return (index_a > index_b) - (index_a < index_b);
 }
 
@@ -2994,31 +2986,27 @@ void update_agent_configuration_reorder_map_values(am_config_t *conf) {
         return;
     }
     if (conf->login_url_sz > 1 && conf->login_url != NULL) {
-        qsort(conf->login_url, conf->login_url_sz,
-                sizeof (am_config_map_t), config_map_name_compare);
+        qsort(conf->login_url, conf->login_url_sz, sizeof(am_config_map_t), config_map_name_compare);
     }
     if (conf->cdsso_login_map_sz > 1 && conf->cdsso_login_map != NULL) {
-        qsort(conf->cdsso_login_map, conf->cdsso_login_map_sz,
-                sizeof (am_config_map_t), config_map_name_compare);
+        qsort(conf->cdsso_login_map, conf->cdsso_login_map_sz, sizeof(am_config_map_t), config_map_name_compare);
     }
     if (conf->openam_logout_map_sz > 1 && conf->openam_logout_map != NULL) {
-        qsort(conf->openam_logout_map, conf->openam_logout_map_sz,
-                sizeof (am_config_map_t), config_map_name_compare);
+        qsort(conf->openam_logout_map, conf->openam_logout_map_sz, sizeof(am_config_map_t), config_map_name_compare);
     }
     if (conf->cond_login_url_sz > 1 && conf->cond_login_url != NULL) {
-        qsort(conf->cond_login_url, conf->cond_login_url_sz,
-                sizeof (am_config_map_t), config_map_name_compare);
+        qsort(conf->cond_login_url, conf->cond_login_url_sz, sizeof(am_config_map_t), config_map_name_compare);
     }
 }
 
 static uint32_t sdbm_hash(const void *s) {
     uint64_t hash = 0;
     int c;
-    const unsigned char *str = (const unsigned char *) s;
+    const unsigned char *str = (const unsigned char *)s;
     while ((c = *str++)) {
         hash = c + (hash << 6) + (hash << 16) - hash;
     }
-    return (uint32_t) hash;
+    return (uint32_t)hash;
 }
 
 uint32_t am_hash(const void *k) {
@@ -3046,31 +3034,30 @@ uint32_t am_hash_buffer(const void *k, size_t sz) {
     return hash;
 }
 
-
 am_bool_t validate_directory_access(const char *path, int mask) {
     am_bool_t ret = AM_FALSE;
 #ifdef _WIN32
     PRIVILEGE_SET privileges = {0};
-    DWORD length = 0, granted_access = 0, privileges_length = sizeof (privileges);
+    DWORD length = 0, granted_access = 0, privileges_length = sizeof(privileges);
     PSECURITY_DESCRIPTOR security = NULL;
     HANDLE token = NULL, imp_token = NULL;
     GENERIC_MAPPING mapping = {0xFFFFFFFF};
     BOOL result = FALSE;
 
-    if (!GetFileSecurityA(path, OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION
-            | DACL_SECURITY_INFORMATION, NULL, 0, &length) &&
-            GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-        security = (PSECURITY_DESCRIPTOR) LocalAlloc(LPTR, length);
+    if (!GetFileSecurityA(path, OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+                          NULL, 0, &length) &&
+        GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+        security = (PSECURITY_DESCRIPTOR)LocalAlloc(LPTR, length);
     }
 
     if (security == NULL) {
         return AM_FALSE;
     }
 
-    if (!GetFileSecurityA(path, OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION
-            | DACL_SECURITY_INFORMATION, security, length, &length) ||
-            !OpenProcessToken(GetCurrentProcess(), TOKEN_IMPERSONATE | TOKEN_QUERY |
-            TOKEN_DUPLICATE | STANDARD_RIGHTS_READ, &token)) {
+    if (!GetFileSecurityA(path, OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+                          security, length, &length) ||
+        !OpenProcessToken(GetCurrentProcess(), TOKEN_IMPERSONATE | TOKEN_QUERY | TOKEN_DUPLICATE | STANDARD_RIGHTS_READ,
+                          &token)) {
         LocalFree(security);
         return AM_FALSE;
     }
@@ -3087,8 +3074,7 @@ am_bool_t validate_directory_access(const char *path, int mask) {
     mapping.GenericAll = FILE_ALL_ACCESS;
     MapGenericMask(&mask, &mapping);
 
-    if (AccessCheck(security, imp_token, mask,
-            &mapping, &privileges, &privileges_length, &granted_access, &result)) {
+    if (AccessCheck(security, imp_token, mask, &mapping, &privileges, &privileges_length, &granted_access, &result)) {
         ret = (result == TRUE);
     }
 

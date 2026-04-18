@@ -29,7 +29,8 @@ int cache_add(uint32_t hash, void *data, size_t ln, int64_t expires, int (*ident
 
 void cache_delete(uint32_t hash, void *data, int (*identity)(void *, void *));
 
-int cache_get_readlocked_ptr(uint32_t hash, void **addr, uint32_t *ln, void *data, int64_t now, int (*identity)(void *, void *));
+int cache_get_readlocked_ptr(uint32_t hash, void **addr, uint32_t *ln, void *data, int64_t now,
+                             int (*identity)(void *, void *));
 void cache_release_readlocked_ptr(uint32_t hash);
 
 void cache_purge_expired_entries(pid_t pid);
@@ -43,4 +44,3 @@ void cache_readlock_total_barrier(pid_t pid);
 int cache_check_entries(pid_t pid);
 
 #endif /* AGENT_CACHE_H */
-

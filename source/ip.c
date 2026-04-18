@@ -14,24 +14,23 @@
  * Copyright 2015 ForgeRock AS.
  */
 
-#include "platform.h"
 #include "am.h"
+#include "platform.h"
 #include "utility.h"
 
 #define IP6_32BIT_COMPONENTS 4
 
 #ifndef s6_addr32
 #ifdef __sun
-#define s6_addr32   _S6_un._S6_u32
+#define s6_addr32 _S6_un._S6_u32
 #elif __APPLE__
-#define s6_addr32   __u6_addr.__u6_addr32
+#define s6_addr32 __u6_addr.__u6_addr32
 #endif
 #endif
 
 #ifdef _WIN32
 
 struct win_in6_addr {
-
     union {
         uint8_t u6_addr8[16];
         uint16_t u6_addr16[8];
@@ -49,9 +48,9 @@ struct win_in6_addr {
 #undef s6_addr32
 #endif
 
-#define s6_addr     in6_u.u6_addr8
-#define s6_addr16   in6_u.u6_addr16
-#define s6_addr32   in6_u.u6_addr32
+#define s6_addr in6_u.u6_addr8
+#define s6_addr16 in6_u.u6_addr16
+#define s6_addr32 in6_u.u6_addr32
 };
 
 #define in6_addr win_in6_addr
@@ -62,7 +61,7 @@ struct win_in6_addr {
  *
  * @return AM_TRUE if the string can be parsed as an ip v6 presentation
  */
-static am_bool_t ipv6_parse(const char * p, struct in6_addr * n) {
+static am_bool_t ipv6_parse(const char *p, struct in6_addr *n) {
     return INETPTON(AF_INET6, p, n) == 1;
 }
 
@@ -71,7 +70,7 @@ static am_bool_t ipv6_parse(const char * p, struct in6_addr * n) {
  *
  * @return AM_TRUE if the string can be parsed as an ip v4 presentation
  */
-static am_bool_t ipv4_parse(const char * p, struct in_addr * n) {
+static am_bool_t ipv4_parse(const char *p, struct in_addr *n) {
     return INETPTON(AF_INET, p, n) == 1;
 }
 
@@ -80,9 +79,9 @@ static am_bool_t ipv4_parse(const char * p, struct in_addr * n) {
  *
  * @return AM_TRUE if the section of a string can be parsed as an ip v6 presentation
  */
-static am_bool_t ipv6_parse_section(const char * p, size_t length, struct in6_addr * n) {
+static am_bool_t ipv6_parse_section(const char *p, size_t length, struct in6_addr *n) {
     am_bool_t output;
-    char * a = strndup(p, length);
+    char *a = strndup(p, length);
     if (a) {
         output = ipv6_parse(a, n);
         free(a);
@@ -97,9 +96,9 @@ static am_bool_t ipv6_parse_section(const char * p, size_t length, struct in6_ad
  *
  * @return AM_TRUE if the section of a string can be parsed as an ip v4 presentation
  */
-static am_bool_t ipv4_parse_section(const char * p, size_t length, struct in_addr * n) {
+static am_bool_t ipv4_parse_section(const char *p, size_t length, struct in_addr *n) {
     am_bool_t output;
-    char * a = strndup(p, length);
+    char *a = strndup(p, length);
     if (a) {
         output = ipv4_parse(a, n);
         free(a);
@@ -112,21 +111,21 @@ static am_bool_t ipv4_parse_section(const char * p, size_t length, struct in_add
 /*
  * Modify the binary address to set only the network mask bits
  */
-static void ipv6_set_mask(struct in6_addr * n, int bits) {
-    int quads = bits >> 5;                      /* number of whole quads masked = bits/32 */
-    int remainder = bits & 0x1F;                /* number of bits masked in the subsequent quad = bits%32 */
+static void ipv6_set_mask(struct in6_addr *n, int bits) {
+    int quads = bits >> 5;       /* number of whole quads masked = bits/32 */
+    int remainder = bits & 0x1F; /* number of bits masked in the subsequent quad = bits%32 */
 
     if (quads < 4 && remainder)
-        n->s6_addr32 [quads++] &= htonl(0xFFFFFFFFu << (32 - remainder));
+        n->s6_addr32[quads++] &= htonl(0xFFFFFFFFu << (32 - remainder));
 
     while (quads < 4)
-        n->s6_addr32 [quads++] = 0;
+        n->s6_addr32[quads++] = 0;
 }
 
 /*
  * Modify the binary address to set only the network mask bits
  */
-static void ipv4_set_mask(struct in_addr * n, int bits) {
+static void ipv4_set_mask(struct in_addr *n, int bits) {
     n->s_addr &= htonl(0xFFFFFFFFu << (32 - bits));
 }
 
@@ -135,20 +134,20 @@ static void ipv4_set_mask(struct in_addr * n, int bits) {
  *
  * @return number of bits in the network mask, 128 if no CIDR mask is present
  */
-int ipv6_pton(const char * p, struct in6_addr * n) {
-    const char * e = strchr(p, '/');
+int ipv6_pton(const char *p, struct in6_addr *n) {
+    const char *e = strchr(p, '/');
     if (e) {
-        char * endp;
+        char *endp;
         uint64_t bits64 = strtoul(e + 1, &endp, 10);
 
         if (e + 1 == endp)
-            return -1;                          /* digits not present */
+            return -1; /* digits not present */
 
-        if (* endp)
-            return -1;                          /* junk after digits */
+        if (*endp)
+            return -1; /* junk after digits */
 
         if (128 < bits64)
-            return -1;                          /* out of range */
+            return -1; /* out of range */
 
         if (ipv6_parse_section(p, e - p, n)) {
             ipv6_set_mask(n, (int)bits64);
@@ -156,10 +155,10 @@ int ipv6_pton(const char * p, struct in6_addr * n) {
         }
     } else {
         if (ipv6_parse(p, n)) {
-            return 128;                         /* no CIDR notation */
+            return 128; /* no CIDR notation */
         }
     }
-    return -1;                                  /* ip v6 part fails */
+    return -1; /* ip v6 part fails */
 }
 
 /*
@@ -167,39 +166,39 @@ int ipv6_pton(const char * p, struct in6_addr * n) {
  *
  * @return number of bits in the network mask, 32 if no CIDR mask is present
  */
-int ipv4_pton(const char * p, struct in_addr * n) {
-    const char * e = strchr(p, '/');
+int ipv4_pton(const char *p, struct in_addr *n) {
+    const char *e = strchr(p, '/');
     if (e) {
-        char * endp;
+        char *endp;
         uint64_t bits64 = strtoul(e + 1, &endp, 10);
 
         if (e + 1 == endp)
-            return -1;                          /* digits not present */
+            return -1; /* digits not present */
 
-        if (* endp)
-            return -1;                          /* junk after digits */
+        if (*endp)
+            return -1; /* junk after digits */
 
         if (32 < bits64)
-            return -1;                          /* out of range */
+            return -1; /* out of range */
 
         if (ipv4_parse_section(p, e - p, n)) {
-            ipv4_set_mask(n, (int) bits64);
-            return (int) bits64;
+            ipv4_set_mask(n, (int)bits64);
+            return (int)bits64;
         }
     } else {
         if (ipv4_parse(p, n)) {
-            return 32;                         /* no CIDR notation */
+            return 32; /* no CIDR notation */
         }
     }
-    return -1;                                  /* ip v4 part fails */
+    return -1; /* ip v4 part fails */
 }
 
 /**
  * Test equivalence masked bits in two ipv4 addresses in network form
- * 
+ *
  * @return AM_TRUE if addr is within the masked ip v4 address range in net
  */
-static am_bool_t cidr_match(const struct in_addr * addr, const struct in_addr * net, int bits) {
+static am_bool_t cidr_match(const struct in_addr *addr, const struct in_addr *net, int bits) {
     if (bits == 0) {
         /* the range is all inclusive - uint32_t << 32 is undefined */
         return AM_TRUE;
@@ -218,24 +217,24 @@ static am_bool_t cidr_match(const struct in_addr * addr, const struct in_addr * 
 
 /**
  * Test masked bits in two ipv6 addresses in network form
- * 
+ *
  * @return AM_TRUE if addr is within the masked ip v6 address range in net
  */
-static am_bool_t cidr6_match(const struct in6_addr * addr, const struct in6_addr * net, int bits) {
-    const uint32_t * a = addr->s6_addr32;
-    const uint32_t * n = net->s6_addr32;
+static am_bool_t cidr6_match(const struct in6_addr *addr, const struct in6_addr *net, int bits) {
+    const uint32_t *a = addr->s6_addr32;
+    const uint32_t *n = net->s6_addr32;
 
-    int quads = bits >> 5; /* number of whole quads masked = bits/32 */
+    int quads = bits >> 5;       /* number of whole quads masked = bits/32 */
     int remainder = bits & 0x1F; /* number of bits masked in the subsequent quad = bits%32 */
 
     if (quads) {
-        if (memcmp(a, n, quads * sizeof (uint32_t))) {
+        if (memcmp(a, n, quads * sizeof(uint32_t))) {
             return AM_FALSE;
         }
     }
 
     if (remainder) {
-        if ((a [quads] ^ n [quads]) & htonl(0xFFFFFFFFu << (32 - remainder))) {
+        if ((a[quads] ^ n[quads]) & htonl(0xFFFFFFFFu << (32 - remainder))) {
             return AM_FALSE;
         }
     }
@@ -244,11 +243,11 @@ static am_bool_t cidr6_match(const struct in6_addr * addr, const struct in6_addr
 
 /**
  * Tests whether the first argument is in the (inclusive) range of v6 addresses from adr_lo to addr_hi
- * 
+ *
  * @return 0 if the address is in the range
  */
-static signed int cmp_ip_range(const struct in_addr * addr, const struct in_addr * addr_lo,
-        const struct in_addr * addr_hi) {
+static signed int cmp_ip_range(const struct in_addr *addr, const struct in_addr *addr_lo,
+                               const struct in_addr *addr_hi) {
     const uint32_t a = addr->s_addr;
     const uint32_t lo = addr_lo->s_addr;
     const uint32_t hi = addr_hi->s_addr;
@@ -257,13 +256,13 @@ static signed int cmp_ip_range(const struct in_addr * addr, const struct in_addr
 
 /**
  *  Compares two uint32 arrays in network format (requiring ntohl translation)
- * 
+ *
  *  @return negative if a < b, positive if a > b, 0 if they are equal
  */
-static signed int cmp_net(const uint32_t * a, const uint32_t * b) {
+static signed int cmp_net(const uint32_t *a, const uint32_t *b) {
     int i, c = 0;
     for (i = IP6_32BIT_COMPONENTS; 0 < i--;) {
-        uint32_t ha = ntohl(a [i]), hb = ntohl(b [i]);
+        uint32_t ha = ntohl(a[i]), hb = ntohl(b[i]);
         c = CMP(ha, hb);
         if (c) {
             break;
@@ -274,10 +273,11 @@ static signed int cmp_net(const uint32_t * a, const uint32_t * b) {
 
 /**
  * Tests whether the first argument is in the (inclusive) range of v6 addresses from adr_lo to addr_hi
- * 
+ *
  * @return 0 if the address is in the range, negative if below the range, positive if its above
  */
-static signed int cmp_ip6_range(const struct in6_addr * addr, const struct in6_addr * addr_lo, const struct in6_addr * addr_hi) {
+static signed int cmp_ip6_range(const struct in6_addr *addr, const struct in6_addr *addr_lo,
+                                const struct in6_addr *addr_hi) {
     int c;
     c = cmp_net(addr_lo->s6_addr32, addr->s6_addr32);
     if (0 < c) {
@@ -292,10 +292,10 @@ static signed int cmp_ip6_range(const struct in6_addr * addr, const struct in6_a
 
 /**
  * Initialize and read an ipv4 presentation, returning in bpits the number of bits
- * 
+ *
  * @return AM_FALSE if the presentation cannot be read as an ipv4 address in CIDR notation
  */
-static am_bool_t read_ip(const char * p, struct in_addr * n, int * pbits) {
+static am_bool_t read_ip(const char *p, struct in_addr *n, int *pbits) {
     *pbits = ipv4_pton(p, n);
     if (*pbits == -1) {
         return AM_FALSE;
@@ -305,13 +305,13 @@ static am_bool_t read_ip(const char * p, struct in_addr * n, int * pbits) {
 
 /**
  * Read an ipv4 presentation p, expecting all bits to be masked, i.e. not a range
- * 
+ *
  * @return AM_FALSE if the presentation is not ipv4, or if it is a CIDR range
  */
-static am_bool_t read_full_ip(const char * p, struct in_addr * n) {
+static am_bool_t read_full_ip(const char *p, struct in_addr *n) {
     int mask;
     if (read_ip(p, n, &mask)) {
-        if (mask == sizeof (n->s_addr) * 8) {
+        if (mask == sizeof(n->s_addr) * 8) {
             return AM_TRUE;
         }
     }
@@ -320,10 +320,10 @@ static am_bool_t read_full_ip(const char * p, struct in_addr * n) {
 
 /**
  * Initialize and read the ipv6 presentation, returning in pbits the number of masked (on) bits
- * 
+ *
  * @return AM_FALSE iff the presentation form cannot be parsed as an ipv6 address in CIDR notation
  */
-static am_bool_t read_ip6(const char * p, struct in6_addr * n, int * pbits) {
+static am_bool_t read_ip6(const char *p, struct in6_addr *n, int *pbits) {
     *pbits = ipv6_pton(p, n);
     if (*pbits == -1) {
         return AM_FALSE;
@@ -333,13 +333,13 @@ static am_bool_t read_ip6(const char * p, struct in6_addr * n, int * pbits) {
 
 /**
  * Read the presentation form of an ipv6 address, expecting all bits to be masked (on)
- * 
+ *
  * @return AM_TRUE if all bits are masked (on).
  */
-static am_bool_t read_full_ip6(const char * ip, struct in6_addr * p) {
+static am_bool_t read_full_ip6(const char *ip, struct in6_addr *p) {
     int mask;
     if (read_ip6(ip, p, &mask)) {
-        if (mask == sizeof (p->s6_addr32) * 8) {
+        if (mask == sizeof(p->s6_addr32) * 8) {
             return AM_TRUE;
         }
     }
@@ -352,7 +352,7 @@ static am_bool_t read_full_ip6(const char * ip, struct in6_addr * p) {
  *
  * @return AM_TRUE for success, false on address parse error or out of bounds
  */
-static am_bool_t test_within_bounds(const char * addr_p, const char * lo_p, const char * hi_p) {
+static am_bool_t test_within_bounds(const char *addr_p, const char *lo_p, const char *hi_p) {
     struct in_addr addr;
     struct in6_addr addr6;
     if (read_full_ip(addr_p, &addr)) {
@@ -371,10 +371,10 @@ static am_bool_t test_within_bounds(const char * addr_p, const char * lo_p, cons
 
 /**
  * Parse a <LO>-<HI> ip address range, and test that an ip address is in that range
- * 
+ *
  * @return 0 on success
  */
-static am_status_t get_in_bounded_range_status(const char * addr, const char * range) {
+static am_status_t get_in_bounded_range_status(const char *addr, const char *range) {
     int c;
     char *lo_p, *hi_p;
     const const char *p = strchr(range, '-');
@@ -398,7 +398,7 @@ static am_status_t get_in_bounded_range_status(const char * addr, const char * r
  *
  * @return AM_SUCCESS on match else NOT_FOUND
  */
-static am_status_t get_in_masked_range_status(const char * addr, const char * range) {
+static am_status_t get_in_masked_range_status(const char *addr, const char *range) {
     struct in_addr addr4;
     struct in6_addr addr6;
     int bits;

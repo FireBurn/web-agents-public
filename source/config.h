@@ -31,15 +31,15 @@ typedef struct am_config_map {
     char *value;
 } am_config_map_t;
 
-#define AM_CONF_MAP_FREE(sz,el) \
-    do {\
-        int i;\
-        for (i = 0; (el) && i < sz; i++) {\
-            am_config_map_t *v = &((el)[i]);\
-            am_free(v->name);\
-        }\
-        am_free(el);\
-        (el) = NULL;\
+#define AM_CONF_MAP_FREE(sz, el)                                                                                       \
+    do {                                                                                                               \
+        int i;                                                                                                         \
+        for (i = 0; (el) && i < sz; i++) {                                                                             \
+            am_config_map_t *v = &((el)[i]);                                                                           \
+            am_free(v->name);                                                                                          \
+        }                                                                                                              \
+        am_free(el);                                                                                                   \
+        (el) = NULL;                                                                                                   \
     } while (0)
 
 typedef struct {
@@ -51,7 +51,7 @@ typedef struct {
 
     /* bootstrap options */
 
-    int local; /* local or remote configuration */
+    int local;     /* local or remote configuration */
     char *pdp_dir; /* directory to store pdp data files */
     int naming_url_sz;
     char **naming_url; /* OpenAM deployment URLs only */
@@ -148,7 +148,7 @@ typedef struct {
     int not_enforced_invert;
     int not_enforced_fetch_attr;
     int not_enforced_map_sz;
-    /* key: [GET,]0  value: wildcard or regular expression 
+    /* key: [GET,]0  value: wildcard or regular expression
      * key format: [method,]index
      * where method name may be omitted ("all methods") */
     am_config_map_t *not_enforced_map;
@@ -252,7 +252,7 @@ typedef struct {
     char *proxy_user;
     char *proxy_password;
     int proxy_password_sz;
-    
+
     char *policy_eval_app;
 } am_config_t;
 
@@ -275,7 +275,7 @@ typedef struct {
 
 #define AM_AGENTS_CONFIG_CERT_KEY_FILE "com.forgerock.agents.config.cert.key"
 #define AM_AGENTS_CONFIG_CERT_KEY_PASSWORD "com.forgerock.agents.config.cert.key.password"
-#define AM_AGENTS_CONFIG_CERT_FILE "com.forgerock.agents.config.cert.file"        
+#define AM_AGENTS_CONFIG_CERT_FILE "com.forgerock.agents.config.cert.file"
 #define AM_AGENTS_CONFIG_CA_FILE "com.forgerock.agents.config.cert.ca.file"
 #define AM_AGENTS_CONFIG_CIPHERS "com.forgerock.agents.config.ciphers"
 #define AM_AGENTS_CONFIG_TRUST_CERT "com.sun.identity.agents.config.trust.server.certs"
@@ -283,11 +283,11 @@ typedef struct {
 
 #define AM_AGENTS_CONFIG_NET_TIMEOUT "com.sun.identity.agents.config.connect.timeout"
 
-#define AM_AGENTS_CONFIG_URL_VALIDATE_LEVEL "com.forgerock.agents.ext.url.validation.level"        
+#define AM_AGENTS_CONFIG_URL_VALIDATE_LEVEL "com.forgerock.agents.ext.url.validation.level"
 #define AM_AGENTS_CONFIG_URL_VALIDATE_PING_INTERVAL "com.forgerock.agents.ext.url.validation.ping.interval"
 #define AM_AGENTS_CONFIG_URL_VALIDATE_PING_MISS "com.forgerock.agents.ext.url.validation.ping.miss.count"
-#define AM_AGENTS_CONFIG_URL_VALIDATE_PING_OK "com.forgerock.agents.ext.url.validation.ping.ok.count"        
-#define AM_AGENTS_CONFIG_URL_VALIDATE_DEFAULT_SET "com.forgerock.agents.ext.url.validation.default.url.set"        
+#define AM_AGENTS_CONFIG_URL_VALIDATE_PING_OK "com.forgerock.agents.ext.url.validation.ping.ok.count"
+#define AM_AGENTS_CONFIG_URL_VALIDATE_DEFAULT_SET "com.forgerock.agents.ext.url.validation.default.url.set"
 
 #define AM_AGENTS_CONFIG_HOST_MAP "com.forgerock.agents.config.hostmap"
 
@@ -300,20 +300,20 @@ typedef struct {
 
 #define AM_AGENTS_CONFIG_AGENT_URI "com.sun.identity.agents.config.agenturi.prefix"
 #define AM_AGENTS_CONFIG_COOKIE_NAME "com.sun.identity.agents.config.cookie.name"
-#define AM_AGENTS_CONFIG_LOGIN_URL_MAP "com.sun.identity.agents.config.login.url"        
-#define AM_AGENTS_CONFIG_COOKIE_SECURE "com.sun.identity.agents.config.cookie.secure"        
-#define AM_AGENTS_CONFIG_NOTIF_ENABLE "com.sun.identity.agents.config.notification.enable"        
-#define AM_AGENTS_CONFIG_NOTIF_URL "com.sun.identity.client.notification.url"        
+#define AM_AGENTS_CONFIG_LOGIN_URL_MAP "com.sun.identity.agents.config.login.url"
+#define AM_AGENTS_CONFIG_COOKIE_SECURE "com.sun.identity.agents.config.cookie.secure"
+#define AM_AGENTS_CONFIG_NOTIF_ENABLE "com.sun.identity.agents.config.notification.enable"
+#define AM_AGENTS_CONFIG_NOTIF_URL "com.sun.identity.client.notification.url"
 #define AM_AGENTS_CONFIG_CMP_CASE_IGNORE "com.sun.identity.agents.config.url.comparison.case.ignore"
 
-#define AM_AGENTS_CONFIG_POLICY_CACHE_VALID "com.sun.identity.agents.config.policy.cache.polling.interval"        
-#define AM_AGENTS_CONFIG_TOKEN_CACHE_VALID "com.sun.identity.agents.config.sso.cache.polling.interval"       
+#define AM_AGENTS_CONFIG_POLICY_CACHE_VALID "com.sun.identity.agents.config.policy.cache.polling.interval"
+#define AM_AGENTS_CONFIG_TOKEN_CACHE_VALID "com.sun.identity.agents.config.sso.cache.polling.interval"
 
-#define AM_AGENTS_CONFIG_UID_PARAM "com.sun.identity.agents.config.userid.param"        
+#define AM_AGENTS_CONFIG_UID_PARAM "com.sun.identity.agents.config.userid.param"
 #define AM_AGENTS_CONFIG_UID_PARAM_TYPE "com.sun.identity.agents.config.userid.param.type"
 
 #define AM_AGENTS_CONFIG_ATTR_PROFILE_MODE "com.sun.identity.agents.config.profile.attribute.fetch.mode"
-#define AM_AGENTS_CONFIG_ATTR_PROFILE_MAP "com.sun.identity.agents.config.profile.attribute.mapping"        
+#define AM_AGENTS_CONFIG_ATTR_PROFILE_MAP "com.sun.identity.agents.config.profile.attribute.mapping"
 #define AM_AGENTS_CONFIG_ATTR_SESSION_MODE "com.sun.identity.agents.config.session.attribute.fetch.mode"
 #define AM_AGENTS_CONFIG_ATTR_SESSION_MAP "com.sun.identity.agents.config.session.attribute.mapping"
 #define AM_AGENTS_CONFIG_ATTR_RESPONSE_MODE "com.sun.identity.agents.config.response.attribute.fetch.mode"
@@ -322,16 +322,16 @@ typedef struct {
 #define AM_AGENTS_CONFIG_LB_ENABLE "com.sun.identity.agents.config.load.balancer.enable"
 #define AM_AGENTS_CONFIG_SSO_ONLY "com.sun.identity.agents.config.sso.only"
 #define AM_AGENTS_CONFIG_ACCESS_DENIED_URL "com.sun.identity.agents.config.access.denied.url"
-#define AM_AGENTS_CONFIG_FQDN_CHECK_ENABLE "com.sun.identity.agents.config.fqdn.check.enable"    
-#define AM_AGENTS_CONFIG_FQDN_DEFAULT "com.sun.identity.agents.config.fqdn.default"       
-#define AM_AGENTS_CONFIG_FQDN_MAP "com.sun.identity.agents.config.fqdn.mapping"      
+#define AM_AGENTS_CONFIG_FQDN_CHECK_ENABLE "com.sun.identity.agents.config.fqdn.check.enable"
+#define AM_AGENTS_CONFIG_FQDN_DEFAULT "com.sun.identity.agents.config.fqdn.default"
+#define AM_AGENTS_CONFIG_FQDN_MAP "com.sun.identity.agents.config.fqdn.mapping"
 
 #define AM_AGENTS_CONFIG_COOKIE_RESET_ENABLE "com.sun.identity.agents.config.cookie.reset.enable"
 #define AM_AGENTS_CONFIG_COOKIE_RESET_MAP "com.sun.identity.agents.config.cookie.reset"
 
 #define AM_AGENTS_CONFIG_NOT_ENFORCED_URL "com.sun.identity.agents.config.notenforced.url"
 #define AM_AGENTS_CONFIG_NOT_ENFORCED_INVERT "com.sun.identity.agents.config.notenforced.url.invert"
-#define AM_AGENTS_CONFIG_NOT_ENFORCED_ATTR "com.sun.identity.agents.config.notenforced.url.attributes.enable"   
+#define AM_AGENTS_CONFIG_NOT_ENFORCED_ATTR "com.sun.identity.agents.config.notenforced.url.attributes.enable"
 #define AM_AGENTS_CONFIG_NOT_ENFORCED_IP "com.sun.identity.agents.config.notenforced.ip"
 #define AM_AGENTS_CONFIG_NOT_ENFORCED_REGEX_ENABLE "com.forgerock.agents.notenforced.url.regex.enable"
 
@@ -368,8 +368,8 @@ typedef struct {
 
 #define AM_AGENTS_CONFIG_OVERRIDE_PROTO "com.sun.identity.agents.config.override.protocol"
 #define AM_AGENTS_CONFIG_OVERRIDE_HOST "com.sun.identity.agents.config.override.host"
-#define AM_AGENTS_CONFIG_OVERRIDE_PORT "com.sun.identity.agents.config.override.port"        
-#define AM_AGENTS_CONFIG_OVERRIDE_NOTIFICATION_URL "com.sun.identity.agents.config.override.notification.url"       
+#define AM_AGENTS_CONFIG_OVERRIDE_PORT "com.sun.identity.agents.config.override.port"
+#define AM_AGENTS_CONFIG_OVERRIDE_NOTIFICATION_URL "com.sun.identity.agents.config.override.notification.url"
 
 #define AM_AGENTS_CONFIG_VALID "com.sun.identity.agents.config.polling.interval"
 
@@ -413,7 +413,8 @@ typedef struct {
 #define AM_AGENTS_CONFIG_ANONYMOUS_USER_ENABLE "com.sun.identity.agents.config.anonymous.user.enable"
 #define AM_AGENTS_CONFIG_ANONYMOUS_USER_ID "com.sun.identity.agents.config.anonymous.user.id"
 
-#define AM_AGENTS_CONFIG_IGNORE_PATHINFO_NOT_ENFORCED "com.sun.identity.agents.config.ignore.path.info.for.not.enforced.list"
+#define AM_AGENTS_CONFIG_IGNORE_PATHINFO_NOT_ENFORCED                                                                  \
+    "com.sun.identity.agents.config.ignore.path.info.for.not.enforced.list"
 #define AM_AGENTS_CONFIG_IGNORE_PATHINFO "com.sun.identity.agents.config.ignore.path.info"
 
 #define AM_AGENTS_CONFIG_PERSISTENT_COOKIE_ENABLE "org.forgerock.agents.config.cdsso.persistent.cookie.enable"

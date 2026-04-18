@@ -18,15 +18,15 @@
 #define AM_MEMORY_MANAGER
 #include "platform.h"
 
-#define CTLFILE                                        "ctl"
-#define BLOCKFILE                                      "blocks"
-#define HEADERFILE                                     "headers"
+#define CTLFILE "ctl"
+#define BLOCKFILE "blocks"
+#define HEADERFILE "headers"
 
-#define CLUSTERS                                       256u
-#define MAX_CACHE_MEMORY_SZ                            0x40000000
-#define MAX_CLUSTER_SIZE                               0x400000             
+#define CLUSTERS 256u
+#define MAX_CACHE_MEMORY_SZ 0x40000000
+#define MAX_CLUSTER_SIZE 0x400000
 
-typedef uint32_t                                       offset;
+typedef uint32_t offset;
 
 uint32_t cache_memory_size();
 
@@ -57,5 +57,4 @@ void agent_memory_reset(pid_t pid);
 
 void agent_memory_error();
 
-#endif  /* AM_MEMORY_MANAGER */
-
+#endif /* AM_MEMORY_MANAGER */

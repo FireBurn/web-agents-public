@@ -27,45 +27,44 @@
 #include "tests.h"
 
 static int run_single_test(const char *name) {
-  const size_t total = sizeof(tests) / sizeof(tests[0]);
-  for (size_t i = 0; i < total; i++) {
-    if (tests[i].name != NULL && strcmp(tests[i].name, name) == 0) {
-      /* cmocka_run_group_tests takes a struct CMUnitTest[], not a
-       * pointer, so we pass a one-element array by address. */
-      const struct CMUnitTest one[] = {tests[i]};
-      return _cmocka_run_group_tests(name, one, 1, NULL, NULL);
+    const size_t total = sizeof(tests) / sizeof(tests[0]);
+    for (size_t i = 0; i < total; i++) {
+        if (tests[i].name != NULL && strcmp(tests[i].name, name) == 0) {
+            /* cmocka_run_group_tests takes a struct CMUnitTest[], not a
+             * pointer, so we pass a one-element array by address. */
+            const struct CMUnitTest one[] = {tests[i]};
+            return _cmocka_run_group_tests(name, one, 1, NULL, NULL);
+        }
     }
-  }
-  fprintf(stderr, "run_tests: unknown test '%s'\n", name);
-  return 2;
+    fprintf(stderr, "run_tests: unknown test '%s'\n", name);
+    return 2;
 }
 
 static void list_tests(void) {
-  const size_t total = sizeof(tests) / sizeof(tests[0]);
-  for (size_t i = 0; i < total; i++) {
-    if (tests[i].name != NULL) {
-      puts(tests[i].name);
+    const size_t total = sizeof(tests) / sizeof(tests[0]);
+    for (size_t i = 0; i < total; i++) {
+        if (tests[i].name != NULL) {
+            puts(tests[i].name);
+        }
     }
-  }
 }
 
 int main(int argc, char **argv) {
-  if (argc >= 2) {
-    if (strcmp(argv[1], "--list") == 0) {
-      list_tests();
-      return 0;
+    if (argc >= 2) {
+        if (strcmp(argv[1], "--list") == 0) {
+            list_tests();
+            return 0;
+        }
+        if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0) {
+            fprintf(stderr,
+                    "Usage: %s [<test_name> | --list]\n"
+                    "  no args      Run all tests\n"
+                    "  <test_name>  Run only the named test\n"
+                    "  --list       Print all test names, one per line\n",
+                    argv[0]);
+            return 0;
+        }
+        return run_single_test(argv[1]);
     }
-    if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0) {
-      fprintf(stderr,
-              "Usage: %s [<test_name> | --list]\n"
-              "  no args      Run all tests\n"
-              "  <test_name>  Run only the named test\n"
-              "  --list       Print all test names, one per line\n",
-              argv[0]);
-      return 0;
-    }
-    return run_single_test(argv[1]);
-  }
-  return _cmocka_run_group_tests("tests", tests,
-                                 sizeof(tests) / sizeof(tests[0]), NULL, NULL);
+    return _cmocka_run_group_tests("tests", tests, sizeof(tests) / sizeof(tests[0]), NULL, NULL);
 }

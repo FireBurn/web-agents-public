@@ -14,8 +14,8 @@
  * Copyright 2014 - 2015 ForgeRock AS.
  */
 
-#include "platform.h"
 #include "am.h"
+#include "platform.h"
 #include "utility.h"
 
 #ifdef _WIN32
@@ -29,14 +29,12 @@
 /* property flags */
 enum entry_type { plaintext, property, property_removed };
 
-struct map_entry
-{
+struct map_entry {
     char *key, *value;
     enum entry_type type;
 };
 
-struct property_map
-{
+struct property_map {
     size_t size, alloc;
     struct map_entry *entries;
 };
@@ -52,7 +50,7 @@ struct property_map *property_map_create() {
     map->size = 0;
     map->alloc = 0;
     map->entries = NULL;
-    
+
     return map;
 }
 
@@ -62,7 +60,7 @@ struct property_map *property_map_create() {
 void property_map_delete(struct property_map *map) {
     int i;
     struct map_entry *e;
-    for (i = 0; i < (int) map->size; i++) {
+    for (i = 0; i < (int)map->size; i++) {
         e = map->entries + i;
         free(e->key);
         if (e->value)
@@ -78,15 +76,15 @@ void property_map_delete(struct property_map *map) {
 char *property_map_get_value(struct property_map *map, const char *key) {
     int i;
     struct map_entry *e;
-    for (i = 0; i < (int) map->size; i++) {
+    for (i = 0; i < (int)map->size; i++) {
         e = map->entries + i;
         switch (e->type) {
-            case plaintext:
-                break;
-            case property:
-            case property_removed:
-                if (strcmp(key, e->key) == 0)
-                    return e->value;
+        case plaintext:
+            break;
+        case property:
+        case property_removed:
+            if (strcmp(key, e->key) == 0)
+                return e->value;
         }
     }
     return NULL;
@@ -114,41 +112,41 @@ static am_bool_t property_map_get_space(struct property_map *map) {
 static struct map_entry *property_map_get_or_create(struct property_map *map, const char *key, size_t len) {
     int i;
     struct map_entry *e;
-    for (i = 0; i < (int) map->size; i++) {
+    for (i = 0; i < (int)map->size; i++) {
         e = map->entries + i;
         switch (e->type) {
-            case plaintext:
-                break;
-            case property:
-            case property_removed:
-                if (strncmp(key, e->key, len) == 0 && e->key [len] == 0) {
-                    e->type = property;
-                    return e;
-                }
+        case plaintext:
+            break;
+        case property:
+        case property_removed:
+            if (strncmp(key, e->key, len) == 0 && e->key[len] == 0) {
+                e->type = property;
+                return e;
+            }
         }
     }
-    if (! property_map_get_space(map))
+    if (!property_map_get_space(map))
         return NULL;
-    
+
     e = map->entries + map->size++;
     e->type = property;
     e->key = strndup(key, len);
     e->value = NULL;
-    
+
     return e;
 }
 
 struct map_entry *property_map_add_plaintext(struct property_map *map, const char *text, size_t len) {
     struct map_entry *e;
-    
-    if (! property_map_get_space(map))
+
+    if (!property_map_get_space(map))
         return NULL;
-    
+
     e = map->entries + map->size++;
     e->type = plaintext;
     e->key = strndup(text, len);
     e->value = NULL;
-    
+
     return e;
 }
 
@@ -158,31 +156,31 @@ struct map_entry *property_map_add_plaintext(struct property_map *map, const cha
 am_bool_t property_map_remove_key(struct property_map *map, const char *key) {
     int i;
     struct map_entry *e;
-    for (i = 0; i < (int) map->size; i++) {
+    for (i = 0; i < (int)map->size; i++) {
         e = map->entries + i;
         if (e->type == property && strcmp(key, e->key) == 0) {
             break;
         }
     }
-    if (i < (int) map->size) {
+    if (i < (int)map->size) {
         e = map->entries + i;
         e->type = property_removed;
-        if (e->value)
-        {
+        if (e->value) {
             free(e->value);
             e->value = 0;
         }
     }
-    return i < (int) map->size;
+    return i < (int)map->size;
 }
 
-void property_map_visit(struct property_map *map, am_bool_t (*callback)(char *key, char *value, void *data), void *data) {
+void property_map_visit(struct property_map *map, am_bool_t (*callback)(char *key, char *value, void *data),
+                        void *data) {
     int i;
     struct map_entry *e;
-    for (i = 0; i < (int) map->size; i++) {
+    for (i = 0; i < (int)map->size; i++) {
         e = map->entries + i;
         if (e->type == property) {
-            if (! callback(e->key, e->value, data))
+            if (!callback(e->key, e->value, data))
                 break;
         }
     }
@@ -193,7 +191,7 @@ void property_map_visit(struct property_map *map, am_bool_t (*callback)(char *ke
  */
 char **property_map_get_value_addr(struct property_map *map, const char *key) {
     struct map_entry *e = property_map_get_or_create(map, key, strlen(key));
-    
+
     /* out of memory */
     if (e == NULL) {
         return NULL;
@@ -207,10 +205,10 @@ char **property_map_get_value_addr(struct property_map *map, const char *key) {
 static char *get_nonspace_section(char *s, char *e, size_t *len) {
     while (s < e && isspace(*s))
         s++;
-    
+
     while (s < e && isspace(e[-1]))
         e--;
-    
+
     *len = e - s;
     return s;
 }
@@ -218,22 +216,24 @@ static char *get_nonspace_section(char *s, char *e, size_t *len) {
 /*
  * parse <property> = <value> configuration element
  */
-static void property_map_parse_line(struct property_map *map, char *source, am_bool_t override, void (*logf)(const char *format, ...), char *line, size_t line_ln) {
+static void property_map_parse_line(struct property_map *map, char *source, am_bool_t override,
+                                    void (*logf)(const char *format, ...), char *line, size_t line_ln) {
     char *eq = memchr(line, '=', line_ln);
-    if ( eq ) {
+    if (eq) {
         size_t key_ln, value_ln;
-        
+
         char *key = get_nonspace_section(line, eq, &key_ln);
         struct map_entry *p = property_map_get_or_create(map, key, key_ln);
 
         char *value = get_nonspace_section(eq + 1, line + line_ln, &value_ln);
         char *old_value = p->value;
-        
+
         if (old_value) {
             if (override) {
                 p->value = strndup(value, value_ln);
                 if (strcmp(old_value, p->value)) {
-                    logf("%s property %s updates value '%s' to '%s'\n", source, LOGEMPTY(p->key), old_value, LOGEMPTY(p->value));
+                    logf("%s property %s updates value '%s' to '%s'\n", source, LOGEMPTY(p->key), old_value,
+                         LOGEMPTY(p->value));
                 }
                 free(old_value);
             }
@@ -251,11 +251,12 @@ static void property_map_parse_line(struct property_map *map, char *source, am_b
 /*
  * parse the content of a configuraiton file (data, data_sz) changing mapped properties only if verride is set
  */
-void property_map_parse(struct property_map *map, char *source, am_bool_t override, void (*logf)(const char *format, ...), char *data, size_t data_sz) {
+void property_map_parse(struct property_map *map, char *source, am_bool_t override,
+                        void (*logf)(const char *format, ...), char *data, size_t data_sz) {
     int i;
     int s = 0;
-    for (i = 0; i < (int) data_sz; i++) {
-        if (data[i] == '\n') {          /* NOTE: the line parser will strip \r for non-unix line endings */
+    for (i = 0; i < (int)data_sz; i++) {
+        if (data[i] == '\n') { /* NOTE: the line parser will strip \r for non-unix line endings */
             if (data[s] == '#') {
                 property_map_add_plaintext(map, data + s, i - s);
             } else {
@@ -264,7 +265,7 @@ void property_map_parse(struct property_map *map, char *source, am_bool_t overri
             s = i + 1;
         }
     }
-    if (s < (int) data_sz) {
+    if (s < (int)data_sz) {
         if (data[s] == '#') {
             property_map_add_plaintext(map, data + s, i - s);
         } else {
@@ -285,35 +286,34 @@ char *property_map_write_to_buffer(struct property_map *map, size_t *data_sz) {
         return NULL;
     }
     *buffer = '\0';
-    
-    for (i = 0; i < (int) map->size; i++) {
+
+    for (i = 0; i < (int)map->size; i++) {
         struct map_entry *e = map->entries + i;
         switch (e->type) {
-            case plaintext:
-                len = (size_t) am_asprintf(&buffer, "%s%s%s", buffer, NOTNULL(e->key), LINE_ENDING);
-                if (buffer == NULL) {
-                    *data_sz = 0;
-                    return NULL;
-                }
-                break;
-                
-            case property:
-                if (e->value) {
-                    len = (size_t) am_asprintf(&buffer, "%s%s = %s%s", buffer, NOTNULL(e->key), e->value, LINE_ENDING);
-                } else {
-                    len = (size_t) am_asprintf(&buffer, "%s%s = %s", buffer, NOTNULL(e->key), LINE_ENDING);
-                }
-                if (buffer == NULL) {
-                    *data_sz = 0;
-                    return NULL;
-                }
-                break;
-                
-            case property_removed:
-                break;
+        case plaintext:
+            len = (size_t)am_asprintf(&buffer, "%s%s%s", buffer, NOTNULL(e->key), LINE_ENDING);
+            if (buffer == NULL) {
+                *data_sz = 0;
+                return NULL;
+            }
+            break;
+
+        case property:
+            if (e->value) {
+                len = (size_t)am_asprintf(&buffer, "%s%s = %s%s", buffer, NOTNULL(e->key), e->value, LINE_ENDING);
+            } else {
+                len = (size_t)am_asprintf(&buffer, "%s%s = %s", buffer, NOTNULL(e->key), LINE_ENDING);
+            }
+            if (buffer == NULL) {
+                *data_sz = 0;
+                return NULL;
+            }
+            break;
+
+        case property_removed:
+            break;
         }
     }
     *data_sz = len;
     return buffer;
 }
-

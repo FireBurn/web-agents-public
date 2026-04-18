@@ -18,10 +18,10 @@
 #define NET_CLIENT_H
 #include "platform.h"
 
-#include "http_parser.h"
-#include "thread.h"
 #include "am.h"
 #include "config.h"
+#include "http_parser.h"
+#include "thread.h"
 
 typedef struct {
     int cert_key_pass_sz;
@@ -89,11 +89,7 @@ typedef struct {
     int num_header_values;
     unsigned int http_status;
 
-    enum {
-        AM_PROXY_NONE = 0,
-        AM_PROXY_CONNECTING,
-        AM_PROXY_CONNECTED
-    } proxy;
+    enum { AM_PROXY_NONE = 0, AM_PROXY_CONNECTING, AM_PROXY_CONNECTED } proxy;
 
     struct addrinfo *ra;
 
@@ -104,10 +100,9 @@ typedef struct {
     void (*on_close)(void *udata, int status);
 
     void (*reset_complete)(void *udata);
-    am_bool_t(*is_complete)(void *udata);
+    am_bool_t (*is_complete)(void *udata);
     int error;
 } am_net_t;
-
 
 int am_net_sync_connect(am_net_t *n);
 int am_net_write(am_net_t *n, const char *data, size_t data_sz);
@@ -117,19 +112,17 @@ int am_net_close(am_net_t *n);
 void am_net_options_create(am_config_t *ac, am_net_options_t *options, void (*log)(const char *, ...));
 void am_net_options_delete(am_net_options_t *options);
 
-int am_agent_login(unsigned long instance_id, const char *openam,
-        const char *user, const char *pass, const char *realm, const char *eval_app, am_net_options_t *options,
-        char **agent_token, char **pxml, size_t *pxsz, struct am_namevalue **session_list);
-int am_agent_logout(unsigned long instance_id, const char *openam,
-        const char *token, am_net_options_t *options);
-int am_agent_policy_request(unsigned long instance_id, const char *openam,
-        const char *token, const char *user_token, const char *req_url,
-        const char *scope, const char *cip, const char *pattr, const char *eval_app,
-        am_net_options_t *options, struct am_namevalue **session_list, struct am_policy_result **policy_list);
-int am_url_validate(unsigned long instance_id, const char *url,
-        am_net_options_t *options, int *httpcode);
-int am_agent_audit_request(unsigned long instance_id, const char *openam,
-        const char *logdata, am_net_options_t *options);
+int am_agent_login(unsigned long instance_id, const char *openam, const char *user, const char *pass, const char *realm,
+                   const char *eval_app, am_net_options_t *options, char **agent_token, char **pxml, size_t *pxsz,
+                   struct am_namevalue **session_list);
+int am_agent_logout(unsigned long instance_id, const char *openam, const char *token, am_net_options_t *options);
+int am_agent_policy_request(unsigned long instance_id, const char *openam, const char *token, const char *user_token,
+                            const char *req_url, const char *scope, const char *cip, const char *pattr,
+                            const char *eval_app, am_net_options_t *options, struct am_namevalue **session_list,
+                            struct am_policy_result **policy_list);
+int am_url_validate(unsigned long instance_id, const char *url, am_net_options_t *options, int *httpcode);
+int am_agent_audit_request(unsigned long instance_id, const char *openam, const char *logdata,
+                           am_net_options_t *options);
 
 void am_net_init();
 void am_net_shutdown();

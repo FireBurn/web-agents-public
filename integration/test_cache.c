@@ -20,139 +20,112 @@
 #include "alloc.h"
 #include "agent_cache.h"
 
-#define THREADS                             5
+#define THREADS 5
 
-#define DATA_BUFFER_SZ                      0x1000
-#define DATA_OFFSET_MASK                    0xfff
+#define DATA_BUFFER_SZ 0x1000
+#define DATA_OFFSET_MASK 0xfff
 
-#define RANDOM_BUFFER_SZ                    0x2000
-#define RANDOM_OFFSET_MASK                  0x1fff
+#define RANDOM_BUFFER_SZ 0x2000
+#define RANDOM_OFFSET_MASK 0x1fff
 
-
-#define rotate64(v, n)                      (((v) << (n)) | ((v) >> (64 - (n))))
+#define rotate64(v, n) (((v) << (n)) | ((v) >> (64 - (n))))
 
 #ifndef offsetof
-#define offsetof(type, field)               ( (char *)(&((type *)0)->field) - (char *)0 )
+#define offsetof(type, field) ((char *)(&((type *)0)->field) - (char *)0)
 #endif
 
-struct bucket
-{
-    uint32_t                                key;
+struct bucket {
+    uint32_t key;
 
-    uint64_t                                checksum;
-    size_t                                  ln;
-    uint8_t                                 data[DATA_BUFFER_SZ];
-
+    uint64_t checksum;
+    size_t ln;
+    uint8_t data[DATA_BUFFER_SZ];
 };
 
+uint8_t random_buffer[RANDOM_BUFFER_SZ]; /* reduce time generating random data */
 
-uint8_t                                     random_buffer[RANDOM_BUFFER_SZ];          /* reduce time generating random data */
+static void initialise_random_buffer() {
+    int i;
 
+    // srandomdev();
 
-static void initialise_random_buffer()
-{
-    int                                     i;
-
-    //srandomdev();
-
-    for (i = 0; i < RANDOM_BUFFER_SZ; i++)
-    {
+    for (i = 0; i < RANDOM_BUFFER_SZ; i++) {
         random_buffer[i] = rand() & 0xff;
     }
-
 }
 
-
-void write_bucket(uint32_t key, struct bucket *bucket)
-{
-    uint64_t                                checksum = 0x43f42a71e03;
-    uint32_t                                seed = rand();
-    int                                     i;
+void write_bucket(uint32_t key, struct bucket *bucket) {
+    uint64_t checksum = 0x43f42a71e03;
+    uint32_t seed = rand();
+    int i;
 
     bucket->key = key;
     bucket->ln = 1 + (seed & DATA_OFFSET_MASK);
 
-    for (i = 0; i < bucket->ln; i++)
-    {
+    for (i = 0; i < bucket->ln; i++) {
         bucket->data[i] = random_buffer[(seed + i) & RANDOM_OFFSET_MASK];
 
         checksum = rotate64(checksum, 3) ^ bucket->data[i];
     }
-   
-    bucket->checksum = checksum;
 
+    bucket->checksum = checksum;
 }
 
-int verify_bucket(struct bucket *bucket)
-{
-    uint64_t                                checksum = 0x43f42a71e03;
-    int                                     i;
+int verify_bucket(struct bucket *bucket) {
+    uint64_t checksum = 0x43f42a71e03;
+    int i;
 
-    for (i = 0; i < bucket->ln; i++)
-    {
+    for (i = 0; i < bucket->ln; i++) {
         checksum = rotate64(checksum, 3) ^ bucket->data[i];
     }
-   
+
     return bucket->checksum == checksum;
-
 }
 
-static int bucket_identity(void *a, void *b)
-{
+static int bucket_identity(void *a, void *b) {
     return ((struct bucket *)a)->key == ((struct bucket *)b)->key;
-
 }
 
-void *cache_robustness_thread(void *data)
-{
-    struct bucket                           bucket;
-    void                                   *ptr;
-    uint32_t                                ln;
+void *cache_robustness_thread(void *data) {
+    struct bucket bucket;
+    void *ptr;
+    uint32_t ln;
 
-    int                                     i;
+    int i;
 
-    int                                     n_iters = 10000, iter;
-    int                                     n_ops = 4096;
+    int n_iters = 10000, iter;
+    int n_ops = 4096;
 
-    uint32_t                                n_keys = 0x7fff;
+    uint32_t n_keys = 0x7fff;
 
-    for (iter = 0; iter < n_iters; iter++)
-    {
-        for (i = 1; i < n_ops; i++)
-        {
-            uint32_t                        key = ((uint32_t)rand()) & n_keys;
+    for (iter = 0; iter < n_iters; iter++) {
+        for (i = 1; i < n_ops; i++) {
+            uint32_t key = ((uint32_t)rand()) & n_keys;
 
             write_bucket(key, &bucket);
 
-            if (cache_add(key, &bucket, offsetof(struct bucket, data) + bucket.ln, time(0) + 2, bucket_identity))
-            {
-                printf("error adding cache item\n");                                  /* acceptable during high load and recovery */
+            if (cache_add(key, &bucket, offsetof(struct bucket, data) + bucket.ln, time(0) + 2, bucket_identity)) {
+                printf("error adding cache item\n"); /* acceptable during high load and recovery */
             }
         }
 
-        for (i = 1; i < n_ops; i++)
-        {
-            uint32_t                        key = ((uint32_t)rand()) & n_keys;
+        for (i = 1; i < n_ops; i++) {
+            uint32_t key = ((uint32_t)rand()) & n_keys;
 
             bucket.key = key;
 
-            if (cache_get_readlocked_ptr(key, &ptr, &ln, &bucket, time(0), bucket_identity))
-            {
+            if (cache_get_readlocked_ptr(key, &ptr, &ln, &bucket, time(0), bucket_identity)) {
                 /* deleted */
-            }
-            else
-            {
-                if (verify_bucket(ptr) == 0)
-                {
+            } else {
+                if (verify_bucket(ptr) == 0) {
                     printf("*** bucket verification error\n");
                 }
                 cache_release_readlocked_ptr(key);
             }
         }
 
-        for (i = 1; i < n_ops; i++)
-        {
-            uint32_t                        key = ((uint32_t)rand()) & n_keys;
+        for (i = 1; i < n_ops; i++) {
+            uint32_t key = ((uint32_t)rand()) & n_keys;
 
             bucket.key = key;
 
@@ -161,46 +134,36 @@ void *cache_robustness_thread(void *data)
     }
 
     return data;
-
 }
 
-void *cache_update_thread(void *data)
-{
-    struct bucket                           bucket;
-    void                                   *ptr;
-    uint32_t                                ln;
+void *cache_update_thread(void *data) {
+    struct bucket bucket;
+    void *ptr;
+    uint32_t ln;
 
-    int                                     i;
+    int i;
 
-    int                                     n_iters = 10000, iter;
-    int                                     n_ops = 4096;
+    int n_iters = 10000, iter;
+    int n_ops = 4096;
 
-    uint32_t                                n_keys = 0x1fffff;
+    uint32_t n_keys = 0x1fffff;
 
-    for (iter = 0; iter < n_iters; iter++)
-    {
-        for (i = 1; i < n_ops; i++)
-        {
-            uint32_t                        key = ((uint32_t)rand()) & n_keys;
+    for (iter = 0; iter < n_iters; iter++) {
+        for (i = 1; i < n_ops; i++) {
+            uint32_t key = ((uint32_t)rand()) & n_keys;
 
             bucket.key = key;
 
-            if (i & 0x1)
-            {
+            if (i & 0x1) {
                 write_bucket(key, &bucket);
 
                 cache_add(key, &bucket, offsetof(struct bucket, data) + bucket.ln, time(0) + 60, bucket_identity);
-            }
-            else if (cache_get_readlocked_ptr(key, &ptr, &ln, &bucket, time(0), bucket_identity))
-            {
+            } else if (cache_get_readlocked_ptr(key, &ptr, &ln, &bucket, time(0), bucket_identity)) {
                 write_bucket(key, &bucket);
 
                 cache_add(key, &bucket, offsetof(struct bucket, data) + bucket.ln, time(0) + 60, bucket_identity);
-            }
-            else
-            {
-                if (verify_bucket(ptr) == 0)
-                {
+            } else {
+                if (verify_bucket(ptr) == 0) {
                     printf("*** bucket verification error\n");
                 }
                 cache_release_readlocked_ptr(key);
@@ -209,43 +172,36 @@ void *cache_update_thread(void *data)
     }
 
     return data;
-
 }
 
-int main(int argc, char *argv[])
-{
-    am_thread_t                             threads[THREADS];
-    long                                    args[THREADS];
+int main(int argc, char *argv[]) {
+    am_thread_t threads[THREADS];
+    long args[THREADS];
 
-    int                                     i;
-    long                                    t0;
-    double                                  dt;
+    int i;
+    long t0;
+    double dt;
 
-    if (cache_initialise(0))
-    {
+    if (cache_initialise(0)) {
         printf("unable to initialise cache\n");
         exit(0);
     }
 
-
-    if (argc == 2 && strcmp(argv[1], "--destroy") == 0)
-    {
-        cache_shutdown(1);                                                            /* one-off delete shared resources */
+    if (argc == 2 && strcmp(argv[1], "--destroy") == 0) {
+        cache_shutdown(1); /* one-off delete shared resources */
 
         exit(0);
     }
 
-    if (argc == 2 && strcmp(argv[1], "--gc") == 0)
-    {
-        pid_t                               pid = getpid();                           /* run as garbage collection thread */
+    if (argc == 2 && strcmp(argv[1], "--gc") == 0) {
+        pid_t pid = getpid(); /* run as garbage collection thread */
 
-        do
-        {
+        do {
             agent_memory_validate(pid);
 
             t0 = clock();
             cache_garbage_collect();
-            dt = ((double) (clock() - t0)) / CLOCKS_PER_SEC;
+            dt = ((double)(clock() - t0)) / CLOCKS_PER_SEC;
 
             cache_stats();
 
@@ -258,23 +214,21 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
-    if (argc == 2 && strcmp(argv[1], "--expire") == 0)
-    {
-        pid_t                               pid = getpid();                           /* run as an expiry thread */
+    if (argc == 2 && strcmp(argv[1], "--expire") == 0) {
+        pid_t pid = getpid(); /* run as an expiry thread */
 
-        do
-        {
+        do {
             agent_memory_validate(pid);
 
             t0 = clock();
             cache_readlock_total_barrier(pid);
-            dt = ((double) (clock() - t0)) / CLOCKS_PER_SEC;
+            dt = ((double)(clock() - t0)) / CLOCKS_PER_SEC;
 
             printf("barrier takes %lf secs\n", dt);
 
             t0 = clock();
             cache_purge_expired_entries(pid);
-            dt = ((double) (clock() - t0)) / CLOCKS_PER_SEC;
+            dt = ((double)(clock() - t0)) / CLOCKS_PER_SEC;
 
             printf("expiry scan takes %lf secs\n", dt);
 
@@ -285,9 +239,8 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
-    if (argc == 2 && strcmp(argv[1], "--error") == 0)
-    {
-        agent_memory_error();                                                         /* one-off trigger global cache reset */
+    if (argc == 2 && strcmp(argv[1], "--error") == 0) {
+        agent_memory_error(); /* one-off trigger global cache reset */
 
         exit(0);
     }
@@ -296,19 +249,17 @@ int main(int argc, char *argv[])
 
     t0 = clock();
 
-    for (i = 0; i < THREADS; i++)
-    {
-        args [i] = 0;
+    for (i = 0; i < THREADS; i++) {
+        args[i] = 0;
 
         AM_THREAD_CREATE(threads[i], cache_robustness_thread, args + i);
     }
 
-    for (i = 0; i < THREADS; i++)
-    {
+    for (i = 0; i < THREADS; i++) {
         AM_THREAD_JOIN(threads[i]);
     }
 
-    dt = ((double) (clock() - t0)) / CLOCKS_PER_SEC;
+    dt = ((double)(clock() - t0)) / CLOCKS_PER_SEC;
     printf("finished after %lf secs\n", dt);
 
     agent_memory_check(getpid(), 0, 0);
@@ -316,6 +267,4 @@ int main(int argc, char *argv[])
     cache_shutdown(0);
 
     exit(0);
-
 }
-

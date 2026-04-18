@@ -14,9 +14,9 @@
  * Copyright 2014 - 2015 ForgeRock AS.
  */
 
-#include "platform.h"
 #include "am.h"
 #include "net_client.h"
+#include "platform.h"
 #include "utility.h"
 
 /*

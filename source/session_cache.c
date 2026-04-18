@@ -14,34 +14,34 @@
  * Copyright 2014 - 2016 ForgeRock AS.
  */
 
-#include "platform.h"
-#include "am.h"
-#include "utility.h"
-#include "list.h"
 #include "agent_cache.h"
+#include "am.h"
+#include "list.h"
+#include "platform.h"
+#include "utility.h"
 
 /*
  * Session and Policy response attribute cache
  * ===============================================================
  * key: 'token value'
- * 
+ *
  * Policy Change event cache
  * ===============================================================
  * key: AM_POLICY_CHANGE_KEY
- * 
+ *
  * PDP cache:
  * ===============================================================
  * key: 'uuid value'
- * 
+ *
  */
 
-#define key_ln(blob)                    *(uint32_t *)(((char *)(blob)) + 1)
-#define key_addr(blob)                   (((char *)(blob)) + 1 + sizeof(uint32_t))
+#define key_ln(blob) *(uint32_t *)(((char *)(blob)) + 1)
+#define key_addr(blob) (((char *)(blob)) + 1 + sizeof(uint32_t))
 
-#define AM_CACHE_GC_INTERVAL            "AM_CACHE_GC_INTERVAL"
-#define AM_CACHE_GC_DEFAULT_INTERVAL    3
+#define AM_CACHE_GC_INTERVAL "AM_CACHE_GC_INTERVAL"
+#define AM_CACHE_GC_DEFAULT_INTERVAL 3
 
-static am_timer_event_t                 *cache_timer = NULL;
+static am_timer_event_t *cache_timer = NULL;
 
 static void cache_cleanup_event(void *arg) {
     pid_t pid;
@@ -49,21 +49,20 @@ static void cache_cleanup_event(void *arg) {
     if (is_agent_memory_ready() == AM_SUCCESS && is_agent_cache_ready() == AM_SUCCESS) {
         pid = getpid();
         cache_readlock_total_barrier(pid); /* check that all rw locks can go past 0 locks */
-        cache_purge_expired_entries(pid); /* purge expired cache entries, then deleted entries */
+        cache_purge_expired_entries(pid);  /* purge expired cache entries, then deleted entries */
         cache_garbage_collect();
         cache_stats();
     }
 }
 
 int am_cache_worker_init() {
+    unsigned int interval = AM_CACHE_GC_DEFAULT_INTERVAL; /* seconds */
 
-    unsigned int                         interval = AM_CACHE_GC_DEFAULT_INTERVAL;     /* seconds */
-     
-    char                                *env = getenv(AM_CACHE_GC_INTERVAL);
+    char *env = getenv(AM_CACHE_GC_INTERVAL);
 
     if (ISVALID(env)) {
-        char                            *endp = NULL;
-        unsigned int                     v = strtol(env, &endp, 0);
+        char *endp = NULL;
+        unsigned int v = strtol(env, &endp, 0);
 
         if (env < endp && *endp == '\0' && 0 < v) {
             interval = v;
@@ -87,16 +86,12 @@ int am_cache_worker_init() {
     am_start_timer_event(cache_timer);
 
     return AM_SUCCESS;
-
 }
 
 void am_cache_worker_shutdown() {
-
     am_close_timer_event(cache_timer);
     cache_timer = NULL;
-
 }
-
 
 /*
  * boolean test of equality between two msgpac blobs, a and b, which have been serialised such that the
@@ -104,24 +99,21 @@ void am_cache_worker_shutdown() {
  *
  */
 static int key_equality(void *a, void *b) {
-
-    uint32_t                             len = key_ln(a);
+    uint32_t len = key_ln(a);
 
     return len == key_ln(b) && memcmp(key_addr(a), key_addr(b), ntohl(len)) == 0;
-
 }
 
 /*
- * delete cache entry. 
+ * delete cache entry.
  *
  */
 int am_remove_cache_entry(unsigned long instance, const char *key) {
+    struct cache_object_ctx ctx;
 
-    struct cache_object_ctx              ctx;
+    int status = AM_SUCCESS;
 
-    int                                  status = AM_SUCCESS;
-
-    uint32_t                             hash = am_hash(key);
+    uint32_t hash = am_hash(key);
 
     cache_object_ctx_init(&ctx);
     cache_object_write_key(&ctx, (char *)key);
@@ -134,7 +126,6 @@ int am_remove_cache_entry(unsigned long instance, const char *key) {
 
     cache_object_ctx_destroy(&ctx);
     return status;
-
 }
 
 /*
@@ -142,10 +133,9 @@ int am_remove_cache_entry(unsigned long instance, const char *key) {
  *
  */
 static int cache_fetch_readable(uint32_t hash, char *key, void **data_addr, uint32_t *sz_addr) {
+    struct cache_object_ctx ctx;
 
-    struct cache_object_ctx              ctx;
-
-    int                                  status = 0;
+    int status = 0;
 
     cache_object_ctx_init(&ctx);
     cache_object_write_key(&ctx, key);
@@ -158,7 +148,6 @@ static int cache_fetch_readable(uint32_t hash, char *key, void **data_addr, uint
 
     cache_object_ctx_destroy(&ctx);
     return status;
-
 }
 
 /*
@@ -166,20 +155,19 @@ static int cache_fetch_readable(uint32_t hash, char *key, void **data_addr, uint
  *
  */
 int am_check_policy_cache_epoch(uint64_t policy_created) {
+    struct cache_object_ctx ctx;
+    int status;
 
-    struct cache_object_ctx              ctx;
-    int                                  status;
+    uint32_t hash = am_hash(AM_POLICY_CHANGE_KEY);
 
-    uint32_t                             hash = am_hash(AM_POLICY_CHANGE_KEY);
+    void *shm_data; /* pointer into hash table */
+    uint32_t shm_data_sz;
 
-    void                                *shm_data;                                    /* pointer into hash table */
-    uint32_t                             shm_data_sz;
+    uint64_t epoch_start;
 
-    uint64_t                             epoch_start;
-
-    if (( status = cache_fetch_readable(hash, (char *)AM_POLICY_CHANGE_KEY, &shm_data, &shm_data_sz) )) {
+    if ((status = cache_fetch_readable(hash, (char *)AM_POLICY_CHANGE_KEY, &shm_data, &shm_data_sz))) {
         if (status == AM_NOT_FOUND) {
-            return AM_SUCCESS;                                                        /* no epoch set */
+            return AM_SUCCESS; /* no epoch set */
         }
         return status;
     }
@@ -198,11 +186,10 @@ int am_check_policy_cache_epoch(uint64_t policy_created) {
     }
 
     if (policy_created < epoch_start) {
-        return AM_ETIMEDOUT;                                                          /* policy crated before the epoch */
+        return AM_ETIMEDOUT; /* policy crated before the epoch */
     }
 
     return status;
-
 }
 
 /*
@@ -210,11 +197,10 @@ int am_check_policy_cache_epoch(uint64_t policy_created) {
  *
  */
 int am_set_policy_cache_epoch(uint64_t epoch_start) {
+    struct cache_object_ctx ctx;
+    int status;
 
-    struct cache_object_ctx              ctx;
-    int                                  status;
-
-    uint32_t                             hash = am_hash(AM_POLICY_CHANGE_KEY);
+    uint32_t hash = am_hash(AM_POLICY_CHANGE_KEY);
 
     cache_object_ctx_init(&ctx);
     cache_object_write_key(&ctx, (char *)AM_POLICY_CHANGE_KEY);
@@ -223,29 +209,28 @@ int am_set_policy_cache_epoch(uint64_t epoch_start) {
     if (ctx.error) {
         status = ctx.error;
     } else if (cache_add(hash, ctx.data, ctx.data_size, ~0, key_equality)) {
-        status = AM_ERROR;                                                            /* failure here is significant */
+        status = AM_ERROR; /* failure here is significant */
     } else {
         status = AM_SUCCESS;
     }
 
     cache_object_ctx_destroy(&ctx);
     return status;
-
 }
 
 /*
  * deserialise cached pdp data entry
  *
  */
-int am_get_pdp_cache_entry(am_request_t *request, const char *key, char **url, char **file, char **content_type, int *method) {
+int am_get_pdp_cache_entry(am_request_t *request, const char *key, char **url, char **file, char **content_type,
+                           int *method) {
+    struct cache_object_ctx ctx;
+    int status;
 
-    struct cache_object_ctx              ctx;
-    int                                  status;
+    uint32_t hash = am_hash(key);
 
-    uint32_t                             hash = am_hash(key);
-
-    void                                *shm_data;                                    /* pointer into hash table */
-    uint32_t                             shm_data_sz;
+    void *shm_data; /* pointer into hash table */
+    uint32_t shm_data_sz;
 
     if (cache_fetch_readable(hash, (char *)key, &shm_data, &shm_data_sz)) {
         return AM_NOT_FOUND;
@@ -261,21 +246,20 @@ int am_get_pdp_cache_entry(am_request_t *request, const char *key, char **url, c
     cache_object_ctx_destroy(&ctx);
 
     return status;
-
 }
 
 /*
  * cache serialised pdp data
  *
  */
-int am_add_pdp_cache_entry(am_request_t *request, const char *key, const char *url, const char *file, const char *content_type, int method) {
+int am_add_pdp_cache_entry(am_request_t *request, const char *key, const char *url, const char *file,
+                           const char *content_type, int method) {
+    struct cache_object_ctx ctx;
+    int status;
 
-    struct cache_object_ctx              ctx;
-    int                                  status;
+    uint32_t hash = am_hash(key);
 
-    uint32_t                             hash = am_hash(key);
-
-    int64_t                              expires = time(0) + request->conf->pdp_cache_valid;
+    int64_t expires = time(0) + request->conf->pdp_cache_valid;
 
     cache_object_ctx_init(&ctx);
     cache_object_write_key(&ctx, (char *)key);
@@ -284,14 +268,13 @@ int am_add_pdp_cache_entry(am_request_t *request, const char *key, const char *u
     if (ctx.error) {
         status = ctx.error;
     } else if (cache_add(hash, ctx.data, ctx.data_size, expires, key_equality)) {
-        status = AM_ERROR;                                                            /* failure here is significant */
+        status = AM_ERROR; /* failure here is significant */
     } else {
         status = AM_SUCCESS;
     }
 
     cache_object_ctx_destroy(&ctx);
     return status;
-
 }
 
 /*
@@ -299,10 +282,9 @@ int am_add_pdp_cache_entry(am_request_t *request, const char *key, const char *u
  *
  */
 static int get_session_ttl(am_request_t *request, struct am_namevalue *session) {
-
-    int                                  ttl = request->conf->token_cache_valid;
-    int                                  max_caching = get_ttl_value(session, "maxcaching", ttl, AM_TRUE);
-    int                                  timeleft = get_ttl_value(session, "timeleft", ttl, AM_FALSE);
+    int ttl = request->conf->token_cache_valid;
+    int max_caching = get_ttl_value(session, "maxcaching", ttl, AM_TRUE);
+    int timeleft = get_ttl_value(session, "timeleft", ttl, AM_FALSE);
 
     if (max_caching < ttl) {
         ttl = max_caching;
@@ -313,22 +295,21 @@ static int get_session_ttl(am_request_t *request, struct am_namevalue *session) 
     }
 
     return ttl;
-
 }
 
 /*
  * deserialise cached policy and session data
  *
  */
-int am_get_session_policy_cache_entry(am_request_t *request, const char *key, struct am_policy_result **policy, struct am_namevalue **session, uint64_t *ts) {
+int am_get_session_policy_cache_entry(am_request_t *request, const char *key, struct am_policy_result **policy,
+                                      struct am_namevalue **session, uint64_t *ts) {
+    uint32_t hash = am_hash(key);
 
-    uint32_t                             hash = am_hash(key);
+    struct cache_object_ctx ctx;
+    int status;
 
-    struct cache_object_ctx              ctx;
-    int                                  status;
-
-    void                                *shm_data;                                    /* pointer into hash table */
-    uint32_t                             shm_data_sz;
+    void *shm_data; /* pointer into hash table */
+    uint32_t shm_data_sz;
 
     if (cache_fetch_readable(hash, (char *)key, &shm_data, &shm_data_sz)) {
         return AM_NOT_FOUND;
@@ -345,32 +326,32 @@ int am_get_session_policy_cache_entry(am_request_t *request, const char *key, st
     cache_object_ctx_destroy(&ctx);
 
     return status;
-
 }
 
 /*
- * cache policy and session data, add existing policies for other resources, overriding existing policies for the same resources
+ * cache policy and session data, add existing policies for other resources, overriding existing policies for the same
+ * resources
  *
  */
-int am_add_session_policy_cache_entry(am_request_t *request, const char *key, struct am_policy_result *policy, struct am_namevalue *session) {
+int am_add_session_policy_cache_entry(am_request_t *request, const char *key, struct am_policy_result *policy,
+                                      struct am_namevalue *session) {
+    int status;
 
-    int                                  status;
+    uint32_t hash = am_hash(key);
 
-    uint32_t                             hash = am_hash(key);
+    struct am_policy_result *merged = policy;
 
-    struct am_policy_result             *merged = policy;
+    struct cache_object_ctx ctx;
 
-    struct cache_object_ctx              ctx;
-
-    void                                *shm_data;                                    /* pointer into hash table */
-    uint32_t                             shm_data_sz;
+    void *shm_data; /* pointer into hash table */
+    uint32_t shm_data_sz;
 
     if (cache_fetch_readable(hash, (char *)key, &shm_data, &shm_data_sz) == 0) {
-        struct am_policy_result         *cached;
+        struct am_policy_result *cached;
 
         cache_object_ctx_init_data(&ctx, shm_data, (size_t)shm_data_sz);
         cache_object_skip_key(&ctx);
-        cached = am_policy_result_deserialise(&ctx);                                  /* read cached policy */
+        cached = am_policy_result_deserialise(&ctx); /* read cached policy */
 
         cache_release_readlocked_ptr(hash);
 
@@ -378,24 +359,24 @@ int am_add_session_policy_cache_entry(am_request_t *request, const char *key, st
         cache_object_ctx_destroy(&ctx);
 
         if (status) {
-            return status;                                                            /* serialisation problem */
+            return status; /* serialisation problem */
         }
 
-        while (cached) {                                                              /* add existing policies, new ones override */
-            struct am_policy_result     *p;
+        while (cached) { /* add existing policies, new ones override */
+            struct am_policy_result *p;
 
             for (p = policy; p; p = p->next) {
                 if (strcmp(cached->resource, p->resource) == 0)
                     break;
             }
 
-            struct am_policy_result     *next = cached->next;
+            struct am_policy_result *next = cached->next;
 
             if (p) {
-                cached->next = 0;                                                     /* discard existing policy */
+                cached->next = 0; /* discard existing policy */
                 delete_am_policy_result_list(&cached);
             } else {
-                cached->next = merged;                                                /* merge (prepend) existing policy */
+                cached->next = merged; /* merge (prepend) existing policy */
                 merged = cached;
             }
 
@@ -403,7 +384,7 @@ int am_add_session_policy_cache_entry(am_request_t *request, const char *key, st
         }
     }
 
-    int                                  ttl = get_session_ttl(request, session);
+    int ttl = get_session_ttl(request, session);
 
     cache_object_ctx_init(&ctx);
     cache_object_write_key(&ctx, (char *)key);
@@ -420,8 +401,8 @@ int am_add_session_policy_cache_entry(am_request_t *request, const char *key, st
 
     cache_object_ctx_destroy(&ctx);
 
-    while (merged != policy) {                                                        /* free merged policy */
-        struct am_policy_result         *next = merged->next;
+    while (merged != policy) { /* free merged policy */
+        struct am_policy_result *next = merged->next;
 
         merged->next = 0;
         delete_am_policy_result_list(&merged);
@@ -430,7 +411,6 @@ int am_add_session_policy_cache_entry(am_request_t *request, const char *key, st
     }
 
     return status;
-
 }
 
 int am_cache_init(int instance) {
@@ -443,9 +423,9 @@ int am_cache_shutdown() {
 }
 
 void am_cache_destroy() {
-    #ifdef UNIT_TEST
+#ifdef UNIT_TEST
     cache_initialise(0);
-    #endif
+#endif
     cache_shutdown(AM_TRUE);
 }
 

@@ -1,0 +1,57 @@
+---
+# Clang-format configuration for OpenAM Web Agents.
+# Based on LLVM style with overrides for 4-space indent, 120-col lines,
+# K&R braces, right-aligned pointers, and manually-grouped includes.
+# Rationale: these settings reflect the existing codebase so enabling the
+# formatter should produce minimal churn.
+
+Language: Cpp
+BasedOnStyle: LLVM
+
+# Indentation
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+
+# Line width
+ColumnLimit: 120
+
+# Braces (K&R: attached)
+BreakBeforeBraces: Attach
+
+# Pointer / reference alignment: "char *foo" not "char* foo"
+PointerAlignment: Right
+DerivePointerAlignment: false
+
+# Switch statements: 'case' aligns with 'switch'
+IndentCaseLabels: false
+
+# Multi-line macros: keep backslashes right-aligned near column limit
+AlignEscapedNewlines: Right
+
+# Preserve author's deliberate include ordering/grouping
+IncludeBlocks: Preserve
+SortIncludes: false
+
+# Don't collapse control flow bodies onto one line
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+
+# Function definitions: return type on same line as name
+AlwaysBreakAfterReturnType: None
+AlwaysBreakAfterDefinitionReturnType: None
+
+# Casts: no space after (int)x
+SpaceAfterCStyleCast: false
+
+# Other housekeeping
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false
+ReflowComments: true
+
+# Penalties nudged so return types stay on the same line as the name
+PenaltyReturnTypeOnItsOwnLine: 200

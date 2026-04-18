@@ -14,11 +14,11 @@
  * Copyright 2014 - 2016 ForgeRock AS.
  */
 
-#include "platform.h"
 #include "am.h"
-#include "utility.h"
 #include "expat.h"
 #include "list.h"
+#include "platform.h"
+#include "utility.h"
 
 /*
  * XML parser for 'SessionResponse', 'SessionNotification', 'PolicyNotification' and
@@ -47,7 +47,7 @@ typedef struct {
 
 static void start_element(void *userData, const char *name, const char **atts) {
     int i;
-    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
+    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *)userData;
 
     am_free(ctx->data);
     ctx->data = NULL;
@@ -55,14 +55,12 @@ static void start_element(void *userData, const char *name, const char **atts) {
 
     if (strcmp(name, "Session") == 0) {
         for (i = 0; atts[i]; i += 2) {
-            if (strcmp(atts[i], "sid") == 0 || strcmp(atts[i], "cid") == 0 ||
-                    strcmp(atts[i], "cdomain") == 0 || strcmp(atts[i], "maxtime") == 0 ||
-                    strcmp(atts[i], "maxidle") == 0 || strcmp(atts[i], "maxcaching") == 0 ||
-                    strcmp(atts[i], "timeidle") == 0 || strcmp(atts[i], "timeleft") == 0 ||
-                    strcmp(atts[i], "state") == 0) {
+            if (strcmp(atts[i], "sid") == 0 || strcmp(atts[i], "cid") == 0 || strcmp(atts[i], "cdomain") == 0 ||
+                strcmp(atts[i], "maxtime") == 0 || strcmp(atts[i], "maxidle") == 0 ||
+                strcmp(atts[i], "maxcaching") == 0 || strcmp(atts[i], "timeidle") == 0 ||
+                strcmp(atts[i], "timeleft") == 0 || strcmp(atts[i], "state") == 0) {
                 struct am_namevalue *el = NULL;
-                if (create_am_namevalue_node(atts[i], strlen(atts[i]),
-                        atts[i + 1], strlen(atts[i + 1]), &el) == 0) {
+                if (create_am_namevalue_node(atts[i], strlen(atts[i]), atts[i + 1], strlen(atts[i + 1]), &el) == 0) {
                     AM_LIST_INSERT(ctx->list, el);
                 }
             }
@@ -80,8 +78,8 @@ static void start_element(void *userData, const char *name, const char **atts) {
         if (((p - atts) >> 1) == 2) {
             for (i = 0; atts[i]; i += 4) {
                 struct am_namevalue *el = NULL;
-                if (create_am_namevalue_node(atts[i + 1], strlen(atts[i + 1]),
-                        atts[i + 3], strlen(atts[i + 3]), &el) == 0) {
+                if (create_am_namevalue_node(atts[i + 1], strlen(atts[i + 1]), atts[i + 3], strlen(atts[i + 3]), &el) ==
+                    0) {
                     AM_LIST_INSERT(ctx->list, el);
                 }
             }
@@ -92,8 +90,7 @@ static void start_element(void *userData, const char *name, const char **atts) {
         for (i = 0; atts[i]; i += 2) {
             if (strcmp(atts[i], "agentName") == 0) {
                 struct am_namevalue *el = NULL;
-                if (create_am_namevalue_node(atts[i], strlen(atts[i]),
-                        atts[i + 1], strlen(atts[i + 1]), &el) == 0) {
+                if (create_am_namevalue_node(atts[i], strlen(atts[i]), atts[i + 1], strlen(atts[i + 1]), &el) == 0) {
                     AM_LIST_INSERT(ctx->list, el);
                 }
             }
@@ -105,14 +102,15 @@ static void start_element(void *userData, const char *name, const char **atts) {
     }
 }
 
-static void end_element(void * userData, const char * name) {
+static void end_element(void *userData, const char *name) {
     struct am_namevalue *el = NULL;
-    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
+    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *)userData;
     char *val = ctx->data;
     int len = ctx->data_sz;
 
     ctx->resource_name = AM_FALSE;
-    if (!ISVALID(ctx->data)) return;
+    if (!ISVALID(ctx->data))
+        return;
 
     if (create_am_namevalue_node("ResourceName", 12, val, len, &el) == 0) {
         AM_LIST_INSERT(ctx->list, el);
@@ -124,8 +122,9 @@ static void end_element(void * userData, const char * name) {
 
 static void character_data(void *userData, const char *val, int len) {
     char *tmp;
-    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
-    if (!(ctx->resource_name) || len <= 0) return;
+    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *)userData;
+    if (!(ctx->resource_name) || len <= 0)
+        return;
 
     tmp = realloc(ctx->data, ctx->data_sz + len + 1);
     if (tmp == NULL) {
@@ -141,10 +140,10 @@ static void character_data(void *userData, const char *val, int len) {
     ctx->data[ctx->data_sz] = 0;
 }
 
-static void entity_declaration(void *userData, const XML_Char *entityName,
-        int is_parameter_entity, const XML_Char *value, int value_length, const XML_Char *base,
-        const XML_Char *systemId, const XML_Char *publicId, const XML_Char *notationName) {
-    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
+static void entity_declaration(void *userData, const XML_Char *entityName, int is_parameter_entity,
+                               const XML_Char *value, int value_length, const XML_Char *base, const XML_Char *systemId,
+                               const XML_Char *publicId, const XML_Char *notationName) {
+    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *)userData;
     XML_StopParser(ctx->parser, XML_FALSE);
 }
 
@@ -155,7 +154,12 @@ void *am_parse_session_xml(unsigned long instance_id, const char *xml, size_t xm
     struct am_namevalue *r = NULL;
 
     am_xml_parser_ctx_t xctx = {.instance_id = instance_id,
-        .list = NULL, .parser = NULL, .resource_name = AM_FALSE, .data_sz = 0, .data = NULL, .status = AM_SUCCESS};
+                                .list = NULL,
+                                .parser = NULL,
+                                .resource_name = AM_FALSE,
+                                .data_sz = 0,
+                                .data = NULL,
+                                .status = AM_SUCCESS};
 
     if (xml == NULL || xml_sz == 0) {
         AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
@@ -171,7 +175,7 @@ void *am_parse_session_xml(unsigned long instance_id, const char *xml, size_t xm
         }
     } else {
         /*no CDATA*/
-        stream = (char *) xml;
+        stream = (char *)xml;
         data_sz = xml_sz;
     }
 
@@ -182,12 +186,12 @@ void *am_parse_session_xml(unsigned long instance_id, const char *xml, size_t xm
         XML_SetElementHandler(parser, start_element, end_element);
         XML_SetCharacterDataHandler(parser, character_data);
         XML_SetEntityDeclHandler(parser, entity_declaration);
-        if (XML_Parse(parser, stream, (int) data_sz, XML_TRUE) == XML_STATUS_ERROR) {
+        if (XML_Parse(parser, stream, (int)data_sz, XML_TRUE) == XML_STATUS_ERROR) {
             const char *message = XML_ErrorString(XML_GetErrorCode(parser));
             XML_Size line = XML_GetCurrentLineNumber(parser);
             XML_Size col = XML_GetCurrentColumnNumber(parser);
-            AM_LOG_ERROR(instance_id, "%s xml parser error (%lu:%lu) %s", thisfunc,
-                    (unsigned long) line, (unsigned long) col, message);
+            AM_LOG_ERROR(instance_id, "%s xml parser error (%lu:%lu) %s", thisfunc, (unsigned long)line,
+                         (unsigned long)col, message);
             delete_am_namevalue_list(&xctx.list);
         } else {
             r = xctx.list;
@@ -201,5 +205,5 @@ void *am_parse_session_xml(unsigned long instance_id, const char *xml, size_t xm
         AM_LOG_ERROR(instance_id, "%s %s", thisfunc, am_strerror(xctx.status));
     }
 
-    return (void *) r;
+    return (void *)r;
 }

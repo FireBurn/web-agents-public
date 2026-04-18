@@ -42,7 +42,7 @@ static void install_log(const char *format, ...) {
     gettimeofday(&tv, NULL);
     localtime_r(&tv.tv_sec, &now);
 #endif
-    strftime(ts, sizeof (ts) - 1, "%Y-%m-%d %H:%M:%S", &now);
+    strftime(ts, sizeof(ts) - 1, "%Y-%m-%d %H:%M:%S", &now);
     if (f != NULL) {
         va_list args;
         fprintf(f, "%s  ", ts);
@@ -60,7 +60,7 @@ void test_single_request(void **state) {
     int httpcode = 0;
     am_net_options_t net_options;
 
-    memset(&net_options, 0, sizeof (am_net_options_t));
+    memset(&net_options, 0, sizeof(am_net_options_t));
     net_options.keepalive = net_options.local = net_options.cert_trust = AM_TRUE;
     net_options.log = install_log;
 
@@ -91,14 +91,14 @@ void test_multiple_requests(void **state) {
     char *profile_xml = NULL;
     size_t profile_xml_sz = 0;
 
-    memset(&net_options, 0, sizeof (am_net_options_t));
+    memset(&net_options, 0, sizeof(am_net_options_t));
     net_options.keepalive = net_options.local = net_options.cert_trust = AM_TRUE;
     net_options.log = install_log;
 
     am_net_init();
 
-    rv = am_agent_login(0, openam_url, agent_user, agent_password, agent_realm, NULL, &net_options,
-            &agent_token, &profile_xml, &profile_xml_sz, &agent_session);
+    rv = am_agent_login(0, openam_url, agent_user, agent_password, agent_realm, NULL, &net_options, &agent_token,
+                        &profile_xml, &profile_xml_sz, &agent_session);
 
     fprintf(stderr, "LOGIN STATUS: %s\n", am_strerror(rv));
     assert_int_equal(rv, AM_SUCCESS);

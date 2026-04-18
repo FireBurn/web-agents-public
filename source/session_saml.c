@@ -14,11 +14,11 @@
  * Copyright 2014 - 2015 ForgeRock AS.
  */
 
-#include "platform.h"
 #include "am.h"
-#include "utility.h"
 #include "expat.h"
 #include "list.h"
+#include "platform.h"
+#include "utility.h"
 
 /*
  * XML parser for SAML elements (LARES response)
@@ -35,20 +35,20 @@ typedef struct {
 } am_xml_parser_ctx_t;
 
 static void start_element(void *userData, const char *name, const char **atts) {
-    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
+    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *)userData;
 
     am_free(ctx->data);
     ctx->data = NULL;
     ctx->data_sz = 0;
     ctx->setting_value = 0;
-    
+
     if (strcmp(name, "saml:NameIdentifier") == 0) {
         ctx->setting_value = 1;
     }
 }
 
-static void end_element(void * userData, const char * name) {
-    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
+static void end_element(void *userData, const char *name) {
+    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *)userData;
     char alloc = 0, *clean = NULL;
     size_t sz = 0;
     struct am_namevalue *el = NULL;
@@ -56,7 +56,8 @@ static void end_element(void * userData, const char * name) {
     int len = ctx->data_sz;
 
     ctx->setting_value = 0;
-    if (!ISVALID(ctx->data)) return;
+    if (!ISVALID(ctx->data))
+        return;
 
     if (memchr(val, '%', len) != NULL) {
         char *t = strndup(val, len);
@@ -65,7 +66,7 @@ static void end_element(void * userData, const char * name) {
         alloc = 1;
         am_free(t);
     } else {
-        clean = (char *) val;
+        clean = (char *)val;
         sz = len;
     }
 
@@ -82,8 +83,9 @@ static void end_element(void * userData, const char * name) {
 
 static void character_data(void *userData, const char *val, int len) {
     char *tmp;
-    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
-    if (ctx->setting_value == 0 || len <= 0) return;
+    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *)userData;
+    if (ctx->setting_value == 0 || len <= 0)
+        return;
 
     tmp = realloc(ctx->data, ctx->data_sz + len + 1);
     if (tmp == NULL) {
@@ -99,10 +101,10 @@ static void character_data(void *userData, const char *val, int len) {
     ctx->data[ctx->data_sz] = 0;
 }
 
-static void entity_declaration(void *userData, const XML_Char *entityName,
-        int is_parameter_entity, const XML_Char *value, int value_length, const XML_Char *base,
-        const XML_Char *systemId, const XML_Char *publicId, const XML_Char *notationName) {
-    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *) userData;
+static void entity_declaration(void *userData, const XML_Char *entityName, int is_parameter_entity,
+                               const XML_Char *value, int value_length, const XML_Char *base, const XML_Char *systemId,
+                               const XML_Char *publicId, const XML_Char *notationName) {
+    am_xml_parser_ctx_t *ctx = (am_xml_parser_ctx_t *)userData;
     XML_StopParser(ctx->parser, XML_FALSE);
 }
 
@@ -110,8 +112,8 @@ void *am_parse_session_saml(unsigned long instance_id, const char *xml, size_t x
     static const char *thisfunc = "am_parse_session_saml():";
     struct am_namevalue *e, *t, *r = NULL;
 
-    am_xml_parser_ctx_t xctx = {.instance_id = instance_id,
-        .list = NULL, .parser = NULL, .data_sz = 0, .data = NULL, .status = AM_SUCCESS};
+    am_xml_parser_ctx_t xctx = {
+        .instance_id = instance_id, .list = NULL, .parser = NULL, .data_sz = 0, .data = NULL, .status = AM_SUCCESS};
 
     if (xml == NULL || xml_sz == 0) {
         AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
@@ -123,12 +125,11 @@ void *am_parse_session_saml(unsigned long instance_id, const char *xml, size_t x
         XML_SetElementHandler(parser, start_element, end_element);
         XML_SetCharacterDataHandler(parser, character_data);
         XML_SetEntityDeclHandler(parser, entity_declaration);
-        if (XML_Parse(parser, xml, (int) xml_sz, XML_TRUE) == XML_STATUS_ERROR) {
+        if (XML_Parse(parser, xml, (int)xml_sz, XML_TRUE) == XML_STATUS_ERROR) {
             const char *message = XML_ErrorString(XML_GetErrorCode(parser));
             XML_Size line = XML_GetCurrentLineNumber(parser);
             XML_Size col = XML_GetCurrentColumnNumber(parser);
-            AM_LOG_ERROR(instance_id, "%s xml parser error (%d:%d) %s", thisfunc,
-                    line, col, message);
+            AM_LOG_ERROR(instance_id, "%s xml parser error (%d:%d) %s", thisfunc, line, col, message);
             delete_am_namevalue_list(&xctx.list);
         } else {
             r = xctx.list;
@@ -137,10 +138,8 @@ void *am_parse_session_saml(unsigned long instance_id, const char *xml, size_t x
     }
 
     if (r != NULL) {
-
         AM_LIST_FOR_EACH(r, e, t) {
-            AM_LOG_DEBUG(instance_id, "%s name: '%s' value: '%s'", thisfunc,
-                    e->n, e->v != NULL ? e->v : "NULL");
+            AM_LOG_DEBUG(instance_id, "%s name: '%s' value: '%s'", thisfunc, e->n, e->v != NULL ? e->v : "NULL");
         }
     }
 
@@ -148,5 +147,5 @@ void *am_parse_session_saml(unsigned long instance_id, const char *xml, size_t x
         AM_LOG_ERROR(instance_id, "%s %s", thisfunc, am_strerror(xctx.status));
     }
 
-    return (void *) r;
+    return (void *)r;
 }

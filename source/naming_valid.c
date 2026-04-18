@@ -14,12 +14,12 @@
  * Copyright 2012 - 2016 ForgeRock AS.
  */
 
-#include "platform.h"
 #include "am.h"
+#include "list.h"
+#include "log.h"
+#include "platform.h"
 #include "thread.h"
 #include "utility.h"
-#include "log.h"
-#include "list.h"
 
 #define MIN_URL_VALIDATOR_TICK 5 /* sec */
 
@@ -48,19 +48,21 @@ static void delete_url_validation_table(struct url_valid_table **list) {
     }
 }
 
-static void get_validation_table_entry(unsigned long instance_id,
-        int index, int *ok, int *fail, int *default_ok) {
+static void get_validation_table_entry(unsigned long instance_id, int index, int *ok, int *fail, int *default_ok) {
     struct url_valid_table *e, *t;
 
     AM_MUTEX_LOCK(&table_mutex);
 
     AM_LIST_FOR_EACH(table, e, t) {
         if (e->instance_id == instance_id && e->index == 0) {
-            if (default_ok != NULL) *default_ok = e->ok;
+            if (default_ok != NULL)
+                *default_ok = e->ok;
         }
         if (e->instance_id == instance_id && e->index == index) {
-            if (ok != NULL) *ok = e->ok;
-            if (fail != NULL) *fail = e->fail;
+            if (ok != NULL)
+                *ok = e->ok;
+            if (fail != NULL)
+                *fail = e->fail;
             break;
         }
     }
@@ -84,7 +86,7 @@ static void set_validation_table_entry(unsigned long instance_id, int index, int
     }
 
     if (!found) {
-        e = (struct url_valid_table *) malloc(sizeof (struct url_valid_table));
+        e = (struct url_valid_table *)malloc(sizeof(struct url_valid_table));
         if (e != NULL) {
             e->instance_id = instance_id;
             e->index = index;
@@ -100,7 +102,7 @@ static void set_validation_table_entry(unsigned long instance_id, int index, int
 
 void url_validator_worker(void *arg) {
     static const char *thisfunc = "url_validator_worker():";
-    struct url_validator_worker_data *w = (struct url_validator_worker_data *) arg;
+    struct url_validator_worker_data *w = (struct url_validator_worker_data *)arg;
     am_net_options_t *net_options;
     int i, validate_status;
     am_config_t *conf = NULL;
@@ -114,8 +116,7 @@ void url_validator_worker(void *arg) {
     set_valid_url_instance_running(w->instance_id, AM_TRUE);
 
     if (am_get_agent_config_cache_or_local(w->instance_id, w->config_path, &conf) != AM_SUCCESS) {
-        AM_LOG_WARNING(w->instance_id, "%s failed to get agent configuration (%s)",
-                thisfunc, LOGEMPTY(w->config_path));
+        AM_LOG_WARNING(w->instance_id, "%s failed to get agent configuration (%s)", thisfunc, LOGEMPTY(w->config_path));
         set_valid_url_instance_running(w->instance_id, AM_FALSE);
         AM_FREE(w->config_path, w);
         return;
@@ -127,7 +128,7 @@ void url_validator_worker(void *arg) {
     current_index = w->url_index;
 
     if (conf->valid_level > 1 || conf->naming_url_sz < 2 || conf->naming_url_sz != conf->valid_default_url_sz ||
-            (current_ts - w->last) < ping_diff) {
+        (current_ts - w->last) < ping_diff) {
         /* a) validation is disabled; b) there is nothing to validate;
          * c) naming.url list and default.url list sizes do not match or
          * d) its not time yet to do any validation
@@ -139,8 +140,8 @@ void url_validator_worker(void *arg) {
     }
 
     if (current_index < 0 || current_index >= conf->naming_url_sz) {
-        AM_LOG_WARNING(w->instance_id,
-                "%s invalid current index value, defaulting to %s", thisfunc, conf->naming_url[0]);
+        AM_LOG_WARNING(w->instance_id, "%s invalid current index value, defaulting to %s", thisfunc,
+                       conf->naming_url[0]);
         set_valid_url_index(w->instance_id, 0);
         am_config_free(&conf);
         set_valid_url_instance_running(w->instance_id, AM_FALSE);
@@ -148,16 +149,18 @@ void url_validator_worker(void *arg) {
         return;
     }
 
-#define URL_LIST_FREE(l, s) do { \
-        int k; \
-        if (l == NULL) break; \
-        for (k = 0; k < s; k++) { \
-            am_free(l[k]); \
-        }\
-        free(l); \
+#define URL_LIST_FREE(l, s)                                                                                            \
+    do {                                                                                                               \
+        int k;                                                                                                         \
+        if (l == NULL)                                                                                                 \
+            break;                                                                                                     \
+        for (k = 0; k < s; k++) {                                                                                      \
+            am_free(l[k]);                                                                                             \
+        }                                                                                                              \
+        free(l);                                                                                                       \
     } while (0)
 
-    net_options = calloc(1, sizeof (am_net_options_t));
+    net_options = calloc(1, sizeof(am_net_options_t));
     if (net_options == NULL) {
         AM_LOG_ERROR(w->instance_id, "%s memory allocation error", thisfunc);
         am_config_free(&conf);
@@ -166,7 +169,7 @@ void url_validator_worker(void *arg) {
         return;
     }
 
-    url_list = (char **) calloc(1, conf->naming_url_sz * sizeof (char *));
+    url_list = (char **)calloc(1, conf->naming_url_sz * sizeof(char *));
     if (url_list == NULL) {
         AM_LOG_ERROR(w->instance_id, "%s memory allocation error", thisfunc);
         am_config_free(&conf);
@@ -178,7 +181,7 @@ void url_validator_worker(void *arg) {
 
     for (i = 0; i < url_list_sz; i++) {
         /* default.url.set contains fail-over order;
-         * will keep internal value list index-ordered 
+         * will keep internal value list index-ordered
          **/
         int j = conf->valid_default_url[i];
         url_list[i] = strdup(conf->naming_url[j]);
@@ -213,8 +216,8 @@ void url_validator_worker(void *arg) {
         } else {
             /* full scale agent login-logout request */
             char *agent_token = NULL;
-            validate_status = am_agent_login(w->instance_id, url, conf->user, conf->pass, conf->realm,
-                    NULL, net_options, &agent_token, NULL, NULL, NULL);
+            validate_status = am_agent_login(w->instance_id, url, conf->user, conf->pass, conf->realm, NULL,
+                                             net_options, &agent_token, NULL, NULL, NULL);
             if (agent_token != NULL) {
                 am_agent_logout(0, url, agent_token, net_options);
                 free(agent_token);
@@ -246,7 +249,7 @@ void url_validator_worker(void *arg) {
     }
 
     default_ok = current_ok = current_fail = 0;
-    /* fetch validation table entry for the current_index 
+    /* fetch validation table entry for the current_index
      * (which now corresponds to the default.url.set value/index) */
     get_validation_table_entry(w->instance_id, current_index, &current_ok, &current_fail, &default_ok);
 
@@ -288,8 +291,7 @@ void url_validator_worker(void *arg) {
         AM_MUTEX_UNLOCK(&table_mutex);
 
         if (next_ok == 0) {
-            AM_LOG_WARNING(w->instance_id,
-                    "%s none of the values are valid, defaulting to %s", thisfunc, url_list[0]);
+            AM_LOG_WARNING(w->instance_id, "%s none of the values are valid, defaulting to %s", thisfunc, url_list[0]);
             set_valid_url_index(w->instance_id, conf->valid_default_url[0]);
             break;
         }
@@ -318,8 +320,7 @@ static void am_url_validator_tick(void *arg) {
     int i;
     struct url_validator_worker_data *list;
 
-    list = (struct url_validator_worker_data *) calloc(1,
-            sizeof (struct url_validator_worker_data) * AM_MAX_INSTANCES);
+    list = (struct url_validator_worker_data *)calloc(1, sizeof(struct url_validator_worker_data) * AM_MAX_INSTANCES);
     if (list == NULL || get_valid_url_all(list) != AM_SUCCESS) {
         am_free(list);
         return;
@@ -329,7 +330,7 @@ static void am_url_validator_tick(void *arg) {
         /* schedule a new url_validator_worker only when instance is registered and validator is not running already */
         if (list[i].instance_id > 0 && !list[i].running) {
             struct url_validator_worker_data *worker_data =
-                    (struct url_validator_worker_data *) malloc(sizeof (struct url_validator_worker_data));
+                (struct url_validator_worker_data *)malloc(sizeof(struct url_validator_worker_data));
             if (worker_data != NULL) {
                 worker_data->instance_id = list[i].instance_id;
                 worker_data->url_index = list[i].url_index;
@@ -357,8 +358,8 @@ int am_url_validator_init() {
 
     AM_MUTEX_INIT(&table_mutex);
 
-    validator_timer = am_create_timer_event(AM_TIMER_EVENT_RECURRING,
-            MIN_URL_VALIDATOR_TICK, NULL, am_url_validator_tick);
+    validator_timer =
+        am_create_timer_event(AM_TIMER_EVENT_RECURRING, MIN_URL_VALIDATOR_TICK, NULL, am_url_validator_tick);
     if (validator_timer == NULL) {
         return AM_ENOMEM;
     }
