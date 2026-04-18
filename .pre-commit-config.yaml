@@ -1,0 +1,32 @@
+# Pre-commit framework config: https://pre-commit.com
+#
+# Install once per clone:
+#     pip install pre-commit
+#     pre-commit install
+#
+# After that, `git commit` automatically runs these hooks on staged files.
+# Run against the whole tree at any time with:
+#     pre-commit run --all-files
+
+repos:
+  # Basic hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-yaml
+      - id: check-json
+
+  # clang-format for C / C++ sources and headers
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v19.1.7
+    hooks:
+      - id: clang-format
+        types_or: [c, c++]
+        files: ^(source|tests|integration)/.*\.(c|h|cpp|cc|hpp)$
