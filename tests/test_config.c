@@ -3,18 +3,18 @@
 // Copyright 2015 ForgeRock AS.
 // Copyright 2018-2026 Open Identity Platform Community.
 
-#include <setjmp.h>
-#include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <setjmp.h>
 #include <unistd.h>
 
 #include "am.h"
-#include "cmocka.h"
-#include "log.h"
 #include "platform.h"
 #include "utility.h"
+#include "log.h"
+#include "cmocka.h"
 
 void test_config_url_maps(void **state) {
     int i;
@@ -30,8 +30,7 @@ void test_config_url_maps(void **state) {
 
                     "com.sun.identity.agents.config.notenforced.regex.enable = false\n"
                     "com.sun.identity.agents.config.notenforced.url[0] = http://a.b.c/path\n"
-                    "com.sun.identity.agents.config.notenforced.url[1] = "
-                    "https://a.b.c:1234/path\n"
+                    "com.sun.identity.agents.config.notenforced.url[1] = https://a.b.c:1234/path\n"
 
                     "org.forgerock.agents.config.notenforced.ext.regex.enable = false\n"
                     "org.forgerock.agents.config.notenforced.ipurl[0] = http://a.b.c/path\n"

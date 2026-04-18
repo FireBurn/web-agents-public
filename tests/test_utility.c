@@ -3,33 +3,31 @@
 // Copyright 2015-2016 ForgeRock AS.
 // Copyright 2018-2026 Open Identity Platform Community.
 
-#include <setjmp.h>
-#include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <setjmp.h>
 #include <unistd.h>
 
 #include "am.h"
-#include "cmocka.h"
-#include "log.h"
 #include "platform.h"
 #include "utility.h"
+#include "log.h"
+#include "cmocka.h"
 
 /**
- * This is the marker we spatter throughout our destination buffer for testing
- * purposes.  It must not be null because as far as this code is concerned, null
- * is valid data.  We need this to be invalid and noticable. Thus I chose
- * control A.
+ * This is the marker we spatter throughout our destination buffer for testing purposes.  It must not be null
+ * because as far as this code is concerned, null is valid data.  We need this to be invalid and noticable.
+ * Thus I chose control A.
  */
 #define MARKER 0x1
 
 /**
- * Encode the string stored in p and make non printing characters (including
- * nulls) visible by representing them as \HH where HH is the hex value in the
- * shortest width possible (so null comes out as \0).  We return a pointer to a
- * dynamically allocated piece of memory which should be freed.  This routine
- * isn't particularly efficient.
+ * Encode the string stored in p and make non printing characters (including nulls) visible by representing
+ * them as \HH where HH is the hex value in the shortest width possible (so null comes out as \0).  We return
+ * a pointer to a dynamically allocated piece of memory which should be freed.  This routine isn't particularly
+ * efficient.
  */
 static const char *encode(const char *p, size_t len) {
     static char buf[1024];
@@ -51,8 +49,7 @@ static const char *encode(const char *p, size_t len) {
 }
 
 /**
- * Find the first marker character in "dest" and return the number of characters
- * before it.
+ * Find the first marker character in "dest" and return the number of characters before it.
  */
 static size_t find_marker(const char *dest) {
     const char *p = dest;
@@ -63,10 +60,9 @@ static size_t find_marker(const char *dest) {
 }
 
 /**
- * Compare the actual and expected values.  If they do not match, dump out a
- * representation of both the expected and actual values so we can see what has
- * gone wrong.  If they do match, print "SUCCESS" and return 0.  In this way we
- * draw maximum attention to ourselves only if the test fails.
+ * Compare the actual and expected values.  If they do not match, dump out a representation of both the expected
+ * and actual values so we can see what has gone wrong.  If they do match, print "SUCCESS" and return 0.  In
+ * this way we draw maximum attention to ourselves only if the test fails.
  */
 static int compare(const char *actual, const char *expected, size_t expected_len) {
     size_t actual_len = find_marker(actual);
@@ -79,8 +75,7 @@ static int compare(const char *actual, const char *expected, size_t expected_len
     }
 
     if (memcmp(actual, expected, expected_len) != 0) {
-        printf("actual and expected strings are different (although the same "
-               "length)\n");
+        printf("actual and expected strings are different (although the same length)\n");
         printf("expected: %s\nactual: %s\n", encode(expected, expected_len), encode(actual, actual_len));
         return 1;
     }
@@ -158,9 +153,8 @@ void test_match(void **state) {
 }
 
 /**
- * Note that the match_groups function isn't tested here because it is only
- * invoked once in the entire codebase. Also I can't quite figure what the
- * length parameters should be set to.
+ * Note that the match_groups function isn't tested here because it is only invoked once in the entire codebase.
+ * Also I can't quite figure what the length parameters should be set to.
  */
 
 static int am_vasprintf_test(char **p, const char *format, ...) {
@@ -179,8 +173,7 @@ static int am_vasprintf_test(char **p, const char *format, ...) {
  */
 void test_am_vasprintf(void **state) {
     char random[5];
-    char *buff = random; /* ensure we won't crash if passed a pointer referencing
-                            the stack */
+    char *buff = random; /* ensure we won't crash if passed a pointer referencing the stack */
 
     int returned = am_vasprintf_test(&buff, "%s: %s; %s", as_you_like_it_1, as_you_like_it_2, as_you_like_it_3);
 
@@ -195,8 +188,8 @@ void test_am_vasprintf(void **state) {
 }
 
 /**
- * test the am_asprintf function.  Obviously one thing we cannot do is pass it a
- * pointer to the stack as it's first parmameter - if we do, it crashes.
+ * test the am_asprintf function.  Obviously one thing we cannot do is pass it a pointer to the
+ * stack as it's first parmameter - if we do, it crashes.
  */
 void test_am_asprintf(void **state) {
     char *buff = NULL;
@@ -220,10 +213,9 @@ void test_am_asprintf(void **state) {
 }
 
 /**
- * test the am_free function.  Obviously we can't pass a stack-based reference
- * to it, that will cause it to crash.  Similarly we can only pass a pointer
- * directly returned from one of the memory allocation functions, as opposed to
- * something returned and incremented a little.
+ * test the am_free function.  Obviously we can't pass a stack-based reference to it, that will cause it
+ * to crash.  Similarly we can only pass a pointer directly returned from one of the memory allocation functions,
+ * as opposed to something returned and incremented a little.
  */
 void test_am_free(void **state) {
     void *m_buff = malloc(8192);
@@ -243,8 +235,8 @@ void test_am_free(void **state) {
 }
 
 /**
- * test am_strldup, which duplicates a lowercase version of the string into
- * dynamic memory. In fact am_stridup was only written while tidying up stristr.
+ * test am_strldup, which duplicates a lowercase version of the string into dynamic memory.
+ * In fact am_stridup was only written while tidying up stristr.
  */
 void test_am_strldup(void **state) {
     char *should_be_null = am_strldup(NULL);
@@ -302,16 +294,15 @@ void test_stristr(void **state) {
 }
 
 /**
- * Test base 64 encoding and decoding.  Note that https://www.base64encode.org/
- * has been particularly helpful here.  Also note the importance of setting
- * "length" correctly before its address is passed into the encoding function.
- * The decoding function doesn't care.
+ * Test base 64 encoding and decoding.  Note that https://www.base64encode.org/ has been
+ * particularly helpful here.  Also note the importance of setting "length" correctly before
+ * its address is passed into the encoding function.  The decoding function doesn't care.
  */
 void test_base64_encode_decode(void **state) {
     const char *in = "Man";
     const char *out = "TWFu";
-    const char *r3_out = "Tm93IGlzIHRoZSB3aW50ZXIgb2Ygb3VyIGRpc2NvbnRlbnQsIE1hZGU"
-                         "gZ2xvcmlvdXMgc3VtbWVyIGJ5IHRoaXMgc29uIG9mIFlvcms=";
+    const char *r3_out =
+        "Tm93IGlzIHRoZSB3aW50ZXIgb2Ygb3VyIGRpc2NvbnRlbnQsIE1hZGUgZ2xvcmlvdXMgc3VtbWVyIGJ5IHRoaXMgc29uIG9mIFlvcms=";
     size_t length = 3;
 
     char *encoded = base64_encode(in, &length);
@@ -355,9 +346,8 @@ void test_char_count(void **state) {
 }
 
 /**
- * Test encryption and decryption.  This function does the obvious test of
- * taking text, encoding it and decoding it again to see if we end up with the
- * same thing.
+ * Test encryption and decryption.  This function does the obvious test of taking text, encoding
+ * it and decoding it again to see if we end up with the same thing.
  */
 void test_encrypt_decrypt_password(void **state) {
     const char *key = "jU7tHgf1iB4gbTR7";
@@ -370,8 +360,7 @@ void test_encrypt_decrypt_password(void **state) {
     assert_non_null(encoded);
     encrypt_password(encoded, &result);
 
-    // "result" now points to a dynamically allocated area filled with the
-    // encrypted password
+    // "result" now points to a dynamically allocated area filled with the encrypted password
     assert_string_not_equal(clear_text, result);
 
     // now decode back to the original text (hopefully)
@@ -875,9 +864,7 @@ void test_url_encoding(void **state) {
 void encode_header_value(char **val);
 
 void test_header_value_encoding(void **state) {
-    const char *value1 = "-_.!~*'();/"
-                         "?:@&=+$,%#"
-                         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ]";
+    const char *value1 = "-_.!~*'();/?:@&=+$,%#abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ]";
     const char *value2 = "aā bcdef";
     const char *value2_encoded = "=?UTF-8?B?YcSBIGJjZGVm?=";
 

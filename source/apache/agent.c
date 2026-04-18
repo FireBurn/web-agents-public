@@ -872,11 +872,7 @@ static int amagent_auth_handler(request_rec *req) {
     }
 
     if (!ISVALID(am_request.client_ip)) {
-#ifdef APACHE24
         am_request.client_ip = (char *)req->connection->client_ip;
-#else
-        am_request.client_ip = (char *)req->connection->remote_ip;
-#endif
     }
 
     if (ISVALID(am_request.conf->client_hostname_header)) {

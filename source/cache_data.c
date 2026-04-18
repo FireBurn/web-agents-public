@@ -118,18 +118,6 @@ static int cache_object_write_s32(struct cache_object_ctx *ctx, int32_t val) {
     return 0;
 }
 
-/* write unsigned 32 bit integer */
-static int cache_object_write_u32(struct cache_object_ctx *ctx, uint32_t val) {
-    uint32_t i;
-    if (write_byte(ctx, U32_MARKER) != 0) {
-        ctx->error = AM_ERROR;
-        return -1;
-    }
-    i = htonl(val);
-    ctx->write(ctx, &i, sizeof(uint32_t));
-    return 0;
-}
-
 /* write unsigned 64 bit integer */
 static int cache_object_write_u64(struct cache_object_ctx *ctx, uint64_t val) {
     uint64_t i;
@@ -247,15 +235,6 @@ static int cache_object_read_u64(struct cache_object_ctx *ctx, uint64_t *val) {
 }
 
 /* read unsigned 32 bit integer */
-static int cache_object_read_u32(struct cache_object_ctx *ctx, uint32_t *val) {
-    struct cache_object obj;
-    if (cache_object_read(ctx, &obj) == 0 && obj.type == UINT32_TYPE) {
-        *val = obj.obj.u32;
-        return 0;
-    }
-    return -1;
-}
-
 static int cache_object_read_str_size(struct cache_object_ctx *ctx, uint32_t *size) {
     struct cache_object obj;
     if (cache_object_read(ctx, &obj) == 0 && obj.type == STR32_TYPE) {

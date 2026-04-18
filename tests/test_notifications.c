@@ -3,16 +3,16 @@
 // Copyright 2014-2016 ForgeRock AS.
 // Copyright 2018-2026 Open Identity Platform Community.
 
-#include <setjmp.h>
 #include <stdio.h>
 #include <string.h>
+#include <setjmp.h>
 #include <unistd.h>
 
-#include "am.h"
-#include "cmocka.h"
 #include "platform.h"
-#include "thread.h"
+#include "am.h"
 #include "utility.h"
+#include "thread.h"
+#include "cmocka.h"
 
 typedef am_return_t (*am_state_func_t)(am_request_t *);
 
@@ -46,13 +46,12 @@ void test_simple_fail(void **state) {
                       " <Notification>"
                       // option - invalidate config changed ( not for specific instance )
                       //" <AgentConfigChangeNotification />"
-                      // option - invalidate session by sid ( state must be present, not is not
-                      // used )
+                      // option - invalidate session by sid ( state must be present, not is not used )
                       //" <SessionNotification>"
                       //"  <Session sid='my-session' state='destroyed' />"
                       //" </SessionNotification>"
-                      // option remove specific resources from the cache - check that it is the
-                      // right service these can't be removed by resource from the session cache
+                      // option remove specific resources from the cache - check that it is the right service
+                      // these can't be removed by resource from the session cache
                       " <PolicyChangeNotification serviceName='identified-service' >"
                       "  <ResourceName type='added' >a.b.c:3232/d/e/f</ResourceName>"
                       "  <ResourceName type='deleted' >a.b.c:3232/d/e/f</ResourceName>"
@@ -109,13 +108,12 @@ void test_simple_notification(void **state) {
                       " <Notification>"
                       // option - invalidate config changed ( not for specific instance )
                       //" <AgentConfigChangeNotification />"
-                      // option - invalidate session by sid ( state must be present, not is not
-                      // used )
+                      // option - invalidate session by sid ( state must be present, not is not used )
                       //" <SessionNotification>"
                       //"  <Session sid='my-session' state='destroyed' />"
                       //" </SessionNotification>"
-                      // option remove specific resources from the cache - check that it is the
-                      // right service these can't be removed by resource from the session cache
+                      // option remove specific resources from the cache - check that it is the right service
+                      // these can't be removed by resource from the session cache
                       " <PolicyChangeNotification serviceName='identified-service' >"
                       "  <ResourceName type='added' >a.b.c:3232/d/e/f</ResourceName>"
                       "  <ResourceName type='deleted' >a.b.c:3232/d/e/f</ResourceName>"
@@ -180,12 +178,12 @@ void test_simple_notification(void **state) {
 void test_session_notification_on_policy_cache(void **state) {
     const char *session_id = "XXX";
 
-    char *session_notification = "<NotificationSet version='1.0'>"
-                                 " <Notification>"
-                                 "  <SessionNotification> <Session sid='XXX' "
-                                 "state='destroyed' /> </SessionNotification>"
-                                 " </Notification>"
-                                 "</NotificationSet>";
+    char *session_notification =
+        "<NotificationSet version='1.0'>"
+        " <Notification>"
+        "  <SessionNotification> <Session sid='XXX' state='destroyed' /> </SessionNotification>"
+        " </Notification>"
+        "</NotificationSet>";
 
     am_state_func_t const *func_array = NULL;
     int array_len = 0;
@@ -234,13 +232,11 @@ void test_session_notification_on_policy_cache(void **state) {
                 "        <ResponseAttributes>"
                 "           <!-- these can have multiple (0..n) value elements -->"
                 "           <AttributeValuePair>"
-                "             <Attribute name='Attributes,key:0,0'/> "
-                "<Value>Attributes,value:0,0,0</Value> "
+                "             <Attribute name='Attributes,key:0,0'/> <Value>Attributes,value:0,0,0</Value> "
                 "<Value>Attributes,value:0,0,1</Value>"
                 "           </AttributeValuePair>"
                 "           <AttributeValuePair>"
-                "             <Attribute name='Attributes,key:0,1'/> "
-                "<Value>Attributes,value:0,1,0</Value>"
+                "             <Attribute name='Attributes,key:0,1'/> <Value>Attributes,value:0,1,0</Value>"
                 "           </AttributeValuePair>"
                 "        </ResponseAttributes>"
 
@@ -251,28 +247,23 @@ void test_session_notification_on_policy_cache(void **state) {
                 "          </AttributeValuePair>"
                 "          <Advices>"
                 "            <AttributeValuePair>"
-                "              <Attribute name='Advices,key:0,0'/> "
-                "<Value>Advices,value:0,0,0</Value>"
+                "              <Attribute name='Advices,key:0,0'/> <Value>Advices,value:0,0,0</Value>"
                 "            </AttributeValuePair>"
                 "            <AttributeValuePair>"
-                "              <Attribute name='Advices,key:0,1'/> "
-                "<Value>Advices,value:0,1,0</Value>"
+                "              <Attribute name='Advices,key:0,1'/> <Value>Advices,value:0,1,0</Value>"
                 "            </AttributeValuePair>"
                 "          </Advices>"
                 "        </ActionDecision>"
 
                 "        <ResponseDecisions>"
                 "          <AttributeValuePair>"
-                "            <Attribute name='Decision,key:0,0'/> "
-                "<Value>Decision,value:0,0,0</Value>"
+                "            <Attribute name='Decision,key:0,0'/> <Value>Decision,value:0,0,0</Value>"
                 "          </AttributeValuePair>"
                 "          <AttributeValuePair>"
-                "            <Attribute name='Decision,key:0,1'/> "
-                "<Value>Decision,value:0,1,0</Value>"
+                "            <Attribute name='Decision,key:0,1'/> <Value>Decision,value:0,1,0</Value>"
                 "          </AttributeValuePair>"
                 "          <AttributeValuePair>"
-                "            <Attribute name='Decision,key:0,2'/> "
-                "<Value>Decision,value:0,2,0</Value>"
+                "            <Attribute name='Decision,key:0,2'/> <Value>Decision,value:0,2,0</Value>"
                 "          </AttributeValuePair>"
                 "        </ResponseDecisions>"
 
@@ -389,13 +380,11 @@ void test_resource_notification_on_policy_cache(void **state) {
                 "        <ResponseAttributes>"
                 "          <!-- these can have multiple (0..n) value elements -->"
                 "          <AttributeValuePair>"
-                "            <Attribute name='Attributes,key:0,0'/> "
-                "<Value>Attributes,value:0,0,0</Value> "
+                "            <Attribute name='Attributes,key:0,0'/> <Value>Attributes,value:0,0,0</Value> "
                 "<Value>Attributes,value:0,0,1</Value>"
                 "          </AttributeValuePair>"
                 "          <AttributeValuePair>"
-                "            <Attribute name='Attributes,key:0,1'/> "
-                "<Value>Attributes,value:0,1,0</Value>"
+                "            <Attribute name='Attributes,key:0,1'/> <Value>Attributes,value:0,1,0</Value>"
                 "          </AttributeValuePair>"
                 "        </ResponseAttributes>"
 
@@ -406,28 +395,23 @@ void test_resource_notification_on_policy_cache(void **state) {
                 "          </AttributeValuePair>"
                 "          <Advices>"
                 "            <AttributeValuePair>"
-                "              <Attribute name='Advices,key:0,0'/> "
-                "<Value>Advices,value:0,0,0</Value>"
+                "              <Attribute name='Advices,key:0,0'/> <Value>Advices,value:0,0,0</Value>"
                 "            </AttributeValuePair>"
                 "            <AttributeValuePair>"
-                "              <Attribute name='Advices,key:0,1'/> "
-                "<Value>Advices,value:0,1,0</Value>"
+                "              <Attribute name='Advices,key:0,1'/> <Value>Advices,value:0,1,0</Value>"
                 "            </AttributeValuePair>"
                 "          </Advices>"
                 "        </ActionDecision>"
 
                 "        <ResponseDecisions>"
                 "          <AttributeValuePair>"
-                "            <Attribute name='Decision,key:0,0'/> "
-                "<Value>Decision,value:0,0,0</Value>"
+                "            <Attribute name='Decision,key:0,0'/> <Value>Decision,value:0,0,0</Value>"
                 "          </AttributeValuePair>"
                 "          <AttributeValuePair>"
-                "            <Attribute name='Decision,key:0,1'/> "
-                "<Value>Decision,value:0,1,0</Value>"
+                "            <Attribute name='Decision,key:0,1'/> <Value>Decision,value:0,1,0</Value>"
                 "          </AttributeValuePair>"
                 "          <AttributeValuePair>"
-                "            <Attribute name='Decision,key:0,2'/> "
-                "<Value>Decision,value:0,2,0</Value>"
+                "            <Attribute name='Decision,key:0,2'/> <Value>Decision,value:0,2,0</Value>"
                 "          </AttributeValuePair>"
                 "        </ResponseDecisions>"
 
@@ -442,8 +426,7 @@ void test_resource_notification_on_policy_cache(void **state) {
                 "</ResponseSet>";
 
     char *buffer = NULL;
-    /* when the worker has finished, the session result list should be unchanged,
-     * but policy cache entry removed */
+    /* when the worker has finished, the session result list should be unchanged, but policy cache entry removed */
     uint64_t ets;
     struct am_policy_result *r = NULL;
     struct am_namevalue *session = NULL;
@@ -481,8 +464,7 @@ void test_resource_notification_on_policy_cache(void **state) {
     assert_int_equal(notification_handler(&request), AM_OK);
     sleep(2);
 
-    // check that the notification has been received, which will invalidate the
-    // cache entry
+    // check that the notification has been received, which will invalidate the cache entry
     assert_int_equal(am_get_session_policy_cache_entry(&request, session_id, &r, &session, &ets), AM_SUCCESS);
     assert_int_equal(strcmp(r->resource, "a.b.c:3232/d/e/f"), 0);
     assert_int_equal(am_check_policy_cache_epoch(r->created), AM_ETIMEDOUT);

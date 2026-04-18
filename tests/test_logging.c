@@ -3,17 +3,17 @@
 // Copyright 2015-2016 ForgeRock AS.
 // Copyright 2018-2026 Open Identity Platform Community.
 
-#include <inttypes.h>
-#include <setjmp.h>
 #include <stdio.h>
 #include <string.h>
+#include <setjmp.h>
+#include <inttypes.h>
 
-#include "am.h"
-#include "cmocka.h"
-#include "net_client.h"
 #include "platform.h"
-#include "thread.h"
+#include "am.h"
 #include "utility.h"
+#include "net_client.h"
+#include "thread.h"
+#include "cmocka.h"
 
 struct log_range {
     int inst;

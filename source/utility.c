@@ -590,6 +590,7 @@ int parse_url(const char *u, struct url *url) {
     uri_normalize(url, uri);
 
     strncpy(url->path, uri, sizeof(url->path) - 1);
+    url->path[sizeof(url->path) - 1] = '\0';
     return AM_SUCCESS;
 }
 
@@ -1623,11 +1624,23 @@ void uuid(char *buf, size_t buflen) {
         CryptReleaseContext(hcp, 0);
     }
 #else
-    size_t sz;
     FILE *fp = fopen("/dev/urandom", "r");
     if (fp != NULL) {
-        sz = fread(uuid_data.__rnd, 1, sizeof(uuid_data), fp);
+        size_t got = fread(uuid_data.__rnd, 1, sizeof(uuid_data), fp);
         fclose(fp);
+        /* If we couldn't read enough entropy, bail out rather than emit a
+         * UUID derived from stack garbage. */
+        if (got != sizeof(uuid_data)) {
+            if (buflen > 0) {
+                buf[0] = '\0';
+            }
+            return;
+        }
+    } else {
+        if (buflen > 0) {
+            buf[0] = '\0';
+        }
+        return;
     }
 #endif
 

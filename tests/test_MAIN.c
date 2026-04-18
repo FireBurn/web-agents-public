@@ -17,11 +17,11 @@
  * CTest apply per-test timeouts and isolates hangs.
  */
 
-#include <setjmp.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
+#include <setjmp.h>
 
 #include "cmocka.h"
 #include "tests.h"

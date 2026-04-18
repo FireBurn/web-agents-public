@@ -10,6 +10,8 @@
 #include "thread.h"
 #include "utility.h"
 
+#include <inttypes.h>
+
 #define AUDIT_SHM_LOCK_TIMEOUT 500 /* msec */
 #define THROTTLE_CNTRL 50          /* default max number of batch messages per second */
 #define BATCH_SIZE 20
@@ -281,7 +283,7 @@ static
         /* estimate the size of the next message (and overall batch_size) */
         if ((batch_size + (e->size * 2)) >= 0x4000 || c == BATCH_SIZE) {
 #ifdef UNIT_TEST
-            printf("sending batch size: %lld bytes, count: %d\n", batch_size, c);
+            printf("sending batch size: %" PRIu64 " bytes, count: %d\n", batch_size, c);
 #endif
             AM_LOG_DEBUG(instance_id, "%s sending %d audit log messages to %s", thisfunc, c, config->openam);
             callback(config->openam, c, batch);
@@ -339,7 +341,7 @@ static am_status_t write_entries_to_server(const char *openam, int count, struct
     int i, msg_size;
     struct audit_worker_data *wd;
     char *server_id = NULL, *msg = NULL, *config_file = NULL;
-    unsigned long instance_id;
+    unsigned long instance_id = 0;
 
     if (count == 0 || batch == NULL || ISINVALID(openam)) {
         return AM_EINVAL;

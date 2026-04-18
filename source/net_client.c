@@ -650,7 +650,7 @@ int am_net_sync_connect(am_net_t *n) {
  */
 static int am_net_write_internal(am_net_t *n, const char *data, size_t data_sz) {
     int status = 0, sent = 0, flags = 0;
-    int er = 0, error = 0;
+    int error = 0;
     SOCKLEN_T errlen = sizeof(error);
     size_t len = data_sz;
     const char *buf = data;
@@ -671,7 +671,10 @@ static int am_net_write_internal(am_net_t *n, const char *data, size_t data_sz) 
 #ifdef MSG_NOSIGNAL
         flags |= MSG_NOSIGNAL;
 #endif
-        er = getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (void *)&error, &errlen);
+        /* Clear any pending socket error before writing. The return value
+         * and fetched `error` are currently unused by the caller, but
+         * keeping the call preserves platform-specific side effects. */
+        (void)getsockopt(n->sock, SOL_SOCKET, SO_ERROR, (void *)&error, &errlen);
         while (sent < (int)len) {
             int rv = send(n->sock, buf + sent, (int)len - sent, flags);
             if (rv < 0) {

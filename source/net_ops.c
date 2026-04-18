@@ -54,7 +54,8 @@ static void on_connected_cb(void *udata, int status) {
 }
 
 static void on_close_cb(void *udata, int status) {
-    struct request_data *ld = (struct request_data *)udata;
+    (void)udata;
+    (void)status;
 }
 
 static void on_complete_cb(void *udata, int status) {

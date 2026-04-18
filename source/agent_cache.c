@@ -423,7 +423,7 @@ static void purge_identical_entries(pid_t pid, uint32_t hash, struct cache_entry
 static uint32_t bits(uint32_t v) {
     v = v - ((v >> 1) & 0x55555555);
     v = (v & 0x33333333) + ((v >> 2) & 0x33333333);
-    return ((v + (v >> 4) & 0xf0f0f0f) * 0x1010101) >> 24;
+    return (((v + (v >> 4)) & 0xf0f0f0f) * 0x1010101) >> 24;
 }
 
 /*
@@ -816,9 +816,11 @@ void cache_garbage_collect() {
     agent_memory_scan(getpid(), cache_garbage_checker, 0);
 }
 
+#ifdef INTEGRATION_TEST
 static uint32_t get_and_reset(volatile uint32_t *p) {
     return reset(p);
 }
+#endif
 
 void cache_stats() {
     if (stats == NULL)

@@ -1190,9 +1190,4 @@ void sync_connect_win(am_net_t *net) {
     }
 }
 
-#else
-
-/* not used on this platform */
-static void unused_module() {
-}
 #endif
