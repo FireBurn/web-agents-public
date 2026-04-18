@@ -1087,11 +1087,7 @@ static int amagent_preserve_url(request_rec *r) {
 }
 
 static void amagent_register_hooks(apr_pool_t *p) {
-#if AP_SERVER_MAJORVERSION_NUMBER == 2 && AP_SERVER_MINORVERSION_NUMBER < 3
-    ap_hook_access_checker(amagent_auth_handler, NULL, NULL, APR_HOOK_FIRST);
-#else
     ap_hook_check_access_ex(amagent_auth_handler, NULL, NULL, APR_HOOK_FIRST, AP_AUTH_INTERNAL_PER_CONF);
-#endif
     ap_hook_translate_name(amagent_preserve_url, NULL, NULL, APR_HOOK_FIRST - 2);
     ap_hook_post_config(amagent_init, NULL, NULL, APR_HOOK_MIDDLE);
     ap_hook_child_init(amagent_worker_init, NULL, NULL, APR_HOOK_MIDDLE);
