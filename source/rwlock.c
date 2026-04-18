@@ -36,13 +36,21 @@
 #include <sys/atomic.h>
 #define casv(p, old, new) atomic_cas_32((volatile uint32_t *)(p), (uint32_t)(old), (uint32_t)(new))
 #define cas(p, old, new) (atomic_cas_32((volatile uint32_t *)(p), (uint32_t)(old), (uint32_t)(new)) == (old))
-#define yield() sched_yield()
+#define yield()                                                                                                        \
+    do {                                                                                                               \
+        struct timespec ts = {0, 1000000L};                                                                            \
+        nanosleep(&ts, NULL);                                                                                          \
+    } while (0)
 
 #else
 
 #define casv(p, old, new) __sync_val_compare_and_swap(p, old, new)
 #define cas(p, old, new) __sync_bool_compare_and_swap(p, old, new)
-#define yield() sched_yield()
+#define yield()                                                                                                        \
+    do {                                                                                                               \
+        struct timespec ts = {0, 1000000L};                                                                            \
+        nanosleep(&ts, NULL);                                                                                          \
+    } while (0)
 
 #endif
 
