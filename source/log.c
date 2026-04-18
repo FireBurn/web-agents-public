@@ -770,6 +770,10 @@ int am_log_init(int id) {
 #else
 
     log_handle->mapping = shm_open(get_global_name(AM_LOG_SHM_NAME_INT, id), O_CREAT | O_EXCL | O_RDWR, 0666);
+#ifndef _WIN32
+    if (log_handle->mapping != -1)
+        fchmod(log_handle->mapping, 0666);
+#endif
     if (log_handle->mapping == -1 && errno != EEXIST) {
         fprintf(stderr, "am_log_init() shm_open failed (%d)\n", errno);
         AM_MUTEX_DESTROY(&log_handle->mutex[LOG_MUTEX]->lock);
