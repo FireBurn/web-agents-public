@@ -2344,16 +2344,15 @@ static void disable_iis_mod(int argc, char **argv) {
 
 static void archive_files(int argc, char **argv) {
     int i;
-    time_t tv;
-    struct tm fd;
-    zipFile zf = NULL;
     struct am_namevalue *all = NULL, *e, *t;
 
     if (argc < 4)
         return;
 
-    zf = zipOpen(argv[2], APPEND_STATUS_CREATE);
+    int err = 0;
+    zip_t *zf = zip_open(argv[2], ZIP_CREATE | ZIP_TRUNCATE, &err);
     if (zf == NULL) {
+        fprintf(stderr, "Failed to open zip file %s\n", argv[2]);
         return;
     }
 
@@ -2362,265 +2361,222 @@ static void archive_files(int argc, char **argv) {
         read_directory(argv[i], &all);
     }
 
-    time(&tv);
-    localtime_r(&tv, &fd);
-
     if (all != NULL) {
         fprintf(stdout, "Adding to %s:\n", argv[2]);
     }
 
     AM_LIST_FOR_EACH(all, e, t) {
-        zip_fileinfo zi;
         size_t off = 0;
-        uLong file_mode = 0;
+
         /* fix path prefixes */
-        if (e->n[0] == '/') {
+        if (e->n[0] == '/' || e->n[0] == '\\') {
             off = 1;
         }
-
-        memset(&zi, 0, sizeof(zi));
-        zi.tmz_date.tm_sec = fd.tm_sec;
-        zi.tmz_date.tm_min = fd.tm_min;
-        zi.tmz_date.tm_hour = fd.tm_hour;
-        zi.tmz_date.tm_mday = fd.tm_mday;
-        zi.tmz_date.tm_mon = fd.tm_mon;
-        zi.tmz_date.tm_year = fd.tm_year;
 #ifdef _WIN32
-        {
-            char fname[AM_URI_SIZE];
-            char dir[AM_URI_SIZE];
-            char drive[AM_PATH_SIZE];
-            char ext[AM_PATH_SIZE];
-            if (_splitpath_s(e->n, drive, sizeof(drive) - 1, dir, sizeof(dir) - 1, fname, sizeof(fname) - 1, ext,
-                             sizeof(ext) - 1) != 0) {
-                continue;
-            }
-            if (dir[0] == '\\') {
-                off = 1;
-            }
-            if (dir[0] == '\\' && dir[1] == '\\') {
-                off = 2;
-            }
-            off += strlen(drive);
+        if (e->n[0] && e->n[1] == ':') {
+            off = 3; // Skip drive letter e.g., C:\
         }
 #endif
-        fprintf(stdout, "  %s\n", e->n);
-#ifndef _WIN32
-        if (e->ns == 1) {
-            /* a directory */
-            file_mode = (S_IFDIR | 0755) << 16L;
-        } else {
-            /* a file */
-            if (strstr(e->n, "agentadmin") != NULL || strstr(e->n, ".so") != NULL) {
-                file_mode = 0755 << 16L; /* we need execute bit set for these two */
+
+            fprintf(stdout, "  %s\n", e->n);
+
+            if (e->ns == 1) {
+                /* a directory */
+                zip_dir_add(zf, e->n + off, ZIP_FL_ENC_UTF_8);
             } else {
-                file_mode = 0644 << 16L;
+                /* a file */
+                zip_source_t *source = zip_source_file(zf, e->n, 0, -1);
+                if (source != NULL) {
+                    zip_file_add(zf, e->n + off, source, ZIP_FL_OVERWRITE | ZIP_FL_ENC_UTF_8);
+                }
             }
         }
-        zi.external_fa = file_mode;
-#endif
-        zipOpenNewFileInZip(zf, e->n + off, &zi, NULL, 0, NULL, 0, NULL, Z_DEFLATED, Z_BEST_COMPRESSION);
-        if (e->ns == 1) {
-            /* a directory */
-            zipCloseFileInZip(zf);
-        } else {
-            /* a file */
-            FILE *f = fopen(e->n, "rb");
-            if (f != NULL) {
-                int rb;
-                unsigned char b[1024];
-                while (!feof(f)) {
-                    rb = (int)fread(b, 1, sizeof(b), f);
-                    zipWriteInFileInZip(zf, b, rb);
-                }
-                fclose(f);
+
+        zip_close(zf);
+        delete_am_namevalue_list(&all);
+    }
+
+    static void modify_ownership(int argc, char **argv) {
+        int rv;
+        if (argc == 4) {
+            rv = add_directory_acl(NULL, argv[3], argv[2]);
+            fprintf(stdout, "\nAdding \"%s\" to \"%s\" ACLs with status: %s.\n", argv[2], argv[3], am_strerror(rv));
+            if (rv != AM_SUCCESS) {
+                exit_status = EXIT_FAILURE;
             }
-            zipCloseFileInZip(zf);
         }
     }
-    zipClose(zf, NULL);
-    delete_am_namevalue_list(&all);
-}
-
-static void modify_ownership(int argc, char **argv) {
-    int rv;
-    if (argc == 4) {
-        rv = add_directory_acl(NULL, argv[3], argv[2]);
-        fprintf(stdout, "\nAdding \"%s\" to \"%s\" ACLs with status: %s.\n", argv[2], argv[3], am_strerror(rv));
-        if (rv != AM_SUCCESS) {
-            exit_status = EXIT_FAILURE;
-        }
-    }
-}
 
 #ifdef _WIN32
 
-static void admin_atexit(void) {
-    if (win_init) {
-        CoUninitialize();
+    static void admin_atexit(void) {
+        if (win_init) {
+            CoUninitialize();
+        }
     }
-}
 
 #endif
 
-int main(int argc, char **argv) {
-    int i;
-    char tm[64];
-    struct tm now;
-    char instance_type_mod[AM_URI_SIZE];
+    int main(int argc, char **argv) {
+        int i;
+        char tm[64];
+        struct tm now;
+        char instance_type_mod[AM_URI_SIZE];
 
-    struct command_line params[] = {{"--i", install_interactive}, {"--s", install_silent},   {"--l", list_instances},
-                                    {"--r", remove_instance},
+        struct command_line params[] = {
+            {"--i", install_interactive}, {"--s", install_silent},   {"--l", list_instances},
+            {"--r", remove_instance},
 #ifdef _WIN32
-                                    {"--n", list_iis_sites},      {"--g", remove_global},    {"--e", enable_iis_mod},
-                                    {"--d", disable_iis_mod},     {"--o", modify_ownership},
+            {"--n", list_iis_sites},      {"--g", remove_global},    {"--e", enable_iis_mod},
+            {"--d", disable_iis_mod},     {"--o", modify_ownership},
 #endif
-                                    {"--v", show_version},        {"--k", generate_key},     {"--p", password_encrypt},
-                                    {"--d", password_decrypt},    {"--a", archive_files},    {NULL}};
+            {"--v", show_version},        {"--k", generate_key},     {"--p", password_encrypt},
+            {"--d", password_decrypt},    {"--a", archive_files},    {NULL}};
 
-    if (!validate_os_version()) {
+        if (!validate_os_version()) {
 #ifdef _WIN32
-        fprintf(stderr, "\nYou are running unsupported Microsoft Windows OS version.\n" DESCRIPTION
-                        " supports Microsoft Windows 2008R2 or newer.\n\n");
+            fprintf(stderr, "\nYou are running unsupported Microsoft Windows OS version.\n" DESCRIPTION
+                            " supports Microsoft Windows 2008R2 or newer.\n\n");
 #endif
-        exit(EXIT_FAILURE);
-    }
+            exit(EXIT_FAILURE);
+        }
 
 #ifdef _WIN32
-    if (argc > 1 && strcmp(argv[1], "--v") != 0 && strcmp(argv[1], "--a") != 0 && strcmp(argv[1], "--k") != 0 &&
-        strcmp(argv[1], "--p") != 0 && strcmp(argv[1], "--d") != 0 && !IsUserAnAdmin()) {
-        fprintf(stderr, "\nYou need Administrator privileges to run " DESCRIPTION " agentadmin.\n\n");
-        exit(EXIT_FAILURE);
-    }
+        if (argc > 1 && strcmp(argv[1], "--v") != 0 && strcmp(argv[1], "--a") != 0 && strcmp(argv[1], "--k") != 0 &&
+            strcmp(argv[1], "--p") != 0 && strcmp(argv[1], "--d") != 0 && !IsUserAnAdmin()) {
+            fprintf(stderr, "\nYou need Administrator privileges to run " DESCRIPTION " agentadmin.\n\n");
+            exit(EXIT_FAILURE);
+        }
 
-    if (FAILED(CoInitializeEx(NULL, COINIT_MULTITHREADED))) {
-        fprintf(stderr, "\nFailed to initialize COM.\n\n");
-        exit(EXIT_FAILURE);
-    }
-    win_init = AM_TRUE;
-    atexit(admin_atexit);
+        if (FAILED(CoInitializeEx(NULL, COINIT_MULTITHREADED))) {
+            fprintf(stderr, "\nFailed to initialize COM.\n\n");
+            exit(EXIT_FAILURE);
+        }
+        win_init = AM_TRUE;
+        atexit(admin_atexit);
 #endif
 
-    if (argc > 1) {
-        time_t tv;
-        time(&tv);
-        localtime_r(&tv, &now);
-        strftime(tm, sizeof(tm) - 1, "%Y%m%d%H%M%S", &now);
+        if (argc > 1) {
+            time_t tv;
+            time(&tv);
+            localtime_r(&tv, &now);
+            strftime(tm, sizeof(tm) - 1, "%Y%m%d%H%M%S", &now);
 
-        /* get agentadmin path */
-        am_bin_path(app_path, sizeof(app_path) - 1);
+            /* get agentadmin path */
+            am_bin_path(app_path, sizeof(app_path) - 1);
 
-        /* create/update installer log path */
-        snprintf(log_path, sizeof(log_path), "%s.." FILE_PATH_SEP "log", app_path);
-        strcpy(log_path_dir, log_path);
-        if (strcmp(argv[1], "--a") != 0) {
-            am_make_path(log_path, NULL, NULL, install_log);
-        }
-        snprintf(log_path + strlen(log_path), sizeof(log_path) - strlen(log_path), "%sinstall_%s.log", FILE_PATH_SEP,
-                 tm);
+            /* create/update installer log path */
+            snprintf(log_path, sizeof(log_path), "%s.." FILE_PATH_SEP "log", app_path);
+            strcpy(log_path_dir, log_path);
+            if (strcmp(argv[1], "--a") != 0) {
+                am_make_path(log_path, NULL, NULL, install_log);
+            }
+            snprintf(log_path + strlen(log_path), sizeof(log_path) - strlen(log_path), "%sinstall_%s.log",
+                     FILE_PATH_SEP, tm);
 
-        /* instances directory */
-        snprintf(instance_path, sizeof(instance_path), "%s.." FILE_PATH_SEP "instances", app_path);
+            /* instances directory */
+            snprintf(instance_path, sizeof(instance_path), "%s.." FILE_PATH_SEP "instances", app_path);
 
-        /* agent configuration template */
-        snprintf(config_template, sizeof(config_template),
-                 "%s.." FILE_PATH_SEP "config" FILE_PATH_SEP "agent.conf.template", app_path);
+            /* agent configuration template */
+            snprintf(config_template, sizeof(config_template),
+                     "%s.." FILE_PATH_SEP "config" FILE_PATH_SEP "agent.conf.template", app_path);
 
-        /* instances configuration file (internal) */
-        snprintf(instance_config, sizeof(instance_config), "%s.." FILE_PATH_SEP "instances" FILE_PATH_SEP ".agents",
-                 app_path);
+            /* instances configuration file (internal) */
+            snprintf(instance_config, sizeof(instance_config), "%s.." FILE_PATH_SEP "instances" FILE_PATH_SEP ".agents",
+                     app_path);
 
-        /* and add a license tracker path */
-        snprintf(license_tracker_path, sizeof(license_tracker_path),
-                 "%s.." FILE_PATH_SEP "instances" FILE_PATH_SEP ".license", app_path);
+            /* and add a license tracker path */
+            snprintf(license_tracker_path, sizeof(license_tracker_path),
+                     "%s.." FILE_PATH_SEP "instances" FILE_PATH_SEP ".license", app_path);
 
-        /* determine installer type */
-        snprintf(instance_type_mod, sizeof(instance_type_mod),
-                 "%s.." FILE_PATH_SEP "lib" FILE_PATH_SEP "mod_openam." LIB_FILE_EXT, app_path);
-        if (file_exists(instance_type_mod)) {
-            instance_type = AM_I_APACHE;
-        }
-        snprintf(instance_type_mod, sizeof(instance_type_mod),
-                 "%s.." FILE_PATH_SEP "lib" FILE_PATH_SEP "mod_iis_openam_32." LIB_FILE_EXT, app_path);
-        if (file_exists(instance_type_mod)) {
-            instance_type = AM_I_IIS;
-        }
-        snprintf(instance_type_mod, sizeof(instance_type_mod),
-                 "%s.." FILE_PATH_SEP "lib" FILE_PATH_SEP "mod_iis_openam_64." LIB_FILE_EXT, app_path);
-        if (file_exists(instance_type_mod)) {
-            instance_type = AM_I_IIS;
-        }
-        snprintf(instance_type_mod, sizeof(instance_type_mod),
-                 "%s.." FILE_PATH_SEP "lib" FILE_PATH_SEP "libvmod_am." LIB_FILE_EXT, app_path);
-        if (file_exists(instance_type_mod)) {
-            snprintf(instance_config_template, sizeof(instance_config_template),
-                     "%s.." FILE_PATH_SEP "config" FILE_PATH_SEP "agent.vcl.template", app_path);
-            instance_type = AM_I_VARNISH;
-        }
+            /* determine installer type */
+            snprintf(instance_type_mod, sizeof(instance_type_mod),
+                     "%s.." FILE_PATH_SEP "lib" FILE_PATH_SEP "mod_openam." LIB_FILE_EXT, app_path);
+            if (file_exists(instance_type_mod)) {
+                instance_type = AM_I_APACHE;
+            }
+            snprintf(instance_type_mod, sizeof(instance_type_mod),
+                     "%s.." FILE_PATH_SEP "lib" FILE_PATH_SEP "mod_iis_openam_32." LIB_FILE_EXT, app_path);
+            if (file_exists(instance_type_mod)) {
+                instance_type = AM_I_IIS;
+            }
+            snprintf(instance_type_mod, sizeof(instance_type_mod),
+                     "%s.." FILE_PATH_SEP "lib" FILE_PATH_SEP "mod_iis_openam_64." LIB_FILE_EXT, app_path);
+            if (file_exists(instance_type_mod)) {
+                instance_type = AM_I_IIS;
+            }
+            snprintf(instance_type_mod, sizeof(instance_type_mod),
+                     "%s.." FILE_PATH_SEP "lib" FILE_PATH_SEP "libvmod_am." LIB_FILE_EXT, app_path);
+            if (file_exists(instance_type_mod)) {
+                snprintf(instance_config_template, sizeof(instance_config_template),
+                         "%s.." FILE_PATH_SEP "config" FILE_PATH_SEP "agent.vcl.template", app_path);
+                instance_type = AM_I_VARNISH;
+            }
 
-        /* read environment variables and create am_net_options */
-        memset(&net_options, 0, sizeof(am_net_options_t));
-        for (i = 0; i < ARRAY_SIZE(ssl_variables); i++) {
-            char *env = getenv(ssl_variables[i]);
-            if (ISVALID(env)) {
-                if (strcmp(ssl_variables[i], AM_INSTALL_SSL_KEY) == 0) {
-                    net_options.cert_key_file = strdup(env);
-                }
-                if (strcmp(ssl_variables[i], AM_INSTALL_SSL_CERT) == 0) {
-                    net_options.cert_file = strdup(env);
-                }
-                if (strcmp(ssl_variables[i], AM_INSTALL_SSL_CA) == 0) {
-                    net_options.cert_ca_file = strdup(env);
-                }
-                if (strcmp(ssl_variables[i], AM_INSTALL_SSL_CIPHERS) == 0) {
-                    net_options.ciphers = strdup(env);
-                }
-                if (strcmp(ssl_variables[i], AM_INSTALL_SSL_OPTIONS) == 0) {
-                    net_options.tls_opts = strdup(env);
-                }
-                if (strcmp(ssl_variables[i], AM_INSTALL_SSL_KEY_PASSWORD) == 0) {
-                    net_options.cert_key_pass = strdup(env);
-                    if (net_options.cert_key_pass != NULL) {
-                        net_options.cert_key_pass_sz = (int)strlen(net_options.cert_key_pass);
+            /* read environment variables and create am_net_options */
+            memset(&net_options, 0, sizeof(am_net_options_t));
+            for (i = 0; i < ARRAY_SIZE(ssl_variables); i++) {
+                char *env = getenv(ssl_variables[i]);
+                if (ISVALID(env)) {
+                    if (strcmp(ssl_variables[i], AM_INSTALL_SSL_KEY) == 0) {
+                        net_options.cert_key_file = strdup(env);
+                    }
+                    if (strcmp(ssl_variables[i], AM_INSTALL_SSL_CERT) == 0) {
+                        net_options.cert_file = strdup(env);
+                    }
+                    if (strcmp(ssl_variables[i], AM_INSTALL_SSL_CA) == 0) {
+                        net_options.cert_ca_file = strdup(env);
+                    }
+                    if (strcmp(ssl_variables[i], AM_INSTALL_SSL_CIPHERS) == 0) {
+                        net_options.ciphers = strdup(env);
+                    }
+                    if (strcmp(ssl_variables[i], AM_INSTALL_SSL_OPTIONS) == 0) {
+                        net_options.tls_opts = strdup(env);
+                    }
+                    if (strcmp(ssl_variables[i], AM_INSTALL_SSL_KEY_PASSWORD) == 0) {
+                        net_options.cert_key_pass = strdup(env);
+                        if (net_options.cert_key_pass != NULL) {
+                            net_options.cert_key_pass_sz = (int)strlen(net_options.cert_key_pass);
+                        }
+                    }
+                    if (strcmp(ssl_variables[i], AM_INSTALL_SSL_SCHANNEL) == 0) {
+                        net_options.secure_channel_disable =
+                            !strcmp(env, "0") || !strcasecmp(env, "off") || !strcasecmp(env, "false");
+                    }
+                    if (strcmp(ssl_variables[i], AM_INSTALL_PROXY_HOST) == 0) {
+                        net_options.proxy_host = strdup(env);
+                    }
+                    if (strcmp(ssl_variables[i], AM_INSTALL_PROXY_PORT) == 0) {
+                        net_options.proxy_port = (int)strtol(env, NULL, 10);
+                    }
+                    if (strcmp(ssl_variables[i], AM_INSTALL_PROXY_PASSWORD) == 0) {
+                        net_options.proxy_password = strdup(env);
+                        if (net_options.proxy_password != NULL) {
+                            net_options.proxy_password_sz = (int)strlen(net_options.proxy_password);
+                        }
+                    }
+                    if (strcmp(ssl_variables[i], AM_INSTALL_PROXY_USER) == 0) {
+                        net_options.proxy_user = strdup(env);
                     }
                 }
-                if (strcmp(ssl_variables[i], AM_INSTALL_SSL_SCHANNEL) == 0) {
-                    net_options.secure_channel_disable =
-                        !strcmp(env, "0") || !strcasecmp(env, "off") || !strcasecmp(env, "false");
-                }
-                if (strcmp(ssl_variables[i], AM_INSTALL_PROXY_HOST) == 0) {
-                    net_options.proxy_host = strdup(env);
-                }
-                if (strcmp(ssl_variables[i], AM_INSTALL_PROXY_PORT) == 0) {
-                    net_options.proxy_port = (int)strtol(env, NULL, 10);
-                }
-                if (strcmp(ssl_variables[i], AM_INSTALL_PROXY_PASSWORD) == 0) {
-                    net_options.proxy_password = strdup(env);
-                    if (net_options.proxy_password != NULL) {
-                        net_options.proxy_password_sz = (int)strlen(net_options.proxy_password);
-                    }
-                }
-                if (strcmp(ssl_variables[i], AM_INSTALL_PROXY_USER) == 0) {
-                    net_options.proxy_user = strdup(env);
+            }
+            net_options.local = net_options.cert_trust = AM_TRUE;
+            net_options.keepalive = AM_FALSE;
+            net_options.notif_enable = AM_FALSE;
+            net_options.log = install_log;
+
+            /* run through the cli options */
+            for (i = 0; params[i].option; ++i) {
+                if (!strcasecmp(argv[1], params[i].option)) {
+                    params[i].handler(argc, argv);
+                    am_net_options_delete(&net_options);
+                    return exit_status;
                 }
             }
         }
-        net_options.local = net_options.cert_trust = AM_TRUE;
-        net_options.keepalive = AM_FALSE;
-        net_options.notif_enable = AM_FALSE;
-        net_options.log = install_log;
 
-        /* run through the cli options */
-        for (i = 0; params[i].option; ++i) {
-            if (!strcasecmp(argv[1], params[i].option)) {
-                params[i].handler(argc, argv);
-                am_net_options_delete(&net_options);
-                return exit_status;
-            }
-        }
-    }
-
-    fprintf(stdout,
+        fprintf(
+            stdout,
             "\n%s\n"
             "Usage: agentadmin <option> [<arguments>]\n\n"
             "The available options are:\n\n"
@@ -2654,6 +2610,6 @@ int main(int argc, char **argv) {
             " agentadmin --v\n\n",
             DESCRIPTION);
 
-    am_net_options_delete(&net_options);
-    return EXIT_SUCCESS;
-}
+        am_net_options_delete(&net_options);
+        return EXIT_SUCCESS;
+    }
