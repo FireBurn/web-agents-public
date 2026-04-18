@@ -8,7 +8,7 @@
  *
  * When distributing Covered Software, include this CDDL Header Notice in each file and include
  * the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
- * Header, with the fields enclosed by brackets [] replaced by your own identifying
+ * Header, with the fields enclosed by brackets[] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2014 - 2016 ForgeRock AS.
@@ -18,10 +18,13 @@
 #include "am.h"
 #include "error.h"
 #include "list.h"
-#include "pcre.h"
+
+#define PCRE2_CODE_UNIT_WIDTH 8
+#include <pcre2.h>
+
 #include "platform.h"
 #include "thread.h"
-#include "zlib.h"
+#include <zlib.h>
 
 #define AM_STRERROR_GEN(name, msg)                                                                                     \
     case AM_##name:                                                                                                    \
@@ -228,6 +231,44 @@ char is_big_endian() {
     return b.c[0] == 1;
 }
 
+void *am_compile_regex(const char *pattern) {
+    pcre2_code *re;
+    PCRE2_SIZE erroroffset;
+    int errorcode;
+
+    if (!pattern)
+        return NULL;
+
+    re = pcre2_compile((PCRE2_SPTR)pattern, PCRE2_ZERO_TERMINATED, 0, &errorcode, &erroroffset, NULL);
+    if (re == NULL) {
+        PCRE2_UCHAR buffer[256];
+        pcre2_get_error_message(errorcode, buffer, sizeof(buffer));
+        AM_LOG_ERROR(0, "am_compile_regex: failed on \"%s\" at offset %d: %s", pattern, (int)erroroffset, buffer);
+    }
+    return re;
+}
+
+am_return_t am_match_regex(void *compiled_re, const char *subject) {
+    pcre2_code *re = (pcre2_code *)compiled_re;
+    pcre2_match_data *match_data;
+    int rc;
+
+    if (!re || !subject)
+        return AM_FAIL;
+
+    match_data = pcre2_match_data_create_from_pattern(re, NULL);
+    rc = pcre2_match(re, (PCRE2_SPTR)subject, PCRE2_ZERO_TERMINATED, 0, 0, match_data, NULL);
+    pcre2_match_data_free(match_data);
+
+    return rc >= 0 ? AM_OK : AM_FAIL;
+}
+
+void am_free_regex(void *compiled_re) {
+    if (compiled_re) {
+        pcre2_code_free((pcre2_code *)compiled_re);
+    }
+}
+
 /**
  * Match a subject against a pattern.
  *
@@ -239,30 +280,27 @@ char is_big_endian() {
  *         AM_FAIL (1) if there is no match, or the pattern doesn't compile
  */
 am_return_t match(unsigned long instance_id, const char *subject, const char *pattern) {
-    pcre *x = NULL;
-    const char *error;
-    int erroroffset, rc = -1;
-    int offsets[3];
-    am_return_t result = AM_OK;
+    am_return_t result;
+    void *re;
 
     if (subject == NULL || pattern == NULL) {
-        return result;
+        return AM_OK;
     }
-    x = pcre_compile(pattern, 0, &error, &erroroffset, NULL);
-    if (x == NULL) {
-        AM_LOG_DEBUG(instance_id, "match: pcre_compile failed on \"%s\" with error %s", pattern,
-                     (error == NULL) ? "unknown" : error);
+
+    re = am_compile_regex(pattern);
+    if (!re) {
+        AM_LOG_DEBUG(instance_id, "match: am_compile_regex failed on \"%s\"", pattern);
         return AM_FAIL;
     }
 
-    rc = pcre_exec(x, NULL, subject, (int)strlen(subject), 0, 0, offsets, 3);
-    if (rc < 0) {
-        AM_LOG_DEBUG(instance_id, "match(): '%s' does not match '%s'", subject, pattern);
-        result = AM_FAIL;
-    } else {
+    result = am_match_regex(re, subject);
+    am_free_regex(re);
+
+    if (result == AM_OK) {
         AM_LOG_DEBUG(instance_id, "match(): '%s' matches '%s'", subject, pattern);
+    } else {
+        AM_LOG_DEBUG(instance_id, "match(): '%s' does not match '%s'", subject, pattern);
     }
-    pcre_free(x);
 
     return result;
 }
@@ -271,58 +309,56 @@ am_return_t match(unsigned long instance_id, const char *subject, const char *pa
  * Match groups specified in the compiled regular expression against the subject specified.
  * The matching groups are returned in bulk in the return value as a number of null separated strings.
  *
- * @param x: the compiled regular expression
- * @param capture_groups: the number of capture groups specified in the regular expression
+ * @param re_ptr: the compiled regular expression (cast to void pointer)
+ * @param capture_groups: the number of capture groups specified in the regular expression (Unused in PCRE2
+ * implementation)
  * @param subject: the string to be matched against the regular expression
  * @param len: initially set to the length of the subject, this is changed to be a count of the number
  *        of strings stored in the return value, separated by null strings.
  *
  * @return null separated matching strings
  */
-char *match_group(pcre *x, int capture_groups, const char *subject, size_t *len) {
-    /* pcre itself needs space in the max_capture_groups */
-    int max_capture_groups = (capture_groups + 1) * 3;
-    size_t k = 0, slen = *len;
-    int i, substring_len, rc, ret_len = 0;
-    unsigned int offset = 0;
+char *match_group(void *re_ptr, int capture_groups, const char *subject, size_t *len) {
+    pcre2_code *re = (pcre2_code *)re_ptr;
+    pcre2_match_data *match_data;
+    int rc, i;
+    PCRE2_SIZE *ovector;
     char *result = NULL;
-    int *ovector;
+    size_t offset = 0;
+    size_t slen = *len;
+    size_t k = 0, ret_len = 0;
+    (void)capture_groups;
 
-    if (x == NULL || subject == NULL) {
+    if (!re || !subject)
         return NULL;
-    }
-    if ((ovector = calloc(max_capture_groups, sizeof(int))) == NULL) {
-        return NULL;
-    }
-    while (offset < slen && (rc = pcre_exec(x, 0, subject, (int)slen, offset, 0, ovector, max_capture_groups)) >= 0) {
-        for (i = 1 /* skip the first pair: "identify the portion of the subject string matched by the entire pattern" */
-             ;
-             i < rc; ++i) {
-            char *rslt, *ret_tmp;
-            if ((substring_len = pcre_get_substring(subject, ovector, rc, i, (const char **)&rslt)) > 0) {
-                ret_tmp = realloc(result, ret_len + substring_len + 1);
-                if (ret_tmp == NULL) {
-                    am_free(result);
-                    pcre_free_substring(rslt);
-                    free(ovector);
+
+    match_data = pcre2_match_data_create_from_pattern(re, NULL);
+
+    while (offset < slen && (rc = pcre2_match(re, (PCRE2_SPTR)subject, slen, offset, 0, match_data, NULL)) >= 0) {
+        ovector = pcre2_get_ovector_pointer(match_data);
+        for (i = 1; i < rc; ++i) {
+            PCRE2_SPTR substring_start = (PCRE2_SPTR)subject + ovector[2 * i];
+            size_t substring_length = ovector[2 * i + 1] - ovector[2 * i];
+
+            if (substring_length > 0) {
+                char *ret_tmp = realloc(result, ret_len + substring_length + 1);
+                if (!ret_tmp) {
+                    free(result);
+                    pcre2_match_data_free(match_data);
                     return NULL;
                 }
                 result = ret_tmp;
-
-                /* return value is stored as:
-                 * key\0value\0...
-                 */
-                memcpy(result + ret_len, rslt, substring_len);
-                result[ret_len + substring_len] = '\0';
-                ret_len += substring_len + 1;
+                memcpy(result + ret_len, substring_start, substring_length);
+                result[ret_len + substring_length] = '\0';
+                ret_len += substring_length + 1;
                 k++;
             }
-            pcre_free_substring(rslt);
         }
         offset = ovector[1];
     }
+
+    pcre2_match_data_free(match_data);
     *len = k;
-    free(ovector);
     return result;
 }
 

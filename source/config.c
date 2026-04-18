@@ -1839,3 +1839,31 @@ int am_get_agent_config_cache_or_local(unsigned long instance_id, const char *co
     }
     return status;
 }
+
+void update_agent_configuration_compile_regexes(am_config_t *conf) {
+    int i;
+    if (!conf)
+        return;
+
+    if (conf->not_enforced_regex_enable) {
+        for (i = 0; i < conf->not_enforced_map_sz; i++) {
+            conf->not_enforced_map[i].compiled_regex = am_compile_regex(conf->not_enforced_map[i].value);
+        }
+    }
+    if (conf->not_enforced_ext_regex_enable) {
+        for (i = 0; i < conf->not_enforced_ext_map_sz; i++) {
+            conf->not_enforced_ext_map[i].compiled_regex = am_compile_regex(conf->not_enforced_ext_map[i].value);
+        }
+    }
+    if (conf->logout_regex_enable) {
+        for (i = 0; i < conf->logout_map_sz; i++) {
+            conf->logout_map[i].compiled_regex = am_compile_regex(conf->logout_map[i].value);
+        }
+    }
+    if (ISVALID(conf->url_check_regex)) {
+        conf->compiled_url_check_regex = am_compile_regex(conf->url_check_regex);
+    }
+    if (ISVALID(conf->logout_url_regex)) {
+        conf->compiled_logout_url_regex = am_compile_regex(conf->logout_url_regex);
+    }
+}

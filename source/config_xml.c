@@ -16,7 +16,6 @@
 
 #include "am.h"
 #include "expat.h"
-#include "pcre.h"
 #include "platform.h"
 #include "utility.h"
 
@@ -31,7 +30,7 @@ typedef struct {
     int data_sz;
     int status;
     am_config_t *conf;
-    pcre *rgx;
+    void *rgx;
     void *parser;
     char log_enable;
 } am_xml_parser_ctx_t;
@@ -585,7 +584,7 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
     am_config_t *r = NULL;
     const const char *begin, *stream = NULL;
     size_t data_sz;
-    pcre *x = NULL;
+    void *x = NULL;
     const char *error = NULL;
     int erroroffset;
 
@@ -604,15 +603,15 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
     }
 
     /* match [key]=value returned within <value>[key]=value_of_a_key</value> element */
-    x = pcre_compile("(?<=\\[)(.+?)(?=\\])\\]\\s*\\=\\s*(.+)", 0, &error, &erroroffset, NULL);
+    x = am_compile_regex("(?<=\\\\[)(.+?)(?=\\\\])\\\\]\\\\s*\\\\=\\\\s*(.+)");
     if (x == NULL) {
-        AM_LOG_ERROR(instance_id, "%s pcre error %s", thisfunc, error == NULL ? "" : error);
+        AM_LOG_ERROR(instance_id, "%s regex error %s", thisfunc, error == NULL ? "" : error);
     }
 
     r = calloc(1, sizeof(am_config_t));
     if (r == NULL) {
         AM_LOG_ERROR(instance_id, "%s memory allocation error", thisfunc);
-        pcre_free(x);
+        am_free_regex(x);
         return NULL;
     }
     r->instance_id = instance_id;
@@ -659,7 +658,7 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
         AM_LOG_ERROR(instance_id, "%s %s", thisfunc, am_strerror(xctx.status));
     }
 
-    pcre_free(x);
+    am_free_regex(x);
 
     decrypt_agent_passwords(r);
     update_agent_configuration_ttl(r);
@@ -667,5 +666,7 @@ am_config_t *am_parse_config_xml(unsigned long instance_id, const char *xml, siz
     update_agent_configuration_normalise_map_urls(r);
     update_agent_configuration_reorder_map_values(r);
 
+    update_agent_configuration_compile_regexes(r);
+    update_agent_configuration_compile_regexes(r);
     return r;
 }
