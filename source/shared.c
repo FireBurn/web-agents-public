@@ -897,6 +897,10 @@ am_shm_t *am_shm_create(const char *name, uint64_t usize, int use_new_initialise
     am_shm_lock(ret);
 
     ret->fd = shm_open(ret->name[1], O_CREAT | O_EXCL | O_RDWR, 0666);
+#ifndef _WIN32
+    if (ret->fd != -1)
+        fchmod(ret->fd, 0666);
+#endif
     error = errno;
     if (ret->fd == -1 && error != EEXIST) {
         munmap(ret->lock, sizeof(pthread_mutex_t));
