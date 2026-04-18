@@ -35,6 +35,7 @@ find_package(ZLIB REQUIRED)
 find_package(EXPAT REQUIRED)
 find_package(Threads REQUIRED)
 find_package(libzip REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 # PCRE1 usually requires manual find_path/find_library
 find_path(PCRE_INCLUDE_DIR pcre.h REQUIRED)
@@ -67,6 +68,8 @@ target_link_libraries(openam PRIVATE
     EXPAT::EXPAT 
     ${PCRE_LIBRARY} 
     Threads::Threads
+    OpenSSL::SSL
+    OpenSSL::Crypto
 )
 
 # Link 'dl' (dynamic loader) on Unix systems
