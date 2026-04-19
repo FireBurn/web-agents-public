@@ -2,7 +2,23 @@ cmake_minimum_required(VERSION 3.12)
 project(OpenAMWebAgent
     VERSION 5.0.0
     DESCRIPTION "OpenAM Web Policy Agents"
-    LANGUAGES C)
+    LANGUAGES C CXX)
+
+# -----------------------------------------------------------------------------
+# C language standard.
+#
+# The codebase uses C99 features throughout (declarations inside for-loop
+# initializers, mixed decls/statements, //-comments, etc). Modern compilers
+# default to at least C99, but GCC 4.8.5 (shipped on RHEL 7) defaults to
+# gnu89/c89 and rejects the code with "'for' loop initial declarations are
+# only allowed in C99 mode". Force C99 everywhere so RHEL 7 builds clean.
+#
+# Using gnu99 (not c99) to keep GNU extensions like typeof, ({...}) blocks,
+# and __attribute__ available — the code relies on some of these.
+# -----------------------------------------------------------------------------
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS ON)  # Enable gnu99 over strict c99
 
 # -----------------------------------------------------------------------------
 # Project options
@@ -126,16 +142,31 @@ set(OPENAM_CORE_SOURCES
     source/utility.c
     source/worker.c)
 
-add_library(openam SHARED ${OPENAM_CORE_SOURCES})
-set_target_properties(openam PROPERTIES
-    VERSION   ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR})
+# -----------------------------------------------------------------------------
+# Core openam code is compiled once into an OBJECT library. Two consumers
+# link against it:
+#   - libopenam.so  (shared; used by agentadmin at runtime)
+#   - mod_openam.so (Apache module; statically embeds the objects so the
+#                    module has no runtime dependency on libopenam.so)
+# On Windows, mod_iis_openam.dll does the same static-embed trick.
+#
+# This matches the upstream 4.1.1 layout where mod_openam.so is
+# self-contained — a drop-in Apache module that doesn't require a
+# separately-deployed libopenam.
+# -----------------------------------------------------------------------------
 
-target_include_directories(openam PUBLIC
+add_library(openam_objects OBJECT ${OPENAM_CORE_SOURCES})
+
+# PIC is essential: these objects are linked into libopenam.so (a shared
+# lib) AND mod_openam.so / mod_iis_openam.dll (modules), both of which
+# require position-independent code.
+set_target_properties(openam_objects PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+target_include_directories(openam_objects PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/source>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/source>)
 
-target_link_libraries(openam
+target_link_libraries(openam_objects
     PUBLIC
         Threads::Threads
         ZLIB::ZLIB
@@ -144,72 +175,116 @@ target_link_libraries(openam
         OpenSSL::Crypto)
 
 if(PCRE2_FOUND)
-    target_link_libraries(openam PUBLIC PkgConfig::PCRE2)
+    target_link_libraries(openam_objects PUBLIC PkgConfig::PCRE2)
 else()
-    target_include_directories(openam PUBLIC ${PCRE2_INCLUDE_DIR})
-    target_link_libraries(openam PUBLIC ${PCRE2_LIBRARY})
+    target_include_directories(openam_objects PUBLIC ${PCRE2_INCLUDE_DIR})
+    target_link_libraries(openam_objects PUBLIC ${PCRE2_LIBRARY})
 endif()
 
 # dl is needed on Linux (not macOS, not Windows)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(openam PUBLIC dl)
+    target_link_libraries(openam_objects PUBLIC dl)
+endif()
+
+# rt is needed for shm_open, timer_create, etc. on older glibc (<2.34).
+# Modern glibc (Ubuntu 22.04+) folded these into libc, but RHEL 8 and
+# earlier still require explicit -lrt. Detect and link conditionally.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    include(CheckLibraryExists)
+    check_library_exists(rt shm_open "" HAVE_LIBRT)
+    if(HAVE_LIBRT)
+        target_link_libraries(openam_objects PUBLIC rt)
+    endif()
 endif()
 
 # -----------------------------------------------------------------------------
-# Compiler / linker hardening
+# Compiler / linker hardening (applied to the object library so both
+# consumers inherit the same flags).
 # -----------------------------------------------------------------------------
 
-target_compile_definitions(openam PRIVATE _REENTRANT)
+target_compile_definitions(openam_objects PRIVATE _REENTRANT)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_compile_definitions(openam PRIVATE _GNU_SOURCE LINUX)
+    target_compile_definitions(openam_objects PRIVATE _GNU_SOURCE LINUX)
 endif()
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
-    target_compile_options(openam PRIVATE
-        # Warnings
+    target_compile_options(openam_objects PRIVATE
         -Wall
         -Wformat
         -Wformat-security
-        # Security-critical: truncated format output is almost always a bug.
-        # Upgrade to error once the existing warnings in admin.c are fixed.
-        -Wformat-truncation
+        -fPIC)
 
-        # Hardening (active in all configs; not a perf hit)
-        -fstack-protector-strong
-        -fPIC
+    include(CheckCCompilerFlag)
 
-        # Build-type-specific: -g only in debug / relwithdebinfo, etc.
-        # (CMake adds -O0/-g for Debug, -O3 for Release, -O2 -g for
-        # RelWithDebInfo, -Os for MinSizeRel by default. Don't override.)
-    )
+    # -Wformat-truncation was added in GCC 7 and isn't available on older
+    # toolchains (notably RHEL 7's GCC 4.8.5). Probe for support.
+    check_c_compiler_flag(-Wformat-truncation HAS_WFORMAT_TRUNCATION)
+    if(HAS_WFORMAT_TRUNCATION)
+        target_compile_options(openam_objects PRIVATE -Wformat-truncation)
+    endif()
 
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        target_link_options(openam PRIVATE
-            -Wl,-z,relro
-            -Wl,-z,now
-            -Wl,-z,noexecstack)
+    # -fstack-protector-strong was added in GCC 4.9 and Clang 3.5. Older
+    # compilers (RHEL 6's GCC 4.4.7) only have -fstack-protector. Probe
+    # for the stronger variant and fall back to the plain one.
+    check_c_compiler_flag(-fstack-protector-strong HAS_STACK_PROTECTOR_STRONG)
+    if(HAS_STACK_PROTECTOR_STRONG)
+        target_compile_options(openam_objects PRIVATE -fstack-protector-strong)
+    else()
+        check_c_compiler_flag(-fstack-protector HAS_STACK_PROTECTOR)
+        if(HAS_STACK_PROTECTOR)
+            target_compile_options(openam_objects PRIVATE -fstack-protector)
+        endif()
     endif()
 
     # Fortify only makes sense when optimising
-    target_compile_definitions(openam PRIVATE
+    target_compile_definitions(openam_objects PRIVATE
         $<$<NOT:$<CONFIG:Debug>>:_FORTIFY_SOURCE=2>)
 endif()
 
 # -----------------------------------------------------------------------------
-# Admin tool
+# libopenam.so — thin shared-library wrapper around the object library.
+# External consumers (agentadmin, user code) link against this.
+# -----------------------------------------------------------------------------
+
+add_library(openam SHARED $<TARGET_OBJECTS:openam_objects>)
+# Inherit all the PUBLIC link/include requirements from the object library
+target_link_libraries(openam PUBLIC openam_objects)
+set_target_properties(openam PROPERTIES
+    VERSION   ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR})
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_link_options(openam PRIVATE
+        -Wl,-z,relro
+        -Wl,-z,now
+        -Wl,-z,noexecstack)
+endif()
+
+# -----------------------------------------------------------------------------
+# Admin tool.
+#
+# Also statically embeds openam_objects — matches the upstream 4.1.1
+# distribution model where `agentadmin` is a standalone executable with
+# no runtime dependency on libopenam.so. Only system libraries (libc,
+# libssl, libpcre2-8, libz, libexpat, libzip) remain dynamic.
 # -----------------------------------------------------------------------------
 
 add_executable(agentadmin
     source/admin.c
-    source/admin_iis.c)
+    source/admin_iis.c
+    $<TARGET_OBJECTS:openam_objects>)
 
 target_link_libraries(agentadmin PRIVATE
-    openam
+    openam_objects
     PkgConfig::LIBZIP)
 
 # -----------------------------------------------------------------------------
-# Apache module (Linux / macOS / optionally Windows with APR)
+# Apache module (Linux / macOS / optionally Windows with APR).
+#
+# Statically embeds openam_objects so the resulting mod_openam.so is
+# a self-contained Apache module — dropping it into httpd's modules/
+# directory is enough, no libopenam.so needs to be present on the box.
 # -----------------------------------------------------------------------------
 
 if(BUILD_APACHE_MODULE)
@@ -226,12 +301,47 @@ if(BUILD_APACHE_MODULE)
         pkg_check_modules(APR apr-1)
         pkg_check_modules(APRUTIL apr-util-1)
 
-        add_library(mod_openam MODULE source/apache/agent.c)
+        add_library(mod_openam MODULE
+            source/apache/agent.c
+            $<TARGET_OBJECTS:openam_objects>)
         target_include_directories(mod_openam PRIVATE
             ${APACHE_INCLUDE_DIR}
             ${APR_INCLUDE_DIRS}
             ${APRUTIL_INCLUDE_DIRS})
-        target_link_libraries(mod_openam PRIVATE openam)
+        # Link PRIVATE against the object lib to get its transitive
+        # PUBLIC link dependencies (OpenSSL, zlib, pcre2, etc.) WITHOUT
+        # dragging in libopenam.so as a runtime dependency.
+        target_link_libraries(mod_openam PRIVATE openam_objects)
+
+        # Link APR explicitly. On Linux the Apache server provides the
+        # APR symbols at module load time via the runtime linker, so
+        # leaving them unresolved works. macOS's ld is strict by default
+        # and wants every undefined at link time — and being explicit is
+        # harmless everywhere.
+        if(APR_FOUND)
+            target_link_libraries(mod_openam PRIVATE ${APR_LIBRARIES})
+            target_link_directories(mod_openam PRIVATE ${APR_LIBRARY_DIRS})
+        endif()
+        if(APRUTIL_FOUND)
+            target_link_libraries(mod_openam PRIVATE ${APRUTIL_LIBRARIES})
+            target_link_directories(mod_openam PRIVATE ${APRUTIL_LIBRARY_DIRS})
+        endif()
+
+        # Apache's core symbols (ap_rprintf, ap_get_client_block, etc.)
+        # are provided by the httpd binary at module load time, not by
+        # a linkable .so/.dylib. On Linux this is fine — ld treats
+        # unresolved symbols in shared modules as lazy by default. On
+        # macOS ld is strict: every symbol must resolve at link time or
+        # be explicitly marked as dynamic lookup.
+        #
+        # Use -undefined dynamic_lookup so the ap_* symbols defer to
+        # httpd at module-load time, matching Linux behavior. This is
+        # the standard pattern for Apache modules on macOS (mod_perl,
+        # mod_php, etc. all do this).
+        if(APPLE)
+            target_link_options(mod_openam PRIVATE
+                -Wl,-undefined,dynamic_lookup)
+        endif()
         set_target_properties(mod_openam PROPERTIES PREFIX "")
 
         message(STATUS "Apache module: enabled (apxs at ${APXS_EXECUTABLE})")
@@ -241,43 +351,87 @@ if(BUILD_APACHE_MODULE)
 endif()
 
 # -----------------------------------------------------------------------------
-# IIS module (Windows only)
+# IIS module (Windows only) — same static-embed pattern as mod_openam.
+#
+# As of Windows 11 24H2 SDK (10.0.26100.x), IIS headers (httpserv.h etc)
+# use C++ class declarations with __declspec(uuid(...)) attributes. These
+# do not parse as C, so the .c source has to be compiled as C++. Forcing
+# MSVC to treat source/iis/agent.c as C++ via the LANGUAGE property gives
+# MSVC the /TP flag it needs. The file itself is carefully written to
+# compile as both C and C++.
 # -----------------------------------------------------------------------------
 
-if(WIN32)
-    add_library(mod_iis_openam MODULE source/iis/agent.c)
-    target_link_libraries(mod_iis_openam PRIVATE openam)
+option(BUILD_IIS_MODULE "Build the IIS module on Windows" ON)
+
+if(WIN32 AND BUILD_IIS_MODULE)
+    add_library(mod_iis_openam MODULE
+        source/iis/agent.c
+        $<TARGET_OBJECTS:openam_objects>)
+    target_link_libraries(mod_iis_openam PRIVATE openam_objects)
     set_target_properties(mod_iis_openam PROPERTIES PREFIX "")
+
+    # Compile agent.c as C++ so MSVC can parse the IIS headers. A .c file
+    # normally gets /TC (force-C); setting LANGUAGE CXX overrides this to
+    # /TP.
+    if(MSVC)
+        set_source_files_properties(source/iis/agent.c
+            PROPERTIES LANGUAGE CXX)
+    endif()
 endif()
 
 # -----------------------------------------------------------------------------
-# Install rules
+# Install rules — match the upstream 4.1.1 distribution layout:
+#
+#   bin/agentadmin
+#   lib/mod_openam.so  (or mod_iis_openam.dll on Windows)
+#   config/<templates + xml schemas>
+#   legal/CDDLv1.0.txt
+#   legal/THIRDPARTYREADME.txt
+#   log/          (empty - agent writes logs here)
+#   instances/    (empty - per-agent state)
+#
+# libopenam.so is built for the test target but not shipped by default;
+# opt in with -DINSTALL_SHARED_OPENAM=ON if you need it for downstream
+# consumers.
 # -----------------------------------------------------------------------------
 
-include(GNUInstallDirs)
+option(INSTALL_SHARED_OPENAM "Install libopenam.so for external consumers" OFF)
 
-install(TARGETS openam agentadmin
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(TARGETS agentadmin
+    RUNTIME DESTINATION bin)
+
+if(INSTALL_SHARED_OPENAM)
+    install(TARGETS openam
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib)
+endif()
 
 if(TARGET mod_openam)
-    install(TARGETS mod_openam
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/openam)
+    install(TARGETS mod_openam LIBRARY DESTINATION lib)
 endif()
 
 if(TARGET mod_iis_openam)
     install(TARGETS mod_iis_openam
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/openam
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/openam)
+        RUNTIME DESTINATION lib
+        LIBRARY DESTINATION lib)
 endif()
 
+# Config templates — copy every .template and .xml schema file as-is.
 install(DIRECTORY config/
-    DESTINATION ${CMAKE_INSTALL_DATADIR}/openam/config
+    DESTINATION config
     FILES_MATCHING PATTERN "*.template" PATTERN "*.xml")
 
-install(FILES LICENSE.md legal/CDDLv1.0.txt legal/THIRDPARTYREADME.txt
-    DESTINATION ${CMAKE_INSTALL_DOCDIR})
+# License + third-party notices.
+install(FILES legal/CDDLv1.0.txt legal/THIRDPARTYREADME.txt
+    DESTINATION legal)
+
+# Empty runtime directories the agent expects to exist. CMake creates
+# these at install time via MESSAGE; the DIRECTORY install form only
+# works with an existing source dir, so use CODE to mkdir.
+install(CODE "
+    file(MAKE_DIRECTORY \"\${CMAKE_INSTALL_PREFIX}/log\")
+    file(MAKE_DIRECTORY \"\${CMAKE_INSTALL_PREFIX}/instances\")
+")
 
 # -----------------------------------------------------------------------------
 # Tests

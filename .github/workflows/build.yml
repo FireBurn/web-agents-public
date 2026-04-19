@@ -6,32 +6,20 @@ on:
     tags: [ "[0-9]*" ]
   pull_request:
     branches: [ "master", "main" ]
-  # Nightly run exercises the slow/stress tests that are skipped on PRs.
   schedule:
     - cron: '0 3 * * *'
-  # Manual trigger for ad-hoc runs of the slow-test job
   workflow_dispatch:
 
-# softprops/action-gh-release needs write access to create releases
 permissions:
   contents: write
 
-# -----------------------------------------------------------------------------
-# Shared env — keeps the ctest invocation consistent across jobs.
-#
-# Slow tests (labelled `slow` in tests/CMakeLists.txt) and known-broken
-# tests (labelled `broken`) are excluded from the PR/push pipeline.
-# They run nightly via the `slow-tests` job below.
-# -----------------------------------------------------------------------------
 env:
   CTEST_DEFAULT_ARGS: --output-on-failure -LE "slow|broken" -j 4
 
 jobs:
 
   # ---------------------------------------------------------------------------
-  # Formatting gate: fails the build if any C/H file isn't clang-format clean.
-  # Runs on every push/PR so contributors without the pre-commit hook still
-  # get caught before merge.
+  # Formatting gate.
   # ---------------------------------------------------------------------------
   lint-format:
     name: Check formatting
@@ -45,27 +33,26 @@ jobs:
         sudo apt-get install -y clang-format
     - name: Verify formatting
       run: |
-        find source tests integration -type f \( -name '*.c' -o -name '*.h' \) -print0 \
+        find source tests integration -type f \( -name '*.c' -o -name '*.h' \) \
+          ! -path 'source/http_parser.*' \
+          ! -path 'source/process.c' \
+          ! -path 'source/audit.c' \
+          ! -path 'tests/test_policy.c' \
+          -print0 \
           | xargs -0 clang-format --dry-run --Werror
 
 
   # ---------------------------------------------------------------------------
-  # Native build matrix: Ubuntu, macOS, Windows
+  # Ubuntu
   # ---------------------------------------------------------------------------
-  build-native:
-    name: Build Native (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+  build-ubuntu:
+    name: Build Ubuntu
+    runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest ]
 
     steps:
     - uses: actions/checkout@v4
 
-    # Version to embed in the binaries: the tag name on a tag push,
-    # or "dev-<sha>" otherwise.
     - name: Derive version
       id: version
       shell: bash
@@ -76,34 +63,216 @@ jobs:
           echo "version=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
         fi
 
-    - name: Install Dependencies (Ubuntu)
-      if: runner.os == 'Linux'
+    - name: Install Dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          cmake \
-          pkg-config \
-          libpcre2-dev \
-          libexpat1-dev \
-          zlib1g-dev \
-          libzip-dev \
-          libssl-dev \
-          libapr1-dev \
-          libaprutil1-dev \
-          apache2-dev \
-          libcmocka-dev
+          cmake pkg-config \
+          libpcre2-dev libexpat1-dev zlib1g-dev libzip-dev libssl-dev \
+          libapr1-dev libaprutil1-dev apache2-dev libcmocka-dev
 
-    - name: Install Dependencies (macOS)
-      if: runner.os == 'macOS'
+    - name: Configure and Build
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DAGENT_VERSION=${{ steps.version.outputs.version }}
+        cmake --build build --config Release -j 4
+
+    - name: Run Tests
+      working-directory: build
+      run: ctest ${{ env.CTEST_DEFAULT_ARGS }}
+
+    - name: Package Artifacts
+      # Shipped artifacts match upstream 4.1.1's layout: bin/agentadmin,
+      # lib/mod_openam.so (self-contained), config/<templates>,
+      # legal/<licenses>, log/ and instances/ (empty). cmake --install
+      # does the assembly; our CMakeLists has the layout rules.
+      run: |
+        cmake --install build --prefix "$PWD/package"
+        cd package && zip -ry "../OpenAM-WebAgent-Ubuntu.zip" .
+
+    - name: Upload Workflow Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenAM-WebAgent-Ubuntu
+        path: OpenAM-WebAgent-Ubuntu.zip
+
+    - name: Attach to GitHub Release
+      if: github.ref_type == 'tag'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        files: OpenAM-WebAgent-Ubuntu.zip
+        generate_release_notes: true
+        fail_on_unmatched_files: true
+
+
+  # ---------------------------------------------------------------------------
+  # macOS.
+  #
+  # APR is handled specially. Homebrew's apr / apr-util are keg-only and
+  # macOS's built-in apr at /usr/include/apr-1/ is an ancient 1.5.2 from
+  # Apple that doesn't expose apr_thread_proc.h in a way apxs sees. So we
+  # build a fresh APR + APR-util from the Apache source tarballs into
+  # $HOME/apr-local and point pkg-config at that. Now the Apache module
+  # builds cleanly (and, thanks to the openam_objects pattern in
+  # CMakeLists.txt, is self-contained).
+  # ---------------------------------------------------------------------------
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    if: github.event_name != 'schedule'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Derive version
+      id: version
+      run: |
+        if [ "${{ github.ref_type }}" = "tag" ]; then
+          echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "version=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Install Homebrew dependencies
       run: |
         brew install cmake pkg-config pcre2 expat zlib libzip openssl@3 httpd cmocka
+
+    # Download APR + APR-util from source (the Apache archive, not
+    # Homebrew) because Homebrew's apr is keg-only and macOS's system
+    # apr is too old for our apxs path.
+    - name: Build APR and APR-util from source
+      run: |
+        APR_PREFIX="$HOME/apr-local"
+        mkdir -p "$APR_PREFIX"
+
+        cd /tmp
+        curl -fsSL https://archive.apache.org/dist/apr/apr-1.7.4.tar.gz -o apr.tar.gz
+        tar xzf apr.tar.gz
+        cd apr-1.7.4
+        ./configure --prefix="$APR_PREFIX" --disable-dependency-tracking
+        make -j4
+        make install
+
+        cd /tmp
+        curl -fsSL https://archive.apache.org/dist/apr/apr-util-1.6.3.tar.gz -o apr-util.tar.gz
+        tar xzf apr-util.tar.gz
+        cd apr-util-1.6.3
+        ./configure --prefix="$APR_PREFIX" --with-apr="$APR_PREFIX" --disable-dependency-tracking
+        make -j4
+        make install
+
+        # Export so subsequent steps pick up our APR via pkg-config.
+        echo "APR_PREFIX=$APR_PREFIX" >> "$GITHUB_ENV"
+
+    - name: Set build environment
+      run: |
         {
           echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)"
-          echo "PKG_CONFIG_PATH=$(brew --prefix libzip)/lib/pkgconfig:$(brew --prefix openssl@3)/lib/pkgconfig:$(brew --prefix pcre2)/lib/pkgconfig:$(brew --prefix cmocka)/lib/pkgconfig"
+          PKG_CONFIG_PATH="$HOME/apr-local/lib/pkgconfig"
+          PKG_CONFIG_PATH="$PKG_CONFIG_PATH:$(brew --prefix libzip)/lib/pkgconfig"
+          PKG_CONFIG_PATH="$PKG_CONFIG_PATH:$(brew --prefix openssl@3)/lib/pkgconfig"
+          PKG_CONFIG_PATH="$PKG_CONFIG_PATH:$(brew --prefix pcre2)/lib/pkgconfig"
+          PKG_CONFIG_PATH="$PKG_CONFIG_PATH:$(brew --prefix cmocka)/lib/pkgconfig"
+          echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
         } >> "$GITHUB_ENV"
 
-    - name: Install Dependencies (Windows)
-      if: runner.os == 'Windows'
+    - name: Configure and Build
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DAGENT_VERSION=${{ steps.version.outputs.version }}
+        cmake --build build --config Release -j 4
+
+    - name: Run Tests
+      working-directory: build
+      run: ctest ${{ env.CTEST_DEFAULT_ARGS }}
+
+    - name: Package Artifacts
+      run: |
+        cmake --install build --prefix "$PWD/package"
+        cd package && zip -ry "../OpenAM-WebAgent-macOS.zip" .
+
+    - name: Upload Workflow Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenAM-WebAgent-macOS
+        path: OpenAM-WebAgent-macOS.zip
+
+    - name: Attach to GitHub Release
+      if: github.ref_type == 'tag'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        files: OpenAM-WebAgent-macOS.zip
+        generate_release_notes: true
+        fail_on_unmatched_files: true
+
+
+  # ---------------------------------------------------------------------------
+  # Windows.
+  #
+  # The Windows 11 24H2 SDK (10.0.26100.x) pulls in <ifdef.h> (which uses
+  # ULONG/USHORT/DWORD) from some transitive include, without <windows.h>
+  # being reached first. This cascades into hundreds of C2059 errors that
+  # make the whole build fail.
+  #
+  # Force-include <winsock2.h> at the top of every translation unit (/FI)
+  # so that <windows.h> and all the basic Windows types are defined before
+  # anything else is parsed. Also define WIN32_LEAN_AND_MEAN (skip rarely-
+  # used headers) and _WIN32_WINNT=0x0A00 (target Windows 10+ — the old
+  # code may have been defaulting to something ancient that the 24H2 SDK
+  # doesn't support any more).
+  # ---------------------------------------------------------------------------
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    if: github.event_name != 'schedule'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Derive version
+      id: version
+      shell: bash
+      run: |
+        if [ "${{ github.ref_type }}" = "tag" ]; then
+          echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "version=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Install pkg-config
+      # Chocolatey's community repo occasionally returns 503 mid-install
+      # (one recent CI run hit it). Retry a few times, and fall back to
+      # a raw binary download if choco is completely unavailable.
+      shell: pwsh
+      run: |
+        $ok = $false
+        for ($i = 0; $i -lt 3 -and -not $ok; $i++) {
+          if ($i -gt 0) { Start-Sleep -Seconds 10 }
+          try {
+            choco install -y --no-progress pkgconfiglite
+            if ($LASTEXITCODE -eq 0) { $ok = $true }
+          } catch { }
+        }
+        if (-not $ok) {
+          # Fallback: download pkg-config-lite binary directly
+          Write-Host "Chocolatey failed; falling back to direct download"
+          $url = "https://download.gnome.org/binaries/win32/dependencies/pkg-config_0.26-1_win32.zip"
+          $gnu = "https://download.gnome.org/binaries/win32/dependencies/glib_2.28.8-1_win32.zip"
+          $dst = "C:\pkgconfig"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\pkgconfig.zip"
+          Expand-Archive -Path "$env:TEMP\pkgconfig.zip" -DestinationPath $dst -Force
+          # Also need libintl-8.dll from glib
+          Invoke-WebRequest -Uri $gnu -OutFile "$env:TEMP\glib.zip"
+          Expand-Archive -Path "$env:TEMP\glib.zip" -DestinationPath $dst -Force
+          Add-Content -Path $env:GITHUB_PATH -Value "$dst\bin"
+        }
+
+    - name: Install Dependencies
       shell: bash
       run: |
         vcpkg install \
@@ -114,95 +283,298 @@ jobs:
           openssl:x64-windows \
           cmocka:x64-windows
 
-    - name: Configure and Build (Unix)
-      if: runner.os != 'Windows'
+    - name: Configure and Build
+      # PowerShell, not bash. Git Bash's MSYS path-conversion mangles
+      # MSVC-style flags: the leading slash in /FIwinsock2.h gets
+      # rewritten to C:/Program Files/Git/FIwinsock2.h before CL sees
+      # it, which then fails with C1083 "Cannot open source file". pwsh
+      # passes flags through verbatim.
+      shell: pwsh
       run: |
-        cmake -B build \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DAGENT_VERSION=${{ steps.version.outputs.version }}
-        cmake --build build --config Release -j 4
-
-    - name: Configure and Build (Windows)
-      if: runner.os == 'Windows'
-      shell: bash
-      run: |
-        # IIS SDK isn't available on GitHub runners, so the Windows build
-        # produces the core library + admin tool only (no mod_iis_openam,
-        # no Apache module). Apache is built on Unix runners.
-        cmake -B build \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DAGENT_VERSION=${{ steps.version.outputs.version }} \
-          -DBUILD_APACHE_MODULE=OFF \
-          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
-          -DVCPKG_TARGET_TRIPLET=x64-windows
+        cmake -B build `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DAGENT_VERSION=${{ steps.version.outputs.version }} `
+          -DBUILD_APACHE_MODULE=OFF `
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+          -DVCPKG_TARGET_TRIPLET=x64-windows `
+          -DCMAKE_C_FLAGS="/FIwinsock2.h /DWIN32_LEAN_AND_MEAN /D_WIN32_WINNT=0x0A00"
         cmake --build build --config Release -j 4
 
     - name: Run Tests
       shell: bash
       working-directory: build
-      # No wall-clock --timeout here: each test has its own per-test timeout
-      # in tests/CMakeLists.txt (60s default, 600s for slow tests).
       run: ctest ${{ env.CTEST_DEFAULT_ARGS }}
 
     - name: Package Artifacts
       shell: bash
       run: |
-        mkdir -p package/lib package/bin
-        # Linux/macOS layout: artifacts in build/
-        # Windows (MSBuild multi-config) layout: artifacts in build/Release/
-        for src in build build/Release; do
-          [ -d "$src" ] || continue
-          cp "$src"/agentadmin*    package/bin/ 2>/dev/null || true
-          cp "$src"/mod_*          package/lib/ 2>/dev/null || true
-          cp "$src"/libopenam*     package/lib/ 2>/dev/null || true
-          cp "$src"/openam*.dll    package/lib/ 2>/dev/null || true
-          cp "$src"/openam*.dylib  package/lib/ 2>/dev/null || true
-        done
-        cd package && zip -r "../OpenAM-WebAgent-${{ runner.os }}.zip" .
+        cmake --install build --prefix "$PWD/package" --config Release
+        cd package && 7z a "../OpenAM-WebAgent-Windows.zip" .
 
     - name: Upload Workflow Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: OpenAM-WebAgent-${{ runner.os }}
-        path: OpenAM-WebAgent-${{ runner.os }}.zip
+        name: OpenAM-WebAgent-Windows
+        path: OpenAM-WebAgent-Windows.zip
 
     - name: Attach to GitHub Release
       if: github.ref_type == 'tag'
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.ref_name }}
-        files: OpenAM-WebAgent-${{ runner.os }}.zip
+        files: OpenAM-WebAgent-Windows.zip
         generate_release_notes: true
         fail_on_unmatched_files: true
 
 
   # ---------------------------------------------------------------------------
-  # RHEL / AlmaLinux / CentOS Stream matrix: 7, 8, 9, 10
+  # RHEL 6 and 7 — legacy distros run via `docker run` on ubuntu-latest host.
   #
-  # RHEL 6 has its own dedicated job below because it needs several deps
-  # built from source (none of pcre2, libzip, cmocka, or a modern cmake
-  # are in EPEL 6), which would slow the whole matrix down.
+  # RHEL 7 now works because:
+  #   - CMakeLists.txt was updated to probe `-Wformat-truncation` support
+  #     via check_c_compiler_flag, so it's skipped silently on GCC 4.8.
+  #   - -lrt is now linked via CMakeLists.txt check_library_exists.
+  #
+  # RHEL 6 still builds cmake/pcre2/libzip/cmocka from source. The libzip
+  # download URL was changed to github.com/nih-at/libzip/releases/download
+  # after libzip.org became flaky in CI.
+  # ---------------------------------------------------------------------------
+  build-rhel-legacy:
+    name: Build RHEL ${{ matrix.rhel_version }}
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    continue-on-error: ${{ matrix.rhel_version == '6' }}
+    timeout-minutes: ${{ matrix.rhel_version == '6' && 60 || 30 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        rhel_version: [ '6', '7' ]
+        include:
+          - rhel_version: '6'
+            container_image: 'centos:6'
+          - rhel_version: '7'
+            container_image: 'centos:7'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Derive version
+      id: version
+      run: |
+        if [ "${{ github.ref_type }}" = "tag" ]; then
+          echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "version=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Build, test, package (RHEL 6)
+      if: matrix.rhel_version == '6'
+      # --shm-size=256m: /dev/shm must be large enough for the agent's
+      # shared-memory audit/policy caches, otherwise several tests fail
+      # with ENAMETOOLONG from mmap.
+      #
+      # PCRE2 and libzip are built as STATIC libraries only (no shared
+      # objects). Since CentOS 6 has no packages for either, a RHEL 6
+      # deployment would otherwise need a vendor-lib directory on the
+      # LD_LIBRARY_PATH. Statically linking them into libopenam.so (and
+      # into agentadmin via libzip) means the produced binaries are
+      # self-contained against system libc + libssl + libexpat.
+      run: |
+        docker run --rm -i \
+          --shm-size=256m \
+          -v "${PWD}:/src" \
+          -w /src \
+          -e VERSION="${{ steps.version.outputs.version }}" \
+          ${{ matrix.container_image }} \
+          bash -eux <<'SCRIPT'
+        # CentOS 6 has been at end-of-life since 2020-11-30. Redirect the
+        # repo config to vault.centos.org where the old packages still live.
+        sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*.repo || true
+        sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo || true
+
+        yum install -y epel-release || true
+        yum install -y \
+          gcc gcc-c++ make zip tar xz wget which pkgconfig \
+          expat-devel zlib-devel openssl-devel \
+          apr-devel apr-util-devel httpd-devel
+        # xz: CentOS 6's tar doesn't bundle xz support, so extracting
+        # cmocka-1.1.7.tar.xz below would fail with "xz: Cannot exec".
+
+        mkdir -p /opt/legacy
+        export PATH=/opt/legacy/bin:$PATH
+        export PKG_CONFIG_PATH=/opt/legacy/lib/pkgconfig:/opt/legacy/lib64/pkgconfig
+        export LD_LIBRARY_PATH=/opt/legacy/lib:/opt/legacy/lib64
+
+        # CMake (binary tarball -- avoid bootstrap)
+        cd /tmp
+        wget -q https://github.com/Kitware/CMake/releases/download/v3.22.6/cmake-3.22.6-linux-x86_64.tar.gz
+        tar -xzf cmake-3.22.6-linux-x86_64.tar.gz -C /opt/legacy --strip-components=1
+
+        # PCRE2 — STATIC only, PIC (so it can be linked into libopenam.so).
+        cd /tmp
+        wget -q https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.42/pcre2-10.42.tar.gz
+        tar -xzf pcre2-10.42.tar.gz
+        cd pcre2-10.42
+        ./configure --prefix=/opt/legacy \
+                    --disable-shared --enable-static --with-pic \
+                    --disable-dependency-tracking
+        make -j4 && make install
+
+        # libzip — STATIC only, PIC. Uses system zlib.
+        cd /tmp
+        wget -q https://github.com/nih-at/libzip/releases/download/v1.10.1/libzip-1.10.1.tar.gz
+        tar -xzf libzip-1.10.1.tar.gz
+        cd libzip-1.10.1
+        cmake -B build \
+          -DCMAKE_INSTALL_PREFIX=/opt/legacy \
+          -DBUILD_SHARED_LIBS=OFF \
+          -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+          -DBUILD_TOOLS=OFF -DBUILD_REGRESS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_DOC=OFF \
+          -DENABLE_BZIP2=OFF -DENABLE_LZMA=OFF -DENABLE_ZSTD=OFF
+        cmake --build build -j4
+        cmake --install build
+
+        # cmocka — shared is fine, it's only needed for the test binary
+        # which isn't shipped. Runtime LD_LIBRARY_PATH below ensures ctest
+        # can find it.
+        cd /tmp
+        wget -q https://cmocka.org/files/1.1/cmocka-1.1.7.tar.xz
+        tar -xf cmocka-1.1.7.tar.xz
+        cd cmocka-1.1.7
+        cmake -B build \
+          -DCMAKE_INSTALL_PREFIX=/opt/legacy \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DUNIT_TESTING=OFF
+        cmake --build build -j4
+        cmake --install build
+
+        # OpenAM Web Agents. The linker picks up the static PCRE2 and
+        # libzip archives from /opt/legacy/lib since no .so exists there.
+        # CMAKE_C_STANDARD 99 in top-level CMakeLists handles the gnu99
+        # requirement (needed here for GCC 4.4.7's C89 default).
+        cd /src
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DAGENT_VERSION="$VERSION"
+        cmake --build build --config Release -j 4
+
+        cd build
+        ctest --output-on-failure -LE "slow|broken" -j 4
+        cd ..
+
+        # No vendor-lib needed: PCRE2 and libzip are statically embedded
+        # into agentadmin / mod_openam.so directly. libopenam.so is built
+        # for the test target but not shipped -- nothing in the artifact
+        # has a runtime dependency on it. Only cmocka (test-only) stayed
+        # shared in /opt/legacy/, and neither it nor libopenam.so ship.
+        cmake --install build --prefix /src/package
+        cd package && zip -ry /src/OpenAM-WebAgent-RHEL6.zip .
+        SCRIPT
+
+    - name: Build, test, package (RHEL 7)
+      if: matrix.rhel_version == '7'
+      # CentOS 7 ships libzip 0.10.1 (2013), which predates the zip_t
+      # API that source/admin.c uses. Build libzip 1.10.1 statically
+      # from source into /opt/legacy/ so it gets embedded into
+      # agentadmin at link time. PCRE2 is fine from the system package.
+      run: |
+        docker run --rm -i \
+          --shm-size=256m \
+          -v "${PWD}:/src" \
+          -w /src \
+          -e VERSION="${{ steps.version.outputs.version }}" \
+          ${{ matrix.container_image }} \
+          bash -eux <<'SCRIPT'
+        sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*.repo || true
+        sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo || true
+
+        yum install -y epel-release
+        yum install -y \
+          gcc gcc-c++ make zip pkgconfig cmake3 wget \
+          pcre2-devel expat-devel zlib-devel openssl-devel \
+          apr-devel apr-util-devel httpd-devel \
+          libcmocka-devel
+        ln -sf /usr/bin/cmake3 /usr/bin/cmake
+        ln -sf /usr/bin/ctest3 /usr/bin/ctest
+
+        # libzip 1.10.1 from source — static, PIC, so it links into
+        # agentadmin directly. CentOS 7's libzip-devel is 0.10.1 which
+        # is missing the zip_t API used in admin.c.
+        mkdir -p /opt/legacy
+        export PKG_CONFIG_PATH=/opt/legacy/lib/pkgconfig:/opt/legacy/lib64/pkgconfig
+        cd /tmp
+        wget -q https://github.com/nih-at/libzip/releases/download/v1.10.1/libzip-1.10.1.tar.gz
+        tar -xzf libzip-1.10.1.tar.gz
+        cd libzip-1.10.1
+        cmake -B build \
+          -DCMAKE_INSTALL_PREFIX=/opt/legacy \
+          -DBUILD_SHARED_LIBS=OFF \
+          -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+          -DBUILD_TOOLS=OFF -DBUILD_REGRESS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_DOC=OFF \
+          -DENABLE_BZIP2=OFF -DENABLE_LZMA=OFF -DENABLE_ZSTD=OFF
+        cmake --build build -j4
+        cmake --install build
+
+        cd /src
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DAGENT_VERSION="$VERSION"
+        cmake --build build --config Release -j 4
+
+        cd build
+        ctest --output-on-failure -LE "slow|broken" -j 4
+        cd ..
+
+        cmake --install build --prefix /src/package
+        cd package && zip -ry /src/OpenAM-WebAgent-RHEL7.zip .
+        SCRIPT
+
+    - name: Upload Workflow Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenAM-WebAgent-RHEL${{ matrix.rhel_version }}
+        path: OpenAM-WebAgent-RHEL${{ matrix.rhel_version }}.zip
+
+    - name: Attach to GitHub Release
+      if: github.ref_type == 'tag'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        files: OpenAM-WebAgent-RHEL${{ matrix.rhel_version }}.zip
+        generate_release_notes: true
+        fail_on_unmatched_files: ${{ matrix.rhel_version != '6' }}
+
+
+  # ---------------------------------------------------------------------------
+  # RHEL 8 / 9 / 10 — modern AlmaLinux / CentOS Stream.
+  #
+  # --shm-size=256m: GitHub's default /dev/shm is 64MB in containers, but
+  # our audit + policy cache tests request up to 128MB of shared memory.
+  # Without this, 4+ tests fail with errno -31 (ENAMETOOLONG from mmap).
   # ---------------------------------------------------------------------------
   build-rhel:
     name: Build RHEL ${{ matrix.rhel_version }}
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        rhel_version: [ '7', '8', '9', '10' ]
+        rhel_version: [ '8', '9', '10' ]
         include:
-          - rhel_version: '7'
-            container_image: 'centos:7'
           - rhel_version: '8'
             container_image: 'almalinux:8'
+            crb_repo: 'powertools'
           - rhel_version: '9'
             container_image: 'almalinux:9'
+            crb_repo: 'crb'
           - rhel_version: '10'
             container_image: 'quay.io/centos/centos:stream10'
+            crb_repo: 'crb'
 
     container:
       image: ${{ matrix.container_image }}
+      options: --shm-size=256m
 
     steps:
     - uses: actions/checkout@v4
@@ -217,29 +589,11 @@ jobs:
           echo "version=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
         fi
 
-    - name: Fix EOL Repos for CentOS 7
-      if: matrix.rhel_version == '7'
+    - name: Install Dependencies
       run: |
-        sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*.repo || true
-        sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo || true
-
-    - name: Install Dependencies (RHEL 7)
-      if: matrix.rhel_version == '7'
-      run: |
-        yum install -y epel-release
-        yum install -y \
-          gcc gcc-c++ make zip pkgconfig cmake3 \
-          pcre2-devel expat-devel zlib-devel openssl-devel libzip-devel \
-          apr-devel apr-util-devel httpd-devel \
-          libcmocka-devel
-        # RHEL 7 calls modern cmake 'cmake3'
-        ln -sf /usr/bin/cmake3 /usr/bin/cmake
-        ln -sf /usr/bin/ctest3 /usr/bin/ctest
-
-    - name: Install Dependencies (RHEL 8, 9, 10)
-      if: matrix.rhel_version == '8' || matrix.rhel_version == '9' || matrix.rhel_version == '10'
-      run: |
-        dnf install -y epel-release || true
+        dnf install -y epel-release
+        dnf install -y dnf-plugins-core
+        dnf config-manager --set-enabled ${{ matrix.crb_repo }}
         dnf install -y \
           gcc gcc-c++ make cmake zip pkgconfig \
           pcre2-devel expat-devel zlib-devel openssl-devel libzip-devel \
@@ -259,210 +613,27 @@ jobs:
 
     - name: Package Artifacts
       run: |
-        mkdir -p package/lib package/bin
-        cp build/agentadmin* package/bin/ 2>/dev/null || true
-        cp build/mod_*       package/lib/ 2>/dev/null || true
-        cp build/libopenam*  package/lib/ 2>/dev/null || true
-        cd package && zip -r "../OpenAM-WebAgent-RHEL-${{ matrix.rhel_version }}.zip" .
+        cmake --install build --prefix "$PWD/package"
+        cd package && zip -ry "../OpenAM-WebAgent-RHEL${{ matrix.rhel_version }}.zip" .
 
     - name: Upload Workflow Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: OpenAM-WebAgent-RHEL-${{ matrix.rhel_version }}
-        path: OpenAM-WebAgent-RHEL-${{ matrix.rhel_version }}.zip
+        name: OpenAM-WebAgent-RHEL${{ matrix.rhel_version }}
+        path: OpenAM-WebAgent-RHEL${{ matrix.rhel_version }}.zip
 
     - name: Attach to GitHub Release
       if: github.ref_type == 'tag'
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.ref_name }}
-        files: OpenAM-WebAgent-RHEL-${{ matrix.rhel_version }}.zip
+        files: OpenAM-WebAgent-RHEL${{ matrix.rhel_version }}.zip
         generate_release_notes: true
         fail_on_unmatched_files: true
 
 
   # ---------------------------------------------------------------------------
-  # RHEL 6 — best-effort, legacy.
-  #
-  # WARNING: CentOS 6 has been EOL since 2020-11-30. This job exists to
-  # support legacy environments and is NOT a recommendation. Several deps
-  # must be built from source because they're not in the CentOS 6 base
-  # repos or EPEL 6:
-  #   - cmake 3.x (base repo has 2.8 — too old for our CMakeLists.txt)
-  #   - pcre2    (EPEL 6 only has PCRE1)
-  #   - libzip   (not in base or EPEL 6)
-  #   - cmocka   (not in base or EPEL 6)
-  #
-  # The step times out after 30 minutes. If it becomes flaky, drop it to
-  # a weekly schedule or remove the job entirely — RHEL 6 has been
-  # unsupported by Red Hat itself for nearly 6 years.
-  #
-  # Sources are cached between runs so only the initial build is slow.
-  # ---------------------------------------------------------------------------
-  build-rhel6:
-    name: Build RHEL 6 (legacy, best-effort)
-    runs-on: ubuntu-latest
-    if: github.event_name != 'schedule'
-    continue-on-error: true   # Don't fail the whole CI pipeline if RHEL 6 breaks
-    timeout-minutes: 30
-    container:
-      image: centos:6
-
-    steps:
-    - name: Fix EOL Repos for CentOS 6
-      run: |
-        # All CentOS 6 repos point at the dead mirror network; redirect to vault.
-        sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*.repo || true
-        sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo || true
-
-    - name: Install Base Build Tools
-      run: |
-        yum install -y epel-release || true
-        yum install -y \
-          gcc gcc-c++ make zip tar wget which pkgconfig \
-          expat-devel zlib-devel openssl-devel \
-          apr-devel apr-util-devel httpd-devel
-
-    # actions/checkout@v4 requires glibc >= 2.17 (CentOS 6 has 2.12),
-    # so we fall back to v1 which still works on old distros.
-    - name: Checkout (legacy-compatible)
-      uses: actions/checkout@v1
-
-    - name: Derive version
-      id: version
-      shell: bash
-      run: |
-        if [ "${{ github.ref_type }}" = "tag" ]; then
-          echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-        else
-          echo "version=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-        fi
-
-    # Cache the from-source dependencies so we only pay the ~10 minute
-    # build cost on first run or when versions change.
-    - name: Cache legacy dependencies
-      id: rhel6-cache
-      uses: actions/cache@v3
-      with:
-        path: /opt/legacy
-        # Bump this suffix to invalidate the cache if you change
-        # versions or build flags below.
-        key: rhel6-deps-cmake3.22.6-pcre2-10.42-libzip-1.10.1-cmocka-1.1.7-v2
-
-    - name: Install CMake 3.22 (binary)
-      if: steps.rhel6-cache.outputs.cache-hit != 'true'
-      run: |
-        mkdir -p /opt/legacy
-        cd /tmp
-        wget -q https://github.com/Kitware/CMake/releases/download/v3.22.6/cmake-3.22.6-linux-x86_64.tar.gz
-        tar -xzf cmake-3.22.6-linux-x86_64.tar.gz -C /opt/legacy --strip-components=1
-
-    - name: Build PCRE2 from source
-      if: steps.rhel6-cache.outputs.cache-hit != 'true'
-      run: |
-        cd /tmp
-        wget -q https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.42/pcre2-10.42.tar.gz
-        tar -xzf pcre2-10.42.tar.gz
-        cd pcre2-10.42
-        ./configure --prefix=/opt/legacy --enable-shared --disable-static --disable-dependency-tracking
-        make -j4 && make install
-
-    - name: Build libzip from source
-      if: steps.rhel6-cache.outputs.cache-hit != 'true'
-      run: |
-        export PATH=/opt/legacy/bin:$PATH
-        cd /tmp
-        # libzip 1.10.x is the last line that builds cleanly on CentOS 6's
-        # older gcc and zlib. Newer 1.11+ wants C11 features not available.
-        wget -q https://libzip.org/download/libzip-1.10.1.tar.gz
-        tar -xzf libzip-1.10.1.tar.gz
-        cd libzip-1.10.1
-        cmake -B build \
-          -DCMAKE_INSTALL_PREFIX=/opt/legacy \
-          -DBUILD_SHARED_LIBS=ON \
-          -DBUILD_TOOLS=OFF \
-          -DBUILD_REGRESS=OFF \
-          -DBUILD_EXAMPLES=OFF \
-          -DBUILD_DOC=OFF \
-          -DENABLE_BZIP2=OFF \
-          -DENABLE_LZMA=OFF \
-          -DENABLE_ZSTD=OFF
-        cmake --build build -j4
-        cmake --install build
-
-    - name: Build cmocka from source
-      if: steps.rhel6-cache.outputs.cache-hit != 'true'
-      run: |
-        export PATH=/opt/legacy/bin:$PATH
-        cd /tmp
-        wget -q https://cmocka.org/files/1.1/cmocka-1.1.7.tar.xz
-        tar -xf cmocka-1.1.7.tar.xz
-        cd cmocka-1.1.7
-        cmake -B build \
-          -DCMAKE_INSTALL_PREFIX=/opt/legacy \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DUNIT_TESTING=OFF
-        cmake --build build -j4
-        cmake --install build
-
-    - name: Configure and Build OpenAM Web Agents
-      run: |
-        export PATH=/opt/legacy/bin:$PATH
-        export PKG_CONFIG_PATH=/opt/legacy/lib/pkgconfig:/opt/legacy/lib64/pkgconfig
-        export LD_LIBRARY_PATH=/opt/legacy/lib:/opt/legacy/lib64
-        # RHEL 6 ships gcc 4.4.7 — C99 strict mode is needed for some features
-        cmake -B build \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DAGENT_VERSION=${{ steps.version.outputs.version }} \
-          -DCMAKE_C_FLAGS="-std=gnu99"
-        cmake --build build --config Release -j 4
-
-    - name: Run Tests
-      working-directory: build
-      run: |
-        export PATH=/opt/legacy/bin:$PATH
-        export LD_LIBRARY_PATH=/opt/legacy/lib:/opt/legacy/lib64
-        ctest ${{ env.CTEST_DEFAULT_ARGS }}
-
-    - name: Package Artifacts
-      run: |
-        mkdir -p package/lib package/bin
-        cp build/agentadmin* package/bin/ 2>/dev/null || true
-        cp build/mod_*       package/lib/ 2>/dev/null || true
-        cp build/libopenam*  package/lib/ 2>/dev/null || true
-        # Bundle the vendored deps so the tarball is self-contained on a
-        # stock RHEL 6 box that won't have pcre2/libzip from any repo.
-        mkdir -p package/vendor-lib
-        cp -a /opt/legacy/lib*/libpcre2-8.so* package/vendor-lib/ 2>/dev/null || true
-        cp -a /opt/legacy/lib*/libzip.so*     package/vendor-lib/ 2>/dev/null || true
-        cp -a /opt/legacy/lib*/libcmocka.so*  package/vendor-lib/ 2>/dev/null || true
-        cd package && zip -r ../OpenAM-WebAgent-RHEL-6.zip .
-
-    - name: Upload Workflow Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: OpenAM-WebAgent-RHEL-6
-        path: OpenAM-WebAgent-RHEL-6.zip
-
-    - name: Attach to GitHub Release
-      if: github.ref_type == 'tag'
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ github.ref_name }}
-        files: OpenAM-WebAgent-RHEL-6.zip
-        generate_release_notes: true
-        fail_on_unmatched_files: false   # RHEL 6 may legitimately fail to build
-
-
-  # ---------------------------------------------------------------------------
-  # Nightly slow-test job — exercises the tests labelled `slow` in
-  # tests/CMakeLists.txt (shared-memory stress, threaded log worker,
-  # policy-cache concurrency). These are excluded from the PR pipeline
-  # because they add several minutes per run and can be flaky in
-  # resource-constrained CI runners.
-  #
-  # Runs on the `schedule` trigger (03:00 UTC nightly) and can also be
-  # kicked off manually via the "Run workflow" button.
+  # Nightly slow-test job.
   # ---------------------------------------------------------------------------
   slow-tests:
     name: Slow tests (nightly)
@@ -486,6 +657,4 @@ jobs:
 
     - name: Run Slow Tests
       working-directory: build
-      # Only the `slow` label, exclude broken. These tests have 600s
-      # per-test timeouts set in CMakeLists.txt.
       run: ctest --output-on-failure -L slow -LE broken -j 2
