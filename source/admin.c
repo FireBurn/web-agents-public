@@ -20,7 +20,6 @@
 #else
 #define LIB_FILE_EXT "so"
 #define APACHE_DEFAULT_CONF_FILE "/opt/apache/conf/httpd.conf"
-#define VARNISH_DEFAULT_VMODS_DIR "/usr/lib64/varnish/vmods"
 #endif
 
 #ifdef AM_BINARY_LICENSE
@@ -76,7 +75,7 @@ struct am_conf_entry {
     struct am_conf_entry *next;
 };
 
-enum { AM_I_UNKNOWN = 0, AM_I_APACHE, AM_I_IIS, AM_I_VARNISH };
+enum { AM_I_UNKNOWN = 0, AM_I_APACHE, AM_I_IIS };
 
 /* forward declarations (IIS specific) */
 void list_iis_sites(int, char **);
@@ -93,8 +92,6 @@ static const char *am_container_str(int v) {
         return "Apache";
     case AM_I_IIS:
         return "IIS";
-    case AM_I_VARNISH:
-        return "Varnish";
     default:
         return "Unknown";
     }
@@ -909,69 +906,6 @@ static int create_agent_instance(int status, const char *web_conf_path, const ch
         }
         break;
     }
-    case AM_I_VARNISH: {
-#ifndef _WIN32
-        if (rv == AM_SUCCESS) {
-            char vmod_path[AM_URI_SIZE];
-            char instance_type_mod[AM_URI_SIZE];
-            char instance_conf_file[AM_URI_SIZE];
-            snprintf(vmod_path, sizeof(vmod_path), "%s" FILE_PATH_SEP "libvmod_am." LIB_FILE_EXT, web_conf_path);
-            build_path(instance_type_mod, sizeof(instance_type_mod), app_path,
-                       ".." FILE_PATH_SEP "lib" FILE_PATH_SEP "libvmod_am." LIB_FILE_EXT);
-            snprintf(instance_conf_file, sizeof(instance_conf_file),
-                     "%s" FILE_PATH_SEP "config" FILE_PATH_SEP "agent.conf", created_name_path);
-
-            /* cleanup existing vmods directory */
-            if (file_exists(vmod_path) && unlink(vmod_path) != 0) {
-                install_log("failed to unlink %s (error: %d)", vmod_path, errno);
-            }
-
-            /* add agent (softlink) to vmods directory */
-            rv = symlink(instance_type_mod, vmod_path);
-            if (rv == 0) {
-                install_log("webserver vmods directory %s updated", web_conf_path);
-            } else {
-                install_log("failed to update vmods directory %s (error: %d)", web_conf_path, errno);
-                rv = AM_ERROR;
-            }
-
-            if (rv == AM_SUCCESS) {
-                size_t vcl_template_sz = 0;
-
-                /* load instance vcl template */
-                char *vcl_template = load_file(instance_config_template, &vcl_template_sz);
-                if (vcl_template != NULL) {
-                    install_log("updating %s", AM_INSTALL_CONF_PATH);
-
-                    /* update instance vcl template */
-                    rv = string_replace(&vcl_template, AM_INSTALL_CONF_PATH, instance_conf_file, &vcl_template_sz);
-                    if (rv != AM_SUCCESS) {
-                        install_log("failed to update instance vcl template %s (error: %s)", instance_config_template,
-                                    am_strerror(rv));
-                        rv = AM_ERROR;
-                    } else {
-                        char vcl_file[AM_URI_SIZE];
-
-                        /* save instance vcl template to a file */
-                        snprintf(vcl_file, sizeof(vcl_file), "%s" FILE_PATH_SEP "config" FILE_PATH_SEP "agent.vcl",
-                                 created_name_path);
-                        install_log("writing vcl configuration to %s", vcl_file);
-                        if (write_file(vcl_file, vcl_template, vcl_template_sz) > 0) {
-                            rv = AM_SUCCESS;
-                        } else {
-                            install_log("failed to write agent vcl configuration to %s", vcl_file);
-                            rv = AM_ERROR;
-                        }
-                    }
-                }
-            }
-        }
-#else
-        install_log("unsupported platform");
-        rv = AM_ERROR;
-#endif
-        break;
-    }
     default: {
         install_log("unknown installation instance type %d", instance_type);
         break;
@@ -1441,34 +1375,7 @@ static void install_interactive(int argc, char **argv) {
 
             free(input);
 
-            break; /* avoid fall through into varnish */
-        }
-        case AM_I_VARNISH: {
-#ifndef _WIN32
-            input = prompt_and_read("\nEnter the complete path to Varnish server VMODS directory.\n"
-                                    "[ q or 'ctrl+c' to exit ]\n"
-                                    "Directory [" VARNISH_DEFAULT_VMODS_DIR "]:");
-            check_if_quit_wanted(input);
-            if (!ISVALID(input)) {
-                am_free(input);
-                input = strdup(VARNISH_DEFAULT_VMODS_DIR);
-                if (input == NULL) {
-                    install_log("installation exit (memory allocation error)");
-                    am_net_options_delete(&net_options);
-                    exit(EXIT_FAILURE);
-                }
-            }
-            if (file_exists(input)) {
-                strncpy(server_conf, input, sizeof(server_conf) - 1);
-                install_log("server vmods directory %s", server_conf);
-                error = AM_FALSE;
-            } else {
-                fprintf(stdout, "\nError: unable to access directory %s.\nPlease try again.\n\n", input);
-                install_log("unable to access server VMODS directory %s", input);
-            }
-            free(input);
             break;
-#endif
         }
         default: {
             fprintf(stdout, "Error: unknown installation type. Exiting.\n");
@@ -1873,7 +1780,7 @@ static void install_interactive(int argc, char **argv) {
         fprintf(stdout, "\nCreating configuration...\n");
         /* create agent instance and modify the server configuration */
 
-        if (instance_type == AM_I_APACHE || instance_type == AM_I_IIS || instance_type == AM_I_VARNISH) {
+        if (instance_type == AM_I_APACHE || instance_type == AM_I_IIS) {
             rv = create_agent_instance(instance_type == AM_I_IIS ? iis_status : 0, server_conf /* site id for IIS */,
                                        openam_url, agent_realm, agent_url, agent_user, agent_password, uid, gid,
                                        property_map);
@@ -1922,7 +1829,7 @@ static void install_interactive(int argc, char **argv) {
  * The important thing to know about the way this function works is that the arguments are:
  *
  * argv[1] == --s
- * argv[2] = Apache: path to httpd.conf file; IIS: SiteId; Varnish: path to VMODS directory
+ * argv[2] = Apache: path to httpd.conf file; IIS: SiteId
  * argv[3] = OpenAM URL
  * argv[4] = Agent URL
  * argv[5] = Realm
@@ -2070,7 +1977,7 @@ static void install_silent(int argc, char **argv) {
             fprintf(stdout, "\nCreating configuration...\n");
             property_map_t *property_map = property_map_create();
 
-            if (instance_type == AM_I_APACHE || instance_type == AM_I_IIS || instance_type == AM_I_VARNISH) {
+            if (instance_type == AM_I_APACHE || instance_type == AM_I_IIS) {
                 rv = AM_SUCCESS;
                 if (instance_type == AM_I_IIS) {
                     int iis_status = test_module(argv[2]);
@@ -2229,27 +2136,6 @@ static void remove_instance(int argc, char **argv) {
                 fprintf(stdout, "\nRemoving %s configuration...\n", e->name);
                 /* remove IIS module in the site (global module configuration remains) */
                 disable_module(e->web, iis_instc_file);
-                /* delete agent instance configuration directory */
-                am_delete_directory(e->path);
-                /* remove agent instance configuration */
-                am_cleanup_instance(instance_config, e->name);
-                fprintf(stdout, "\nRemoving %s configuration... Done.\n", e->name);
-                break;
-            }
-            case AM_I_VARNISH: {
-                char vmod_path[AM_URI_SIZE];
-                char *input = prompt_and_read("\nWarning! This procedure will remove all " DESCRIPTION
-                                              " references from \nWeb server configuration."
-                                              "\n\nContinue (yes/no): [no]:");
-                rv = AM_SUCCESS;
-                if (!ISVALID(input) || strncasecmp(input, "y", 1) != 0) {
-                    am_free(input);
-                    break;
-                }
-                am_free(input);
-                snprintf(vmod_path, sizeof(vmod_path), "%s" FILE_PATH_SEP "libvmod_am." LIB_FILE_EXT, e->web);
-                fprintf(stdout, "\nRemoving %s configuration...\n", e->name);
-                unlink(vmod_path);
                 /* delete agent instance configuration directory */
                 am_delete_directory(e->path);
                 /* remove agent instance configuration */
@@ -2522,13 +2408,6 @@ static void archive_files(int argc, char **argv) {
                        ".." FILE_PATH_SEP "lib" FILE_PATH_SEP "mod_iis_openam_64." LIB_FILE_EXT);
             if (file_exists(instance_type_mod)) {
                 instance_type = AM_I_IIS;
-            }
-            build_path(instance_type_mod, sizeof(instance_type_mod), app_path,
-                       ".." FILE_PATH_SEP "lib" FILE_PATH_SEP "libvmod_am." LIB_FILE_EXT);
-            if (file_exists(instance_type_mod)) {
-                build_path(instance_config_template, sizeof(instance_config_template), app_path,
-                           ".." FILE_PATH_SEP "config" FILE_PATH_SEP "agent.vcl.template");
-                instance_type = AM_I_VARNISH;
             }
 
             /* read environment variables and create am_net_options */
